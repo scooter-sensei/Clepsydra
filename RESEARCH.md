@@ -37,7 +37,7 @@ These judgments are relative to the sources in §1, found in a non-exhaustive se
 
 **Change:** when both candidate lines are full, evict the slot with the fewest events in the horizon, oldest on ties. One-off keys churn among themselves.
 
-**Evidence:** `TestSprayCannotEvictRepeatOffender` sprays 20× capacity of one-off keys. All 50 offender keys keep their exact count of 20. The same test **fails with oldest-first eviction** (`verify/experiments/oldest-first-eviction.patch`) [E1]. Insert latency was measured as unchanged at the time; `verify/ab.sh a5292e3 2a526a8 MissInsert` repeats that comparison [S].
+**Evidence:** `TestSprayCannotEvictRepeatOffender` sprays 20× capacity of one-off keys. All 50 offender keys keep their exact count of 20. The same test **fails with oldest-first eviction** (`verify/experiments/oldest-first-eviction.patch`) [E1]. Insert latency was reported as unchanged at the time; re-measured, miss-insert went from 83 to 110 ns (`verify/ab.sh a5292e3 2a526a8 'CheckAndTouchMissInsert$'`; claims S6, X19).
 
 TinyLFU uses frequency for cache *admission*. Using it as an anti-evasion eviction policy in a temporal filter appears to be new.
 

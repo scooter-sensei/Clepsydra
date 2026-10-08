@@ -2,22 +2,26 @@
 
 Every `*.patch` here is a plain `git diff` against **1e0ef14** (HEAD of
 `github.com/scooter-sensei/temporalfilter`, Go 1.24.7), except
-`lockfree-dup-repair-bc2e12d.patch`, which applies to commit **bc2e12d**.
+`lockfree-dup-repair-bc2e12d.patch` (applies to **bc2e12d**) and
+`insert-saturated-bench-597ee63.patch` (adds 126bd87's saturated-insert
+benchmark to **597ee63**, for the speed comparison in `verify/speed.sh`).
 
 ```sh
-git clone /mnt/project-files/temporal-filter tf && cd tf   # at 1e0ef14
-git apply /path/to/out/<name>.patch
+git clone /mnt/project-files/temporal-filter tf && cd tf && git checkout 1e0ef14
+git apply verify/experiments/<name>.patch     # or: verify/experiments.sh, verify/ab.sh
 ```
 
 The experiment code was recovered from the earlier session transcript, which
 recorded the edits as Python and heredoc scripts. Each patch's notes say where
-the code was ported to HEAD and how. Raw outputs of every check below are in
-`logs/`.
+the code was ported to HEAD and how. ("HEAD" in these notes means 1e0ef14.)
+The raw logs of the checks below were not kept; `verify/experiments.sh`
+re-runs every deterministic one and `verify/run.sh` compares the result with
+`verify/expected/experiments.txt`.
 
 Each patch was applied to a fresh worktree at 1e0ef14 and checked with
-`git apply`, `go build ./...`, `go vet ./...` and `go test -short -count=1 ./...`
-(logs/verify-*.txt). Nine patches were also run with `go test -race -short -count=1 .`
-(logs/race.txt, see the race check section at the end). No speed benchmarks were run. Any
+`git apply`, `go build ./...`, `go vet ./...` and `go test -short -count=1 ./...`.
+Nine patches were also run with `go test -race -short -count=1 .`
+(see the race check section at the end). No speed benchmarks were run. Any
 ns/op in the notes are the original session's numbers, given as context only.
 
 ## Status
@@ -107,7 +111,7 @@ FAIL
 ```
 tfbench -quick: `| 0.000% | 0.000% | 0.050% | 0.00e+00 | 1.80e-08 | 0% | 18.8 | 0.081 |`. Spray is **0%** versus 100% at HEAD. Everything else is unchanged, except FN 1.15x at 0.050% versus 0.051%.
 
-**Side effect (not deterministic):** `TestTouchRacingRelocationKeepsCounts` also fails, because hot keys get evicted during its 98%-load fill. Over 30 standalone runs it lost counts in 30 of 30 (median 1786 lost, max 8736). HEAD lost counts in 2 of 30 (max 21). That HEAD test is itself slightly flaky on this host (logs/reloc-race-oldest.txt).
+**Side effect (not deterministic):** `TestTouchRacingRelocationKeepsCounts` also fails, because hot keys get evicted during its 98%-load fill. Over 30 standalone runs it lost counts in 30 of 30 (median 1786 lost, max 8736). HEAD lost counts in 2 of 30 (max 21). That was the test's own flaw at the time (claims X14), since fixed.
 
 The "insert latency unchanged" part is a speed claim: REGEX `CheckAndTouchMissInsert$`, T `1s`.
 
@@ -250,8 +254,8 @@ These match the original session's rows exactly.
 
 **Count cap:**
 - TestHeavyHitterSpill reports `1000 hits counted as 876` for 46 bits and `1000 hits counted as 627` for 44 bits. HEAD passes.
-- Derivation (sum of bucket maxima, plus 5000 same-instant hits read back over 60 s, from a throwaway test in logs/count-cap-derivation.txt):
-  - HEAD [5 5 6 7 8 8 9]: 1273, read back as 1247.
+- Derivation (sum of bucket maxima, plus 5000 same-instant hits read back over 60 s, from a throwaway test that was not kept; `tfbench -exact` re-measures the limits, claims D7):
+  - HEAD [5 5 6 7 8 8 9]: 1273, read back as 1247 (the read-back depends on the burst's phase: 770–1,273 over 64 phases, claims D7).
   - 46 bits [5 5 6 7 7 8 8]: 889, read back as 876.
   - 44 bits [5 5 6 7 7 7 7]: 633, read back as 627.
 
@@ -328,7 +332,7 @@ lf-orig   (bc2e12d + original) runs=60 mean=102  median=106  p90=197  max=227  r
 
 **Claim:** "Pure dyadic register (H/32, widths to 32 units): same mean MAE as the H/24 geometry but 60s error 0.040 vs 0.024."
 
-**No.** `registers_experiment_test.go` is a standalone simulation. It has its own float model, 5 traffic shapes × 40 trials, and its own estimator. It compares linear, dyadic H/16, dyadic H/32 and Laplace registers, and it has **no H/24 geometry row**, so it cannot show H/32 against H/24. Its output for reference (`go test -count=1 -run '^TestRegisterExperiment$' -v .`, 0.85 s, full table in logs/register-experiment.txt):
+**No.** `registers_experiment_test.go` is a standalone simulation. It has its own float model, 5 traffic shapes × 40 trials, and its own estimator. It compares linear, dyadic H/16, dyadic H/32 and Laplace registers, and it has **no H/24 geometry row**, so it cannot show H/32 against H/24. Its output for reference (`go test -count=1 -run '^TestRegisterExperiment$' -v .`, full table in `verify/expected/register-experiment.txt`):
 ```
 mean over all traffic x windows:
   linear 6x8 (H/5)                   0.154
@@ -348,7 +352,7 @@ Mean MAE is the same within 0.001, and the 60 s error is **0.038 vs 0.024**. The
 
 ## Race check
 
-`go test -race -short -count=1 .` in the patched worktrees (logs/race.txt) passed for all nine patches it was run on: cas2-cmpxchg16b, homing, spill-counts, branchless-find, eight-slot, reciprocal-clock, thp-madvise, reloc-prefetch and piecewise-linear. It was not run on the patches that fail a test on purpose, nor on the benchmark-only or geometry patches. The race detector cannot see the asm CAS in cas2-cmpxchg16b.
+`go test -race -short -count=1 .` in the patched worktrees passed for all nine patches it was run on: cas2-cmpxchg16b, homing, spill-counts, branchless-find, eight-slot, reciprocal-clock, thp-madvise, reloc-prefetch and piecewise-linear. It was not run on the patches that fail a test on purpose, nor on the benchmark-only or geometry patches. The race detector cannot see the asm CAS in cas2-cmpxchg16b.
 
 ## Note on HEAD itself
 

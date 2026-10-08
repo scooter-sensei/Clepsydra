@@ -81,7 +81,7 @@ type Config struct {
 	// CoarseClock, if > 0 and Clock is nil, makes the built-in clock a cached
 	// value refreshed every CoarseClock by one background goroutine: reading
 	// it is an atomic load instead of a monotonic clock read (BenchmarkClock*:
-	// ~1.4 vs ~38-42 ns on the reference host),
+	// ~1.4 vs 30-42 ns on the reference host, verify/speed.md),
 	// and timestamps are accurate to CoarseClock. Call Close to stop it.
 	CoarseClock time.Duration
 }

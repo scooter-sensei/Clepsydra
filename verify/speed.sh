@@ -37,10 +37,12 @@ echo
 ab "Clock read: built-in monotonic vs CoarseClock (same build)" HEAD HEAD 'Clock'
 ab "Batch APIs vs single calls, L3-resident 1M-key table (same build)" HEAD HEAD 'CheckAndTouchHit$|CheckAndTouchBatch$|TouchAndCount$|TouchAndCountBatch|VelocityCount$|VelocityCountBatch'
 ab "DRAM-sized 32M-key table: hit, batch, absent, velocity (same build)" HEAD HEAD 'Huge' 3
-ab "Velocity-aware eviction (2a526a8): insert unchanged" a5292e3 2a526a8 'CheckAndTouchMissInsert$'
+ab "Adaptive relocation budget (126bd87): overfull-table insert" "597ee63+$X/insert-saturated-bench-597ee63.patch" 126bd87 'InsertSaturated$' 4
+ab "Velocity-aware eviction (2a526a8): insert cost" a5292e3 2a526a8 'CheckAndTouchMissInsert$'
 ab "Striped first-touch lock (a8a2848): insert cost" bc2e12d a8a2848 'CheckAndTouchMissInsert$|CheckAndTouchHit$'
+ab "Striped first-touch lock (a8a2848): steady insert (benchmark from HEAD, added as a patch)" "bc2e12d+$X/insert-steady-bench-bc2e12d.patch" "a8a2848+$X/insert-steady-bench-bc2e12d.patch" 'InsertSteady$|CheckAndTouchMissInsert$'
 ab "TrailingZeros increment (c8dbb54): hot-key hit" a8a2848 c8dbb54 'CheckAndTouchHitHot$'
-ab "Displaced bit (6bf61f0): no speed cost" c8dbb54 6bf61f0 'CheckAndTouchHit$|CheckAndTouchHitHot$|CheckAndTouchMissInsert$|VelocityCount$'
+ab "Displaced bit (6bf61f0): speed cost" c8dbb54 6bf61f0 'CheckAndTouchHit$|CheckAndTouchHitHot$|CheckAndTouchMissInsert$|VelocityCount$'
 ab "Register published with key (e42327a): saturated inserts" f07b04e e42327a 'InsertSaturated$|InsertSteady$'
 ab "Count-race fixes (0e073a5, 75db206): busy hand-over, word0 re-read on every hit" 2187079 75db206 'CheckAndTouchHit$|CheckAndTouchHitHot$|TouchAndCount$|CheckAndTouchMissInsert$|InsertSteady$|InsertSaturated$'
 ab "Estimate without re-bucketing (24f133b): VelocityCount" d5648a8 24f133b 'VelocityCount$'
@@ -54,5 +56,5 @@ ab "Relocation prefetch (reverted)" 1e0ef14 "1e0ef14+$X/reloc-prefetch.patch" 'I
 ab "Reciprocal clock division (reverted)" 1e0ef14 "1e0ef14+$X/reciprocal-clock.patch" 'CheckAndTouchString$'
 ab "Alternate-line prefetch (40f9223, reverted in bc2e12d)" 7ca297c 40f9223 'CheckAndTouchHit$|CheckAndTouchMissInsert$'
 ab "8-slot buckets (reverted), incl. DRAM table" 1e0ef14 "1e0ef14+$X/eight-slot.patch" 'HugeHit$|HugeAbsent$|InsertNearFull$|InsertSaturated$|InsertSteady$' 3
-ab "THP madvise (reverted), DRAM table" 1e0ef14 "1e0ef14+$X/thp-madvise.patch" 'HugeHit$|HugeAbsent$|HugeBatch$' 3
+ab "THP madvise (reverted), DRAM table" 1e0ef14 "1e0ef14+$X/thp-madvise.patch" 'HugeHit$|HugeAbsent$|HugeBatch$' 6
 ab "Hot-key contention (benchmark only)" "1e0ef14+$X/contention-bench.patch" "1e0ef14+$X/contention-bench.patch" 'Contended|Uncontended' 3

@@ -52,7 +52,7 @@ Each "tried" item in results/backlog.md is a patch against the verification comm
 | E4 | Reciprocal clock division: no change on the string path | reciprocal-clock | exactness test passes; speed in `verify/speed.md` | host |
 | E5 | Raw RDTSC: 19 vs 37 ns | rdtsc-clock | benchmarks in `internal/clockbench`: `go test -run '^$' -bench . ./internal/clockbench` after applying; not in speed.md | host |
 | E6 | Homing: keys in their second line 37% → 30% (steady), 33% → 24% (re-touch) | homing | 37.3% → 30.2% and 33.5% → 23.9% | checked; speed host |
-| E7 | THP madvise granted, no clear gain | thp-madvise | AnonHugePages 307,200 kB with the patch, 0 without (host-dependent); speed in `verify/speed.md` | host |
+| E7 | THP madvise granted, no clear gain | thp-madvise | AnonHugePages 307,200 kB with the patch, 0 without (host-dependent). Speed: 11–18% faster on the DRAM table in the re-run, so "no clear gain" doesn't hold here (S18, X22) | host |
 | E8 | Relocation prefetch: no change | reloc-prefetch | `verify/speed.md` | host |
 | E9 | Spill counts exact under a concurrent audit; absent lookups faster, inserts slower | spill-counts | audit passes; accuracy identical to the base; speed in `verify/speed.md` | checked / host |
 | E10 | 46-bit register: FPR 7e-9, MAE 0.085, cap ~876 | register-46 | 7 in 1e9 (95%: 2.8e-9–1.4e-8); MAE 0.0852; FN 62 at 1.15x; 60 s burst 638–889; steady 10/s reads 12% low | checked |
@@ -67,7 +67,35 @@ The alternate-line prefetch is commits 40f9223 (added) and bc2e12d (reverted); `
 
 ## Speed (host)
 
-SPEED_TABLE
+Measured by `verify/speed.sh` on one host (4-vCPU Xeon @ 2.1 GHz, 260 MB L3, Go 1.24.7); every block, with its command, is in `verify/speed.md`. Each A/B runs both builds alternately (8 rounds; 3–6 for the DRAM table) and compares medians. Same-build A/B pairs differ by up to 3%, so smaller ratios are noise. A claim **holds** if the measured direction and rough size match.
+
+| ID | Claim (source) | Measured (median ns/op, B/A) | Verdict |
+|---|---|---|---|
+| S1 | Built-in clock ~38–42 ns, CoarseClock ~1.4 ns (filter.go) | 31.6 vs 1.4 | holds; the built-in read was 30–42 ns across runs |
+| S2 | CoarseClock string path 172 → 110 ns (backlog 10) | scorecard `str` 115–121 vs `str coarse` 73–75 (0.63x) | holds (claimed 0.64x) |
+| S3 | Batching: cold hit ~100 → 45–55 ns/key (backlog 4); TouchAndCount 154 → 106, VelocityCount 129 → 83 (backlog 15) | hit 65.3 → 42.6 (0.65x); TouchAndCount 97.9 → 62.9 (0.64x); VelocityCount 72.3 → 51.3 (0.71x) | holds; single hits are faster today, so batching saves less than the first figure |
+| S4 | DRAM table: hit ~207, batched ~95, absent ~115, VelocityCount ~190 ns (backlog 17) | 174, 78, 91, 142 | same shape (batch/hit 0.45 vs 0.46); 15–25% lower in this run |
+| S5 | Adaptive budget: overfull insert 12 µs → ~0.4 µs (backlog 2) | 3,729 → 304 (0.08x) | direction holds; 12x faster here, not 30x |
+| S6 | Velocity-aware eviction leaves insert latency unchanged (RESEARCH §3.1) | 83.0 → 109.5 (1.32x) | **does not hold** (X19) |
+| S7 | Striped lock: steady insert +~15 ns (backlog 11) | 154.9 → 174.1 (+19 ns); miss-insert +21–23 ns; hits 1.01 | holds |
+| S8 | TrailingZeros increment: hot hit 44 → 32 ns (backlog 12) | 34.0 → 26.1 (0.77x) | holds (claimed 0.73x) |
+| S9 | Displaced bit: no speed cost (backlog 13) | hits 1.00–1.02, insert 1.02, VelocityCount 1.06 | holds within 6% |
+| S10 | Register published with key: saturated inserts ~10% faster (backlog 16) | 386.8 → 394.2 (1.02); steady 0.97 | **not reproduced** (X21) |
+| S11 | Estimate without re-bucketing: VelocityCount 123 → 45 ns (backlog 9) | 88.2 → 71.1 (0.81x) | **does not hold** (X20) |
+| S12 | Depth 3 / budget 500 instead of 4 / 1000: insert speed (backlog 6; the reason was never recorded, X6) | miss-insert 0.88x, near-full 0.67x, saturated 0.93x | measured now: inserts 7–33% faster, for 75 instead of 12 misses at 1.15x |
+| S13 | Count-race fixes (0e073a5, 75db206) | six benchmarks 1.00–1.03 | no change beyond noise |
+| S14 | Branchless find: hot hits ~10% faster, cold lookups ~15% slower (E2) | hit 0.87, hot hit 0.80, VelocityCount 1.18 | holds |
+| S15 | One CMPXCHG16B: 19 vs 15 ns for two CASes (E3) | 14.1 vs 11.8 (1.19x); on the hit path 1.04, hot 1.11 | holds |
+| S16 | Reciprocal clock division: no change on the string path (E4) | 1.00 | holds |
+| S17 | Homing: no hit gain, inserts +15 ns, hits on full tables +18 ns (E6) | steady insert +22 ns (1.14); hit +3.6 ns (1.06); churned-table hit 0.99 | holds for inserts and hit gain; the full-table hit cost was not re-measured separately |
+| S18 | THP madvise: no clear change on the 600 MB table (E7, backlog) | hit 0.82 / 0.84, absent 0.87 / 0.89, batch 0.93 / 0.89 (3 and 6 rounds) | **does not hold here** (X22) |
+| S19 | Relocation prefetch: no change (E8) | steady 1.06, saturated 0.99 | holds within 6% |
+| S20 | Spill counts: absent lookups faster, inserts slower (E9) | absent 0.90, steady 1.09, near-full 1.09, hit 0.98 | holds |
+| S21 | Alternate-line prefetch made hits slower (40f9223, reverted in bc2e12d) | hit 1.02, miss-insert 1.00 | **not reproduced** (X23) |
+| S22 | 8-slot buckets: near-full 2,945 → 464, DRAM hit 208 → 227, absent 127 → 200, saturated 514 → 793 ns, steady slightly faster (E13) | 0.15, 1.09, 1.51, 1.58, 0.93 | holds (claimed 0.16, 1.09, 1.57, 1.54) |
+| S23 | Contention: 10 / 16 / 22 ns per op for 1 / 16 / 16K keys (E16) | 7.2 / 12.6 / 19.3 | ordering holds; lower in this run |
+| S24 | Raw RDTSC 19 vs 37 ns (E5) | not re-run (benchmarks live in the patch's `internal/clockbench`) | unchecked |
+| S25 | Two CASes are ~15 ns of the ~32 ns hot hit (backlog, Next) | two-CAS microbenchmark 11.8 ns; hot hit 26–28 ns | roughly: ~12 of ~27 ns |
 
 ## Corrected claims
 
@@ -78,7 +106,7 @@ SPEED_TABLE
 | X3 | Decision card: "counts stay exact past 1,000 hits per key per horizon" with the current register | Only for a burst at a favourable phase; steady traffic is within 1% only up to ~12 events/s (720 per minute). The alternatives' caps (876, 630) were measured the same way; on both patterns they are still lower than the current register's, so the choice's ordering holds | D7, E10, E11 |
 | X4 | "0.06% missed at 98%" (DESIGN) | 0.051% (58 of 113,040) at 1.15x | D1 |
 | X5 | "lock-free filter", "safe for concurrent use without locks" (DESIGN, filter.go) | Hits are lock-free; a key's first touch takes a striped lock | filter.go `touch` |
-| X6 | "Relocation depth 3 / budget 500: misses at 98% load 0.19% → 0.06%" (backlog item 6) | True against 3e9277c, but the commit just before it (9f2529f: depth 4 / budget 1000) missed 0.011%; the change raised misses from 12 to 75. Its insert-speed benefit was never recorded | R3 |
+| X6 | "Relocation depth 3 / budget 500: misses at 98% load 0.19% → 0.06%" (backlog item 6) | True against 3e9277c, but the commit just before it (9f2529f: depth 4 / budget 1000) missed 0.011%; the change raised misses from 12 to 75. Its insert-speed benefit wasn't recorded; measured now: inserts 7–33% faster (S12) | R3, S12 |
 | X7 | "Static FPR 2e-7 → 4e-8" (backlog item 3, thread round 1) | Those were 1 and 2 events in 5M and 50M probes. At 1e9 probes: 1.96e-7 → 1.40e-8 | R3 |
 | X8 | `VelocityCount` "re-buckets to now" (DESIGN) | It reads the buckets at the register's own epoch, no re-bucketing (since 24f133b) | register.go `estimate` |
 | X9 | 1s error ranges in RESEARCH §3.2 (linear 0.38–0.75, dyadic 0.17–0.35) | 0.02–0.75 and 0.02–0.35 (the sparse shape was left out) | D12 |
@@ -91,6 +119,12 @@ SPEED_TABLE
 | X16 | Count limits stated as "exact past 1,000 per horizon" or "1,273 per burst" | Steady traffic above ~12 events/s per key reads low in every window; bursts read low in windows shorter than the horizon; even 60 s windows read 770–1,273 for a 1,273-event burst depending on phase | D7 |
 | X17 | No counts lost to relocation races after e42327a (backlog item 16) | Two rarer causes remained. (1) A move abandoned because a touch reached the source first dropped the copy's own counts: 2% of `TestAbandonedMoveKeepsCounts` rounds with distinct tags. Fixed in 0e073a5. (2) A touch could count into the slot's next occupant when it had the same 12-bit tag: about 1 in 1,600 rounds with shared tags. Fixed in 75db206. Both were found from the 1-in-300 stress failure; the distinct-tags run (0 failures in 24,000 rounds vs 4 with shared tags at the time) isolated the second | R2, D14 |
 | X18 | D7 as first written today: "within 1% up to 12/s" | The check counted `(now − W, now]` while the filter counts `[now − W, now]`, so low rates read one event high (1.2x at 1/s in 5 s) and contradicted the claim. The check now uses the filter's window; the claim holds | D7, 7bfa0e9 |
+| X19 | Velocity-aware eviction left insert latency unchanged, ~230 ns (RESEARCH §3.1) | Miss-insert went from 83 to 110 ns (1.32x) on the same benchmark | S6 |
+| X20 | Estimating without re-bucketing cut cache-resident VelocityCount from 123 to 45 ns (backlog 9) | 88 → 71 ns (0.81x). The scorecard's velocity column didn't show 123 → 45 either (111, 115, 106 ns over ba0677c, d5648a8, 24f133b) | S11 |
+| X21 | Publishing the register with its key made saturated inserts ~10% faster (backlog 16) | 387 → 394 ns (1.02): no measurable change | S10 |
+| X22 | THP madvise: no clear change on the 600 MB table (backlog, tried) | 11–18% faster hits, absent lookups and batches on the DRAM table in two runs (3 and 6 rounds; THP mode `madvise`). Host-dependent; worth re-testing | S18 |
+| X23 | The alternate-line prefetch made hits slower (bc2e12d) | No measurable change: hit 1.02, miss-insert 1.00 | S21 |
+| X24 | Commit 7ca297c: "Keep steady-insert benchmark" | The commit removed `BenchmarkInsertSteady`; 6bf61f0 added it back. `verify/experiments/insert-steady-bench-bc2e12d.patch` restores it for S7 | git show 7ca297c |
 
 ## Not reproducible
 

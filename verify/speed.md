@@ -260,3 +260,21 @@ BenchmarkUncontended-4                   18.9       19.2       18.6       19.4  
 BenchmarkContended1-4                     6.9        7.3        7.0        7.1    0.98
 ```
 
+
+### Security changes: keyed hash, stash, saturated bit, Result (S27)
+
+```
+verify/ab.sh 5c57619 afdd877 'CheckAndTouchHit$|CheckAndTouchHitHot|TouchAndCount$|VelocityCount$|VelocityCountHot|InsertSteady|InsertSaturated|InsertNearFull|ContainsAbsent$|CheckAndTouchString|CheckAndTouchParallel' 8
+benchmark (ns/op)                       A min   A median      B min   B median     B/A
+BenchmarkTouchAndCount-4                118.5      126.6      123.9      128.2    1.01
+BenchmarkInsertSteady-4                 208.3      220.9      221.8      233.4    1.06
+BenchmarkCheckAndTouchHit-4              78.8       86.9       78.3       90.1    1.04
+BenchmarkCheckAndTouchString-4          166.2      170.7      167.3      185.7    1.09
+BenchmarkContainsAbsent-4                37.3       40.0       36.3       40.8    1.02
+BenchmarkInsertNearFull-4              2838.0     3026.0     2975.0     3189.0    1.05
+BenchmarkVelocityCount-4                 89.9       95.1       90.5       94.5    0.99
+BenchmarkInsertSaturated-4              516.7      525.2      734.2      748.1    1.42
+BenchmarkCheckAndTouchHitHot-4           36.5       37.3       36.7       39.4    1.06
+BenchmarkVelocityCountHot-4              49.0       50.6       54.5       56.8    1.12
+BenchmarkCheckAndTouchParallel-4         23.8       24.6       24.4       26.0    1.06
+```

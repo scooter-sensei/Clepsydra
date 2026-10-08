@@ -66,6 +66,11 @@ register_experiment() {
 	go test -count=1 -run '^TestRegisterExperiment$' -v . | sed -n '/normalized MAE/,/^--- /p' | grep -v '^--- ' | sed -E 's/^ *[a-z_]+\.go:[0-9]+: *//; s/^ +//'
 }
 
+attacks() {
+	go test -count=1 -run '^(TestAttackForgedIdentity|TestAttackStripeFlood|TestAttackEvictionReset|TestAttackHeavyHitter|TestUpperBoundRandom)$' -v . |
+		grep -vE '^(=== |--- |PASS|ok |FAIL)' | sed -E 's/^ *[a-z_]+\.go:[0-9]+: //'
+}
+
 speed() {
 	for i in 1 2 3; do go run ./cmd/tfbench 2>/dev/null | tail -1; done
 }
@@ -77,6 +82,7 @@ check race - go test -race -short -count=1 ./...
 check exact verify/expected/exact.txt go run ./cmd/tfbench -exact
 check placement verify/expected/placement.txt placement
 check register-experiment verify/expected/register-experiment.txt register_experiment
+check attacks verify/expected/attacks.txt attacks
 check fixes - verify/replay.sh fixes
 check stress - verify/replay.sh stress 300
 check history - verify/replay.sh history

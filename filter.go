@@ -7,7 +7,7 @@
 // Memory layout: the table is an array of 64-byte cache lines. Each line holds
 // four 2-word slots:
 //
-//	word0: fp(16) | displaced(1) | lastTouch(47)               // freshness, CheckAndTouch
+//	word0: fp(16) | displaced(1) | saturated(1) | lastTouch(46) // freshness, CheckAndTouch
 //	word1: tag(12) | epoch(4) | b0..b6 (7 buckets, 48 bits)    // velocity register
 //
 // The velocity register keeps 7 buckets whose widths grow with age (1, 1,

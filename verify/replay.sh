@@ -80,7 +80,7 @@ stress() {
 	local n=${1:-300} d="$WORK/stress"
 	mkdir -p "$d"
 	go test -c -o "$d/t.test" .
-	for re in '^TestConcurrentFirstInsertNoDuplicates$' '^TestTouchRacingRelocationKeepsCounts$' '^TestAbandonedMoveKeepsCounts$'; do
+	for re in '^TestConcurrentFirstInsertNoDuplicates$' '^TestTouchRacingRelocationKeepsCounts$' '^TestAbandonedMoveKeepsCounts$' '^TestStashConcurrentEvictions$'; do
 		local f par=4
 		[ "$re" = '^TestAbandonedMoveKeepsCounts$' ] && par=1
 		f=$(PAR=$par runmany "$d" "$d/t.test" "$re" "$n")

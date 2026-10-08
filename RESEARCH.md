@@ -80,7 +80,7 @@ It loses: with 3–4 exponentials you can't make a sharp box, so the mean error 
 
 ## 4. Limitations to keep in view
 
-- **Keyed hashing is required for adversarial keys.** `HashUint64` is an unkeyed mixer, so an attacker who controls IDs could aim at one line. Use `Hash` (seeded maphash) or a keyed SipHash for user-controlled keys.
+- **Keyed hashing is required for adversarial keys.** `HashUint64` was an unkeyed mixer, so an attacker who controls IDs could aim at one line. Both hashes are now keyed (seeded maphash, or SipHash-2-4 under `Config.Key`); SECURITY.md measures the attacks.
 - **No resizing.** Capacity is fixed at construction.
 - **Count saturation.** Per key, 1,273 events for a burst and 762 per horizon for steady traffic (exact up to about 725) [D7]. (Was 255 per sub-window in the v1 linear layout.)
 - **Memory.** 16 B per slot, 18.8 B per key at the default 85% load [D6]. Bloom-style APBF and TLBF use a few bits per key but give no counts and no per-query window.

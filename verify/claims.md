@@ -15,12 +15,12 @@ Run everything: `verify/isolated.sh` (fresh clone from a git bundle, official Go
 
 | ID | Claim | Check | Result |
 |---|---|---|---|
-| D1 | Missed keys on the churn workload: 0 at 1.0x and 1.1x Capacity, 0.051% at 1.15x | `go run ./cmd/tfbench -exact` | 0/99,075, 0/108,572, 58/113,040 positives missed |
+| D1 | Missed keys on the churn workload: 0 at 1.0x, 1.1x and 1.15x Capacity (0.051% at 1.15x before the eviction stash, afdd877) | `go run ./cmd/tfbench -exact` | 0/99,075, 0/108,572, 0/113,040 positives missed (58/113,040 at 5c57619) |
 | D2 | No false "seen" on the churn workload | same | 0 of 628,235 / 691,508 / 723,513 negatives |
 | D3 | Static FPR 1.8e-8 at capacity | same | 18 in 1e9 never-inserted probes; exact Poisson 95% interval 1.07e-8–2.84e-8 |
 | D4 | Spray can't evict repeat offenders | same; `TestSprayCannotEvictRepeatOffender` | 100 of 100 offenders keep exact counts after 20× capacity of one-off keys (test: 50 of 50) |
 | D5 | Velocity error 0.081 (mean over 1, 5, 15, 30, 60s windows) | same | per window 0.2273, 0.0583, 0.0514, 0.0436, 0.0239; mean 0.0809. Exact counts are over `[now − W, now]`, the window the filter answers for |
-| D6 | 18.8 B per key at the default 85% load | same | 235,296 slots × 16 B / 200,000 keys |
+| D6 | 18.8 B per key at the default 85% load, plus 0.44 B for the stash | same; stash: derived (`New`) | 235,296 slots × 16 B / 200,000 keys; stash 3,676 entries × 24 B / 200,000 |
 | D7 | Per-key count limits | same (`burst` and `steady` lines) | Steady traffic, reported/exact over the last horizon of 3: within 1% up to 12 events/s at 15–60 s windows (1.000–1.006) and within 2% at 5 s (0.984–1.000); 13/s 0.94–0.99; 20/s 0.62–0.75; 100/s 0.12–0.22. A 1 s window reads 0.5–1.0 even at 1/s (it is under one 2.5 s unit). A burst in one tick, over 64 phases of the bucket cycle: reads at most 43 / 125 / 380 / 1,273 in 1 / 5 / 15 / 60 s windows, at least 14 / 66 / 192 / 770. A 10-event burst reads 5–10 in a 1 s window |
 | D8 | The 1.15x misses are not forced by the layout | `go test -run TestPlacementLimit -v` | exact oracle (same lines, same 2 candidates, unbounded BFS) drops 0 of 731,739 inserts, peak slot load 0.9780; the filter evicts 4,575 times. The oracle's shortest paths needed 5 moves for 3,406 inserts; the filter's search allows 4 |
 | D9 | The oracle is right | `go test -run TestOracleMatchesMaxFlow -v` | on small overloaded tables it agrees with from-scratch max bipartite b-matching on 12,941 feasible and 2,933 infeasible inserts; every drop carries a checked Hall-violation certificate |
@@ -28,9 +28,22 @@ Run everything: `verify/isolated.sh` (fresh clone from a git bundle, official Go
 | D11 | The displaced bit halves the entries an absent lookup compares | `go test -run TestComparedEntries -v` | 3.3998 vs 6.7989 entries per lookup (1e6 probes), expected FPR 1.267e-8 vs 2.533e-8; 18.9% of keys sit in their alternate line at 85% load |
 | D12 | Register prototypes (RESEARCH.md §3.2–3.3) | `go test -run TestRegisterExperiment -v` | table in `verify/expected/register-experiment.txt`: means linear 0.154, dyadic-7 0.108, Laplace 3×16 0.268 |
 | D13 | Tests pass, including under the race detector | `go vet ./...`, `go test ./...`, `go test -race -short ./...` | pass |
-| D14 | The racy regression tests hold at HEAD: no duplicate slots, no lost counts under relocation | `verify/replay.sh stress 300` (4 runs at a time; `verify/run.sh` runs this) | 0 of 300 failures each, three tests (also 0 of 1,000 each in a separate run) |
+| D14 | The racy regression tests hold at HEAD: no duplicate slots, no lost counts under relocation or eviction to the stash | `verify/replay.sh stress 300` (4 runs at a time; `verify/run.sh` runs this) | 0 of 300 failures each, four tests (the first three also 0 of 1,000 each in a separate run) |
 | D15 | Hits skip the word0 CAS within one tick, and a full register skips the word1 CAS | derived: `touch` (`if now > last && !CAS`), `bump` (`nw == old`) | code |
-| D16 | 2^47 µs ≈ 4.46 years; 1.8e-8 FPR ≈ one false hit per minute at 1M absent-key lookups/s | derived: arithmetic | 1.407e14 µs = 4.46 y; 1.8e-8 × 1e6 × 60 = 1.08 |
+| D16 | 2^46 µs ≈ 2.23 years (47 bits / 4.46 years before the saturated bit took one); 1.8e-8 FPR ≈ one false hit per minute at 1M absent-key lookups/s | derived: arithmetic | 7.04e13 µs = 2.23 y; 1.8e-8 × 1e6 × 60 = 1.08 |
+
+## Attacks (checked; SECURITY.md)
+
+`verify/run.sh` runs these tests and compares their output with `verify/expected/attacks.txt`. The workloads are seeded and single-threaded; the keyed hash uses a random seed but only appears where any seed gives the same result.
+
+| ID | Claim | Check | Result |
+|---|---|---|---|
+| A1 | The unkeyed integer hash let an attacker forge a victim's identity; the keyed one doesn't | `go test -run TestAttackForgedIdentity -v` | 4 ids built by inverting SplitMix64, 25 events each: never-touched victim reads 100 and seen (unkeyed), 0 and unseen (keyed) |
+| A2 | …and pile first touches on one lock stripe | `go test -run TestAttackStripeFlood -v` | 4,096 crafted ids: 1 stripe unkeyed, 256 keyed |
+| A3 | Evicting a 20-event key: 168 attacker events against the unkeyed hash, ~10^5 keyed; the stash restores it, and a flood that overruns the stash leaves it Degraded | `go test -run TestAttackEvictionReset -v` | targeted: 168 events; offender returns with count 1 (no stash) or 21 of 21, Restored (stash). Random spray: 87,045 (no stash) / 102,753 (stash) events on 4,818 slots; offender returns count 1, Degraded |
+| A4 | A key is never undercounted silently: if not Saturated, Upper ≥ the exact count | `go test -run TestAttackHeavyHitter -v` | steady and bursty senders at 1–500 ev/s, 1–60 s windows: 0 of 74,319 queries (713 not Saturated); Saturated on 0% at 1 ev/s, 93% at 12/s, ~100% from 31/s |
+| A5 | Same contract, random senders (0.2–60 ev/s, silences, bursts up to 200 in one tick), horizons 10 s and 60 s | `go test -run TestUpperBoundRandom -v` | 0 of 187,219 queries (51,095 not Saturated); there Upper exceeds the exact count by 18.3% of events. Before the saturated bit, a density heuristic missed 689 |
+| A6 | Concurrent evictions and restores lose no counts | `TestStashConcurrentEvictions` (in D14's stress) | 32 hot keys, 8 workers, 76-slot table flooded with heavier keys (~600 evictions per round): every key ends at its exact count. 3,000 rounds clean at afdd877; the first stash version lost counts in ~1 of 10 runs (a stash copy withdrawn after another eviction had replaced it), fixed before commit |
 
 ## Replays of recorded results (replayed)
 
@@ -96,6 +109,8 @@ Measured by `verify/speed.sh` on one host (4-vCPU Xeon @ 2.1 GHz, 260 MB L3, Go 
 | S23 | Contention: 10 / 16 / 22 ns per op for 1 / 16 / 16K keys (E16) | 7.2 / 12.6 / 19.3 | ordering holds; lower in this run |
 | S24 | Raw RDTSC 19 vs 37 ns (E5) | not re-run (benchmarks live in the patch's `internal/clockbench`) | unchecked |
 | S25 | Two CASes are ~15 ns of the ~32 ns hot hit (backlog, Next) | two-CAS microbenchmark 11.8 ns; hot hit 26–28 ns | roughly: ~12 of ~27 ns |
+| S26 | Keyed hashing costs +3 ns per integer key (seed) or +15 ns (SipHash, `Config.Key`) | `go test -bench 'Hash(Uint64|String)'`: integer 2.9 unkeyed, 5.9–6.3 maphash, 16.8–20.6 SipHash; strings of 11 / 21 / 33 B 6.5–8.5 maphash, 18.6 / 22.8–26.7 / 28.6–35.3 SipHash | holds |
+| S27 | Stash, saturated bit and Result (afdd877 vs 5c57619): saturated inserts +42%, hot VelocityCount +12%, the rest within ~10% | `verify/ab.sh 5c57619 afdd877 …` (`verify/speed.md`): InsertSaturated 1.42, VelocityCountHot 1.12, CheckAndTouchString 1.09, InsertSteady 1.06, HitHot 1.06, Parallel 1.06, InsertNearFull 1.05, Hit 1.04, ContainsAbsent 1.02, TouchAndCount 1.01, VelocityCount 0.99 | holds |
 
 ## Corrected claims
 

@@ -36,7 +36,8 @@ Scorecard: `bash bench.sh "label"` (race tests + cmd/tfbench, appends to results
 - Lock-free duplicate repair (in-flight marker + lower index wins): cut duplicates 10x but can't be made symmetric. Replaced by the stripe lock.
 - Pure dyadic register (H/32, widths to 32 units): same mean MAE as the H/24 geometry but 60s error 0.040 vs 0.024.
 
-## Needs a decision (trade-offs)
+## Decided
+- 2026-10-08: Priyasis chose to keep the 48-bit counter (exact heavy-hitter counts) over trading counter bits for identity bits. Options measured:
 - More identity bits from the velocity register (measured, 1e9 probes):
   - 46-bit register + 14-bit tag: FPR 1.8e-8 → 7e-9, vel MAE 0.081 → 0.085, per-key count cap per horizon 1000+ → ~876.
   - 44-bit register + 16-bit tag: FPR → 0 seen (~1e-9 expected), vel MAE 0.088, cap ~630.

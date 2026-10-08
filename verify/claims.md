@@ -36,7 +36,7 @@ Run everything: `verify/isolated.sh` (fresh clone from a git bundle, official Go
 
 | ID | Claim | Check | Result |
 |---|---|---|---|
-| R1 | Every results/history.md row's deterministic columns | `verify/replay.sh history` | each row's commit re-run with its own harness: all 17 rows match on every column that harness printed |
+| R1 | Every results/history.md row's deterministic columns | `verify/replay.sh history` | each row's commit re-run with its own harness: all 18 rows match on every column that harness printed |
 | R2 | Six bugs found and fixed | `verify/replay.sh fixes` | each regression test fails with the bug and passes with the fix (two runs): duplicate slots, bc2e12d 10–12 of 20 → e42327a 0 of 20; a8a2848 still 7–10 of 400 → e42327a 0 of 400. Lost counts in the relocation test, f07b04e 32–39 of 200 → 75db206 0 of 200. Abandoned moves (cold keys off the hot tags), 2187079 20 of 20 runs (5–6 of 300 rounds each) → 0e073a5 0 of 20. Same-tag hand-over, 0e073a5 34 of 200 runs (about 1 in 1,600 rounds) → 75db206 0 of 200 (60,000 rounds). Negative windows (f9c9127) and the empty-batch panic (f07b04e): deterministic |
 | R3 | Before → after numbers in results/backlog.md | `verify/replay.sh harness` (today's accuracy harness on each library commit; expected output `verify/expected/harness.txt`) | item 1: 5.016% → 0% missed at 2.5x (597ee63 harness on 8381fd2 vs 597ee63). Item 3: 1.96e-7 → 1.40e-8 at 1e9 probes (126bd87 → 4b5850b). Item 5: 41.9 → 18.8 B/key. Item 6: 0.191% → 0.066% (3e9277c → acea1cf), see X6. Item 7: 0.1288 → 0.0868. Item 9: 0.0868 → 0.0809. Item 13: 32 → 18 false positives in 1e9 (c8dbb54 → 6bf61f0) |
 

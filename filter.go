@@ -271,16 +271,10 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
 		f.decayStep(now, 1)
 	}
 	fp, tg := fingerprint(h), tag(h)
-	p := f.primary(h)
-	a := f.alt(p, fp)
-	// Start the alternate line's load before scanning the primary so a miss
-	// (new key) waits for both lines in parallel rather than one after the
-	// other. Hits in the primary don't wait for it.
-	runtime.KeepAlive(atomic.LoadUint64(&f.words[a*wordsPerLine]))
 	for {
-		i := f.find(p, fp, tg)
+		i := f.find(f.primary(h), fp, tg)
 		if i < 0 {
-			i = f.find(a, fp, tg)
+			i = f.find(f.alt(f.primary(h), fp), fp, tg)
 		}
 		if i < 0 {
 			i = f.claim(h, fp, now)

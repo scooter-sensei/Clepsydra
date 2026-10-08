@@ -304,26 +304,26 @@ func speed() speeds {
 			hot.CheckAndTouchAt(hs[i&4095], w, 2000+uint64(i>>10))
 		}
 	})
-	keys := make([]string, 1<<16)
+	// String keys on fresh 1M-key tables (the tables above have been
+	// written far into the future by the insert benchmarks).
+	keys := make([]string, benchKeys)
 	for i := range keys {
 		keys[i] = fmt.Sprintf("10.%d.%d.%d", i>>16, i>>8&255, i&255)
-		f.CheckAndTouch(keys[i], time.Minute)
 	}
-	s.str = nsop(func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			f.CheckAndTouch(keys[i&(1<<16-1)], 30*time.Second)
+	strBench := func(cfg tf.Config) float64 {
+		sf, _ := tf.New(cfg)
+		defer sf.Close()
+		for _, k := range keys {
+			sf.CheckAndTouch(k, time.Minute)
 		}
-	})
-	cf, _ := tf.New(tf.Config{Capacity: benchKeys, Horizon: horizon, CoarseClock: 100 * time.Microsecond})
-	defer cf.Close()
-	for _, k := range keys {
-		cf.CheckAndTouch(k, time.Minute)
+		return nsop(func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				sf.CheckAndTouch(keys[i&(benchKeys-1)], 30*time.Second)
+			}
+		})
 	}
-	s.strCoarse = nsop(func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			cf.CheckAndTouch(keys[i&(1<<16-1)], 30*time.Second)
-		}
-	})
+	s.str = strBench(tf.Config{Capacity: benchKeys, Horizon: horizon})
+	s.strCoarse = strBench(tf.Config{Capacity: benchKeys, Horizon: horizon, CoarseClock: 100 * time.Microsecond})
 	return s
 }
 
@@ -381,7 +381,7 @@ Produced by ` + "`go run ./cmd/tfbench -label ...`" + `. Capacity 200k, horizon 
 FN = missed keys on the churn workload at 1.0x / 2.0x / 2.5x the configured Capacity (the table is sized for ~38% slot load at 1.0x, ~95% at 2.5x) (ground truth: exact map).
 FP churn = false "seen" on the churn workload at the last load point. Static FPR = 50M never-inserted probes at capacity.
 Spray = repeat offenders keeping exact counts after 20x-capacity spray. Latencies in ns/op (best of 3),
-1M-key table; batch = CheckAndTouchBatch per key; insert = steady state (keys expire as fast as they arrive), insert sat = every line full; parallel is per-op throughput with GOMAXPROCS goroutines; str = string key + built-in clock; str coarse = same with CoarseClock (100µs cached clock).
+1M-key table; batch = CheckAndTouchBatch per key; insert = steady state (keys expire as fast as they arrive), insert sat = every line full; parallel is per-op throughput with GOMAXPROCS goroutines; str = string key + built-in clock on a fresh 1M-key table; str coarse = same with CoarseClock (100µs cached clock).
 
 `
 

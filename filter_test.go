@@ -342,3 +342,21 @@ func TestBatchMatchesSingle(t *testing.T) {
 		}
 	}
 }
+
+func TestCoarseClock(t *testing.T) {
+	f, err := New(Config{Capacity: 100, Horizon: time.Minute, CoarseClock: time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	t0 := f.Now()
+	time.Sleep(20 * time.Millisecond)
+	if d := f.Now() - t0; d < f.Ticks(10*time.Millisecond) || d > f.Ticks(200*time.Millisecond) {
+		t.Fatalf("coarse clock advanced %d ticks over 20ms", d)
+	}
+	if f.CheckAndTouch("k", time.Second) || !f.CheckAndTouch("k", time.Second) {
+		t.Fatal("string API with coarse clock")
+	}
+	f.Close()
+	f.Close() // idempotent
+}

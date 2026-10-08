@@ -241,7 +241,7 @@ func nsop(fn func(b *testing.B)) float64 {
 	return best
 }
 
-type speeds struct{ hitCold, batch, hitHot, insert, insertSat, velocity, parallel, str float64 }
+type speeds struct{ hitCold, batch, hitHot, insert, insertSat, velocity, parallel, str, strCoarse float64 }
 
 func speed() speeds {
 	f, hs := filled()
@@ -314,6 +314,16 @@ func speed() speeds {
 			f.CheckAndTouch(keys[i&(1<<16-1)], 30*time.Second)
 		}
 	})
+	cf, _ := tf.New(tf.Config{Capacity: benchKeys, Horizon: horizon, CoarseClock: 100 * time.Microsecond})
+	defer cf.Close()
+	for _, k := range keys {
+		cf.CheckAndTouch(k, time.Minute)
+	}
+	s.strCoarse = nsop(func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			cf.CheckAndTouch(keys[i&(1<<16-1)], 30*time.Second)
+		}
+	})
 	return s
 }
 
@@ -339,10 +349,10 @@ func main() {
 	if !*quick {
 		s = speed()
 	}
-	row := fmt.Sprintf("| %s | %s | %.3f%% | %.3f%% | %.3f%% | %.2e | %.2e | %.0f%% | %.1f | %.3f | %.0f | %.0f | %.0f | %.0f | %.0f | %.0f | %.1f | %.0f |",
+	row := fmt.Sprintf("| %s | %s | %.3f%% | %.3f%% | %.3f%% | %.2e | %.2e | %.0f%% | %.1f | %.3f | %.0f | %.0f | %.0f | %.0f | %.0f | %.0f | %.1f | %.0f | %.0f |",
 		time.Now().UTC().Format("01-02 15:04"), rev,
 		100*c10.fnr, 100*c20.fnr, 100*c25.fnr, c25.fpr, sfpr, 100*sp, bpk, vmae,
-		s.hitCold, s.batch, s.hitHot, s.insert, s.insertSat, s.velocity, s.parallel, s.str)
+		s.hitCold, s.batch, s.hitHot, s.insert, s.insertSat, s.velocity, s.parallel, s.str, s.strCoarse)
 	if *label != "" {
 		row += " " + *label + " |"
 	} else {
@@ -371,9 +381,9 @@ Produced by ` + "`go run ./cmd/tfbench -label ...`" + `. Capacity 200k, horizon 
 FN = missed keys on the churn workload at 1.0x / 2.0x / 2.5x the configured Capacity (the table is sized for ~38% slot load at 1.0x, ~95% at 2.5x) (ground truth: exact map).
 FP churn = false "seen" on the churn workload at the last load point. Static FPR = 50M never-inserted probes at capacity.
 Spray = repeat offenders keeping exact counts after 20x-capacity spray. Latencies in ns/op (best of 3),
-1M-key table; batch = CheckAndTouchBatch per key; insert = steady state (keys expire as fast as they arrive), insert sat = every line full; parallel is per-op throughput with GOMAXPROCS goroutines; str = string key + built-in clock.
+1M-key table; batch = CheckAndTouchBatch per key; insert = steady state (keys expire as fast as they arrive), insert sat = every line full; parallel is per-op throughput with GOMAXPROCS goroutines; str = string key + built-in clock; str coarse = same with CoarseClock (100µs cached clock).
 
 `
 
-const header = `| when (UTC) | rev | FN 1.0x | FN 1.1x | FN 1.15x | FP churn 1.15x | static FPR | spray | B/key | vel MAE | hit cold | batch | hit hot | insert | insert sat | velocity | parallel | str | change |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|`
+const header = `| when (UTC) | rev | FN 1.0x | FN 1.1x | FN 1.15x | FP churn 1.15x | static FPR | spray | B/key | vel MAE | hit cold | batch | hit hot | insert | insert sat | velocity | parallel | str | str coarse | change |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|`

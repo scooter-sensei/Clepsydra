@@ -9,17 +9,18 @@ FN a/b/c = missed keys on the churn workload at multiples of the configured Capa
 B/key = table bytes per Capacity key. vel MAE = VelocityCount error: per window (1,5,15,30,60s) sum|est-exact|/sum exact, averaged over windows; 5 traffic shapes (from 13:36; the 13:34 row pooled all windows).
 FP churn = false "seen" on the churn workload at 1.0x. Static FPR = never-inserted probes at capacity (5M probes before 13:16, 50M after).
 Spray = repeat offenders keeping exact counts after 20x-capacity spray. Latencies in ns/op (best of 3),
-1M-key table; batch = CheckAndTouchBatch per key (rows from 13:20); insert = steady state (keys expire as fast as they arrive), insert sat = every line full (rows before 13:10 measured only the saturated case, in the insert column); parallel is per-op throughput with GOMAXPROCS goroutines; str = string key + built-in clock.
+1M-key table; batch = CheckAndTouchBatch per key (rows from 13:20); insert = steady state (keys expire as fast as they arrive), insert sat = every line full (rows before 13:10 measured only the saturated case, in the insert column); parallel is per-op throughput with GOMAXPROCS goroutines; str = string key + built-in clock; str coarse = same with CoarseClock (100µs cached clock), from 13:56.
 
-| when (UTC) | rev | FN a | FN b | FN c | FP churn | static FPR | spray | B/key | vel MAE | hit cold | batch | hit hot | insert | insert sat | velocity | parallel | str | change |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 10-08 13:04 | 8381fd2 | 0.004% | 0.013% | 0.278% | 0.00e+00 | 4.00e-07 | 100% | 41.9 | - | 97 | - | 31 | 260 | - | 107 | 19.1 | 201 | baseline: v2 velocity-aware eviction |
-| 10-08 13:09 | 597ee63 | 0.000% | 0.000% | 0.000% | 0.00e+00 | 2.00e-07 | 100% | 41.9 | - | 100 | - | 27 | 12372 | - | 125 | 18.3 | 230 | cuckoo relocation depth 2 (alt line from fp) |
-| 10-08 13:13 | 126bd87 | 0.000% | 0.000% | 0.000% | 0.00e+00 | 2.00e-07 | 100% | 41.9 | - | 99 | - | 30 | 218 | 384 | 132 | 19.0 | 207 | adaptive cuckoo budget: deep search only while it succeeds |
-| 10-08 13:16 | 4b5850b | 0.000% | 0.000% | 0.000% | 0.00e+00 | 4.00e-08 | 100% | 41.9 | - | 95 | - | 25 | 205 | 394 | 103 | 18.1 | 260 | 28-bit identity (12-bit tag, 4-bit epoch) |
-| 10-08 13:21 | 151815d | 0.000% | 0.000% | 0.000% | 0.00e+00 | 4.00e-08 | 100% | 41.9 | - | 101 | 45 | 31 | 219 | 373 | 108 | 19.2 | 201 | batched API (memory-level parallelism) |
-| 10-08 13:26 | 3e9277c | 0.000% | 0.000% | 0.191% | 0.00e+00 | 4.00e-08 | 100% | 18.8 | - | 92 | 59 | 30 | 228 | 425 | 76 | 22.0 | 170 | 85% target load, any-size table (-55% memory) |
-| 10-08 13:31 | 983b804 | 0.000% | 0.000% | 0.000% | 0.00e+00 | 6.00e-08 | 100% | 18.8 | - | 97 | 60 | 35 | 286 | 727 | 84 | 22.2 | 183 | 8-slot buckets (2 adjacent lines) — reverted: wins only above 94% load, ~10% slower elsewhere |
-| 10-08 13:34 | acea1cf | 0.000% | 0.000% | 0.066% | 0.00e+00 | 4.00e-08 | 100% | 18.8 | 0.038 | 76 | 55 | 35 | 196 | 427 | 74 | 20.3 | 212 | velocity MAE column; reloc depth 3/budget 500 |
-| 10-08 13:42 | ba0677c | 0.000% | 0.000% | 0.058% | 0.00e+00 | 4.00e-08 | 100% | 18.8 | 0.087 | 120 | 94 | 74 | 523 | 687 | 111 | 34.4 | 318 | age-graded velocity register (H/24 near now), spill on overflow |
-| 10-08 13:46 | d5648a8 | 0.000% | 0.000% | 0.058% | 0.00e+00 | 4.00e-08 | 100% | 18.8 | 0.087 | 84 | 60 | 43 | 188 | 620 | 115 | 24.9 | 215 | register fast paths (lazy victim score, packed increment, no divides) |
+| when (UTC) | rev | FN a | FN b | FN c | FP churn | static FPR | spray | B/key | vel MAE | hit cold | batch | hit hot | insert | insert sat | velocity | parallel | str | str coarse | change |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 10-08 13:04 | 8381fd2 | 0.004% | 0.013% | 0.278% | 0.00e+00 | 4.00e-07 | 100% | 41.9 | - | 97 | - | 31 | 260 | - | 107 | 19.1 | 201 | - | baseline: v2 velocity-aware eviction |
+| 10-08 13:09 | 597ee63 | 0.000% | 0.000% | 0.000% | 0.00e+00 | 2.00e-07 | 100% | 41.9 | - | 100 | - | 27 | 12372 | - | 125 | 18.3 | 230 | - | cuckoo relocation depth 2 (alt line from fp) |
+| 10-08 13:13 | 126bd87 | 0.000% | 0.000% | 0.000% | 0.00e+00 | 2.00e-07 | 100% | 41.9 | - | 99 | - | 30 | 218 | 384 | 132 | 19.0 | 207 | - | adaptive cuckoo budget: deep search only while it succeeds |
+| 10-08 13:16 | 4b5850b | 0.000% | 0.000% | 0.000% | 0.00e+00 | 4.00e-08 | 100% | 41.9 | - | 95 | - | 25 | 205 | 394 | 103 | 18.1 | 260 | - | 28-bit identity (12-bit tag, 4-bit epoch) |
+| 10-08 13:21 | 151815d | 0.000% | 0.000% | 0.000% | 0.00e+00 | 4.00e-08 | 100% | 41.9 | - | 101 | 45 | 31 | 219 | 373 | 108 | 19.2 | 201 | - | batched API (memory-level parallelism) |
+| 10-08 13:26 | 3e9277c | 0.000% | 0.000% | 0.191% | 0.00e+00 | 4.00e-08 | 100% | 18.8 | - | 92 | 59 | 30 | 228 | 425 | 76 | 22.0 | 170 | - | 85% target load, any-size table (-55% memory) |
+| 10-08 13:31 | 983b804 | 0.000% | 0.000% | 0.000% | 0.00e+00 | 6.00e-08 | 100% | 18.8 | - | 97 | 60 | 35 | 286 | 727 | 84 | 22.2 | 183 | - | 8-slot buckets (2 adjacent lines) — reverted: wins only above 94% load, ~10% slower elsewhere |
+| 10-08 13:34 | acea1cf | 0.000% | 0.000% | 0.066% | 0.00e+00 | 4.00e-08 | 100% | 18.8 | 0.038 | 76 | 55 | 35 | 196 | 427 | 74 | 20.3 | 212 | - | velocity MAE column; reloc depth 3/budget 500 |
+| 10-08 13:42 | ba0677c | 0.000% | 0.000% | 0.058% | 0.00e+00 | 4.00e-08 | 100% | 18.8 | 0.087 | 120 | 94 | 74 | 523 | 687 | 111 | 34.4 | 318 | - | age-graded velocity register (H/24 near now), spill on overflow |
+| 10-08 13:46 | d5648a8 | 0.000% | 0.000% | 0.058% | 0.00e+00 | 4.00e-08 | 100% | 18.8 | 0.087 | 84 | 60 | 43 | 188 | 620 | 115 | 24.9 | 215 | - | register fast paths (lazy victim score, packed increment, no divides) |
+| 10-08 13:52 | 24f133b | 0.000% | 0.000% | 0.051% | 0.00e+00 | 4.00e-08 | 100% | 18.8 | 0.081 | 101 | 62 | 40 | 216 | 466 | 106 | 25.6 | 263 | - | estimate without re-bucketing; mask bucket starts |

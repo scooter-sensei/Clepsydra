@@ -22,6 +22,7 @@ import (
 	"math"
 	"math/bits"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -62,6 +63,11 @@ type Config struct {
 	// Clock, if set, returns the current tick. It must be monotonic.
 	// Default: monotonic time since New, in Resolution units.
 	Clock func() uint64
+	// CoarseClock, if > 0 and Clock is nil, makes the built-in clock a cached
+	// value refreshed every CoarseClock by one background goroutine: reading
+	// it is an atomic load (~1ns) instead of a monotonic clock read (~25-40ns),
+	// and timestamps are accurate to CoarseClock. Call Close to stop it.
+	CoarseClock time.Duration
 }
 
 // Filter is safe for concurrent use without locks.
@@ -78,6 +84,9 @@ type Filter struct {
 	_           [64]byte
 	cursor      atomic.Uint64 // ContinuousDecay progress, in lines
 	_           [56]byte
+	coarse      atomic.Uint64 // cached tick for CoarseClock
+	stop        chan struct{}
+	stopOnce    sync.Once
 	evictions   atomic.Uint64
 	relocations atomic.Uint64
 	_           [48]byte
@@ -115,7 +124,24 @@ func New(cfg Config) (*Filter, error) {
 	f.words = alignedWords(int(lines * wordsPerLine))
 	if f.clock == nil {
 		base, res := time.Now(), cfg.Resolution
-		f.clock = func() uint64 { return uint64(time.Since(base)/res) + 1 }
+		read := func() uint64 { return uint64(time.Since(base)/res) + 1 }
+		f.clock = read
+		if cfg.CoarseClock > 0 {
+			f.coarse.Store(read())
+			f.stop = make(chan struct{})
+			go func(t *time.Ticker) {
+				defer t.Stop()
+				for {
+					select {
+					case <-t.C:
+						f.coarse.Store(read())
+					case <-f.stop:
+						return
+					}
+				}
+			}(time.NewTicker(max(cfg.CoarseClock, 10*time.Microsecond)))
+			f.clock = f.coarse.Load
+		}
 	}
 	return f, nil
 }
@@ -125,6 +151,14 @@ func alignedWords(n int) []uint64 {
 	const align = wordsPerLine * 8 // bytes per bucket
 	off := int((align-uintptr(unsafe.Pointer(&buf[0]))%align)%align) / 8
 	return buf[off : off+n : off+n]
+}
+
+// Close stops the CoarseClock goroutine, if any. The filter stays usable;
+// its clock just stops advancing.
+func (f *Filter) Close() {
+	if f.stop != nil {
+		f.stopOnce.Do(func() { close(f.stop) })
+	}
 }
 
 // Now returns the filter's current tick.

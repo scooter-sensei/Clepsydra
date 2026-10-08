@@ -17,7 +17,7 @@ func filled() (*tf.Filter, []uint64) {
 	f, _ := tf.New(tf.Config{Capacity: benchKeys, Horizon: horizon})
 	hs := make([]uint64, benchKeys)
 	for i := range hs {
-		hs[i] = tf.HashUint64(uint64(i))
+		hs[i] = mix64(uint64(i))
 		f.CheckAndTouchAt(hs[i], 0, 1000)
 	}
 	return f, hs
@@ -73,18 +73,18 @@ func speed() speeds {
 	s.insert = nsop(func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			ctr++
-			f.CheckAndTouchAt(tf.HashUint64(benchKeys+ctr), w, 1000+ctr*perKey)
+			f.CheckAndTouchAt(mix64(benchKeys+ctr), w, 1000+ctr*perKey)
 		}
 	})
 	// Saturated insert: worst case, every insert lands in full lines.
 	sat, _ := tf.New(tf.Config{Capacity: benchKeys / 4, Horizon: horizon}) // 512K slots
 	for i := range benchKeys {                                             // 2x overfilled
-		sat.CheckAndTouchAt(tf.HashUint64(uint64(i)), 0, 1000)
+		sat.CheckAndTouchAt(mix64(uint64(i)), 0, 1000)
 	}
 	s.insertSat = nsop(func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			ctr++
-			sat.CheckAndTouchAt(tf.HashUint64(1<<40+ctr), w, 1000)
+			sat.CheckAndTouchAt(mix64(1<<40+ctr), w, 1000)
 		}
 	})
 	hot, _ := tf.New(tf.Config{Capacity: 4096, Horizon: horizon})
@@ -121,11 +121,11 @@ func speed() speeds {
 	const hugeKeys = 1 << 25
 	big, _ := tf.New(tf.Config{Capacity: hugeKeys, Horizon: horizon})
 	for i := range uint64(hugeKeys) {
-		big.CheckAndTouchAt(tf.HashUint64(i), 0, 1000)
+		big.CheckAndTouchAt(mix64(i), 0, 1000)
 	}
 	s.hitDRAM = nsop(func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			big.CheckAndTouchAt(tf.HashUint64(uint64(i*7919)%hugeKeys), w, 2000)
+			big.CheckAndTouchAt(mix64(uint64(i*7919)%hugeKeys), w, 2000)
 		}
 	})
 	return s

@@ -30,9 +30,9 @@ func TestAbandonedMoveKeepsCounts(t *testing.T) {
 		salt := uint64(it) << 32
 		hotTags := map[uint64]bool{}
 		for k := range uint64(hot) {
-			hotTags[tag(HashUint64(salt+k))] = true
+			hotTags[tag(mix64(salt+k))] = true
 			for range 3 {
-				f.CheckAndTouchAt(HashUint64(salt+k), 0, at)
+				f.CheckAndTouchAt(mix64(salt+k), 0, at)
 			}
 		}
 		var stop atomic.Bool
@@ -44,7 +44,7 @@ func TestAbandonedMoveKeepsCounts(t *testing.T) {
 				defer wg.Done()
 				n := int64(0)
 				for i := uint64(w / 2); !stop.Load() && n < 150*hot; i++ {
-					f.CheckAndTouchAt(HashUint64(salt+i%hot), 0, at)
+					f.CheckAndTouchAt(mix64(salt+i%hot), 0, at)
 					n++
 				}
 				touches.Add(n)
@@ -52,7 +52,7 @@ func TestAbandonedMoveKeepsCounts(t *testing.T) {
 		}
 		fill := int(float64(f.Slots())*0.99) - hot
 		for k, n := uint64(0), 0; n < fill; k++ {
-			h := HashUint64(salt + 1<<40 + k)
+			h := mix64(salt + 1<<40 + k)
 			if distinct && hotTags[tag(h)] {
 				continue
 			}
@@ -63,7 +63,7 @@ func TestAbandonedMoveKeepsCounts(t *testing.T) {
 		wg.Wait()
 		total := 0
 		for k := range uint64(hot) {
-			total += f.VelocityCountAt(HashUint64(salt+k), f.Ticks(time.Minute), at)
+			total += f.VelocityCountAt(mix64(salt+k), f.Ticks(time.Minute), at)
 		}
 		if want := int(touches.Load()) + hot*3; total != want {
 			failed++

@@ -43,7 +43,7 @@ func TestPlacementLimit(t *testing.T) {
 		last := map[uint64]uint64{}
 		var pos, filterFN, oracleFN int
 		var pruned uint64
-		workload.Churn(c.load, c.seed, capN, hTicks, HashUint64, func(h, w, now uint64) {
+		workload.Churn(c.load, c.seed, capN, hTicks, mix64, func(h, w, now uint64) {
 			if now%hTicks == 0 && now != pruned {
 				pruned = now
 				for k, lt := range last {
@@ -285,7 +285,7 @@ func TestOracleMatchesMaxFlow(t *testing.T) {
 			t.Fatal(err)
 		}
 		o := newOracle(f, hTicks)
-		workload.Churn(1.4, seed, capN, hTicks, HashUint64, func(h, w, now uint64) {
+		workload.Churn(1.4, seed, capN, hTicks, mix64, func(h, w, now uint64) {
 			o.expire(now) // as touch does first; then ask max-flow
 			_, live := o.ids[h]
 			var want bool
@@ -404,11 +404,11 @@ func TestComparedEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := range uint64(capN) {
-		f.CheckAndTouchAt(HashUint64(i), 0, 1)
+		f.CheckAndTouchAt(mix64(i), 0, 1)
 	}
 	var with, without int
 	for i := range uint64(probes) {
-		h := HashUint64(capN + i)
+		h := mix64(capN + i)
 		fp := fingerprint(h)
 		p := f.primary(h)
 		a := f.alt(p, fp)

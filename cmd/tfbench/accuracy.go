@@ -15,7 +15,8 @@ import (
 )
 
 // The accuracy workloads use only the API every commit has had (New,
-// CheckAndTouchAt, ContainsAt, VelocityCountAt, HashUint64, Slots), so
+// CheckAndTouchAt, ContainsAt, VelocityCountAt, Slots; mix64 below is the
+// unkeyed integer hash that was HashUint64 until it became keyed), so
 // verify/replay.sh can run this file against older commits.
 
 const (
@@ -37,7 +38,7 @@ func churn(load float64, seed uint64) churnResult {
 	last := map[uint64]uint64{}
 	var pos, neg, fn, fp int
 	var pruned uint64
-	workload.Churn(load, seed, capacity, hTicks, tf.HashUint64, func(h, w, now uint64) {
+	workload.Churn(load, seed, capacity, hTicks, mix64, func(h, w, now uint64) {
 		if now%hTicks == 0 && now != pruned { // keep ground truth bounded
 			pruned = now
 			for k, t := range last {
@@ -120,7 +121,7 @@ func velocityMAE() (float64, []velWin) {
 	sort.Slice(evs, func(i, j int) bool { return evs[i].t < evs[j].t })
 	hs := make([]uint64, nkeys)
 	for k := range hs {
-		hs[k] = tf.HashUint64(uint64(k) + 1<<50)
+		hs[k] = mix64(uint64(k) + 1<<50)
 	}
 	wins := []uint64{1_000, 5_000, 15_000, 30_000, 60_000}
 	errSum, exactSum := make([]float64, len(wins)), make([]float64, len(wins))
@@ -160,7 +161,7 @@ type velWin struct {
 func staticFPR(probes int) int64 {
 	f, _ := tf.New(tf.Config{Capacity: capacity, Horizon: horizon, Resolution: time.Millisecond})
 	for i := range capacity {
-		f.CheckAndTouchAt(tf.HashUint64(uint64(i)), 0, 1)
+		f.CheckAndTouchAt(mix64(uint64(i)), 0, 1)
 	}
 	// FPR is ~1e-8, so it takes ~1e9 probes to see more than a handful;
 	// split them across cores.
@@ -173,7 +174,7 @@ func staticFPR(probes int) int64 {
 			defer wg.Done()
 			n := 0
 			for i := w; i < probes; i += workers {
-				if f.ContainsAt(tf.HashUint64(uint64(capacity+i)), hTicks, 2) {
+				if f.ContainsAt(mix64(uint64(capacity+i)), hTicks, 2) {
 					n++
 				}
 			}
@@ -190,13 +191,13 @@ func spray() int {
 	f, _ := tf.New(tf.Config{Capacity: capacity, Horizon: horizon, Resolution: time.Millisecond})
 	off := make([]uint64, sprayOffenders)
 	for i := range off {
-		off[i] = tf.HashUint64(uint64(1<<40 + i))
+		off[i] = mix64(uint64(1<<40 + i))
 		for range 20 {
 			f.CheckAndTouchAt(off[i], 0, 1)
 		}
 	}
 	for i := range 20 * capacity {
-		f.CheckAndTouchAt(tf.HashUint64(uint64(i)), 0, 1+uint64(i%30_000))
+		f.CheckAndTouchAt(mix64(uint64(i)), 0, 1+uint64(i%30_000))
 	}
 	ok := 0
 	for _, h := range off {
@@ -219,7 +220,7 @@ func bytesPerKey() float64 {
 
 // printExact prints every deterministic scorecard metric as the raw counts
 // it is computed from. The workloads use seeded PCG streams and the unkeyed
-// HashUint64, and run single-threaded (static FPR sums per-worker counts), so
+// mix64, and run single-threaded (static FPR sums per-worker counts), so
 // the output is a pure function of the code: two runs, on any amd64 machine
 // with the same Go version, must match byte for byte (verify/expected.txt).
 func printExact() {
@@ -274,7 +275,7 @@ func burstCount(n int, window uint64) (lo, hi int) {
 	lo = math.MaxInt
 	for k := range uint64(64) {
 		f, _ := tf.New(tf.Config{Capacity: 1000, Horizon: horizon, Resolution: time.Millisecond})
-		h := tf.HashUint64(42)
+		h := mix64(42)
 		now := 10*hTicks + k*8*unit/64
 		for range n {
 			f.CheckAndTouchAt(h, 0, now)
@@ -290,7 +291,7 @@ func burstCount(n int, window uint64) (lo, hi int) {
 // queried at each touch in the last horizon.
 func steadyCount(every, window uint64) (lo, hi float64) {
 	f, _ := tf.New(tf.Config{Capacity: 1000, Horizon: horizon, Resolution: time.Millisecond})
-	h := tf.HashUint64(43)
+	h := mix64(43)
 	lo = math.Inf(1)
 	for now := uint64(1); now < 3*hTicks; now += every {
 		f.CheckAndTouchAt(h, 0, now)
@@ -332,4 +333,14 @@ func poissonCI95(k int) (lo, hi float64) {
 	}
 	hi = solve(func(mu float64) float64 { return cdf(mu, k) - 0.025 })
 	return lo, hi
+}
+
+// mix64 is the SplitMix64 finalizer, the package's former HashUint64: unkeyed,
+// so the workloads hash the same in every run and on every commit.
+func mix64(x uint64) uint64 {
+	x ^= x >> 30
+	x *= 0xbf58476d1ce4e5b9
+	x ^= x >> 27
+	x *= 0x94d049bb133111eb
+	return x ^ x>>31
 }

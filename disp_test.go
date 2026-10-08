@@ -24,7 +24,7 @@ func TestDisplacedBitTracksLine(t *testing.T) {
 	horizon := f.Ticks(time.Second)
 	var clock atomic.Uint64
 	clock.Store(1000)
-	key := func(k, now uint64) uint64 { return HashUint64(k + now/horizon*capN) }
+	key := func(k, now uint64) uint64 { return mix64(k + now/horizon*capN) }
 	var wg sync.WaitGroup
 	for w := range workers {
 		wg.Add(1)

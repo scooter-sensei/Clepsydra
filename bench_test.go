@@ -1,6 +1,7 @@
 package temporalfilter
 
 import (
+	"fmt"
 	"runtime"
 	"strconv"
 	"sync"
@@ -18,7 +19,7 @@ func benchFilter(b *testing.B) (*Filter, []uint64) {
 	}
 	hs := make([]uint64, benchKeys)
 	for i := range hs {
-		hs[i] = HashUint64(uint64(i))
+		hs[i] = mix64(uint64(i))
 		f.CheckAndTouchAt(hs[i], 0, 1000)
 	}
 	return f, hs
@@ -39,7 +40,7 @@ func BenchmarkCheckAndTouchMissInsert(b *testing.B) {
 	w := f.Ticks(30 * time.Second)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		f.CheckAndTouchAt(HashUint64(uint64(benchKeys+i)), w, 2000+uint64(i>>10))
+		f.CheckAndTouchAt(mix64(uint64(benchKeys+i)), w, 2000+uint64(i>>10))
 	}
 }
 
@@ -96,7 +97,7 @@ func BenchmarkBaselineMutexMap(b *testing.B) {
 	m := make(map[uint64]uint64, benchKeys)
 	hs := make([]uint64, benchKeys)
 	for i := range hs {
-		hs[i] = HashUint64(uint64(i))
+		hs[i] = mix64(uint64(i))
 		m[hs[i]] = 1000
 	}
 	w := uint64(30_000_000)
@@ -116,7 +117,7 @@ func BenchmarkBaselineMutexMapParallel(b *testing.B) {
 	m := make(map[uint64]uint64, benchKeys)
 	hs := make([]uint64, benchKeys)
 	for i := range hs {
-		hs[i] = HashUint64(uint64(i))
+		hs[i] = mix64(uint64(i))
 		m[hs[i]] = 1000
 	}
 	var seed atomic.Uint64
@@ -139,7 +140,7 @@ func BenchmarkCheckAndTouchHitHot(b *testing.B) {
 	f, _ := New(Config{Capacity: n, Horizon: time.Minute})
 	hs := make([]uint64, n)
 	for i := range hs {
-		hs[i] = HashUint64(uint64(i))
+		hs[i] = mix64(uint64(i))
 		f.CheckAndTouchAt(hs[i], 0, 1000)
 	}
 	w := f.Ticks(30 * time.Second)
@@ -153,12 +154,12 @@ func BenchmarkCheckAndTouchHitHot(b *testing.B) {
 func BenchmarkInsertSaturated(b *testing.B) {
 	f, _ := New(Config{Capacity: benchKeys / 4, Horizon: time.Minute}) // 512K slots
 	for i := range benchKeys {
-		f.CheckAndTouchAt(HashUint64(uint64(i)), 0, 1000)
+		f.CheckAndTouchAt(mix64(uint64(i)), 0, 1000)
 	}
 	w := f.Ticks(30 * time.Second)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		f.CheckAndTouchAt(HashUint64(uint64(1<<40+i)), w, 1000)
+		f.CheckAndTouchAt(mix64(uint64(1<<40+i)), w, 1000)
 	}
 }
 
@@ -204,12 +205,12 @@ func BenchmarkInsertNearFull(b *testing.B) {
 	per := f.Ticks(time.Minute) / live
 	var ctr uint64
 	for ; ctr < live; ctr++ {
-		f.CheckAndTouchAt(HashUint64(ctr), 0, 1+ctr*per)
+		f.CheckAndTouchAt(mix64(ctr), 0, 1+ctr*per)
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ctr++
-		f.CheckAndTouchAt(HashUint64(ctr), 0, 1+ctr*per)
+		f.CheckAndTouchAt(mix64(ctr), 0, 1+ctr*per)
 	}
 	b.ReportMetric(float64(f.Evictions())/float64(b.N), "evict/op")
 }
@@ -220,7 +221,7 @@ func BenchmarkVelocityCountHot(b *testing.B) {
 	f, _ := New(Config{Capacity: n, Horizon: time.Minute})
 	hs := make([]uint64, n)
 	for i := range hs {
-		hs[i] = HashUint64(uint64(i))
+		hs[i] = mix64(uint64(i))
 		for k := range 5 {
 			f.CheckAndTouchAt(hs[i], 0, 1000+uint64(k)*3_000_000)
 		}
@@ -238,7 +239,7 @@ func BenchmarkContainsAbsent(b *testing.B) {
 	w := f.Ticks(30 * time.Second)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		f.ContainsAt(HashUint64(uint64(1<<40+i)), w, 2000)
+		f.ContainsAt(mix64(uint64(1<<40+i)), w, 2000)
 	}
 }
 
@@ -251,12 +252,12 @@ func BenchmarkInsertSteady(b *testing.B) {
 	ctr := uint64(0)
 	for range 2 * benchKeys { // until the initial keys have expired
 		ctr++
-		f.CheckAndTouchAt(HashUint64(benchKeys+ctr), w, 1000+ctr*perKey)
+		f.CheckAndTouchAt(mix64(benchKeys+ctr), w, 1000+ctr*perKey)
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ctr++
-		f.CheckAndTouchAt(HashUint64(benchKeys+ctr), w, 1000+ctr*perKey)
+		f.CheckAndTouchAt(mix64(benchKeys+ctr), w, 1000+ctr*perKey)
 	}
 }
 
@@ -275,7 +276,7 @@ func BenchmarkContainsAbsentLatency(b *testing.B) {
 	dep := uint64(0)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		dep += b2u(f.ContainsAt(HashUint64(uint64(1<<40+i)+dep), w, 2000))
+		dep += b2u(f.ContainsAt(mix64(uint64(1<<40+i)+dep), w, 2000))
 	}
 }
 
@@ -297,13 +298,13 @@ func BenchmarkHitChurned(b *testing.B) {
 	ctr := uint64(0)
 	for range 2 * benchKeys {
 		ctr++
-		f.CheckAndTouchAt(HashUint64(ctr), 0, 1000+ctr*perKey)
+		f.CheckAndTouchAt(mix64(ctr), 0, 1000+ctr*perKey)
 	}
 	now := 1000 + ctr*perKey
 	w := f.Ticks(30 * time.Second)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		f.CheckAndTouchAt(HashUint64(ctr-uint64(i*7919)%(benchKeys*3/4)), w, now)
+		f.CheckAndTouchAt(mix64(ctr-uint64(i*7919)%(benchKeys*3/4)), w, now)
 	}
 }
 
@@ -323,7 +324,7 @@ func hugeFilter(b *testing.B) *Filter {
 	huge.once.Do(func() {
 		huge.f, _ = New(Config{Capacity: hugeKeys, Horizon: time.Minute})
 		for i := range uint64(hugeKeys) {
-			huge.f.CheckAndTouchAt(HashUint64(i), 0, 1000)
+			huge.f.CheckAndTouchAt(mix64(i), 0, 1000)
 		}
 	})
 	return huge.f
@@ -334,7 +335,7 @@ func BenchmarkHugeHit(b *testing.B) {
 	w := f.Ticks(30 * time.Second)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		f.CheckAndTouchAt(HashUint64(uint64(i*7919)%hugeKeys), w, 2000)
+		f.CheckAndTouchAt(mix64(uint64(i*7919)%hugeKeys), w, 2000)
 	}
 }
 
@@ -345,7 +346,7 @@ func BenchmarkHugeBatch(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i += 64 {
 		for j := range hs {
-			hs[j] = HashUint64(uint64((i+j)*7919) % hugeKeys)
+			hs[j] = mix64(uint64((i+j)*7919) % hugeKeys)
 		}
 		f.CheckAndTouchBatch(hs, w, 2000, out)
 	}
@@ -356,7 +357,7 @@ func BenchmarkHugeAbsent(b *testing.B) {
 	w := f.Ticks(30 * time.Second)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		f.ContainsAt(HashUint64(uint64(1<<40+i)), w, 2000)
+		f.ContainsAt(mix64(uint64(1<<40+i)), w, 2000)
 	}
 }
 
@@ -365,7 +366,7 @@ func BenchmarkHugeVelocity(b *testing.B) {
 	w := f.Ticks(30 * time.Second)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		f.VelocityCountAt(HashUint64(uint64(i*7919)%hugeKeys), w, 2000)
+		f.VelocityCountAt(mix64(uint64(i*7919)%hugeKeys), w, 2000)
 	}
 }
 
@@ -388,4 +389,43 @@ func BenchmarkClockCoarse(b *testing.B) {
 		s += f.Now()
 	}
 	runtime.KeepAlive(s)
+}
+
+// Hash cost: the unkeyed mixer the integer path used to be, the keyed
+// default (maphash) and Config.Key (SipHash-2-4).
+var hashSink uint64
+
+func BenchmarkHashUint64(b *testing.B) {
+	key := [16]byte{1, 2, 3}
+	fm, _ := New(Config{Capacity: 1, Horizon: time.Minute})
+	fs, _ := New(Config{Capacity: 1, Horizon: time.Minute, Key: &key})
+	for _, c := range []struct {
+		name string
+		h    func(uint64) uint64
+	}{{"unkeyed", mix64}, {"maphash", fm.HashUint64}, {"siphash", fs.HashUint64}} {
+		b.Run(c.name, func(b *testing.B) {
+			for i := range b.N {
+				hashSink += c.h(uint64(i))
+			}
+		})
+	}
+}
+
+func BenchmarkHashString(b *testing.B) {
+	key := [16]byte{1, 2, 3}
+	fm, _ := New(Config{Capacity: 1, Horizon: time.Minute})
+	fs, _ := New(Config{Capacity: 1, Horizon: time.Minute, Key: &key})
+	keys := []string{"203.0.113.7", "user:8f14e45fceea167a", "card:4111111111111111:merchant:42"}
+	for _, c := range []struct {
+		name string
+		f    *Filter
+	}{{"maphash", fm}, {"siphash", fs}} {
+		for _, k := range keys {
+			b.Run(fmt.Sprintf("%s/%dB", c.name, len(k)), func(b *testing.B) {
+				for range b.N {
+					hashSink += c.f.Hash(k)
+				}
+			})
+		}
+	}
 }

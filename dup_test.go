@@ -19,7 +19,7 @@ func TestConcurrentFirstInsertNoDuplicates(t *testing.T) {
 			defer wg.Done()
 			<-start
 			for k := range keys {
-				f.CheckAndTouchAt(HashUint64(uint64(k)), 0, 1000)
+				f.CheckAndTouchAt(mix64(uint64(k)), 0, 1000)
 			}
 		}()
 	}
@@ -28,7 +28,7 @@ func TestConcurrentFirstInsertNoDuplicates(t *testing.T) {
 	occ := f.Occupancy(1000)
 	total := 0
 	for k := range keys {
-		total += f.VelocityCountAt(HashUint64(uint64(k)), f.Ticks(time.Minute), 1000)
+		total += f.VelocityCountAt(mix64(uint64(k)), f.Ticks(time.Minute), 1000)
 	}
 	t.Logf("slots used %d for %d keys; counted %d of %d touches", occ, keys, total, keys*workers)
 	if occ != keys {

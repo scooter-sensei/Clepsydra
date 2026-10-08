@@ -31,7 +31,7 @@ func TestTouchRacingRelocationKeepsCounts(t *testing.T) {
 	const hot, initTouches, passes, at = 2000, 3, 200, 60_000
 	for k := range uint64(hot) {
 		for range initTouches {
-			f.CheckAndTouchAt(HashUint64(k), 0, at)
+			f.CheckAndTouchAt(mix64(k), 0, at)
 		}
 	}
 	var stop atomic.Bool
@@ -43,7 +43,7 @@ func TestTouchRacingRelocationKeepsCounts(t *testing.T) {
 			defer wg.Done()
 			n := int64(0)
 			for i := uint64(w); !stop.Load() && n < passes*hot; i++ {
-				f.CheckAndTouchAt(HashUint64(i%hot), 0, at)
+				f.CheckAndTouchAt(mix64(i%hot), 0, at)
 				n++
 			}
 			touches.Add(n)
@@ -52,14 +52,14 @@ func TestTouchRacingRelocationKeepsCounts(t *testing.T) {
 	// fill to ~98% slot load with cold keys, forcing cuckoo moves
 	fill := int(float64(f.Slots())*0.98) - hot
 	for k := range uint64(fill) {
-		f.CheckAndTouchAt(HashUint64(1<<40+k), 0, at)
+		f.CheckAndTouchAt(mix64(1<<40+k), 0, at)
 	}
 	stop.Store(true)
 	wg.Wait()
 	dups := 0
 	total := 0
 	for k := range uint64(hot) {
-		h := HashUint64(k)
+		h := mix64(k)
 		fp, tg := fingerprint(h), tag(h)
 		p := f.primary(h)
 		a, b := f.findAny(p, fp, tg), f.findAny(f.alt(p, fp), fp, tg)

@@ -36,8 +36,11 @@ const (
 	// dispBit marks an entry living in its alternate line ("displaced").
 	// Lookups match it too, so a key is compared only with entries that
 	// share its primary line, wherever they live: half the false matches.
-	dispBit   = 1 << 47
-	tsMask    = dispBit - 1
+	dispBit = 1 << 47
+	// satBit marks a slot whose register overflowed (an event spilled to an
+	// older bucket or was dropped) within its span; see estimate.
+	satBit    = 1 << 46
+	tsMask    = satBit - 1
 	tagBits   = 12
 	tagShift  = 64 - tagBits
 	epochMask = 0xf
@@ -68,7 +71,7 @@ type Config struct {
 	Capacity int
 	// Horizon is the largest window any query may use.
 	Horizon time.Duration
-	// Resolution is the clock tick. Default 1µs (47-bit timestamps last ~4.46y).
+	// Resolution is the clock tick. Default 1µs (46-bit timestamps last ~2.2y).
 	Resolution time.Duration
 	// Load is the target slot occupancy when Capacity keys are live.
 	// Default 0.85. The scorecard (cmd/tfbench) misses no keys at 94% slot
@@ -84,6 +87,18 @@ type Config struct {
 	// ~1.4 vs 30-42 ns on the reference host, verify/speed.md),
 	// and timestamps are accurate to CoarseClock. Call Close to stop it.
 	CoarseClock time.Duration
+	// Key, if set, makes Hash and HashUint64 SipHash-2-4 under this 128-bit
+	// key: a keyed PRF, the same in every process that uses the key. Default:
+	// a random per-filter maphash seed, also secret but not a PRF. Either
+	// way an attacker who can't learn the key can't pick inputs that land on
+	// a chosen line, identity or lock stripe (SECURITY.md).
+	Key *[16]byte
+	// Stash is the number of eviction-stash entries (24 B each). A live key
+	// evicted from a full table is kept there, and its freshness and counts
+	// come back if it returns, so flooding the table doesn't reset an
+	// offender's history. When the stash must drop a key it keeps the one
+	// with more events. Default (0): one entry per 64 slots. Negative: none.
+	Stash int
 }
 
 // Filter is safe for concurrent use. Hits never lock; first touches of a key
@@ -110,6 +125,20 @@ type Filter struct {
 	pressure    atomic.Uint32 // EWMA of relocation-search failure, 0..pressureOne
 	_           [60]byte
 	claimMu     [1 << claimStripeBits]paddedMutex // serializes first touches per key
+
+	sip    sipKey
+	keyed  bool // Config.Key set: hash with sip
+	stash  []stashEntry
+	stashN uint64 // sets of stashWays entries
+	_      [64]byte
+	// stashUntil is a tick before which the stash may hold a live entry;
+	// past it, misses skip the stash.
+	stashUntil atomic.Uint64
+	lostAt     atomic.Uint64 // tick of the latest dropped history, 0 if none
+	lost       atomic.Uint64
+	restored   atomic.Uint64
+	_          [32]byte
+	stashMu    [stashStripes]paddedMutex
 }
 
 type paddedMutex struct {
@@ -143,6 +172,16 @@ func New(cfg Config) (*Filter, error) {
 		res:     cfg.Resolution,
 		clock:   cfg.Clock,
 		seed:    maphash.MakeSeed(),
+	}
+	if cfg.Key != nil {
+		f.sip, f.keyed = newSipKey(cfg.Key), true
+	}
+	if cfg.Stash == 0 {
+		cfg.Stash = int(max(1, lines*slotsPerLine/64))
+	}
+	if cfg.Stash > 0 {
+		f.stashN = uint64(cfg.Stash+stashWays-1) / stashWays
+		f.stash = make([]stashEntry, f.stashN*stashWays)
 	}
 	f.unitInv = ^uint64(0)/f.unit + 1
 	f.words = alignedWords(int(lines * wordsPerLine))
@@ -191,17 +230,71 @@ func (f *Filter) Now() uint64 { return f.clock() }
 // Ticks converts a duration to filter ticks.
 func (f *Filter) Ticks(d time.Duration) uint64 { return uint64(max(d, 0) / f.res) }
 
-// Hash hashes a string key for the *At methods.
-func (f *Filter) Hash(key string) uint64 { return maphash.String(f.seed, key) }
+// Hash hashes a string key for the *At methods, under the filter's secret
+// key (Config.Key).
+func (f *Filter) Hash(key string) uint64 {
+	if f.keyed {
+		return f.sip.string(key)
+	}
+	return maphash.String(f.seed, key)
+}
 
-// HashUint64 hashes an integer key (IP, card BIN, user id) for the *At methods.
-func HashUint64(k uint64) uint64 { return mix64(k) }
+// HashUint64 hashes an integer key (IP, card BIN, user id) for the *At
+// methods, under the filter's secret key. The *At methods trust the hash they
+// are given: pass them only Hash or HashUint64 values of this filter.
+func (f *Filter) HashUint64(k uint64) uint64 {
+	if f.keyed {
+		return f.sip.uint64(k)
+	}
+	return maphash.Comparable(f.seed, k)
+}
+
+// Result is the full answer of Touch and Count, including how far it can be
+// trusted. A fail-closed caller (rate limit, abuse check) should treat
+// Saturated as "over any limit above Count" and, while Degraded, a key not
+// Seen as possibly a returning one. SECURITY.md has the threat model.
+type Result struct {
+	// Seen: the key was touched within the window (before this touch).
+	Seen bool
+	// Count estimates the key's events within the window (including this
+	// touch, for Touch). It interpolates the one bucket the window's edge
+	// cuts, so it can read a little high or low.
+	Count int
+	// Upper counts that cut bucket whole, so it is >= the true count unless
+	// Saturated.
+	Upper int
+	// Saturated: within the window the key ran at or above the register's
+	// capacity (31 events per Horizon/24), so events may have spilled to
+	// older buckets or been dropped. Count and Upper are then lower bounds.
+	Saturated bool
+	// Restored: the key had been evicted; its history came back from the
+	// stash.
+	Restored bool
+	// Degraded: the key was not found, and within the last Horizon the
+	// filter dropped some evicted key's history (its stash was full), so
+	// "not seen" may be a key whose history was lost.
+	Degraded bool
+}
+
+// Touch records an occurrence of key now and returns the full Result for
+// window: TouchAndCount plus the trust flags.
+func (f *Filter) Touch(key string, window time.Duration) Result {
+	return f.touch(f.Hash(key), f.Ticks(window), f.clock(), true)
+}
+
+// TouchAt is Touch on a pre-hashed key, in ticks.
+func (f *Filter) TouchAt(h, window, now uint64) Result { return f.touch(h, window, now, true) }
+
+// Count is VelocityCount with the trust flags of Touch. It does not record an
+// occurrence.
+func (f *Filter) Count(key string, window time.Duration) Result {
+	return f.CountAt(f.Hash(key), f.Ticks(window), f.clock())
+}
 
 // CheckAndTouch reports whether key was seen within window, then records an
 // occurrence now.
 func (f *Filter) CheckAndTouch(key string, window time.Duration) bool {
-	seen, _ := f.touch(f.Hash(key), f.Ticks(window), f.clock(), false)
-	return seen
+	return f.touch(f.Hash(key), f.Ticks(window), f.clock(), false).Seen
 }
 
 // VelocityCount estimates how many times key was touched within window.
@@ -213,48 +306,60 @@ func (f *Filter) VelocityCount(key string, window time.Duration) int {
 // TouchAndCount records an occurrence and returns (seen within window before
 // this touch, estimated count within window including this touch).
 func (f *Filter) TouchAndCount(key string, window time.Duration) (bool, int) {
-	return f.touch(f.Hash(key), f.Ticks(window), f.clock(), true)
+	r := f.touch(f.Hash(key), f.Ticks(window), f.clock(), true)
+	return r.Seen, r.Count
 }
 
 // CheckAndTouchAt is CheckAndTouch on a pre-hashed key with caller-supplied
 // window and clock, both in ticks.
 func (f *Filter) CheckAndTouchAt(h, window, now uint64) bool {
-	seen, _ := f.touch(h, window, now, false)
-	return seen
+	return f.touch(h, window, now, false).Seen
 }
 
 // TouchAndCountAt is TouchAndCount on a pre-hashed key, in ticks.
 func (f *Filter) TouchAndCountAt(h, window, now uint64) (bool, int) {
-	return f.touch(h, window, now, true)
+	r := f.touch(h, window, now, true)
+	return r.Seen, r.Count
 }
 
 // VelocityCountAt is VelocityCount on a pre-hashed key, in ticks.
 func (f *Filter) VelocityCountAt(h, window, now uint64) int {
-	fp, tg := fingerprint(h), tag(h)
-	i := f.locate(h, fp, tg)
-	if i < 0 {
-		return 0
+	return f.CountAt(h, window, now).Count
+}
+
+// CountAt is Count on a pre-hashed key, in ticks.
+func (f *Filter) CountAt(h, window, now uint64) Result {
+	w0, w1, ok := f.read(h, now)
+	if !ok || age(now, w0&tsMask) > f.horizon {
+		return Result{}
 	}
-	w0 := atomic.LoadUint64(&f.words[i])
-	if w0>>48 != fp || age(now, w0&tsMask) > f.horizon {
-		return 0
-	}
-	w1 := atomic.LoadUint64(&f.words[i+1])
-	if w1>>tagShift != tg {
-		return 0
-	}
-	return f.estimate(w1, w0&tsMask, now, window)
+	r := f.estimate(w1, w0&tsMask, now, window, w0&satBit != 0)
+	r.Seen = r.Count > 0
+	return r
 }
 
 // ContainsAt reports whether h was touched within window, without touching it.
 func (f *Filter) ContainsAt(h, window, now uint64) bool {
+	w0, _, ok := f.read(h, now)
+	return ok && age(now, w0&tsMask) <= min(window, f.horizon)
+}
+
+// read returns h's slot words from the table or, if it was evicted, the
+// stash.
+func (f *Filter) read(h, now uint64) (w0, w1 uint64, ok bool) {
 	fp, tg := fingerprint(h), tag(h)
-	i := f.locate(h, fp, tg)
-	if i < 0 {
-		return false
+	if i := f.locate(h, fp, tg); i >= 0 {
+		w0 = atomic.LoadUint64(&f.words[i])
+		w1 = atomic.LoadUint64(&f.words[i+1])
+		if w0>>48 == fp && w1>>tagShift == tg {
+			return w0, w1, true
+		}
+		return 0, 0, false
 	}
-	w0 := atomic.LoadUint64(&f.words[i])
-	return w0>>48 == fp && age(now, w0&tsMask) <= min(window, f.horizon)
+	if now <= f.stashUntil.Load() {
+		return f.stashGet(f.stashID(h, fp, tg), now, false)
+	}
+	return 0, 0, false
 }
 
 // CheckAndTouchBatch is CheckAndTouchAt over many pre-hashed keys. It first
@@ -267,7 +372,7 @@ func (f *Filter) CheckAndTouchBatch(hs []uint64, window, now uint64, out []bool)
 		hi := min(lo+batchChunk, len(hs))
 		f.warm(hs[lo:hi])
 		for i := lo; i < hi; i++ {
-			out[i], _ = f.touch(hs[i], window, now, false)
+			out[i] = f.touch(hs[i], window, now, false).Seen
 		}
 	}
 }
@@ -281,7 +386,8 @@ func (f *Filter) TouchAndCountBatch(hs []uint64, window, now uint64, seen []bool
 		hi := min(lo+batchChunk, len(hs))
 		f.warm(hs[lo:hi])
 		for i := lo; i < hi; i++ {
-			seen[i], counts[i] = f.touch(hs[i], window, now, true)
+			r := f.touch(hs[i], window, now, true)
+			seen[i], counts[i] = r.Seen, r.Count
 		}
 	}
 }
@@ -318,7 +424,15 @@ func (f *Filter) Evictions() uint64 { return f.evictions.Load() }
 // Relocations counts entries moved to their alternate line to make room.
 func (f *Filter) Relocations() uint64 { return f.relocations.Load() }
 
-func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
+// Lost counts evicted live keys whose history was dropped because the stash
+// was full (or disabled): the evictions an attacker could use to reset a
+// key's count.
+func (f *Filter) Lost() uint64 { return f.lost.Load() }
+
+// Restored counts returning keys whose history came back from the stash.
+func (f *Filter) Restored() uint64 { return f.restored.Load() }
+
+func (f *Filter) touch(h, window, now uint64, wantCount bool) Result {
 	if h&decayEvery == 0 {
 		f.decayStep(now, 1)
 	}
@@ -332,16 +446,12 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
 			mu := &f.claimMu[h>>(64-claimStripeBits)]
 			mu.Lock()
 			if i = f.locate(h, fp, tg); i < 0 {
-				w1 := f.nextReg(0, tg, now, now, true) // first event, published with the key
-				i = f.claim(h, fp, w1, now)
+				r := f.miss(h, fp, tg, window, now, wantCount)
 				mu.Unlock()
-				if i < 0 {
+				if r.Count < 0 {
 					continue
 				}
-				if !wantCount {
-					return false, 0
-				}
-				return false, f.estimate(w1, now, now, window)
+				return r
 			}
 			mu.Unlock() // another first touch got there first: count as a hit
 		}
@@ -354,15 +464,87 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
 		if now > last && !atomic.CompareAndSwapUint64(&f.words[i], w0, w0&^tsMask|now) {
 			continue
 		}
-		w1, ok := f.bump(i, w0>>47, tg, last, now, stale)
+		w1, over, ok := f.bump(i, w0>>47, tg, last, now, stale)
 		if !ok {
 			continue // the slot was handed to another key after our CAS; look again
 		}
+		sat := w0&satBit != 0
+		if over != sat {
+			sat = f.markSat(i, w0>>48, over)
+		}
 		seen := !stale && age(now, last) <= window
 		if !wantCount {
-			return seen, 0
+			return Result{Seen: seen}
 		}
-		return seen, f.estimate(w1, max(now, last), now, window)
+		r := f.estimate(w1, max(now, last), now, window, sat)
+		r.Seen = seen
+		return r
+	}
+}
+
+// miss installs h, absent from the table, with this touch counted: a fresh
+// register, or its evicted history from the stash. Count < 0 means it lost a
+// race for a slot and the caller should look again. The caller holds h's
+// claim stripe, so no other first touch of h runs meanwhile.
+func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool) Result {
+	var r Result
+	w1, _ := f.nextReg(0, tg, now, now, true) // first event, published with the key
+	last, sat := now, uint64(0)
+	var s0, s1 uint64
+	stashed := false
+	if now <= f.stashUntil.Load() {
+		if s0, s1, stashed = f.stashGet(f.stashID(h, fp, tg), now, true); stashed {
+			last = s0 & tsMask
+			var over bool
+			w1, over = f.nextReg(s1, tg, last, now, false)
+			if over || s0&satBit != 0 && hot(w1) {
+				sat = satBit
+			}
+			r.Seen, r.Restored = age(now, last) <= window, true
+		}
+	}
+	if !stashed {
+		if la := f.lostAt.Load(); la != 0 && age(now, la) <= f.horizon {
+			r.Degraded = true
+		}
+	}
+	if f.claim(h, fp, w1, now, sat) < 0 {
+		if stashed { // put it back for the retry
+			f.stashPut(f.stashID(h, fp, tg), s0, s1, now)
+		}
+		return Result{Count: -1}
+	}
+	if stashed {
+		f.restored.Add(1)
+	}
+	if !wantCount {
+		return r
+	}
+	e := f.estimate(w1, max(now, last), now, window, sat != 0)
+	e.Seen, e.Restored, e.Degraded = r.Seen, r.Restored, r.Degraded
+	return e
+}
+
+// markSat sets (on) or clears the saturated bit of the slot at word index i
+// if it still holds fp, and returns the bit as left. It clears only while no
+// bucket is hot, reading word1 after word0: an overflowing touch writes its
+// register before it sets the bit, so a clear that read a register from
+// before that touch fails its CAS on the newer word0.
+func (f *Filter) markSat(i int, fp uint64, on bool) bool {
+	for {
+		w0 := atomic.LoadUint64(&f.words[i])
+		if w0>>48 != fp {
+			return on
+		}
+		if w0&satBit != 0 == on {
+			return on
+		}
+		if !on && hot(atomic.LoadUint64(&f.words[i+1])) {
+			return true
+		}
+		if atomic.CompareAndSwapUint64(&f.words[i], w0, w0^satBit) {
+			return on
+		}
 	}
 }
 
@@ -400,9 +582,9 @@ func (f *Filter) find(line, fpd, tg uint64) int {
 // if it lost a race for a slot and the caller should look the key up again
 // (a racing writer may have completed it). The caller holds the key's claim
 // stripe.
-func (f *Filter) claim(h, fp, w1, now uint64) int {
+func (f *Filter) claim(h, fp, w1, now, sat uint64) int {
 	lines := [2]uint64{f.primary(h), f.alt(f.primary(h), fp)}
-	mine := [2]uint64{fp<<48 | now, fp<<48 | dispBit | now}
+	mine := [2]uint64{fp<<48 | sat | now, fp<<48 | dispBit | sat | now}
 	for {
 		for li, line := range lines {
 			base := int(line * wordsPerLine)
@@ -446,11 +628,25 @@ func (f *Filter) claim(h, fp, w1, now uint64) int {
 				}
 			}
 		}
-		if f.install(victim, victimW0, victimW1, mine[vli], w1) {
-			f.evictions.Add(1)
-			return victim
+		// The victim's history goes to the stash under the victim's own claim
+		// stripe (its hash's top bits are its fp's), so a first touch of the
+		// victim, which takes that stripe, finds it either still here or
+		// already stashed. TryLock: the caller holds its own stripe.
+		if vs := victimW0 >> (64 - claimStripeBits); vs != h>>(64-claimStripeBits) {
+			mu := &f.claimMu[vs]
+			if !mu.TryLock() {
+				return -1
+			}
+			defer mu.Unlock()
 		}
-		return -1
+		if !f.install(victim, victimW0, victimW1, mine[vli], w1) {
+			return -1
+		}
+		f.evictions.Add(1)
+		if !f.stashPut(f.slotID(lines[vli], victimW0, victimW1), victimW0, victimW1, now) {
+			f.dropped(now)
+		}
+		return victim
 	}
 }
 
@@ -598,12 +794,15 @@ func (f *Filter) fold(j int, fp, tg, n uint64, e int64, last uint64) bool {
 		var x register
 		x[0] = n
 		r, to := unpack(s1&regMask), max(es, e)
-		r.advance(es, to)
+		over := r.advance(es, to)
 		x.advance(e, to)
 		for k, c := range x {
-			r.add(k, c)
+			over = r.add(k, c) || over
 		}
 		if atomic.CompareAndSwapUint64(&f.words[j+1], s1, tg<<tagShift|uint64(to)&epochMask<<48|r.pack()) {
+			if over {
+				f.markSat(j, fp, true)
+			}
 			return true
 		}
 	}
@@ -723,4 +922,122 @@ func mix64(x uint64) uint64 {
 	x ^= x >> 27
 	x *= 0x94d049bb133111eb
 	return x ^ x>>31
+}
+
+// Eviction stash: a 4-way set-associative array of evicted entries, keyed
+// by the entry's full identity (primary line, fp, tag: the same bits the
+// table compares, so the stash adds no false positives beyond the table's
+// own). Evictions are rare and slow already, so it uses plain striped locks.
+
+const (
+	stashStripes = 64
+	stashWays    = 4
+)
+
+type stashEntry struct {
+	id, w0, w1 uint64 // id 0 = empty; w0's displaced bit is clear
+}
+
+// stashID packs a key's identity: primary line (< 2^36) | fp | tag.
+func (f *Filter) stashID(h, fp, tg uint64) uint64 {
+	return f.primary(h)<<28 | fp<<tagBits | tg
+}
+
+// slotID is stashID for the entry in a slot of line, without its key.
+func (f *Filter) slotID(line, w0, w1 uint64) uint64 {
+	fp := w0 >> 48
+	if w0&dispBit != 0 {
+		line = f.alt(line, fp)
+	}
+	return line<<28 | fp<<tagBits | w1>>tagShift
+}
+
+func (f *Filter) stashSet(id uint64) ([]stashEntry, *paddedMutex) {
+	i, _ := bits.Mul64(mix64(id), f.stashN)
+	return f.stash[i*stashWays : (i+1)*stashWays : (i+1)*stashWays], &f.stashMu[i%stashStripes]
+}
+
+// stashPut keeps an evicted entry in its set: in its own old place, a free
+// or expired way, or else in place of the way with the fewest events in the
+// horizon if that has fewer than it. Whichever history is dropped, Lost
+// counts it. Reports whether the entry was kept.
+func (f *Filter) stashPut(id, w0, w1, now uint64) bool {
+	if f.stashN == 0 {
+		return false
+	}
+	w0 &^= dispBit
+	set, mu := f.stashSet(id)
+	mu.Lock()
+	defer mu.Unlock()
+	way, least := -1, uint64(1<<64-1)
+	for i := range set {
+		e := &set[i]
+		if e.id == id {
+			// An evictor holding an older snapshot of the same key (it was
+			// evicted, restored and evicted again meanwhile) must not
+			// overwrite the newer one.
+			if e.w0&tsMask > w0&tsMask || e.w0&tsMask == w0&tsMask && f.mass(e.w1, e.w0&tsMask, now) >= f.mass(w1, w0&tsMask, now) {
+				return true
+			}
+			way, least = i, 0
+			break
+		}
+		if e.id == 0 || age(now, e.w0&tsMask) > f.horizon {
+			way, least = i, 0
+			break
+		}
+		if m := f.mass(e.w1, e.w0&tsMask, now); m < least {
+			way, least = i, m
+		}
+	}
+	if least > 0 {
+		if least > f.mass(w1, w0&tsMask, now) {
+			return false
+		}
+		f.dropped(now) // that way's history goes
+	}
+	set[way] = stashEntry{id, w0, w1}
+	for until := (w0 & tsMask) + f.horizon; ; {
+		u := f.stashUntil.Load()
+		if u >= until || f.stashUntil.CompareAndSwap(u, until) {
+			break
+		}
+	}
+	return true
+}
+
+// stashGet returns the live stash entry for id; take also removes it.
+func (f *Filter) stashGet(id, now uint64, take bool) (w0, w1 uint64, ok bool) {
+	if f.stashN == 0 {
+		return 0, 0, false
+	}
+	set, mu := f.stashSet(id)
+	mu.Lock()
+	defer mu.Unlock()
+	for i := range set {
+		e := &set[i]
+		if e.id != id {
+			continue
+		}
+		if age(now, e.w0&tsMask) > f.horizon {
+			return 0, 0, false
+		}
+		w0, w1 = e.w0, e.w1
+		if take {
+			*e = stashEntry{}
+		}
+		return w0, w1, true
+	}
+	return 0, 0, false
+}
+
+// dropped records that a live key's history was lost at now.
+func (f *Filter) dropped(now uint64) {
+	f.lost.Add(1)
+	for {
+		la := f.lostAt.Load()
+		if la >= now || f.lostAt.CompareAndSwap(la, now) {
+			return
+		}
+	}
 }

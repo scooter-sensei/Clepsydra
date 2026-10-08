@@ -59,13 +59,17 @@ func (r *register) pack() (w uint64) {
 
 // add puts n events into bucket j, spilling into older buckets when it is
 // full: the count is preserved and the event is aged at most one bucket.
-func (r *register) add(j int, n uint64) {
+// Reports whether any of the n didn't fit in bucket j (spilled or, with
+// every older bucket full too, dropped).
+func (r *register) add(j int, n uint64) (overflow bool) {
+	overflow = n > 1<<bucketBits[j]-1-r[j]
 	for ; j < nBuckets && n > 0; j++ {
 		room := uint64(1)<<bucketBits[j] - 1 - r[j]
 		take := min(room, n)
 		r[j] += take
 		n -= take
 	}
+	return overflow
 }
 
 // bucketStart is b_j in units (may be negative near U = 0).
@@ -73,14 +77,15 @@ func bucketStart(u int64, j int) int64 {
 	return u&bucketStepMask[j] - bucketOff[j]
 }
 
-// advance re-buckets r from unit u0 to unit u1 >= u0.
-func (r *register) advance(u0, u1 int64) {
+// advance re-buckets r from unit u0 to unit u1 >= u0, reporting whether a
+// merge overflowed its new bucket.
+func (r *register) advance(u0, u1 int64) (overflow bool) {
 	if u1 <= u0 {
-		return
+		return false
 	}
 	if u1-u0 > 2*unitsPerHorizon {
 		*r = register{}
-		return
+		return false
 	}
 	var starts [nBuckets]int64
 	for j := range starts {
@@ -99,9 +104,10 @@ func (r *register) advance(u0, u1 int64) {
 		if j == nBuckets {
 			break // older buckets only start earlier: all dropped
 		}
-		out.add(j, r[k])
+		overflow = out.add(j, r[k]) || overflow
 	}
 	*r = out
+	return overflow
 }
 
 // regEpoch recovers the register's full unit index from its 4 stored bits,
@@ -119,7 +125,9 @@ func regEpoch(w1 uint64, ref int64) int64 {
 // nextReg returns word1 after counting one event at now in old, the
 // register of key tg last touched at last. reset (or a tag mismatch) starts
 // a fresh register. A full register in the current unit comes back as is.
-func (f *Filter) nextReg(old, tg, last, now uint64, reset bool) uint64 {
+// overflow reports that an event spilled out of its bucket or was dropped
+// (the slot's saturated bit must then be set).
+func (f *Filter) nextReg(old, tg, last, now uint64, reset bool) (w1 uint64, overflow bool) {
 	nowU := f.unitOf(now)
 	if !reset && old>>tagShift == tg && old>>48&epochMask == uint64(nowU)&epochMask &&
 		regEpoch(old, f.unitOf(last)) == nowU {
@@ -128,9 +136,10 @@ func (f *Filter) nextReg(old, tg, last, now uint64, reset bool) uint64 {
 		// so the lowest zero bit of the register lies in that bucket.
 		free := ^old & regMask
 		if free == 0 {
-			return old // every bucket full
+			return old, true // every bucket full
 		}
-		return old + 1<<bucketBase[bits.TrailingZeros64(free)]
+		b := bits.TrailingZeros64(free)
+		return old + 1<<bucketBase[b], b >= bucketBits0
 	}
 	var r register
 	e := nowU
@@ -138,12 +147,25 @@ func (f *Filter) nextReg(old, tg, last, now uint64, reset bool) uint64 {
 		r = unpack(old & regMask)
 		e = regEpoch(old, f.unitOf(last))
 		if nowU > e {
-			r.advance(e, nowU)
+			overflow = r.advance(e, nowU)
 			e = nowU
 		} // else a caller with a slightly stale clock: count at e
 	}
-	r.add(0, 1)
-	return tg<<tagShift | uint64(e)&epochMask<<48 | r.pack()
+	overflow = r.add(0, 1) || overflow
+	return tg<<tagShift | uint64(e)&epochMask<<48 | r.pack(), overflow
+}
+
+// hot reports whether some bucket of w1 holds satPerUnit or more events.
+// A bucket that overflowed (or took a spill-causing merge) holds at least
+// that many, and its count only grows until it ages out of the register, so
+// while a slot's saturated bit is set some bucket is hot.
+func hot(w1 uint64) bool {
+	for j := range nBuckets {
+		if w1>>bucketShift[j]&(1<<bucketBits[j]-1) >= satPerUnit {
+			return true
+		}
+	}
+	return false
 }
 
 // bump counts one event at now in the register of the slot at word index i,
@@ -153,15 +175,15 @@ func (f *Filter) nextReg(old, tg, last, now uint64, reset bool) uint64 {
 // after word1 is read: a hand-over makes word1 busy before it changes word0,
 // so an old value that passes both checks still belongs to the caller's key
 // (a newcomer with the same tag can't be mistaken for it).
-func (f *Filter) bump(i int, fpd, tg, last, now uint64, reset bool) (uint64, bool) {
+func (f *Filter) bump(i int, fpd, tg, last, now uint64, reset bool) (w1 uint64, overflow, ok bool) {
 	for {
 		old := atomic.LoadUint64(&f.words[i+1])
 		if old>>tagShift != tg || atomic.LoadUint64(&f.words[i])>>47 != fpd {
-			return 0, false
+			return 0, false, false
 		}
-		nw := f.nextReg(old, tg, last, now, reset)
+		nw, over := f.nextReg(old, tg, last, now, reset)
 		if nw == old || atomic.CompareAndSwapUint64(&f.words[i+1], old, nw) {
-			return nw, true
+			return nw, over, true
 		}
 		reset = false // a concurrent touch already reset it; merge
 	}
@@ -193,21 +215,27 @@ func (f *Filter) mass(w1, last, now uint64) uint64 {
 // exact at the extremes: nothing happened after last, so a window ending
 // before it holds zero and one reaching it holds at least one; and the
 // newest non-empty bucket's events all lie in [its start, last]. The one
-// bucket the window's trailing edge cuts is assumed uniform.
-func (f *Filter) estimate(w1, last, now, window uint64) int {
+// bucket the window's trailing edge cuts is assumed uniform for Count and
+// counted whole for Upper.
+//
+// sat is the slot's saturated bit: some event overflowed its bucket within
+// the register's span. The bucket it overflowed from still covers its time
+// and is hot (see hot), so if no bucket the window reaches is hot, no event
+// in the window was moved or dropped and Upper bounds the true count.
+func (f *Filter) estimate(w1, last, now, window uint64, sat bool) Result {
 	window = min(window, f.horizon)
 	if age(now, last) > window {
-		return 0
+		return Result{}
 	}
 	e := regEpoch(w1, f.unitOf(last))
 	unit := float64(f.unit)
 	from := float64(now) - float64(window)
 	top := float64(e+1) * unit
 	newest := true
-	est := 0.0
+	est, upper, hit := 0.0, uint64(0), false
 	for j := range nBuckets {
 		lo := float64(bucketStart(e, j)) * unit
-		c := float64(w1 >> bucketShift[j] & (1<<bucketBits[j] - 1))
+		c := w1 >> bucketShift[j] & (1<<bucketBits[j] - 1)
 		hi := top
 		top = lo
 		if c == 0 {
@@ -216,30 +244,40 @@ func (f *Filter) estimate(w1, last, now, window uint64) int {
 			}
 			continue
 		}
+		hit = hit || c >= satPerUnit
+		upper += c
 		if newest {
 			hi = max(lo, min(float64(last), hi))
 			newest = false
 		}
 		if from <= lo {
-			est += c
+			est += float64(c)
 			continue
 		}
 		if from < hi {
-			est += c * (hi - from) / (hi - lo)
+			est += float64(c) * (hi - from) / (hi - lo)
 		}
 		break
 	}
-	return max(1, int(est+0.5))
+	n := max(1, int(est+0.5))
+	return Result{Count: n, Upper: max(n, int(upper)), Saturated: sat && hit}
 }
+
+// satPerUnit is the newest bucket's capacity: a unit with more events
+// overflows, and every bucket that overflows holds at least this many.
+const satPerUnit = 1<<bucketBits0 - 1
 
 // Geometry (see the comment at the top): unit = Horizon/24; widths 1, 1,
 // 1-2, 2-4, 4-8, 8, 8 units; coverage >= 24 units.
-const geomUnits = 24
+const (
+	geomUnits   = 24
+	bucketBits0 = 5
+)
 
 var (
 	bucketLogStep = [nBuckets]uint{0, 0, 1, 2, 3, 3, 3}
 	bucketOff     = [nBuckets]int64{0, 1, 2, 4, 8, 16, 24}
-	bucketBits    = [nBuckets]uint{5, 5, 6, 7, 8, 8, 9}
+	bucketBits    = [nBuckets]uint{bucketBits0, 5, 6, 7, 8, 8, 9}
 )
 
 var bucketStepMask = func() (m [nBuckets]int64) {

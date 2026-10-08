@@ -27,7 +27,7 @@ func TestAlignment(t *testing.T) {
 func TestCheckAndTouchWindows(t *testing.T) {
 	f := newTest(t, 1000, time.Minute)
 	ms := func(d time.Duration) uint64 { return f.Ticks(d) }
-	h := HashUint64(42)
+	h := mix64(42)
 	now := uint64(1000)
 
 	if f.CheckAndTouchAt(h, ms(10*time.Second), now) {
@@ -39,7 +39,7 @@ func TestCheckAndTouchWindows(t *testing.T) {
 	now += ms(9 * time.Second)
 	// 20s gap: outside a 10s window, inside a 30s one. The window is a query
 	// parameter, not a table property.
-	k2 := HashUint64(43)
+	k2 := mix64(43)
 	f.CheckAndTouchAt(k2, 0, now)
 	if f.CheckAndTouchAt(h, ms(10*time.Second), now+ms(20*time.Second)) {
 		t.Fatal("20s gap reported seen within 10s")
@@ -55,7 +55,7 @@ func TestCheckAndTouchWindows(t *testing.T) {
 
 func TestExactBoundary(t *testing.T) {
 	f := newTest(t, 1000, time.Minute)
-	h := HashUint64(7)
+	h := mix64(7)
 	f.CheckAndTouchAt(h, 0, 5000)
 	if !f.CheckAndTouchAt(h, 3000, 8000) {
 		t.Fatal("age == window must be seen")
@@ -76,7 +76,7 @@ func TestVelocityAccuracy(t *testing.T) {
 	u := f.unit
 
 	for trial := 0; trial < 200; trial++ {
-		h := HashUint64(uint64(trial) + 1000)
+		h := mix64(uint64(trial) + 1000)
 		rate := 0.5 + r.Float64()*3 // events per second
 		var events []uint64
 		now := uint64(10_000_000) + uint64(trial)*1_000_000
@@ -114,7 +114,7 @@ func TestVelocityAccuracy(t *testing.T) {
 
 func TestVelocityBurstAndDecay(t *testing.T) {
 	f := newTest(t, 1000, time.Minute)
-	h := HashUint64(99)
+	h := mix64(99)
 	for i := range 10 {
 		f.CheckAndTouchAt(h, 0, 100_000+uint64(i)*100) // 10 hits in 1s
 	}
@@ -146,7 +146,7 @@ func TestVelocityBurstAndDecay(t *testing.T) {
 
 func TestHeavyHitterSpill(t *testing.T) {
 	f := newTest(t, 100, time.Minute)
-	h := HashUint64(5)
+	h := mix64(5)
 	for range 1000 {
 		f.CheckAndTouchAt(h, 0, 1000)
 	}
@@ -162,12 +162,12 @@ func TestFalsePositiveRate(t *testing.T) {
 	f := newTest(t, n, time.Minute)
 	now := uint64(1000)
 	for i := range n {
-		f.CheckAndTouchAt(HashUint64(uint64(i)), 0, now)
+		f.CheckAndTouchAt(mix64(uint64(i)), 0, now)
 	}
 	fp := 0
 	const probes = 1_000_000
 	for i := range probes {
-		if f.ContainsAt(HashUint64(uint64(n+i)), f.Ticks(time.Minute), now) {
+		if f.ContainsAt(mix64(uint64(n+i)), f.Ticks(time.Minute), now) {
 			fp++
 		}
 	}
@@ -183,11 +183,11 @@ func TestRetentionAtCapacity(t *testing.T) {
 	f := newTest(t, n, time.Minute)
 	now := uint64(1000)
 	for i := range n {
-		f.CheckAndTouchAt(HashUint64(uint64(i)), 0, now)
+		f.CheckAndTouchAt(mix64(uint64(i)), 0, now)
 	}
 	lost := 0
 	for i := range n {
-		if !f.CheckAndTouchAt(HashUint64(uint64(i)), f.Ticks(time.Minute), now+1) {
+		if !f.CheckAndTouchAt(mix64(uint64(i)), f.Ticks(time.Minute), now+1) {
 			lost++
 		}
 	}
@@ -205,7 +205,7 @@ func TestContinuousDecayReclaims(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := range 10_000 {
-		f.CheckAndTouchAt(HashUint64(uint64(i)), 0, clock)
+		f.CheckAndTouchAt(mix64(uint64(i)), 0, clock)
 	}
 	if f.Occupancy(clock) == 0 {
 		t.Fatal("nothing inserted")
@@ -239,7 +239,7 @@ func TestContinuousDecayReclaims(t *testing.T) {
 
 func TestConcurrentTouchNoLostUpdates(t *testing.T) {
 	f := newTest(t, 1000, time.Minute)
-	h := HashUint64(1)
+	h := mix64(1)
 	f.CheckAndTouchAt(h, 0, 1000)
 	const workers, per = 8, 25
 	var wg sync.WaitGroup
@@ -267,7 +267,7 @@ func TestConcurrentMixedRace(t *testing.T) {
 			defer wg.Done()
 			r := rand.New(rand.NewPCG(uint64(w), 9))
 			for range 20_000 {
-				h := HashUint64(uint64(r.IntN(3000)))
+				h := mix64(uint64(r.IntN(3000)))
 				now := f.Now()
 				switch r.IntN(3) {
 				case 0:
@@ -308,13 +308,13 @@ func TestSprayCannotEvictRepeatOffender(t *testing.T) {
 	now := uint64(1000)
 	offenders := make([]uint64, 50)
 	for i := range offenders {
-		offenders[i] = HashUint64(uint64(1<<40 + i))
+		offenders[i] = mix64(uint64(1<<40 + i))
 		for range 20 {
 			f.CheckAndTouchAt(offenders[i], 0, now)
 		}
 	}
 	for i := range 20 * n { // 20x capacity of one-off keys, all inside the window
-		f.CheckAndTouchAt(HashUint64(uint64(i)), 0, now+uint64(i%30_000))
+		f.CheckAndTouchAt(mix64(uint64(i)), 0, now+uint64(i%30_000))
 	}
 	now += 30_000
 	for i, h := range offenders {
@@ -329,7 +329,7 @@ func TestBatchMatchesSingle(t *testing.T) {
 	a, b := newTest(t, 10_000, time.Minute), newTest(t, 10_000, time.Minute)
 	hs := make([]uint64, 5000)
 	for i := range hs {
-		hs[i] = HashUint64(uint64(i % 3000)) // repeats inside one batch too
+		hs[i] = mix64(uint64(i % 3000)) // repeats inside one batch too
 	}
 	out := make([]bool, len(hs))
 	for round := range 3 {
@@ -347,7 +347,7 @@ func TestCountBatchesMatchSingle(t *testing.T) {
 	a, b := newTest(t, 10_000, time.Minute), newTest(t, 10_000, time.Minute)
 	hs := make([]uint64, 5000)
 	for i := range hs {
-		hs[i] = HashUint64(uint64(i % 3000)) // repeats inside one batch too
+		hs[i] = mix64(uint64(i % 3000)) // repeats inside one batch too
 	}
 	seen, counts, vel := make([]bool, len(hs)), make([]int, len(hs)), make([]int, len(hs))
 	for round := range 3 {

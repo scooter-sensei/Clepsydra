@@ -18,8 +18,12 @@ Scorecard: `bash bench.sh "label"` (race tests + cmd/tfbench, appends to results
 
 12. Same-unit counter increment picks the first non-full bucket with one TrailingZeros instead of a loop. Hot-key hit 44 → 32 ns.
 13. Displaced bit (taken from the timestamp, now 47 bits): an entry records which of its two lines it is in, and lookups match it. A key is compared only with entries homed at its own primary line. Static FPR 3.2e-8 → 1.8e-8 (1e9 probes), no speed cost. Storing which bucket choice was used is a known way to extend a fingerprint by a bit.
+14. `Ticks` clamps negative durations to 0. A negative window used to wrap to a huge one and report every key as seen.
 
 ## Tried, no gain
+- Reciprocal division for the built-in clock and `Ticks`: no change in the string path. The clock read itself (~38 ns in this VM, lfence/rdtscp-ordered) stops later work from overlapping, so the division was hidden.
+- Raw RDTSC clock: 19 ns vs 37 ns and doesn't block overlap (~20 ns saving on the string path), but needs TSC calibration and trust in invariant TSC across cores and VM migrations. Not done; CoarseClock already removes the clock cost.
+- Issuing all eight relocation candidates' alternate-line loads before the cuckoo search: no measurable change in steady or saturated inserts (the 1M-key benchmark table is mostly L3-resident; misses are cheap).
 - Per-line spill counts (skip the alternate line when nothing homed at the primary line is displaced; exact under a concurrent audit). Absent lookups ~10% faster, but steady inserts +15% and near-full inserts +15% from the extra counter traffic, and alternate-line hits wait on one more load. Reverted; the displaced bit it needed was kept (item 13). Patch: `results/experiments/spill-counts.diff`.
 - One CMPXCHG16B for both slot words instead of two 8-byte CASes: 19 vs 15 ns on this Xeon. Reverted.
 - Branchless 4-way fingerprint compare in find: hot hits ~10% faster, but cold lookups ~15% slower (the slot index becomes data-dependent, so the CPU can't run ahead on a predicted branch). Reverted.
@@ -29,6 +33,12 @@ Scorecard: `bash bench.sh "label"` (race tests + cmd/tfbench, appends to results
 - Alternate-line prefetch (plain load and asm PREFETCHT0), two-choice insert: hits got slower. Reverted.
 - Lock-free duplicate repair (in-flight marker + lower index wins): cut duplicates 10x but can't be made symmetric. Replaced by the stripe lock.
 - Pure dyadic register (H/32, widths to 32 units): same mean MAE as the H/24 geometry but 60s error 0.040 vs 0.024.
+
+## Needs a decision (trade-offs)
+- More identity bits from the velocity register (measured, 1e9 probes):
+  - 46-bit register + 14-bit tag: FPR 1.8e-8 → 7e-9, vel MAE 0.081 → 0.085, per-key count cap per horizon 1000+ → ~876.
+  - 44-bit register + 16-bit tag: FPR → 0 seen (~1e-9 expected), vel MAE 0.088, cap ~630.
+- Truncated timestamps (needs a guaranteed sweeper when idle) would free up to 7 fingerprint bits without touching counts.
 
 ## Next
 - Hot path: two CASes per touch (~15 ns of the ~32 ns hot hit). Option: Resolution floor that skips the word0 CAS when the timestamp would not change.

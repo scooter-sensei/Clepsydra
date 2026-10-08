@@ -179,7 +179,7 @@ func (f *Filter) Close() {
 func (f *Filter) Now() uint64 { return f.clock() }
 
 // Ticks converts a duration to filter ticks.
-func (f *Filter) Ticks(d time.Duration) uint64 { return uint64(d / f.res) }
+func (f *Filter) Ticks(d time.Duration) uint64 { return uint64(max(d, 0) / f.res) }
 
 // Hash hashes a string key for the *At methods.
 func (f *Filter) Hash(key string) uint64 { return maphash.String(f.seed, key) }

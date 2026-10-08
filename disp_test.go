@@ -32,7 +32,7 @@ func TestDisplacedBitTracksLine(t *testing.T) {
 			defer wg.Done()
 			for i := range 300_000 {
 				now := clock.Add(1) * horizon / 100_000 // ~24 horizons overall
-				k := uint64(w*7919+i) % (capN * 6 / 5)    // 1.2x capacity live
+				k := uint64(w*7919+i) % (capN * 6 / 5)  // 1.2x capacity live
 				f.CheckAndTouchAt(key(k, now), horizon, now)
 				if i%97 == 0 {
 					f.decayStep(now, 4)

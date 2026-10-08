@@ -5,9 +5,10 @@ FN a/b/c = missed keys on the churn workload at multiples of the configured Capa
 - before 13:06: 0.5x / 1.0x / 1.5x of Capacity, table sized at ~38% slot load for 1.0x (41.9 B/key)
 - 13:06 to 13:25: 1.0x / 2.0x / 2.5x (38% / 76% / 95% slot load, 41.9 B/key)
 - from 13:26: 1.0x / 1.1x / 1.15x with the table sized for 85% load at 1.0x (85% / 94% / 98% slot load, ~19 B/key)
+- Two-choice, 4-slot cuckoo tables saturate at ~97.7% slot load, so FN c (98%) can't reach 0 with this layout; 8-slot lines can (see backlog).
 
 B/key = table bytes per Capacity key. vel MAE = VelocityCount error: per window (1,5,15,30,60s) sum|est-exact|/sum exact, averaged over windows; 5 traffic shapes (from 13:36; the 13:34 row pooled all windows).
-FP churn = false "seen" on the churn workload at 1.0x. Static FPR = never-inserted probes at capacity (5M probes before 13:16, 50M after, 1e9 from 14:55).
+FP churn = false "seen" on the churn workload at 1.0x. Static FPR = never-inserted probes at capacity (5M probes before 13:16, 50M after, 1e9 from 14:46).
 Spray = repeat offenders keeping exact counts after 20x-capacity spray. Latencies in ns/op (best of 3),
 1M-key table; batch = CheckAndTouchBatch per key (rows from 13:20); insert = steady state (keys expire as fast as they arrive), insert sat = every line full (rows before 13:10 measured only the saturated case, in the insert column); parallel is per-op throughput with GOMAXPROCS goroutines; str = string key + built-in clock; str coarse = same with CoarseClock (100µs cached clock), from 13:54. Before 13:57, str ran on a table the insert benchmarks had filled with future-dated keys, so it measured the eviction path; from 13:57 it uses a fresh 1M-key table.
 

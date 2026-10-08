@@ -66,6 +66,6 @@ These come from the latest row of `results/history.md`: capacity 200k, horizon 6
 ## Known limits
 
 - Two locked CASes per touch, one per word. This is the floor of the cache-resident hit cost.
-- Inserts above ~94% slot load need cuckoo paths and cost µs. Size `Capacity` and `Load` for your live-key count.
+- Inserts above ~94% slot load need cuckoo paths and cost µs. Two-choice, 4-slot tables saturate at ~97.7% load, and above that some keys are evicted (0.05% missed at 98%). Size `Capacity` and `Load` for your live-key count.
 - First touches of a key take a striped lock (256 stripes) so racing writers can't create two slots. Hits stay lock-free.
 - `HashUint64` is unkeyed. Use `Hash` (seeded) for attacker-controlled keys.

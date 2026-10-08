@@ -296,3 +296,28 @@ func TestStringAPI(t *testing.T) {
 		t.Fatalf("VelocityCount = %d", c)
 	}
 }
+
+// An attacker who sprays fresh keys to overflow the table must not be able to
+// evict their own repeat key: eviction takes the lowest-velocity slot.
+func TestSprayCannotEvictRepeatOffender(t *testing.T) {
+	const n = 10_000
+	f := newTest(t, n, time.Minute)
+	now := uint64(1000)
+	offenders := make([]uint64, 50)
+	for i := range offenders {
+		offenders[i] = HashUint64(uint64(1<<40 + i))
+		for range 20 {
+			f.CheckAndTouchAt(offenders[i], 0, now)
+		}
+	}
+	for i := range 20 * n { // 20x capacity of one-off keys, all inside the window
+		f.CheckAndTouchAt(HashUint64(uint64(i)), 0, now+uint64(i%30_000))
+	}
+	now += 30_000
+	for i, h := range offenders {
+		if c := f.VelocityCountAt(h, f.Ticks(time.Minute), now); c != 20 {
+			t.Fatalf("offender %d: count %d after spray, want 20", i, c)
+		}
+	}
+	t.Logf("evictions during spray: %d", f.Evictions())
+}

@@ -12,7 +12,7 @@ word1: tag(8) | epoch(8) | c0 c1 c2 c3 c4 c5 (6 × 8-bit)   velocity shift regis
 ```
 
 - **Identity** = 16-bit `fp` + 8-bit `tag` = 24-bit fingerprint, both in the same line, so no extra memory traffic.
-- **Placement**: primary line from the hash; overflow to one alternate line only when the primary has 4 live keys. Inserts prefer empty or expired slots, then evict the stalest of the 8 candidates.
+- **Placement**: primary line from the hash; overflow to one alternate line only when the primary has 4 live keys. Inserts prefer empty or expired slots, then evict the lowest-velocity of the 8 candidates (oldest on ties), so spraying fresh keys cannot flush a repeat offender.
 - **Velocity**: `c0` counts the current sub-window (`Horizon/5`), `c5` the oldest. Advancing time by `d` sub-windows is `ctr << 8d`.
 
 ## Operations

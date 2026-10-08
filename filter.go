@@ -235,10 +235,13 @@ func (f *Filter) find(line, fp uint64, tg uint8) int {
 }
 
 // claim installs fp in an empty or expired slot of the primary line, then the
-// alternate line, else evicts the stalest of the eight. Returns word0 index.
+// alternate line. If all eight are live it evicts the one with the fewest
+// events in the horizon (oldest on ties), so a spray of fresh keys cannot
+// flush a repeat offender: one-off keys churn among themselves.
+// Returns word0 index.
 func (f *Filter) claim(h, fp, now uint64) int {
 	for {
-		victim, victimTs, victimW0 := -1, uint64(1<<64-1), uint64(0)
+		victim, victimScore, victimW0 := -1, uint64(1<<64-1), uint64(0)
 		for _, line := range [2]uint64{h & f.mask, f.alt(h)} {
 			base := int(line * wordsPerLine)
 			for s := 0; s < wordsPerLine; s += 2 {
@@ -250,8 +253,9 @@ func (f *Filter) claim(h, fp, now uint64) int {
 					}
 					continue
 				}
-				if ts < victimTs {
-					victim, victimTs, victimW0 = base+s, ts, w0
+				score := f.mass(atomic.LoadUint64(&f.words[base+s+1]), now)<<48 | ts
+				if score < victimScore {
+					victim, victimScore, victimW0 = base+s, score, w0
 				}
 			}
 		}
@@ -260,6 +264,19 @@ func (f *Filter) claim(h, fp, now uint64) int {
 			return victim
 		}
 	}
+}
+
+// mass is the register's total event count still inside the horizon.
+func (f *Filter) mass(w1, now uint64) uint64 {
+	d := (now/f.gran - uint64(uint8(w1>>48))) & 0xff
+	if d >= 0x80 {
+		d = 0
+	} else if d >= subWindows {
+		return 0
+	}
+	ctr := w1 & ctrMask << (8 * d) & ctrMask
+	ctr = ctr&0x00ff00ff00ff + ctr>>8&0x00ff00ff00ff // pairwise byte sums
+	return ctr&0xffff + ctr>>16&0xffff + ctr>>32&0xffff
 }
 
 // bump advances the velocity shift register to now and increments c0.

@@ -1,0 +1,77 @@
+diff --git a/filter.go b/filter.go
+index ad680d4..e0d2b59 100644
+--- a/filter.go
++++ b/filter.go
+@@ -85,6 +85,7 @@ type Filter struct {
+ 	unit    uint64   // ticks per velocity register unit (Horizon/unitsPerHorizon)
+ 	unitInv uint64   // floor(2^64 / unit) + 1, for unitOf
+ 	res     time.Duration
++	resInv  uint64 // floor(2^64 / res) + 1, or 0 when res is 1ns
+ 	clock   func() uint64
+ 	seed    maphash.Seed
+ 
+@@ -135,10 +136,13 @@ func New(cfg Config) (*Filter, error) {
+ 		seed:    maphash.MakeSeed(),
+ 	}
+ 	f.unitInv = ^uint64(0)/f.unit + 1
++	if cfg.Resolution > 1 {
++		f.resInv = ^uint64(0)/uint64(cfg.Resolution) + 1
++	}
+ 	f.words = alignedWords(int(lines * wordsPerLine))
+ 	if f.clock == nil {
+-		base, res := time.Now(), cfg.Resolution
+-		read := func() uint64 { return uint64(time.Since(base)/res) + 1 }
++		base := time.Now()
++		read := func() uint64 { return f.nsToTicks(uint64(time.Since(base))) + 1 }
+ 		f.clock = read
+ 		if cfg.CoarseClock > 0 {
+ 			f.coarse.Store(read())
+@@ -179,7 +183,20 @@ func (f *Filter) Close() {
+ func (f *Filter) Now() uint64 { return f.clock() }
+ 
+ // Ticks converts a duration to filter ticks.
+-func (f *Filter) Ticks(d time.Duration) uint64 { return uint64(max(d, 0) / f.res) }
++func (f *Filter) Ticks(d time.Duration) uint64 { return f.nsToTicks(uint64(max(d, 0))) }
++
++// nsToTicks divides by the resolution with a precomputed reciprocal: the
++// string API converts a window and reads the clock on every call.
++func (f *Filter) nsToTicks(ns uint64) uint64 {
++	if f.resInv == 0 {
++		return ns
++	}
++	q, _ := bits.Mul64(ns, f.resInv)
++	if q*uint64(f.res) > ns {
++		q--
++	}
++	return q
++}
+ 
+ // Hash hashes a string key for the *At methods.
+ func (f *Filter) Hash(key string) uint64 { return maphash.String(f.seed, key) }
+diff --git a/register_test.go b/register_test.go
+index 373fa33..c14297c 100644
+--- a/register_test.go
++++ b/register_test.go
+@@ -118,3 +118,22 @@ func TestTicksClampsNegative(t *testing.T) {
+ 		t.Fatal("negative duration should be 0 ticks")
+ 	}
+ }
++
++func TestNsToTicksMatchesDivision(t *testing.T) {
++	r := rand.New(rand.NewPCG(3, 4))
++	for _, res := range []time.Duration{1, 7, time.Microsecond, time.Millisecond, 3 * time.Millisecond, time.Second} {
++		f, err := New(Config{Capacity: 10, Horizon: 1000 * res * unitsPerHorizon, Resolution: res})
++		if err != nil {
++			t.Fatal(err)
++		}
++		for range 100_000 {
++			ns := r.Uint64() >> r.IntN(64)
++			if got, want := f.nsToTicks(ns), ns/uint64(res); got != want {
++				t.Fatalf("res %v: nsToTicks(%d) = %d, want %d", res, ns, got, want)
++			}
++		}
++		if f.Ticks(-time.Second) != 0 {
++			t.Fatalf("negative duration should be 0 ticks")
++		}
++	}
++}

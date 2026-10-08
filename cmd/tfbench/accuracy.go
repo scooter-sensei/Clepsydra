@@ -232,7 +232,8 @@ func printExact() {
 			c.load, c.seed, r.pos, r.fn, r.neg, r.fp, r.nlive, r.evictions, r.relocations, 100*r.fnr, r.fpr, r.live)
 	}
 	n := staticFPR(fprProbes)
-	fmt.Printf("static_fpr probes=%d false_positives=%d  => %.2e\n", fprProbes, n, float64(n)/fprProbes)
+	lo, hi := poissonCI95(int(n))
+	fmt.Printf("static_fpr probes=%d false_positives=%d  => %.2e (95%% interval %.2e-%.2e)\n", fprProbes, n, float64(n)/fprProbes, lo/fprProbes, hi/fprProbes)
 	ok := spray()
 	fmt.Printf("spray offenders=%d exact=%d  => %.0f%%\n", sprayOffenders, ok, 100*float64(ok)/sprayOffenders)
 	mean, per := velocityMAE()
@@ -240,9 +241,17 @@ func printExact() {
 		fmt.Printf("velocity window=%ds abs_error_sum=%.0f exact_sum=%.0f  => %.4f\n", v.w/1000, v.errSum, v.exact, v.errSum/v.exact)
 	}
 	fmt.Printf("velocity mean_of_windows => %.4f\n", mean)
-	for _, n := range []int{100, 500, 725, 750, 775, 1000, 1273, 1274, 2617, 5000} {
-		b, s := heavyHitter(n)
-		fmt.Printf("heavy_hitter touches=%d count_burst=%d count_spread_over_horizon=%d\n", n, b, s)
+	for _, w := range []uint64{1_000, 5_000, 15_000, 60_000} {
+		for _, n := range []int{10, 31, 62, 100, 500, 762, 1000, 1273, 2000} {
+			lo, hi := burstCount(n, w)
+			fmt.Printf("burst window=%ds touches=%d reported_min=%d reported_max=%d\n", w/1000, n, lo, hi)
+		}
+	}
+	for _, w := range []uint64{1_000, 5_000, 15_000, 60_000} {
+		for _, perSec := range []uint64{1, 5, 10, 12, 13, 20, 50, 100} {
+			lo, hi := steadyCount(1000/perSec, w)
+			fmt.Printf("steady window=%ds rate=%d/s reported/exact min=%.3f max=%.3f\n", w/1000, perSec, lo, hi)
+		}
 	}
 	probe, _ := tf.New(tf.Config{Capacity: capacity, Horizon: horizon})
 	fmt.Printf("memory capacity=%d slots=%d bytes=%d  => %.1f B/key\n", capacity, probe.Slots(), probe.Slots()*16, bytesPerKey())
@@ -256,18 +265,74 @@ func relocations(f any) uint64 {
 	return 0
 }
 
-// heavyHitter returns what VelocityCount(Horizon) reports for one key after
-// n touches: all in one tick (burst), and spread evenly over one horizon
-// (queried at the last touch).
-func heavyHitter(n int) (burst, spread int) {
-	b, _ := tf.New(tf.Config{Capacity: 1000, Horizon: horizon, Resolution: time.Millisecond})
-	s, _ := tf.New(tf.Config{Capacity: 1000, Horizon: horizon, Resolution: time.Millisecond})
-	h := tf.HashUint64(42)
-	var last uint64
-	for i := range n {
-		b.CheckAndTouchAt(h, 0, hTicks)
-		last = hTicks + uint64(i)*(hTicks-1)/uint64(max(n-1, 1))
-		s.CheckAndTouchAt(h, 0, last)
+// burstCount returns the smallest and largest VelocityCount(window) for one
+// key right after n touches in a single tick, over 64 burst times spread
+// across the register's 8-unit bucket cycle (the window's edge cuts the
+// buckets differently at each).
+func burstCount(n int, window uint64) (lo, hi int) {
+	unit := uint64(hTicks / 24)
+	lo = math.MaxInt
+	for k := range uint64(64) {
+		f, _ := tf.New(tf.Config{Capacity: 1000, Horizon: horizon, Resolution: time.Millisecond})
+		h := tf.HashUint64(42)
+		now := 10*hTicks + k*8*unit/64
+		for range n {
+			f.CheckAndTouchAt(h, 0, now)
+		}
+		c := f.VelocityCountAt(h, window, now)
+		lo, hi = min(lo, c), max(hi, c)
 	}
-	return b.VelocityCountAt(h, hTicks, hTicks), s.VelocityCountAt(h, hTicks, last)
+	return lo, hi
+}
+
+// steadyCount returns the smallest and largest ratio of VelocityCount(window)
+// to the exact count for one key touched every `every` ticks for 3 horizons,
+// queried at each touch in the last horizon.
+func steadyCount(every, window uint64) (lo, hi float64) {
+	f, _ := tf.New(tf.Config{Capacity: 1000, Horizon: horizon, Resolution: time.Millisecond})
+	h := tf.HashUint64(43)
+	lo = math.Inf(1)
+	for now := uint64(1); now < 3*hTicks; now += every {
+		f.CheckAndTouchAt(h, 0, now)
+		if now < 2*hTicks {
+			continue
+		}
+		exact := float64(window/every + 1) // touches in (now-window, now]
+		if window%every == 0 {
+			exact--
+		}
+		r := float64(f.VelocityCountAt(h, window, now)) / exact
+		lo, hi = min(lo, r), max(hi, r)
+	}
+	return lo, hi
+}
+
+// poissonCI95 is the exact (Garwood) 95% interval for a Poisson mean given k
+// observed events: the means at which P(X >= k) and P(X <= k) are 2.5%.
+func poissonCI95(k int) (lo, hi float64) {
+	cdf := func(mu float64, k int) float64 { // P(X <= k)
+		term, sum := math.Exp(-mu), 0.0
+		for j := 0; j <= k; j++ {
+			sum += term
+			term *= mu / float64(j+1)
+		}
+		return sum
+	}
+	solve := func(f func(float64) float64) float64 { // f decreasing in mu, root in (0, 10k+10)
+		a, b := 0.0, 10*float64(k)+10
+		for range 200 {
+			m := (a + b) / 2
+			if f(m) > 0 {
+				a = m
+			} else {
+				b = m
+			}
+		}
+		return (a + b) / 2
+	}
+	if k > 0 {
+		lo = solve(func(mu float64) float64 { return 0.025 - (1 - cdf(mu, k-1)) })
+	}
+	hi = solve(func(mu float64) float64 { return cdf(mu, k) - 0.025 })
+	return lo, hi
 }

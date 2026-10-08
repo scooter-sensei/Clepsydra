@@ -1,0 +1,38 @@
+diff --git a/bench_test.go b/bench_test.go
+index 05b4ce2..b832aeb 100644
+--- a/bench_test.go
++++ b/bench_test.go
+@@ -367,3 +367,33 @@ func BenchmarkHugeVelocity(b *testing.B) {
+ 		f.VelocityCountAt(HashUint64(uint64(i*7919)%hugeKeys), w, 2000)
+ 	}
+ }
++
++// Hot-key contention (round 8 check): all goroutines hammer the same few
++// keys (a bot storm), with a shared advancing clock. Run with -cpu 4 to get
++// 4 goroutines: 1 key, 16 keys, 16K keys.
++func benchContended(b *testing.B, keys int) {
++	f, _ := New(Config{Capacity: 1 << 16, Horizon: time.Minute})
++	hs := make([]uint64, keys)
++	for i := range hs {
++		hs[i] = HashUint64(uint64(i))
++	}
++	w := f.Ticks(30 * time.Second)
++	var clk atomic.Uint64
++	clk.Store(1000)
++	b.ResetTimer()
++	b.RunParallel(func(pb *testing.PB) {
++		i := 0
++		for pb.Next() {
++			i++
++			now := clk.Load()
++			if i&63 == 0 {
++				now = clk.Add(1)
++			}
++			f.CheckAndTouchAt(hs[i%keys], w, now)
++		}
++	})
++}
++
++func BenchmarkContended1(b *testing.B)  { benchContended(b, 1) }
++func BenchmarkContended16(b *testing.B) { benchContended(b, 16) }
++func BenchmarkUncontended(b *testing.B) { benchContended(b, 1<<14) }

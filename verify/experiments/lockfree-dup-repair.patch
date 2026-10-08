@@ -1,0 +1,94 @@
+diff --git a/filter.go b/filter.go
+index ad680d4..29404ba 100644
+--- a/filter.go
++++ b/filter.go
+@@ -316,24 +316,28 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
+ 	for {
+ 		i := f.locate(h, fp, tg)
+ 		if i < 0 {
+-			// Miss: serialize first touches of the same key so two racers
+-			// can't each claim a slot (which would split its count). The
+-			// lock covers only this path; hits never take it.
+-			mu := &f.claimMu[h>>(64-claimStripeBits)]
+-			mu.Lock()
+-			if i = f.locate(h, fp, tg); i < 0 {
+-				w1 := f.nextReg(0, tg, now, now, true) // first event, published with the key
+-				i = f.claim(h, fp, w1, now)
+-				mu.Unlock()
+-				if i < 0 {
+-					continue
++			// Experiment: lock-free duplicate repair instead of the claim
++			// stripe lock.
++			w1 := f.nextReg(0, tg, now, now, true) // first event, published with the key
++			if i = f.claim(h, fp, tg, w1, now); i < 0 {
++				continue
++			}
++			// Two first touches of one key can race past locate into two
++			// slots. Both see each other here; the higher index yields.
++			p := f.primary(h)
++			if j := f.dup([2]uint64{p, f.alt(p, fp)}, fp, tg, i); j >= 0 && j < i {
++				mine := fp<<48 | now
++				if uint64(i/wordsPerLine) != p {
++					mine |= dispBit
+ 				}
+-				if !wantCount {
+-					return false, 0
++				if atomic.CompareAndSwapUint64(&f.words[i], mine, 0) {
++					continue
+ 				}
+-				return false, f.estimate(w1, now, now, window)
+ 			}
+-			mu.Unlock() // another first touch got there first: count as a hit
++			if !wantCount {
++				return false, 0
++			}
++			return false, f.estimate(w1, now, now, window)
+ 		}
+ 		w0 := atomic.LoadUint64(&f.words[i])
+ 		if w0>>48 != fp {
+@@ -390,7 +394,7 @@ func (f *Filter) find(line, fpd, tg uint64) int {
+ // if it lost a race for a slot and the caller should look the key up again
+ // (a racing writer may have completed it). The caller holds the key's claim
+ // stripe.
+-func (f *Filter) claim(h, fp, w1, now uint64) int {
++func (f *Filter) claim(h, fp, tg, w1, now uint64) int {
+ 	lines := [2]uint64{f.primary(h), f.alt(f.primary(h), fp)}
+ 	mine := [2]uint64{fp<<48 | now, fp<<48 | dispBit | now}
+ 	for {
+@@ -398,6 +402,13 @@ func (f *Filter) claim(h, fp, w1, now uint64) int {
+ 			base := int(line * wordsPerLine)
+ 			for s := 0; s < wordsPerLine; s += 2 {
+ 				w0 := atomic.LoadUint64(&f.words[base+s])
++				if w0>>48 == fp && age(now, w0&tsMask) <= f.horizon {
++					// Our key appeared since the caller's locate (a racing
++					// first touch): don't claim a second slot.
++					if atomic.LoadUint64(&f.words[base+s+1])>>tagShift == tg {
++						return -1
++					}
++				}
+ 				if w0 == 0 || age(now, w0&tsMask) > f.horizon {
+ 					if f.install(base+s, w0, atomic.LoadUint64(&f.words[base+s+1]), mine[li], w1) {
+ 						return base + s
+@@ -459,6 +470,22 @@ func (f *Filter) install(i int, w0, w1, mine0, mine1 uint64) bool {
+ 	return false
+ }
+ 
++// dup returns another slot in lines that already holds fp/tg, or -1.
++func (f *Filter) dup(lines [2]uint64, fp, tg uint64, mine int) int {
++	for _, line := range lines {
++		base := int(line * wordsPerLine)
++		for s := 0; s < wordsPerLine; s += 2 {
++			if base+s == mine || atomic.LoadUint64(&f.words[base+s])>>48 != fp {
++				continue
++			}
++			if atomic.LoadUint64(&f.words[base+s+1])>>tagShift == tg {
++				return base + s
++			}
++		}
++	}
++	return -1
++}
++
+ // relocate moves the entry at word index i (in line) to its alternate line
+ // and installs mine0/mine1 in its place. If that line is full it first
+ // relocates one of its entries, up to depth more steps (a bounded cuckoo

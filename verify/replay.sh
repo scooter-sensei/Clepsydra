@@ -2,7 +2,8 @@
 # Replays recorded results against the commits that produced them. Run from
 # the repository root (a git checkout with full history).
 #
-#   verify/replay.sh fixes [N]   each bug-fix test: fails on the commit before the fix, passes on the fix
+#   verify/replay.sh fixes [N]   each bug-fix test: fails on the commit with the bug, passes on the fix
+#   verify/replay.sh stress [N]  the racy regression tests at the working tree, N runs each
 #   verify/replay.sh history     each results/history.md row: re-run that commit's own tfbench -quick,
 #                                compare the deterministic columns with the recorded row
 #   verify/replay.sh harness     today's accuracy harness (tfbench -exact) on every commit that
@@ -20,14 +21,25 @@ tree() { # tree <rev> <dir>: export a commit's files (no .git)
 	rm -rf "$2" && mkdir -p "$2" && git archive "$1" | tar -x -C "$2"
 }
 
+# runmany <dir> <test binary> <regex> <runs>: runs a test binary <runs> times,
+# 4 at a time (the contention makes races show), and prints how many failed.
+runmany() {
+	: >"$1/fails"
+	seq "$4" | xargs -P 4 -I{} sh -c '"$1" -test.run "$2" -test.count 1 >"$3/run.$4.log" 2>&1 || echo "$4" >>"$3/fails"' _ "$2" "$3" "$1" {}
+	wc -l <"$1/fails" | tr -d ' '
+}
+
 fixes() {
-	local n=${1:-10}
-	# name | fix commit | test files copied from HEAD | test regex | runs
-	while IFS='|' read -r name fix files re runs; do
+	local n=${1:-20}
+	# name | commit with the bug | commit with the fix | test files copied from HEAD | test regex | runs
+	# Duplicate slots: the striped lock (a8a2848) removed most; the install
+	# order in e42327a removed the rare rest (a race with relocation), so
+	# both cases end at e42327a. Racy cases get enough runs that a bug
+	# failing 2.5% of runs is missed with probability < 1e-4.
+	while IFS='|' read -r name old fix files re runs; do
 		[ -z "$name" ] && continue
 		runs=${runs:-$n}
-		local old res=()
-		old=$(git rev-parse --short "$fix^")
+		local res=()
 		for rev in "$old" "$fix"; do
 			local d="$WORK/fix-$name-$rev"
 			tree "$rev" "$d"
@@ -36,25 +48,36 @@ fixes() {
 				res+=("build-failed")
 				continue
 			fi
-			local fails=0
-			for _ in $(seq "$runs"); do
-				(cd "$d" && ./fix.test -test.run "$re" -test.count 1 >>"$d/run.log" 2>&1) || fails=$((fails + 1))
-			done
-			res+=("$fails/$runs")
+			res+=("$(runmany "$d" "$d/fix.test" "$re" "$runs")/$runs")
 		done
 		local verdict=REPRODUCED
 		if [ "${res[0]%%/*}" = 0 ] || [ "${res[0]}" = build-failed ] || [ "${res[1]%%/*}" != 0 ]; then
 			verdict="NOT REPRODUCED"
 			bad=1
 		fi
-		printf 'fix %-22s before %s failed %-7s | fix %s failed %-7s => %s\n' "$name" "$old" "${res[0]}" "$fix" "${res[1]}" "$verdict"
-		grep -h -E 'slots used|counted [0-9]+ of|Ticks\(|panic:' "$WORK/fix-$name-$old/run.log" 2>/dev/null | sed 's/^ *//' | sort | uniq -c | sort -rn | head -5 | sed 's/^/    before: /'
+		printf 'fix %-26s bug at %s failed %-9s | fixed at %s failed %-9s => %s\n' "$name" "$old" "${res[0]}" "$fix" "${res[1]}" "$verdict"
+		cat "$WORK/fix-$name-$old"/run.*.log 2>/dev/null | grep -h -E 'slots used|counted [0-9]+ of|Ticks\(|panic:' | sed 's/^ *//' | sort | uniq -c | sort -rn | head -3 | sed 's/^/    bug run: /'
 	done <<-LIST
-	duplicate-slots|a8a2848|dup_test.go|^TestConcurrentFirstInsertNoDuplicates$|
-	lost-counts-relocation|e42327a|reloc_race_test.go|^TestTouchRacingRelocationKeepsCounts$|20
-	negative-ticks|f9c9127|regress_test.go|^TestRegressNegativeTicks$|3
-	empty-batch-panic|f07b04e|regress_test.go|^TestRegressEmptyBatch$|3
+	duplicate-slots|bc2e12d|e42327a|dup_test.go|^TestConcurrentFirstInsertNoDuplicates$|
+	duplicate-slots-after-lock|a8a2848|e42327a|dup_test.go|^TestConcurrentFirstInsertNoDuplicates$|400
+	lost-counts-relocation|f07b04e|e42327a|reloc_race_test.go|^TestTouchRacingRelocationKeepsCounts$|200
+	negative-ticks|6bf61f0|f9c9127|regress_test.go|^TestRegressNegativeTicks$|3
+	empty-batch-panic|502871a|f07b04e|regress_test.go|^TestRegressEmptyBatch$|3
 	LIST
+}
+
+# stress [N]: the two racy regression tests at the working tree, N runs each
+# (default 300), 4 at a time. Any failure is a live bug.
+stress() {
+	local n=${1:-300} d="$WORK/stress"
+	mkdir -p "$d"
+	go test -c -o "$d/t.test" .
+	for re in '^TestConcurrentFirstInsertNoDuplicates$' '^TestTouchRacingRelocationKeepsCounts$'; do
+		local f
+		f=$(runmany "$d" "$d/t.test" "$re" "$n")
+		printf 'stress %-44s failed %s/%s\n' "$re" "$f" "$n"
+		[ "$f" = 0 ] || bad=1
+	done
 }
 
 # cols <header> <row> <names...>: the named columns of a scorecard row, "-" if
@@ -132,11 +155,13 @@ harness() {
 	tree 8381fd2 "$d"
 	rm -rf "$d/cmd/tfbench" && mkdir -p "$d/cmd" && git archive 597ee63 cmd/tfbench | tar -x -C "$d"
 	printf 'harness 597ee63-on-8381fd2 (tfbench -quick row)\n'
-	(cd "$d" && go run ./cmd/tfbench -quick 2>/dev/null | grep -E '^\| [0-9]{2}-') | sed 's/^/    /'
+	(cd "$d" && go run ./cmd/tfbench -quick 2>/dev/null | grep -E '^\| [0-9]{2}-') |
+		sed -E 's/^\| [0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2} \| *\|/|/; s/^/    /' # drop the timestamp and empty rev
 }
 
 case "${1:-}" in
-fixes) fixes "${2:-10}" ;;
+fixes) fixes "${2:-20}" ;;
+stress) stress "${2:-300}" ;;
 history) history ;;
 harness) harness ;;
 *) sed -n '2,12p' "$0"; exit 2 ;;

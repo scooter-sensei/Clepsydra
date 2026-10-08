@@ -1,0 +1,25 @@
+diff --git a/filter.go b/filter.go
+index ad680d4..9cf1547 100644
+--- a/filter.go
++++ b/filter.go
+@@ -29,7 +29,7 @@ import (
+ )
+ 
+ const (
+-	slotsPerLine = 4
++	slotsPerLine = 8
+ 	wordsPerLine = 2 * slotsPerLine
+ 	// dispBit marks an entry living in its alternate line ("displaced").
+ 	// Lookups match it too, so a key is compared only with entries that
+@@ -297,7 +297,10 @@ const batchChunk = 64
+ func (f *Filter) warm(hs []uint64) {
+ 	var sink uint64
+ 	for _, h := range hs {
+-		sink += atomic.LoadUint64(&f.words[f.primary(h)*wordsPerLine])
++		b := f.primary(h) * wordsPerLine
++		for l := uint64(0); l < wordsPerLine; l += 8 { // each 64-byte line of the bucket
++			sink += atomic.LoadUint64(&f.words[b+l])
++		}
+ 	}
+ 	runtime.KeepAlive(sink)
+ }

@@ -45,11 +45,11 @@ check() {
 }
 
 env_info() {
-	echo "commit:   $(git rev-parse HEAD)$(git diff --quiet HEAD -- . ':!verify-report' || echo ' (dirty)')"
+	echo "commit:   $(git rev-parse HEAD)$([ -z "$(git status --porcelain --untracked-files=no)" ] || echo ' (uncommitted changes)')"
 	echo "go:       $(go version)"
 	echo "GOFLAGS=$(go env GOFLAGS) GOPROXY=$(go env GOPROXY) GOTOOLCHAIN=$(go env GOTOOLCHAIN) GOCACHE=$(go env GOCACHE)"
 	echo "kernel:   $(uname -srm)"
-	echo "cpu:      $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ //') x $(nproc)"
+	echo "cpu:      $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ //') x $(nproc), L3 $(cat /sys/devices/system/cpu/cpu0/cache/index3/size 2>/dev/null || echo '?')"
 	if timeout 3 bash -c 'exec 3<>/dev/tcp/1.1.1.1/443' 2>/dev/null; then
 		echo "network:  reachable"
 	else
@@ -77,7 +77,8 @@ check race - go test -race -short -count=1 ./...
 check exact verify/expected/exact.txt go run ./cmd/tfbench -exact
 check placement verify/expected/placement.txt placement
 check register-experiment verify/expected/register-experiment.txt register_experiment
-check fixes - verify/replay.sh fixes 10
+check fixes - verify/replay.sh fixes
+check stress - verify/replay.sh stress 300
 check history - verify/replay.sh history
 check harness verify/expected/harness.txt verify/replay.sh harness
 check experiments verify/expected/experiments.txt verify/experiments.sh

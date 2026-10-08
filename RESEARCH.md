@@ -1,5 +1,7 @@
 # Temporal Filter: prior art, originality, new directions
 
+Written at the first prototype (commits a5292e3–2a526a8) and corrected on 2026-10-08 during the verification pass; corrections are marked. Measured claims carry tags that `verify/claims.md` maps to a check. Literature summaries in §1–2 come from the linked sources as read then: check them there.
+
 ## 1. What already exists
 
 | Work | Window | Time stored as | Counts? | Closest to our… |
@@ -18,6 +20,8 @@
 
 ## 2. How original is v1?
 
+These judgments are relative to the sources in §1, found in a non-exhaustive search; they aren't proof that nothing similar exists.
+
 - **Not new:** storing a fingerprint and timestamp per slot in a bucketed or cuckoo table (SWBF, TBF), and expiring entries lazily by comparing ages. Our `word0` is this, so we shouldn't claim the freshness half as novel.
 - **New, as far as I found:**
   1. A **per-key velocity register in the same cache line as an exact last-touch time**, updated lock-free with CAS. Every prior structure above either has no counts, keeps them in a separate table (SWAMP's TinyTable), or uses global sketches (Hokusai, Sliding Sketches).
@@ -33,7 +37,7 @@
 
 **Change:** when both candidate lines are full, evict the slot with the fewest events in the horizon, oldest on ties. One-off keys churn among themselves.
 
-**Evidence:** `TestSprayCannotEvictRepeatOffender` sprays 20× capacity of one-off keys. All 50 offender keys keep their exact count of 20. The same test **fails with the old oldest-first policy**. Insert latency is unchanged (~230 ns).
+**Evidence:** `TestSprayCannotEvictRepeatOffender` sprays 20× capacity of one-off keys. All 50 offender keys keep their exact count of 20. The same test **fails with oldest-first eviction** (`verify/experiments/oldest-first-eviction.patch`) [E1]. Insert latency was measured as unchanged at the time; `verify/ab.sh a5292e3 2a526a8 MissInsert` repeats that comparison [S].
 
 TinyLFU uses frequency for cache *admission*. Using it as an anti-evasion eviction policy in a temporal filter appears to be new.
 
@@ -49,13 +53,15 @@ This uses the same 48 bits, but the buckets get wider with age: 1, 1, 1–2, 2�
 
 | Register | 1s | 5s | 15s | 30s | 60s | mean |
 |---|---|---|---|---|---|---|
-| linear 6×8 (shipped) | 0.38–0.75 | 0.09–0.41 | 0.03–0.17 | 0.01–0.10 | 0.01–0.05 | 0.154 |
-| **dyadic, 7 buckets** | **0.17–0.35** | **0.05–0.15** | 0.04–0.16 | 0.03–0.15 | 0.02–0.14 | **0.108** |
+| linear 6×8 (v1, since replaced) | 0.02–0.75 | 0.09–0.41 | 0.03–0.17 | 0.01–0.10 | 0.01–0.05 | 0.154 |
+| **dyadic, 7 buckets** | **0.02–0.35** | **0.05–0.15** | 0.04–0.16 | 0.03–0.15 | 0.02–0.14 | **0.108** |
 | Laplace 3×16 (§3.3) | 0.02–0.76 | 0.06–0.28 | 0.15–0.33 | 0.04–0.19 | 0.27–0.38 | 0.268 |
 
-The dyadic register halves short-window error, which is where fraud velocity rules live ("5 cards in 10s"). It loses on 60s windows.
+Ranges span the 5 traffic shapes; `go test -run TestRegisterExperiment -v` prints the full table [D12]. (Corrected: the 1s ranges for linear and dyadic previously left out the sparse shape's low error.)
 
-**Recommendation:** make the register geometry a constructor option, or run a dyadic filter for short-window rules next to the linear one.
+The dyadic register roughly halves short-window error (mean over shapes at 1s: 0.38 → 0.20; at 5s: 0.21 → 0.09), which is where fraud velocity rules live ("5 cards in 10s"). It loses on 60s windows (0.030 → 0.071).
+
+**What shipped:** an age-graded variant of this register with `Horizon/24` units and counter widths 5,5,6,7,8,8,9 (`register.go`), which scores 0.081 on the scorecard's velocity metric against the linear register's 0.129 [D5, R3].
 
 ### 3.3 Laplace register (prototyped; negative result)
 
@@ -63,11 +69,11 @@ This stores *k* exponentially decayed sums (log-encoded, 16 bits each). Decay is
 
 For any query W, it fits weights by least squares so that Σ aⱼ·e^(−age/τⱼ) ≈ 1[age ≤ W]. I found no prior use of this "window synthesis from a decay bank" idea.
 
-It loses: with 3–4 exponentials you can't make a sharp box, so the error is 2× the linear register's. It is still a good fit if you want EWMA rates (recency-weighted velocity) rather than hard windows.
+It loses: with 3–4 exponentials you can't make a sharp box, so the mean error is 1.7× the linear register's (0.268 vs 0.154; corrected from "2×") [D12]. It is still a good fit if you want EWMA rates (recency-weighted velocity) rather than hard windows.
 
 ### 3.4 Proposed, not built
 
-- **Reclaimer as a correctness guarantee, which frees bits.** If every line is provably visited once per horizon, timestamps can be truncated to 32 bits (ms) without wraparound aliasing. That frees 16 bits per slot, enough for **6 slots per line (+50% keys per cache line)** or a 32-bit fingerprint. Caveat: the guarantee needs a ticker when traffic is idle, because the inline 1/64 pacing alone isn't enough.
+- **Reclaimer as a correctness guarantee, which frees bits.** If every line is provably visited once per horizon, timestamps can be truncated to 32 bits (ms) without wraparound aliasing. That frees 15 bits per slot (the timestamp is now 47 bits), enough for a wider fingerprint. (Corrected: an earlier version said this allowed 6 slots per line; 6 slots need ≤ 85 bits each, and a slot would still need about 113.) Caveat: the guarantee needs a ticker when traffic is idle, because the inline 1/64 pacing alone isn't enough.
 - **`TimeToCount(key, n)`.** The inverse query: "how long did the last n events take?" It detects bursts without choosing a window. It is a cumulative scan over the register in the same line.
 - **Hot-key touch elision.** Skip the word0 CAS when `now − last < δ`, and use Dice-style probabilistic increments past a threshold. This cuts cache-line ping-pong for heavy hitters (the attackers). It is prior-art technique, just a new application.
 - **Mergeable shards.** Merge two filters with max(ts) plus aligned register sums, for multi-node aggregation. This is standard mergeable-summary theory, not new.
@@ -76,8 +82,8 @@ It loses: with 3–4 exponentials you can't make a sharp box, so the error is 2�
 
 - **Keyed hashing is required for adversarial keys.** `HashUint64` is an unkeyed mixer, so an attacker who controls IDs could aim at one line. Use `Hash` (seeded maphash) or a keyed SipHash for user-controlled keys.
 - **No resizing.** Capacity is fixed at construction.
-- **Count saturation.** 255 per sub-window in the linear layout.
-- **Memory.** 16 B per slot, about 32 B per key at 50% load. Bloom-style APBF and TLBF use a few bits per key but give no counts and no per-query window.
+- **Count saturation.** Per key, 1,273 events for a burst and 762 per horizon for steady traffic (exact up to about 725) [D7]. (Was 255 per sub-window in the v1 linear layout.)
+- **Memory.** 16 B per slot, 18.8 B per key at the default 85% load [D6]. Bloom-style APBF and TLBF use a few bits per key but give no counts and no per-query window.
 - **Single process.** The clock is monotonic per process. Cross-node use needs synchronized clocks or the merge path.
-- **Go limits.** No manual prefetch and no SIMD fingerprint compare. Batched lookups with software prefetch would need assembly.
+- **Go limits.** No manual prefetch intrinsic and no SIMD fingerprint compare. The batch APIs overlap misses with plain loads instead.
 - **Accuracy on the Learned Cuckoo Filter is unverified.** I couldn't read its full text, so the originality claim for per-query windows rests on the works I could read.

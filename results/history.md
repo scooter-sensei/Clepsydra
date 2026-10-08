@@ -4,11 +4,12 @@ Produced by `go run ./cmd/tfbench -label ...`. Capacity 200k, horizon 60s.
 FN a/b/c = missed keys on the churn workload at multiples of the configured Capacity (ground truth: exact map). The load points changed as sizing changed:
 - before 13:06: 0.5x / 1.0x / 1.5x of Capacity, table sized at ~38% slot load for 1.0x (41.9 B/key)
 - 13:06 to 13:25: 1.0x / 2.0x / 2.5x (38% / 76% / 95% slot load, 41.9 B/key)
-- from 13:26: 1.0x / 1.1x / 1.15x with the table sized for 85% load at 1.0x (85% / 94% / 98% slot load, ~19 B/key)
-- Two-choice, 4-slot cuckoo tables saturate at ~97.7% slot load, so FN c (98%) can't reach 0 with this layout; 8-slot lines can (see backlog).
+- from 13:26: 1.0x / 1.1x / 1.15x with the table sized for 85% load at 1.0x (85% / 94% / 97.8% peak slot load, ~19 B/key)
+- Correction (10-08 verification): an earlier note here said 2-choice, 4-slot tables saturate at ~97.7%, so FN c couldn't reach 0. That was wrong. The threshold is 98.04%, and an exact placement oracle places every key of the 1.15x stream, so FN c comes from the bounded cuckoo search, not the layout (verify/claims.md D8, D10).
 
 B/key = table bytes per Capacity key. vel MAE = VelocityCount error: per window (1,5,15,30,60s) sum|est-exact|/sum exact, averaged over windows; 5 traffic shapes (from 13:36; the 13:34 row pooled all windows).
-FP churn = false "seen" on the churn workload at 1.0x. Static FPR = never-inserted probes at capacity (5M probes before 13:16, 50M after, 1e9 from 14:46).
+FP churn = false "seen" on the churn workload at the highest load point (FN c's; 0.5x in the first row). Static FPR = never-inserted probes at capacity (5M probes before 13:16, 50M after, 1e9 from 14:46; the 5M and 50M values are 1 or 2 events, so treat them as rough).
+Re-checking: `verify/replay.sh history` re-runs each row's commit with its own harness and compares the deterministic columns (FN, FP churn, static FPR, spray, B/key, vel MAE). Rows marked `+` were measured on an uncommitted tree and are checked against the next commit. Harnesses before 13:26 didn't print B/key; `verify/replay.sh harness` shows 41.9 for those commits.
 Spray = repeat offenders keeping exact counts after 20x-capacity spray. Latencies in ns/op (best of 3),
 1M-key table (20 MB, which fits this host's 260 MB L3, so "cold" means L3); hit DRAM = hit on a 32M-key (~600 MB) table, every lookup a DRAM miss (last column, from 15:39); batch = CheckAndTouchBatch per key (rows from 13:20); insert = steady state (keys expire as fast as they arrive), insert sat = every line full (rows before 13:10 measured only the saturated case, in the insert column); parallel is per-op throughput with GOMAXPROCS goroutines; str = string key + built-in clock; str coarse = same with CoarseClock (100µs cached clock), from 13:54. Before 13:57, str ran on a table the insert benchmarks had filled with future-dated keys, so it measured the eviction path; from 13:57 it uses a fresh 1M-key table.
 

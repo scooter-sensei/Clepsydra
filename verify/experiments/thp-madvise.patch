@@ -1,0 +1,99 @@
+diff --git a/filter.go b/filter.go
+index ad680d4..fca1f7c 100644
+--- a/filter.go
++++ b/filter.go
+@@ -161,12 +161,26 @@ func New(cfg Config) (*Filter, error) {
+ }
+ 
+ func alignedWords(n int) []uint64 {
+-	buf := make([]uint64, n+wordsPerLine)
+-	const align = wordsPerLine * 8 // bytes per bucket
+-	off := int((align-uintptr(unsafe.Pointer(&buf[0]))%align)%align) / 8
+-	return buf[off : off+n : off+n]
++	align := wordsPerLine * 8 // bytes per bucket
++	if n*8 >= hugeMin {
++		align = hugePage // so the table starts on a huge page
++	}
++	buf := make([]uint64, n+align/8)
++	off := int((uintptr(align)-uintptr(unsafe.Pointer(&buf[0]))%uintptr(align))%uintptr(align)) / 8
++	w := buf[off : off+n : off+n]
++	if n*8 >= hugeMin {
++		adviseHuge(w)
++	}
++	return w
+ }
+ 
++// Tables past the last-level TLB's reach take a page walk on nearly every
++// lookup; 2 MiB pages remove most of them.
++const (
++	hugePage = 2 << 20
++	hugeMin  = 8 << 20
++)
++
+ // Close stops the CoarseClock goroutine, if any. The filter stays usable;
+ // its clock just stops advancing.
+ func (f *Filter) Close() {
+diff --git a/huge_linux.go b/huge_linux.go
+new file mode 100644
+index 0000000..4e9c328
+--- /dev/null
++++ b/huge_linux.go
+@@ -0,0 +1,13 @@
++package temporalfilter
++
++import (
++	"syscall"
++	"unsafe"
++)
++
++// adviseHuge asks for transparent huge pages behind w. Best effort: with THP
++// off, or a kernel that refuses, the table just uses normal pages.
++func adviseHuge(w []uint64) {
++	b := unsafe.Slice((*byte)(unsafe.Pointer(&w[0])), len(w)*8)
++	_ = syscall.Madvise(b[:len(b)/hugePage*hugePage], 14) // MADV_HUGEPAGE
++}
+diff --git a/huge_other.go b/huge_other.go
+new file mode 100644
+index 0000000..4288a4b
+--- /dev/null
++++ b/huge_other.go
+@@ -0,0 +1,5 @@
++//go:build !linux
++
++package temporalfilter
++
++func adviseHuge([]uint64) {}
+diff --git a/thp_probe_linux_test.go b/thp_probe_linux_test.go
+new file mode 100644
+index 0000000..10085a6
+--- /dev/null
++++ b/thp_probe_linux_test.go
+@@ -0,0 +1,28 @@
++package temporalfilter
++
++import (
++	"os"
++	"strings"
++	"testing"
++	"time"
++)
++
++// Was the madvise honoured? Builds a ~300 MB table, fills 4M keys, and logs
++// the process's Rss and AnonHugePages (they should roughly match the table).
++// Depends on the host's THP setting (/sys/kernel/mm/transparent_hugepage).
++func TestZZTHP(t *testing.T) {
++	if testing.Short() {
++		t.Skip("allocates a ~300 MB table")
++	}
++	f, _ := New(Config{Capacity: 1 << 24, Horizon: time.Minute})
++	for i := range uint64(1 << 22) {
++		f.CheckAndTouchAt(HashUint64(i), 0, 1000)
++	}
++	b, _ := os.ReadFile("/proc/self/smaps_rollup")
++	for _, l := range strings.Split(string(b), "\n") {
++		if strings.Contains(l, "AnonHuge") || strings.HasPrefix(l, "Rss") {
++			t.Log(l)
++		}
++	}
++	t.Logf("table %d MB", len(f.words)*8>>20)
++}

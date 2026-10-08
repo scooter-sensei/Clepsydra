@@ -1,0 +1,134 @@
+diff --git a/internal/clockbench/clk_amd64_test.go b/internal/clockbench/clk_amd64_test.go
+new file mode 100644
+index 0000000..aa600f9
+--- /dev/null
++++ b/internal/clockbench/clk_amd64_test.go
+@@ -0,0 +1,19 @@
++package clockbench
++
++import "testing"
++
++func BenchmarkRDTSC(b *testing.B) {
++	for i := 0; i < b.N; i++ {
++		sink += int64(rdtsc())
++	}
++}
++
++func BenchmarkMissRDTSC(b *testing.B) {
++	table := missTable()
++	x := uint64(1)
++	b.ResetTimer()
++	for i := 0; i < b.N; i++ {
++		x = x*6364136223846793005 + 1442695040888963407
++		sink += int64(table[x>>39]) + int64(rdtsc())
++	}
++}
+diff --git a/internal/clockbench/clk_test.go b/internal/clockbench/clk_test.go
+new file mode 100644
+index 0000000..c512baa
+--- /dev/null
++++ b/internal/clockbench/clk_test.go
+@@ -0,0 +1,65 @@
++package clockbench
++
++import (
++	"hash/maphash"
++	"sync"
++	"testing"
++	"time"
++	_ "unsafe"
++)
++
++//go:linkname nanotime runtime.nanotime
++func nanotime() int64
++
++var sink int64
++
++func BenchmarkTimeSince(b *testing.B) {
++	base := time.Now()
++	for i := 0; i < b.N; i++ {
++		sink += int64(time.Since(base))
++	}
++}
++
++func BenchmarkNanotime(b *testing.B) {
++	for i := 0; i < b.N; i++ {
++		sink += nanotime()
++	}
++}
++
++func BenchmarkMaphashString(b *testing.B) {
++	seed := maphash.MakeSeed()
++	for i := 0; i < b.N; i++ {
++		sink += int64(maphash.String(seed, "user-12345678"))
++	}
++}
++
++// table is 256 MB, allocated on first use so plain test runs don't pay for it.
++var (
++	tableOnce sync.Once
++	table     []uint64
++)
++
++func missTable() []uint64 {
++	tableOnce.Do(func() { table = make([]uint64, 1<<25) })
++	return table
++}
++
++func BenchmarkMissNanotime(b *testing.B) {
++	table := missTable()
++	x := uint64(1)
++	b.ResetTimer()
++	for i := 0; i < b.N; i++ {
++		x = x*6364136223846793005 + 1442695040888963407
++		sink += int64(table[x>>39]) + nanotime()
++	}
++}
++
++func BenchmarkMissNoClock(b *testing.B) {
++	table := missTable()
++	x := uint64(1)
++	b.ResetTimer()
++	for i := 0; i < b.N; i++ {
++		x = x*6364136223846793005 + 1442695040888963407
++		sink += int64(table[x>>39])
++	}
++}
+diff --git a/internal/clockbench/doc.go b/internal/clockbench/doc.go
+new file mode 100644
+index 0000000..c38c58c
+--- /dev/null
++++ b/internal/clockbench/doc.go
+@@ -0,0 +1,7 @@
++// Package clockbench holds the clock microbenchmarks behind the backlog's
++// "raw RDTSC clock" entry: time.Since and runtime.nanotime versus a bare
++// RDTSC, alone and next to a dependent cache miss. Benchmarks only; nothing
++// here is used by the filter.
++//
++//	go test -run '^$' -bench . -count 2 ./internal/clockbench
++package clockbench
+diff --git a/internal/clockbench/tsc_amd64.go b/internal/clockbench/tsc_amd64.go
+new file mode 100644
+index 0000000..fabdf26
+--- /dev/null
++++ b/internal/clockbench/tsc_amd64.go
+@@ -0,0 +1,4 @@
++package clockbench
++
++// rdtsc returns the raw time-stamp counter (unserialized RDTSC).
++func rdtsc() uint64
+diff --git a/internal/clockbench/tsc_amd64.s b/internal/clockbench/tsc_amd64.s
+new file mode 100644
+index 0000000..3f3d0f0
+--- /dev/null
++++ b/internal/clockbench/tsc_amd64.s
+@@ -0,0 +1,9 @@
++#include "textflag.h"
++
++// func rdtsc() uint64
++TEXT ·rdtsc(SB), NOSPLIT, $0-8
++	RDTSC
++	SHLQ $32, DX
++	ORQ DX, AX
++	MOVQ AX, ret+0(FP)
++	RET

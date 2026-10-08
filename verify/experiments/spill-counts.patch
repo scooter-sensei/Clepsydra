@@ -1,0 +1,298 @@
+diff --git a/filter.go b/filter.go
+index ad680d4..5e9257d 100644
+--- a/filter.go
++++ b/filter.go
+@@ -80,6 +80,7 @@ type Config struct {
+ // Filter is safe for concurrent use without locks.
+ type Filter struct {
+ 	words   []uint64 // 64-byte aligned, len = lines*wordsPerLine
++	spill   []uint32 // per line, 8 bits each: displaced entries whose primary it is
+ 	lines   uint64   // any size; indexed by multiply-shift, not masking
+ 	horizon uint64   // ticks
+ 	unit    uint64   // ticks per velocity register unit (Horizon/unitsPerHorizon)
+@@ -136,6 +137,7 @@ func New(cfg Config) (*Filter, error) {
+ 	}
+ 	f.unitInv = ^uint64(0)/f.unit + 1
+ 	f.words = alignedWords(int(lines * wordsPerLine))
++	f.spill = make([]uint32, (lines+3)/4)
+ 	if f.clock == nil {
+ 		base, res := time.Now(), cfg.Resolution
+ 		read := func() uint64 { return uint64(time.Since(base)/res) + 1 }
+@@ -357,15 +359,54 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
+ }
+ 
+ // locate returns the word index of h's slot, or -1: an undisplaced entry in
+-// the primary line or a displaced one in the alternate line.
++// the primary line or a displaced one in the alternate line. The alternate
++// line is read only when some entry whose primary line this is lives there,
++// which saves a second cache miss on most absent keys.
+ func (f *Filter) locate(h, fp, tg uint64) int {
+ 	p := f.primary(h)
+-	if i := f.find(p, fp<<1, tg); i >= 0 {
++	if i := f.find(p, fp<<1, tg); i >= 0 || !f.spilled(p) {
+ 		return i
+ 	}
+ 	return f.find(f.alt(p, fp), fp<<1|1, tg)
+ }
+ 
++const noLine = ^uint64(0)
++
++// spilled reports whether any entry with primary line l is displaced. Its
++// count is raised before such an entry can be missing from l and lowered
++// only after it is gone, so a miss in l followed by a zero here (both atomic
++// loads, in that order) proves the key absent.
++func (f *Filter) spilled(l uint64) bool {
++	return atomic.LoadUint32(&f.spill[l>>2])>>(l&3*8)&0xff != 0
++}
++
++// addSpill adjusts line l's displaced count by d (+1 or -1); noLine is a
++// no-op. It saturates: a count that reaches 255 stays there (conservative,
++// never wrong).
++func (f *Filter) addSpill(l uint64, d int) {
++	if l == noLine {
++		return
++	}
++	p, sh := &f.spill[l>>2], l&3*8
++	for {
++		old := atomic.LoadUint32(p)
++		c := old >> sh & 0xff
++		if c == 0xff || (d < 0 && c == 0) {
++			return
++		}
++		if atomic.CompareAndSwapUint32(p, old, old+uint32(d)<<sh) {
++			return
++		}
++	}
++}
++
++// removed accounts for an entry w0 that was just taken out of line.
++func (f *Filter) removed(line, w0 uint64) {
++	if w0&dispBit != 0 {
++		f.addSpill(f.alt(line, w0>>48), -1)
++	}
++}
++
+ // find returns the word index of the slot in line whose fingerprint and
+ // displaced bit equal fpd and whose tag is tg, or -1. The tag lives in word1
+ // of the same cache line, so identity is effectively 28 bits at no extra
+@@ -391,7 +432,8 @@ func (f *Filter) find(line, fpd, tg uint64) int {
+ // (a racing writer may have completed it). The caller holds the key's claim
+ // stripe.
+ func (f *Filter) claim(h, fp, w1, now uint64) int {
+-	lines := [2]uint64{f.primary(h), f.alt(f.primary(h), fp)}
++	p := f.primary(h)
++	lines := [2]uint64{p, f.alt(p, fp)}
+ 	mine := [2]uint64{fp<<48 | now, fp<<48 | dispBit | now}
+ 	for {
+ 		for li, line := range lines {
+@@ -399,9 +441,16 @@ func (f *Filter) claim(h, fp, w1, now uint64) int {
+ 			for s := 0; s < wordsPerLine; s += 2 {
+ 				w0 := atomic.LoadUint64(&f.words[base+s])
+ 				if w0 == 0 || age(now, w0&tsMask) > f.horizon {
++					if li == 1 {
++						f.addSpill(p, 1)
++					}
+ 					if f.install(base+s, w0, atomic.LoadUint64(&f.words[base+s+1]), mine[li], w1) {
++						f.removed(line, w0)
+ 						return base + s
+ 					}
++					if li == 1 {
++						f.addSpill(p, -1)
++					}
+ 					return -1
+ 				}
+ 			}
+@@ -409,20 +458,21 @@ func (f *Filter) claim(h, fp, w1, now uint64) int {
+ 		// Iterative deepening: all short paths before any long one. The deep
+ 		// budget shrinks as recent searches fail, so an overfull table falls
+ 		// back to cheap eviction instead of searching in vain.
+-		p := f.pressure.Load()
+-		budget := 8 + int(uint64(relocBudget-8)*(pressureOne-uint64(p))>>pressureShift)
++		pr := f.pressure.Load()
++		budget := 8 + int(uint64(relocBudget-8)*(pressureOne-uint64(pr))>>pressureShift)
++		home := [2]uint64{noLine, p}
+ 		for depth := 0; depth <= relocDepth; depth++ {
+ 			for li, line := range lines {
+ 				base := int(line * wordsPerLine)
+ 				for s := 0; s < wordsPerLine; s += 2 {
+-					if f.relocate(base+s, line, mine[li], w1, now, depth, &budget) {
+-						f.pressure.Store(p - p>>3) // EWMA toward "searches succeed"
++					if f.relocate(base+s, line, mine[li], w1, home[li], now, depth, &budget) {
++						f.pressure.Store(pr - pr>>3) // EWMA toward "searches succeed"
+ 						return base + s
+ 					}
+ 				}
+ 			}
+ 		}
+-		f.pressure.Store(p - p>>3 + pressureOne>>3) // EWMA toward "searches fail"
++		f.pressure.Store(pr - pr>>3 + pressureOne>>3) // EWMA toward "searches fail"
+ 		victim, vli, victimScore, victimW0, victimW1 := -1, 0, uint64(1<<64-1), uint64(0), uint64(0)
+ 		for li, line := range lines {
+ 			base := int(line * wordsPerLine)
+@@ -436,10 +486,17 @@ func (f *Filter) claim(h, fp, w1, now uint64) int {
+ 				}
+ 			}
+ 		}
++		if vli == 1 {
++			f.addSpill(p, 1)
++		}
+ 		if f.install(victim, victimW0, victimW1, mine[vli], w1) {
++			f.removed(lines[vli], victimW0)
+ 			f.evictions.Add(1)
+ 			return victim
+ 		}
++		if vli == 1 {
++			f.addSpill(p, -1)
++		}
+ 		return -1
+ 	}
+ }
+@@ -464,7 +521,13 @@ func (f *Filter) install(i int, w0, w1, mine0, mine1 uint64) bool {
+ // relocates one of its entries, up to depth more steps (a bounded cuckoo
+ // path). Copy-then-replace keeps every moved key findable throughout; if the
+ // source changes mid-move (a touch updated it) the copy is withdrawn.
+-func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budget *int) bool {
++//
++// Spill counts: mine is counted at mineHome (noLine if it isn't displaced)
++// just before it is installed, so no displaced copy ever exists uncounted. An
++// entry returning home is uncounted only after its displaced original is
++// gone. A copy that can't be withdrawn (a touch already updated it) keeps its
++// count.
++func (f *Filter) relocate(i int, line, mine0, mine1, mineHome, now uint64, depth int, budget *int) bool {
+ 	w0 := atomic.LoadUint64(&f.words[i])
+ 	if w0 == 0 {
+ 		return false
+@@ -476,13 +539,23 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
+ 	w1 := atomic.LoadUint64(&f.words[i+1])
+ 	a := f.alt(line, w0>>48)
+ 	base := int(a * wordsPerLine)
+-	moved := w0 ^ dispBit         // displaced iff it wasn't
++	moved, movedHome := w0^dispBit, line // displaced iff it wasn't
++	if w0&dispBit != 0 {
++		movedHome = noLine
++	}
+ 	replace := func(d int) bool { // the copy is at d; now take the source
++		f.addSpill(mineHome, 1)
+ 		if f.install(i, w0, w1, mine0, mine1) {
+ 			f.relocations.Add(1)
++			if movedHome == noLine {
++				f.addSpill(a, -1) // back home; its displaced original is gone
++			}
+ 			return true
+ 		}
+-		atomic.CompareAndSwapUint64(&f.words[d], moved, 0) // source moved on; withdraw copy
++		f.addSpill(mineHome, -1)
++		if atomic.CompareAndSwapUint64(&f.words[d], moved, 0) { // source moved on; withdraw copy
++			f.addSpill(movedHome, -1)
++		}
+ 		return false
+ 	}
+ 	for s := 0; s < wordsPerLine; s += 2 {
+@@ -490,13 +563,16 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
+ 		if d0 != 0 && age(now, d0&tsMask) <= f.horizon {
+ 			continue
+ 		}
++		f.addSpill(movedHome, 1)
+ 		if f.install(base+s, d0, atomic.LoadUint64(&f.words[base+s+1]), moved, w1) {
++			f.removed(a, d0)
+ 			return replace(base + s)
+ 		}
++		f.addSpill(movedHome, -1)
+ 	}
+ 	if depth > 0 {
+ 		for s := 0; s < wordsPerLine; s += 2 {
+-			if f.relocate(base+s, a, moved, w1, now, depth-1, budget) {
++			if f.relocate(base+s, a, moved, w1, movedHome, now, depth-1, budget) {
+ 				return replace(base + s)
+ 			}
+ 		}
+@@ -547,6 +623,7 @@ func (f *Filter) sweepLine(line, now uint64) {
+ 		w1 := atomic.LoadUint64(&f.words[base+s+1])
+ 		if atomic.CompareAndSwapUint64(&f.words[base+s], w0, 0) {
+ 			atomic.CompareAndSwapUint64(&f.words[base+s+1], w1, 0)
++			f.removed(line, w0)
+ 		}
+ 	}
+ }
+diff --git a/spill_test.go b/spill_test.go
+new file mode 100644
+index 0000000..3065d4f
+--- /dev/null
++++ b/spill_test.go
+@@ -0,0 +1,76 @@
++package temporalfilter
++
++import (
++	"sync"
++	"sync/atomic"
++	"testing"
++	"time"
++)
++
++// spillAudit compares each line's spill count with the displaced entries
++// actually homed there. A count below the truth would let locate skip a
++// line that holds the key (a false negative).
++func spillAudit(t *testing.T, f *Filter) (exact, over int) {
++	t.Helper()
++	want := make([]int, f.lines)
++	for l := range f.lines {
++		for s := 0; s < wordsPerLine; s += 2 {
++			w0 := atomic.LoadUint64(&f.words[int(l*wordsPerLine)+s])
++			if w0 != 0 && w0&dispBit != 0 {
++				want[f.alt(l, w0>>48)]++
++			}
++		}
++	}
++	for l := range f.lines {
++		got := int(f.spill[l>>2] >> (l & 3 * 8) & 0xff)
++		switch {
++		case got < want[l]:
++			t.Fatalf("line %d: spill count %d < %d displaced entries", l, got, want[l])
++		case got == want[l]:
++			exact++
++		default:
++			over++
++		}
++	}
++	return exact, over
++}
++
++func TestSpillCountsNeverUnderCount(t *testing.T) {
++	const capN, workers = 20_000, 8
++	f := newTest(t, capN, time.Second)
++	horizon := f.Ticks(time.Second)
++	var clock atomic.Uint64
++	clock.Store(1000)
++	var wg sync.WaitGroup
++	for w := range workers {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			for i := range 300_000 {
++				now := clock.Add(1) * horizon / 100_000 // ~24 horizons overall
++				k := uint64(w*7919+i) % (capN * 6 / 5)  // 1.2x capacity live
++				f.CheckAndTouchAt(HashUint64(k+now/horizon*capN), horizon, now)
++				if i%97 == 0 {
++					f.decayStep(now, 4)
++				}
++			}
++		}()
++	}
++	wg.Wait()
++	exact, over := spillAudit(t, f)
++	t.Logf("lines exact %d, over-counted %d; relocations %d, evictions %d", exact, over, f.Relocations(), f.Evictions())
++	// Every live key is found by locate exactly when it is in either line.
++	now := clock.Load() * horizon / 100_000
++	for k := range uint64(capN * 6 / 5) {
++		h := HashUint64(k + now/horizon*capN)
++		fp, tg := fingerprint(h), tag(h)
++		p := f.primary(h)
++		both := f.findAny(p, fp, tg)
++		if both < 0 {
++			both = f.findAny(f.alt(p, fp), fp, tg)
++		}
++		if (f.locate(h, fp, tg) < 0) != (both < 0) {
++			t.Fatalf("key %d: locate disagrees with a two-line search", k)
++		}
++	}
++}

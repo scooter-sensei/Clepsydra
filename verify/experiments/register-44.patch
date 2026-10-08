@@ -1,0 +1,81 @@
+diff --git a/filter.go b/filter.go
+index ad680d4..30724ef 100644
+--- a/filter.go
++++ b/filter.go
+@@ -36,7 +36,7 @@ const (
+ 	// share its primary line, wherever they live: half the false matches.
+ 	dispBit   = 1 << 47
+ 	tsMask    = dispBit - 1
+-	tagBits   = 12
++	tagBits   = 64 - regBits - 4
+ 	tagShift  = 64 - tagBits
+ 	epochMask = 0xf
+ 	// decayEvery gates the inline decay step to 1/64 of operations (by key
+@@ -570,7 +570,7 @@ func (f *Filter) Slots() int { return len(f.words) / 2 }
+ // fingerprint (48..63) and tag (36..47), so keys sharing a line share no
+ // identity bits. Multiply-shift lets the table be any size.
+ func (f *Filter) primary(h uint64) uint64 {
+-	hi, _ := bits.Mul64(h<<28, f.lines) // bits 0..35 moved to the top
++	hi, _ := bits.Mul64(h<<(16+tagBits), f.lines) // bits below the tag moved to the top
+ 	return hi
+ }
+ 
+@@ -595,7 +595,7 @@ func fingerprint(h uint64) uint64 {
+ 
+ // tag is 12 more fingerprint bits, kept in word1: with the 16-bit fp the
+ // slot identity is 28 bits.
+-func tag(h uint64) uint64 { return h >> 36 & (1<<tagBits - 1) }
++func tag(h uint64) uint64 { return h >> (48 - tagBits) & (1<<tagBits - 1) }
+ 
+ // age is now-ts, or 0 if ts is ahead (a caller with a slightly stale clock).
+ func age(now, ts uint64) uint64 {
+diff --git a/register.go b/register.go
+index 3bafeec..4c6a53c 100644
+--- a/register.go
++++ b/register.go
+@@ -21,7 +21,8 @@ import (
+ const (
+ 	nBuckets        = 7
+ 	unitsPerHorizon = geomUnits
+-	regMask         = 1<<48 - 1
++	regBits         = 44
++	regMask         = 1<<regBits - 1
+ )
+ 
+ var bucketShift = func() (sh [nBuckets]uint) {
+@@ -109,7 +110,7 @@ func (r *register) advance(u0, u1 int64) {
+ // lastTouch, which the register was last aligned to (a racing touch may
+ // leave it one unit either side).
+ func regEpoch(w1 uint64, ref int64) int64 {
+-	d := (ref - int64(w1>>48)) & epochMask
++	d := (ref - int64(w1>>regBits)) & epochMask
+ 	if d > epochMask/2 {
+ 		d -= epochMask + 1
+ 	}
+@@ -121,7 +122,7 @@ func regEpoch(w1 uint64, ref int64) int64 {
+ // a fresh register. A full register in the current unit comes back as is.
+ func (f *Filter) nextReg(old, tg, last, now uint64, reset bool) uint64 {
+ 	nowU := f.unitOf(now)
+-	if !reset && old>>tagShift == tg && old>>48&epochMask == uint64(nowU)&epochMask &&
++	if !reset && old>>tagShift == tg && old>>regBits&epochMask == uint64(nowU)&epochMask &&
+ 		regEpoch(old, f.unitOf(last)) == nowU {
+ 		// Fast path, same unit: increment the first bucket with room in
+ 		// place (spilling as add does). Buckets are contiguous from bit 0,
+@@ -143,7 +144,7 @@ func (f *Filter) nextReg(old, tg, last, now uint64, reset bool) uint64 {
+ 		} // else a caller with a slightly stale clock: count at e
+ 	}
+ 	r.add(0, 1)
+-	return tg<<tagShift | uint64(e)&epochMask<<48 | r.pack()
++	return tg<<tagShift | uint64(e)&epochMask<<regBits | r.pack()
+ }
+ 
+ // bump counts one event at now in the register at word index i, which
+@@ -235,7 +236,7 @@ const geomUnits = 24
+ var (
+ 	bucketLogStep = [nBuckets]uint{0, 0, 1, 2, 3, 3, 3}
+ 	bucketOff     = [nBuckets]int64{0, 1, 2, 4, 8, 16, 24}
+-	bucketBits    = [nBuckets]uint{5, 5, 6, 7, 8, 8, 9}
++	bucketBits    = [nBuckets]uint{5, 5, 6, 7, 7, 7, 7}
+ )
+ 
+ var bucketStepMask = func() (m [nBuckets]int64) {

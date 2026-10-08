@@ -1,0 +1,13 @@
+diff --git a/filter.go b/filter.go
+index ad680d4..2320d04 100644
+--- a/filter.go
++++ b/filter.go
+@@ -430,7 +430,7 @@ func (f *Filter) claim(h, fp, w1, now uint64) int {
+ 				w0 := atomic.LoadUint64(&f.words[base+s])
+ 				ts := w0 & tsMask
+ 				vw1 := atomic.LoadUint64(&f.words[base+s+1])
+-				score := f.mass(vw1, ts, now)<<48 | ts
++				score := ts // experiment: oldest-first eviction (ignore velocity)
+ 				if score < victimScore {
+ 					victim, vli, victimScore, victimW0, victimW1 = base+s, li, score, w0, vw1
+ 				}

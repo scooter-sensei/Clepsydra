@@ -1,0 +1,38 @@
+diff --git a/filter.go b/filter.go
+index ad680d4..3a278ec 100644
+--- a/filter.go
++++ b/filter.go
+@@ -316,24 +316,16 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
+ 	for {
+ 		i := f.locate(h, fp, tg)
+ 		if i < 0 {
+-			// Miss: serialize first touches of the same key so two racers
+-			// can't each claim a slot (which would split its count). The
+-			// lock covers only this path; hits never take it.
+-			mu := &f.claimMu[h>>(64-claimStripeBits)]
+-			mu.Lock()
+-			if i = f.locate(h, fp, tg); i < 0 {
+-				w1 := f.nextReg(0, tg, now, now, true) // first event, published with the key
+-				i = f.claim(h, fp, w1, now)
+-				mu.Unlock()
+-				if i < 0 {
+-					continue
+-				}
+-				if !wantCount {
+-					return false, 0
+-				}
+-				return false, f.estimate(w1, now, now, window)
++			// Control for the lock-free repair experiment: no stripe lock,
++			// no duplicate repair.
++			w1 := f.nextReg(0, tg, now, now, true) // first event, published with the key
++			if i = f.claim(h, fp, w1, now); i < 0 {
++				continue
++			}
++			if !wantCount {
++				return false, 0
+ 			}
+-			mu.Unlock() // another first touch got there first: count as a hit
++			return false, f.estimate(w1, now, now, window)
+ 		}
+ 		w0 := atomic.LoadUint64(&f.words[i])
+ 		if w0>>48 != fp {

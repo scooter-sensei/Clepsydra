@@ -1,0 +1,23 @@
+diff --git a/filter.go b/filter.go
+index ad680d4..2ee4da6 100644
+--- a/filter.go
++++ b/filter.go
+@@ -411,6 +411,18 @@ func (f *Filter) claim(h, fp, w1, now uint64) int {
+ 		// back to cheap eviction instead of searching in vain.
+ 		p := f.pressure.Load()
+ 		budget := 8 + int(uint64(relocBudget-8)*(pressureOne-uint64(p))>>pressureShift)
++		// A one-step move reads the candidate's alternate line. Issue all
++		// eight candidates' loads first so their misses overlap instead of
++		// queuing one after another.
++		var sink uint64
++		for _, line := range lines {
++			base := int(line * wordsPerLine)
++			for s := 0; s < wordsPerLine; s += 2 {
++				fpc := atomic.LoadUint64(&f.words[base+s]) >> 48
++				sink += atomic.LoadUint64(&f.words[f.alt(line, fpc)*wordsPerLine])
++			}
++		}
++		runtime.KeepAlive(sink)
+ 		for depth := 0; depth <= relocDepth; depth++ {
+ 			for li, line := range lines {
+ 				base := int(line * wordsPerLine)

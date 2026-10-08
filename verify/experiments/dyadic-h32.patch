@@ -1,0 +1,34 @@
+diff --git a/register.go b/register.go
+index 3bafeec..aae7512 100644
+--- a/register.go
++++ b/register.go
+@@ -230,12 +230,12 @@ func (f *Filter) estimate(w1, last, now, window uint64) int {
+ 
+ // Geometry (see the comment at the top): unit = Horizon/24; widths 1, 1,
+ // 1-2, 2-4, 4-8, 8, 8 units; coverage >= 24 units.
+-const geomUnits = 24
++const geomUnits = 32
+ 
+ var (
+-	bucketLogStep = [nBuckets]uint{0, 0, 1, 2, 3, 3, 3}
+-	bucketOff     = [nBuckets]int64{0, 1, 2, 4, 8, 16, 24}
+-	bucketBits    = [nBuckets]uint{5, 5, 6, 7, 8, 8, 9}
++	bucketLogStep = [nBuckets]uint{0, 0, 1, 2, 3, 4, 5}
++	bucketOff     = [nBuckets]int64{0, 1, 2, 4, 8, 16, 32}
++	bucketBits    = [nBuckets]uint{5, 5, 6, 6, 7, 8, 11}
+ )
+ 
+ var bucketStepMask = func() (m [nBuckets]int64) {
+diff --git a/register_test.go b/register_test.go
+index 373fa33..9692656 100644
+--- a/register_test.go
++++ b/register_test.go
+@@ -95,7 +95,7 @@ func TestPackRoundTripAndSpill(t *testing.T) {
+ 
+ func TestUnitOfMatchesDivision(t *testing.T) {
+ 	rng := rand.New(rand.NewPCG(5, 6))
+-	for _, h := range []time.Duration{48 * time.Microsecond, time.Second, time.Minute, 7 * time.Hour} {
++	for _, h := range []time.Duration{2 * unitsPerHorizon * time.Microsecond, time.Second, time.Minute, 7 * time.Hour} {
+ 		f, err := New(Config{Capacity: 10, Horizon: h})
+ 		if err != nil {
+ 			t.Fatal(err)

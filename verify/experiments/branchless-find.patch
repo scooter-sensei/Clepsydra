@@ -1,0 +1,53 @@
+diff --git a/bench_test.go b/bench_test.go
+index 05b4ce2..3d2d45f 100644
+--- a/bench_test.go
++++ b/bench_test.go
+@@ -259,13 +259,6 @@ func BenchmarkInsertSteady(b *testing.B) {
+ 	}
+ }
+ 
+-func b2u(b bool) uint64 {
+-	if b {
+-		return 1
+-	}
+-	return 0
+-}
+-
+ // Same, but each probe's key depends on the previous answer, so lookups
+ // can't overlap: per-request latency rather than throughput.
+ func BenchmarkContainsAbsentLatency(b *testing.B) {
+diff --git a/filter.go b/filter.go
+index ad680d4..ba41c31 100644
+--- a/filter.go
++++ b/filter.go
+@@ -372,15 +372,27 @@ func (f *Filter) locate(h, fp, tg uint64) int {
+ // memory traffic.
+ func (f *Filter) find(line, fpd, tg uint64) int {
+ 	base := int(line * wordsPerLine)
+-	w := f.words[base : base+wordsPerLine : base+wordsPerLine]
+-	for s := 0; s < wordsPerLine; s += 2 {
+-		if atomic.LoadUint64(&w[s])>>47 == fpd && atomic.LoadUint64(&w[s+1])>>tagShift == tg {
++	w := (*[wordsPerLine]uint64)(f.words[base : base+wordsPerLine])
++	// Compare all four fingerprints without branching, so which slot holds
++	// the key doesn't cost a mispredicted loop exit.
++	m := b2u(atomic.LoadUint64(&w[0])>>47 == fpd) | b2u(atomic.LoadUint64(&w[2])>>47 == fpd)<<1 |
++		b2u(atomic.LoadUint64(&w[4])>>47 == fpd)<<2 | b2u(atomic.LoadUint64(&w[6])>>47 == fpd)<<3
++	for ; m != 0; m &= m - 1 {
++		s := bits.TrailingZeros64(m) * 2
++		if atomic.LoadUint64(&w[s+1])>>tagShift == tg {
+ 			return base + s
+ 		}
+ 	}
+ 	return -1
+ }
+ 
++func b2u(b bool) uint64 {
++	if b {
++		return 1
++	}
++	return 0
++}
++
+ // claim installs fp in an empty or expired slot of the primary line, then the
+ // alternate line. If all eight are live it tries to relocate one of them to
+ // its own alternate line (one cuckoo step). Only then does it evict, taking

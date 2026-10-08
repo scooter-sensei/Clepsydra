@@ -1,0 +1,94 @@
+diff --git a/register.go b/register.go
+index 3bafeec..68be970 100644
+--- a/register.go
++++ b/register.go
+@@ -196,38 +196,70 @@ func (f *Filter) estimate(w1, last, now, window uint64) int {
+ 		return 0
+ 	}
+ 	e := regEpoch(w1, f.unitOf(last))
++	r := unpack(w1 & regMask)
++	// Bucket spans in ticks: [lo[j], hi[j]). The newest non-empty bucket ends
++	// at the last touch.
++	var lo, hi [nBuckets]float64
+ 	unit := float64(f.unit)
+-	from := float64(now) - float64(window)
+ 	top := float64(e+1) * unit
+ 	newest := true
+-	est := 0.0
+-	for j := range nBuckets {
+-		lo := float64(bucketStart(e, j)) * unit
+-		c := float64(w1 >> bucketShift[j] & (1<<bucketBits[j] - 1))
+-		hi := top
+-		top = lo
+-		if c == 0 {
+-			if from >= lo {
+-				break
+-			}
+-			continue
+-		}
+-		if newest {
+-			hi = max(lo, min(float64(last), hi))
++	for j := range r {
++		lo[j], hi[j] = float64(bucketStart(e, j))*unit, top
++		if newest && r[j] > 0 {
++			hi[j] = max(lo[j], min(float64(last), top))
+ 			newest = false
+ 		}
+-		if from <= lo {
+-			est += c
++		top = lo[j]
++	}
++	from := float64(now) - float64(window)
++	est := 0.0
++	for j, c := range r {
++		if from <= lo[j] {
++			est += float64(c)
+ 			continue
+ 		}
+-		if from < hi {
+-			est += c * (hi - from) / (hi - lo)
++		if from < hi[j] && c > 0 {
++			est += f.partial(r, lo, hi, j, from)
+ 		}
+ 		break
+ 	}
+ 	return max(1, int(est+0.5))
+ }
+ 
++// partial estimates how many of bucket j's events fall in [from, hi[j]).
++// Instead of assuming they are uniform, it lets the density inside the
++// bucket slope toward its neighbours' densities (piecewise-linear
++// histogram), clamped so the density stays non-negative and the bucket's
++// total is unchanged.
++func (f *Filter) partial(r register, lo, hi [nBuckets]float64, j int, from float64) float64 {
++	c, w := float64(r[j]), hi[j]-lo[j]
++	if w <= 0 {
++		return c
++	}
++	a := c / w
++	density := func(k int) (float64, float64, bool) {
++		if k < 0 || k >= nBuckets || hi[k] <= lo[k] {
++			return 0, 0, false
++		}
++		return float64(r[k]) / (hi[k] - lo[k]), (lo[k] + hi[k]) / 2, true
++	}
++	dNew, xNew, okNew := density(j - 1)
++	dOld, xOld, okOld := density(j + 1)
++	mid := (lo[j] + hi[j]) / 2
++	var b float64
++	switch {
++	case okNew && okOld:
++		b = (dNew - dOld) / (xNew - xOld)
++	case okNew:
++		b = (dNew - a) / (xNew - mid)
++	case okOld:
++		b = (a - dOld) / (mid - xOld)
++	}
++	limit := 2 * a / w // keeps a + b*(x-mid) >= 0 across the bucket
++	b = max(-limit, min(limit, b))
++	return a*(hi[j]-from) + b/2*((hi[j]-mid)*(hi[j]-mid)-(from-mid)*(from-mid))
++}
++
+ // Geometry (see the comment at the top): unit = Horizon/24; widths 1, 1,
+ // 1-2, 2-4, 4-8, 8, 8 units; coverage >= 24 units.
+ const geomUnits = 24

@@ -1,0 +1,191 @@
+diff --git a/dup_test.go b/dup_test.go
+new file mode 100644
+index 0000000..ca620d9
+--- /dev/null
++++ b/dup_test.go
+@@ -0,0 +1,40 @@
++package temporalfilter
++
++import (
++	"sync"
++	"testing"
++	"time"
++)
++
++// Concurrent first touches of the same keys must not leave duplicate slots
++// (which would split a key's count).
++func TestConcurrentFirstInsertNoDuplicates(t *testing.T) {
++	const keys, workers = 20_000, 8
++	f := newTest(t, keys, time.Minute)
++	var wg sync.WaitGroup
++	start := make(chan struct{})
++	for range workers {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			<-start
++			for k := range keys {
++				f.CheckAndTouchAt(HashUint64(uint64(k)), 0, 1000)
++			}
++		}()
++	}
++	close(start)
++	wg.Wait()
++	occ := f.Occupancy(1000)
++	total := 0
++	for k := range keys {
++		total += f.VelocityCountAt(HashUint64(uint64(k)), f.Ticks(time.Minute), 1000)
++	}
++	t.Logf("slots used %d for %d keys; counted %d of %d touches", occ, keys, total, keys*workers)
++	if occ != keys {
++		t.Fatalf("%d duplicate slots", occ-keys)
++	}
++	if total != keys*workers {
++		t.Fatalf("counts split or lost: %d of %d", total, keys*workers)
++	}
++}
+diff --git a/filter.go b/filter.go
+index 79c1b04..07146d6 100644
+--- a/filter.go
++++ b/filter.go
+@@ -277,8 +277,18 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
+ 			i = f.find(f.alt(f.primary(h), fp), fp, tg)
+ 		}
+ 		if i < 0 {
+-			i = f.claim(h, fp, now)
+-			w1 := f.bump(i+1, tg, now, now, true)
++			if i = f.claim(h, fp, tg, now); i < 0 {
++				continue
++			}
++			// Two first touches of one key can race past find into two
++			// slots. Both see each other here; the higher index yields.
++			p := f.primary(h)
++			if j := f.dup([2]uint64{p, f.alt(p, fp)}, fp, tg, i); j >= 0 && j < i {
++				if atomic.CompareAndSwapUint64(&f.words[i], fp<<48|now, 0) {
++					continue
++				}
++			}
++			w1 := f.bump(i+1, tg, now, now, false)
+ 			if !wantCount {
+ 				return false, 0
+ 			}
+@@ -309,8 +319,13 @@ func (f *Filter) find(line, fp, tg uint64) int {
+ 	base := int(line * wordsPerLine)
+ 	w := f.words[base : base+wordsPerLine : base+wordsPerLine]
+ 	for s := 0; s < wordsPerLine; s += 2 {
+-		if atomic.LoadUint64(&w[s])>>48 == fp && atomic.LoadUint64(&w[s+1])>>tagShift == tg {
+-			return base + s
++		if atomic.LoadUint64(&w[s])>>48 == fp {
++			// word1 == 0 marks a slot whose claimer has published word0 but
++			// not yet word1: match it on fp alone rather than treat the key
++			// as absent and insert a duplicate.
++			if w1 := atomic.LoadUint64(&w[s+1]); w1>>tagShift == tg || w1 == 0 {
++				return base + s
++			}
+ 		}
+ 	}
+ 	return -1
+@@ -320,18 +335,30 @@ func (f *Filter) find(line, fp, tg uint64) int {
+ // alternate line. If all eight are live it tries to relocate one of them to
+ // its own alternate line (one cuckoo step). Only then does it evict, taking
+ // the slot with the fewest events in the horizon (oldest on ties), so a spray
+-// of fresh keys cannot flush a repeat offender. Returns word0 index.
+-func (f *Filter) claim(h, fp, now uint64) int {
++// of fresh keys cannot flush a repeat offender. Returns word0 index, or -1
++// when the caller should look the key up again (it lost a race for a slot,
++// possibly to another first touch of the same key).
++func (f *Filter) claim(h, fp, tg, now uint64) int {
+ 	lines := [2]uint64{f.primary(h), f.alt(f.primary(h), fp)}
+ 	for {
+ 		for _, line := range lines {
+ 			base := int(line * wordsPerLine)
+ 			for s := 0; s < wordsPerLine; s += 2 {
+ 				w0 := atomic.LoadUint64(&f.words[base+s])
++				if w0>>48 == fp && age(now, w0&tsMask) <= f.horizon {
++					// Our key appeared since the caller's find (a racing
++					// first touch): don't claim a second slot.
++					if w1 := atomic.LoadUint64(&f.words[base+s+1]); w1>>tagShift == tg || w1 == 0 {
++						return -1
++					}
++				}
+ 				if w0 == 0 || age(now, w0&tsMask) > f.horizon {
+-					if atomic.CompareAndSwapUint64(&f.words[base+s], w0, fp<<48|now) {
++					if f.install(base+s, w0, atomic.LoadUint64(&f.words[base+s+1]), fp<<48|now) {
+ 						return base + s
+ 					}
++					// Lost the slot: maybe to another first touch of this
++					// same key. Let the caller look again before claiming.
++					return -1
+ 				}
+ 			}
+ 		}
+@@ -352,23 +379,56 @@ func (f *Filter) claim(h, fp, now uint64) int {
+ 			}
+ 		}
+ 		f.pressure.Store(p - p>>3 + pressureOne>>3) // EWMA toward "searches fail"
+-		victim, victimScore, victimW0 := -1, uint64(1<<64-1), uint64(0)
++		victim, victimScore, victimW0, victimW1 := -1, uint64(1<<64-1), uint64(0), uint64(0)
+ 		for _, line := range lines {
+ 			base := int(line * wordsPerLine)
+ 			for s := 0; s < wordsPerLine; s += 2 {
+ 				w0 := atomic.LoadUint64(&f.words[base+s])
+ 				ts := w0 & tsMask
+-				score := f.mass(atomic.LoadUint64(&f.words[base+s+1]), ts, now)<<48 | ts
++				w1 := atomic.LoadUint64(&f.words[base+s+1])
++				score := f.mass(w1, ts, now)<<48 | ts
+ 				if score < victimScore {
+-					victim, victimScore, victimW0 = base+s, score, w0
++					victim, victimScore, victimW0, victimW1 = base+s, score, w0, w1
+ 				}
+ 			}
+ 		}
+-		if atomic.CompareAndSwapUint64(&f.words[victim], victimW0, fp<<48|now) {
++		if f.install(victim, victimW0, victimW1, fp<<48|now) {
+ 			f.evictions.Add(1)
+ 			return victim
+ 		}
++		return -1
++	}
++}
++
++// install takes slot i (word index) for mine if it still holds w0/w1. It
++// clears word1 before publishing word0, so between the two writes readers
++// see fp with word1 == 0 ("claim in flight") rather than a stranger's tag.
++func (f *Filter) install(i int, w0, w1, mine uint64) bool {
++	if !atomic.CompareAndSwapUint64(&f.words[i+1], w1, 0) {
++		return false
++	}
++	if atomic.CompareAndSwapUint64(&f.words[i], w0, mine) {
++		return true
++	}
++	atomic.CompareAndSwapUint64(&f.words[i+1], 0, w1) // lost the slot; put word1 back
++	return false
++}
++
++// dup returns another slot in lines that already holds fp/tg (or is an
++// in-flight claim of fp), or -1.
++func (f *Filter) dup(lines [2]uint64, fp, tg uint64, mine int) int {
++	for _, line := range lines {
++		base := int(line * wordsPerLine)
++		for s := 0; s < wordsPerLine; s += 2 {
++			if base+s == mine || atomic.LoadUint64(&f.words[base+s])>>48 != fp {
++				continue
++			}
++			if w1 := atomic.LoadUint64(&f.words[base+s+1]); w1>>tagShift == tg || w1 == 0 {
++				return base + s
++			}
++		}
+ 	}
++	return -1
+ }
+ 
+ // relocate moves the entry at word index i (in line) to its alternate line
+@@ -393,7 +453,7 @@ func (f *Filter) relocate(i int, line, mine, now uint64, depth int, budget *int)
+ 			atomic.CompareAndSwapUint64(&f.words[d], w0, 0)
+ 			return false
+ 		}
+-		if atomic.CompareAndSwapUint64(&f.words[i], w0, mine) {
++		if f.install(i, w0, w1, mine) {
+ 			f.relocations.Add(1)
+ 			return true
+ 		}

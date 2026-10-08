@@ -1,0 +1,111 @@
+diff --git a/alt_fraction_test.go b/alt_fraction_test.go
+new file mode 100644
+index 0000000..0fc0901
+--- /dev/null
++++ b/alt_fraction_test.go
+@@ -0,0 +1,67 @@
++package temporalfilter
++
++import (
++	"testing"
++	"time"
++)
++
++// Share of live keys sitting in their alternate line under churn (the
++// homing experiment's measurement). Deterministic: single goroutine,
++// unkeyed hashes, caller-supplied clock.
++
++// Steady churn at ~1.0x capacity: keys expire as fast as they arrive.
++func TestZZAltFractionSteady(t *testing.T) {
++	const n = 200_000
++	f, _ := New(Config{Capacity: n, Horizon: time.Minute})
++	perKey := f.Ticks(time.Minute) / n
++	ctr := uint64(0)
++	for range 4 * n {
++		ctr++
++		f.CheckAndTouchAt(HashUint64(ctr), 0, 1000+ctr*perKey)
++	}
++	now := 1000 + ctr*perKey
++	live, inAlt := 0, 0
++	for k := ctr - n + 1; k <= ctr; k++ {
++		h := HashUint64(k)
++		if !f.ContainsAt(h, f.Ticks(time.Minute), now) {
++			continue
++		}
++		live++
++		if f.find(f.primary(h), fingerprint(h)<<1, tag(h)) < 0 {
++			inAlt++
++		}
++	}
++	t.Logf("steady: %d live, %.1f%% in alt line, relocations %d", live, 100*float64(inAlt)/float64(live), f.Relocations())
++}
++
++// Steady churn with re-touches: each new key is followed by a touch of a
++// random key from the last n/4 inserts. Insert rate set so ~85% of slots
++// hold live keys.
++func TestZZAltFractionRetouch(t *testing.T) {
++	const n = 200_000
++	f, _ := New(Config{Capacity: n, Horizon: time.Minute})
++	perKey := f.Ticks(time.Minute) / (n * 85 / 100)
++	ctr, x := uint64(0), uint64(1)
++	for range 6 * n {
++		ctr++
++		now := 1000 + ctr*perKey
++		f.CheckAndTouchAt(HashUint64(ctr), 0, now)
++		x = x*6364136223846793005 + 1442695040888963407
++		if back := x >> 46 % (n / 4); back < ctr {
++			f.CheckAndTouchAt(HashUint64(ctr-back), 0, now)
++		}
++	}
++	now := 1000 + ctr*perKey
++	live, inAlt := 0, 0
++	for k := ctr - 2*n; k <= ctr; k++ {
++		h := HashUint64(k)
++		if !f.ContainsAt(h, f.Ticks(time.Minute), now) {
++			continue
++		}
++		live++
++		if f.find(f.primary(h), fingerprint(h)<<1, tag(h)) < 0 {
++			inAlt++
++		}
++	}
++	t.Logf("retouch: occupancy %.2f, %.1f%% of live keys in alt line, relocations %d, evictions %d", float64(f.Occupancy(now))/float64(f.Slots()), 100*float64(inAlt)/float64(live), f.Relocations(), f.Evictions())
++}
+diff --git a/filter.go b/filter.go
+index ad680d4..6c7da24 100644
+--- a/filter.go
++++ b/filter.go
+@@ -348,6 +348,13 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
+ 		if !ok {
+ 			continue // the slot was handed to another key after our CAS; look again
+ 		}
++		if l := uint64(i / wordsPerLine); l != f.primary(h) {
++			// Found in the alternate line, so the primary line was just
++			// read and is in cache. If it has room now, move the key home
++			// so its later lookups read one line, not two.
++			b := 1
++			f.relocate(i, l, 0, 0, now, 0, &b)
++		}
+ 		seen := !stale && age(now, last) <= window
+ 		if !wantCount {
+ 			return seen, 0
+@@ -405,6 +412,19 @@ func (f *Filter) claim(h, fp, w1, now uint64) int {
+ 					return -1
+ 				}
+ 			}
++			if li == 0 {
++				// The primary line is full. Before settling for the
++				// alternate line, send a displaced entry back to its own
++				// primary line if that has room: both keys then sit
++				// where a lookup reads first.
++				home := slotsPerLine
++				for s := 0; s < wordsPerLine; s += 2 {
++					if atomic.LoadUint64(&f.words[base+s])&dispBit != 0 &&
++						f.relocate(base+s, line, mine[0], w1, now, 0, &home) {
++						return base + s
++					}
++				}
++			}
+ 		}
+ 		// Iterative deepening: all short paths before any long one. The deep
+ 		// budget shrinks as recent searches fail, so an overfull table falls

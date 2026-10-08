@@ -79,7 +79,7 @@ func main() {
 const intro = `# Temporal filter scorecard history
 
 Produced by ` + "`go run ./cmd/tfbench -label ...`" + `. Capacity 200k, horizon 60s.
-FN = missed keys on the churn workload at 1.0x / 1.1x / 1.15x the configured Capacity, i.e. ~85% / 94% / 98% slot load at the default Load (ground truth: exact map). Two-choice, 4-slot cuckoo tables saturate at ~97.7% load, so the 1.15x column cannot reach 0 with this layout.
+FN = missed keys on the churn workload at 1.0x / 1.1x / 1.15x the configured Capacity, i.e. ~85% / 94% / 97.8% peak slot load at the default Load (ground truth: exact map). An exact placement oracle places every key at 1.15x (TestPlacementLimit), so misses there come from the bounded cuckoo search.
 FP churn = false "seen" on the churn workload at the last load point. Static FPR = 1e9 never-inserted probes at capacity.
 Spray = repeat offenders keeping exact counts after 20x-capacity spray. Latencies in ns/op (best of 3),
 1M-key table (20 MB, which fits this host's 260 MB L3, so "cold" means L3); hit DRAM = hit on a 32M-key (~600 MB) table, every lookup a DRAM miss (last column, from 15:39); batch = CheckAndTouchBatch per key; insert = steady state (keys expire as fast as they arrive), insert sat = every line full; parallel is per-op throughput with GOMAXPROCS goroutines; str = string key + built-in clock on a fresh 1M-key table; str coarse = same with CoarseClock (100µs cached clock).

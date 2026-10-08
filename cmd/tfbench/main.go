@@ -167,7 +167,7 @@ func nsop(fn func(b *testing.B)) float64 {
 	return best
 }
 
-type speeds struct{ hitCold, hitHot, insert, velocity, parallel, str float64 }
+type speeds struct{ hitCold, hitHot, insert, insertSat, velocity, parallel, str float64 }
 
 func speed() speeds {
 	f, hs := filled()
@@ -193,11 +193,25 @@ func speed() speeds {
 			}
 		})
 	})
+	// Steady-state insert: time advances so keys expire as fast as they
+	// arrive, holding ~1.0x capacity live.
 	var ctr uint64
+	perKey := f.Ticks(horizon) / benchKeys
 	s.insert = nsop(func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			ctr++
-			f.CheckAndTouchAt(tf.HashUint64(benchKeys+ctr), w, 2000+ctr>>10)
+			f.CheckAndTouchAt(tf.HashUint64(benchKeys+ctr), w, 1000+ctr*perKey)
+		}
+	})
+	// Saturated insert: worst case, every insert lands in full lines.
+	sat, _ := tf.New(tf.Config{Capacity: benchKeys / 4, Horizon: horizon}) // 512K slots
+	for i := range benchKeys { // 2x overfilled
+		sat.CheckAndTouchAt(tf.HashUint64(uint64(i)), 0, 1000)
+	}
+	s.insertSat = nsop(func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			ctr++
+			sat.CheckAndTouchAt(tf.HashUint64(1<<40+ctr), w, 1000)
 		}
 	})
 	hot, _ := tf.New(tf.Config{Capacity: 4096, Horizon: horizon})
@@ -241,10 +255,10 @@ func main() {
 	if !*quick {
 		s = speed()
 	}
-	row := fmt.Sprintf("| %s | %s | %.3f%% | %.3f%% | %.3f%% | %.2e | %.2e | %.0f%% | %.0f | %.0f | %.0f | %.0f | %.1f | %.0f |",
+	row := fmt.Sprintf("| %s | %s | %.3f%% | %.3f%% | %.3f%% | %.2e | %.2e | %.0f%% | %.0f | %.0f | %.0f | %.0f | %.0f | %.1f | %.0f |",
 		time.Now().UTC().Format("01-02 15:04"), rev,
 		100*c10.fnr, 100*c20.fnr, 100*c25.fnr, c25.fpr, sfpr, 100*sp,
-		s.hitCold, s.hitHot, s.insert, s.velocity, s.parallel, s.str)
+		s.hitCold, s.hitHot, s.insert, s.insertSat, s.velocity, s.parallel, s.str)
 	if *label != "" {
 		row += " " + *label + " |"
 	} else {
@@ -273,9 +287,9 @@ Produced by ` + "`go run ./cmd/tfbench -label ...`" + `. Capacity 200k, horizon 
 FN = missed keys on the churn workload at 1.0x / 2.0x / 2.5x the configured Capacity (the table is sized for ~38% slot load at 1.0x, ~95% at 2.5x) (ground truth: exact map).
 FP churn = false "seen" on the churn workload at 2.5x. Static FPR = 5M never-inserted probes at capacity.
 Spray = repeat offenders keeping exact counts after 20x-capacity spray. Latencies in ns/op (best of 3),
-1M-key table; parallel is per-op throughput with GOMAXPROCS goroutines; str = string key + built-in clock.
+1M-key table; insert = steady state (keys expire as fast as they arrive), insert sat = every line full; parallel is per-op throughput with GOMAXPROCS goroutines; str = string key + built-in clock.
 
 `
 
-const header = `| when (UTC) | rev | FN 1.0x | FN 2.0x | FN 2.5x | FP churn 2.5x | static FPR | spray | hit cold | hit hot | insert | velocity | parallel | str | change |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|`
+const header = `| when (UTC) | rev | FN 1.0x | FN 2.0x | FN 2.5x | FP churn 2.5x | static FPR | spray | hit cold | hit hot | insert | insert sat | velocity | parallel | str | change |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|`

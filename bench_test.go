@@ -147,3 +147,16 @@ func BenchmarkCheckAndTouchHitHot(b *testing.B) {
 		f.CheckAndTouchAt(hs[i&(n-1)], w, 2000+uint64(i>>10))
 	}
 }
+
+// Worst case: every insert lands in two full lines (no expiry).
+func BenchmarkInsertSaturated(b *testing.B) {
+	f, _ := New(Config{Capacity: benchKeys / 4, Horizon: time.Minute}) // 512K slots
+	for i := range benchKeys {
+		f.CheckAndTouchAt(HashUint64(uint64(i)), 0, 1000)
+	}
+	w := f.Ticks(30 * time.Second)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		f.CheckAndTouchAt(HashUint64(uint64(1<<40+i)), w, 1000)
+	}
+}

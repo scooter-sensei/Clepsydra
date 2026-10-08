@@ -37,6 +37,11 @@ const (
 	// relocDepth bounds the cuckoo path an insert into two full lines may
 	// take before evicting.
 	relocDepth = 2
+	// relocBudget caps the alternate lines one insert may scan. The usable
+	// part above the first 8 shrinks with pressure (see claim).
+	relocBudget   = 200
+	pressureShift = 16
+	pressureOne   = 1 << pressureShift
 )
 
 // Config sizes a Filter.
@@ -68,6 +73,8 @@ type Filter struct {
 	_           [56]byte
 	evictions   atomic.Uint64
 	relocations atomic.Uint64
+	_           [48]byte
+	pressure    atomic.Uint32 // EWMA of relocation-search failure, 0..pressureOne
 }
 
 // New allocates a Filter sized for ~50% slot load at cfg.Capacity.
@@ -270,14 +277,23 @@ func (f *Filter) claim(h, fp, now uint64) int {
 		if victim < 0 {
 			continue
 		}
-		for _, line := range lines {
-			base := int(line * wordsPerLine)
-			for s := 0; s < wordsPerLine; s += 2 {
-				if f.relocate(base+s, line, fp<<48|now, now, relocDepth) {
-					return base + s
+		// Iterative deepening: all short paths before any long one. The deep
+		// budget shrinks as recent searches fail, so an overfull table falls
+		// back to cheap eviction instead of searching in vain.
+		p := f.pressure.Load()
+		budget := 8 + int(uint64(relocBudget-8)*(pressureOne-uint64(p))>>pressureShift)
+		for depth := 0; depth <= relocDepth; depth++ {
+			for _, line := range lines {
+				base := int(line * wordsPerLine)
+				for s := 0; s < wordsPerLine; s += 2 {
+					if f.relocate(base+s, line, fp<<48|now, now, depth, &budget) {
+						f.pressure.Store(p - p>>3) // EWMA toward "searches succeed"
+						return base + s
+					}
 				}
 			}
 		}
+		f.pressure.Store(p - p>>3 + pressureOne>>3) // EWMA toward "searches fail"
 		if atomic.CompareAndSwapUint64(&f.words[victim], victimW0, fp<<48|now) {
 			f.evictions.Add(1)
 			return victim
@@ -290,11 +306,15 @@ func (f *Filter) claim(h, fp, now uint64) int {
 // of its entries, up to depth more steps (a bounded cuckoo path).
 // Copy-then-replace keeps every moved key findable throughout; if the source
 // changes mid-move the copy is withdrawn.
-func (f *Filter) relocate(i int, line, mine, now uint64, depth int) bool {
+func (f *Filter) relocate(i int, line, mine, now uint64, depth int, budget *int) bool {
 	w0 := atomic.LoadUint64(&f.words[i])
 	if w0 == 0 {
 		return false
 	}
+	if *budget <= 0 {
+		return false
+	}
+	*budget--
 	w1 := atomic.LoadUint64(&f.words[i+1])
 	a := f.alt(line, w0>>48)
 	base := int(a * wordsPerLine)
@@ -321,7 +341,7 @@ func (f *Filter) relocate(i int, line, mine, now uint64, depth int) bool {
 	}
 	if depth > 0 {
 		for s := 0; s < wordsPerLine; s += 2 {
-			if f.relocate(base+s, a, w0, now, depth-1) {
+			if f.relocate(base+s, a, w0, now, depth-1, budget) {
 				return place(base + s)
 			}
 		}

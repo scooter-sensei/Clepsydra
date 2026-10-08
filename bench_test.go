@@ -1,6 +1,7 @@
 package temporalfilter
 
 import (
+	"runtime"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -366,4 +367,25 @@ func BenchmarkHugeVelocity(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		f.VelocityCountAt(HashUint64(uint64(i*7919)%hugeKeys), w, 2000)
 	}
+}
+
+// Clock read cost behind Config.CoarseClock: the built-in monotonic clock
+// vs the cached tick.
+func BenchmarkClockBuiltin(b *testing.B) {
+	f, _ := New(Config{Capacity: 100, Horizon: time.Minute})
+	var s uint64
+	for i := 0; i < b.N; i++ {
+		s += f.Now()
+	}
+	runtime.KeepAlive(s)
+}
+
+func BenchmarkClockCoarse(b *testing.B) {
+	f, _ := New(Config{Capacity: 100, Horizon: time.Minute, CoarseClock: 100 * time.Microsecond})
+	defer f.Close()
+	var s uint64
+	for i := 0; i < b.N; i++ {
+		s += f.Now()
+	}
+	runtime.KeepAlive(s)
 }

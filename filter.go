@@ -1,19 +1,21 @@
 // Package temporalfilter implements a Sliding-Window Probabilistic Register:
-// a fixed-size, lock-free filter that answers "have we seen key X in the last
-// W?" and "how many times in the last W?" for any W up to a configured horizon.
+// a fixed-size filter that answers "have we seen key X in the last W?" and
+// "how many times in the last W?" for any W up to a configured horizon. Hits
+// are lock-free (CAS on the slot's words); a key's first touch takes one of
+// 256 striped locks so racing inserts can't give it two slots.
 //
 // Memory layout: the table is an array of 64-byte cache lines. Each line holds
 // four 2-word slots:
 //
-//	word0: fp(16) | lastTouch(48)          // freshness, CheckAndTouch
-//	word1: tag(12) | epoch(4) | b0..b6 (7 buckets, 48 bits) // velocity register
+//	word0: fp(16) | displaced(1) | lastTouch(47)               // freshness, CheckAndTouch
+//	word1: tag(12) | epoch(4) | b0..b6 (7 buckets, 48 bits)    // velocity register
 //
 // The velocity register keeps 7 buckets whose widths grow with age (1, 1,
-// 1-2, 2-4, ... units of Horizon/32): fine resolution near now, coarse in the
-// past (register.go). Advancing time re-buckets arithmetically from the clock,
-// so there is no background sweep on the correctness path. A key's home is
-// its primary line; relocation moves entries to their alternate line to make
-// room.
+// 1-2, 2-4, 4-8, 8, 8 units of Horizon/24): fine resolution near now, coarse
+// in the past (register.go). Advancing time re-buckets arithmetically from
+// the clock, so there is no background sweep on the correctness path. A key's
+// home is its primary line; relocation moves entries to their alternate line
+// to make room.
 package temporalfilter
 
 import (
@@ -61,23 +63,26 @@ type Config struct {
 	Capacity int
 	// Horizon is the largest window any query may use.
 	Horizon time.Duration
-	// Resolution is the clock tick. Default 1µs (48-bit timestamps last ~8.9y).
+	// Resolution is the clock tick. Default 1µs (47-bit timestamps last ~4.46y).
 	Resolution time.Duration
 	// Load is the target slot occupancy when Capacity keys are live.
-	// Default 0.85; cuckoo relocation keeps misses at zero up to ~0.95.
-	// Lower values trade memory for headroom above Capacity.
+	// Default 0.85. The scorecard (cmd/tfbench) misses no keys at 94% slot
+	// load and 0.051% at 97.8%. Lower values trade memory for headroom above
+	// Capacity.
 	Load float64
 	// Clock, if set, returns the current tick. It must be monotonic.
 	// Default: monotonic time since New, in Resolution units.
 	Clock func() uint64
 	// CoarseClock, if > 0 and Clock is nil, makes the built-in clock a cached
 	// value refreshed every CoarseClock by one background goroutine: reading
-	// it is an atomic load (~1ns) instead of a monotonic clock read (~25-40ns),
+	// it is an atomic load instead of a monotonic clock read (BenchmarkClock*:
+	// ~1.4 vs ~38-42 ns on the reference host),
 	// and timestamps are accurate to CoarseClock. Call Close to stop it.
 	CoarseClock time.Duration
 }
 
-// Filter is safe for concurrent use without locks.
+// Filter is safe for concurrent use. Hits never lock; first touches of a key
+// serialize on a striped lock.
 type Filter struct {
 	words   []uint64 // 64-byte aligned, len = lines*wordsPerLine
 	lines   uint64   // any size; indexed by multiply-shift, not masking

@@ -48,7 +48,7 @@ fixes() {
 			bad=1
 		fi
 		printf 'fix %-22s before %s failed %-7s | fix %s failed %-7s => %s\n' "$name" "$old" "${res[0]}" "$fix" "${res[1]}" "$verdict"
-		grep -h -m1 -E 'duplicate slots|counted [0-9]+ of|Ticks\(|panic:' "$WORK/fix-$name-$old/run.log" 2>/dev/null | sed 's/^/    before: /'
+		grep -h -E 'slots used|counted [0-9]+ of|Ticks\(|panic:' "$WORK/fix-$name-$old/run.log" 2>/dev/null | sed 's/^ *//' | sort | uniq -c | sort -rn | head -5 | sed 's/^/    before: /'
 	done <<-LIST
 	duplicate-slots|a8a2848|dup_test.go|^TestConcurrentFirstInsertNoDuplicates$|
 	lost-counts-relocation|e42327a|reloc_race_test.go|^TestTouchRacingRelocationKeepsCounts$|20
@@ -57,11 +57,24 @@ fixes() {
 	LIST
 }
 
-# cols <row>: the deterministic columns of a scorecard row (FN a/b/c, FP churn,
-# static FPR, spray, B/key, vel MAE).
-cols() { awk -F'|' '{for (i = 4; i <= 11; i++) {gsub(/ /, "", $i); printf "%s ", $i}}' <<<"$1"; }
+# cols <header> <row> <names...>: the named columns of a scorecard row, "-" if
+# the header has no such column.
+cols() {
+	awk -F'|' -v h="$1" -v r="$2" -v names="$3" 'BEGIN {
+		nh = split(h, H, "|"); split(r, R, "|"); nn = split(names, N, ",")
+		for (j = 1; j <= nn; j++) {
+			v = "-"
+			for (i = 1; i <= nh; i++) { x = H[i]; gsub(/^ +| +$/, "", x); if (x == N[j]) { v = R[i]; gsub(/ /, "", v) } }
+			printf "%s ", v
+		}
+	}'
+}
 
 history() {
+	# Old harnesses named the FN columns by load point; map by position for
+	# those, by name for the rest.
+	local hh
+	hh=$(grep -m1 '^| when' results/history.md)
 	while IFS= read -r row; do
 		local when rev c
 		when=$(awk -F'|' '{gsub(/^ +| +$/, "", $2); print $2}' <<<"$row")
@@ -72,14 +85,30 @@ history() {
 		fi
 		local d="$WORK/hist-$c"
 		[ -d "$d" ] || tree "$c" "$d"
-		local out want got
-		out=$(cd "$d" && go run ./cmd/tfbench -quick 2>/dev/null | grep -E '^\| [0-9]{2}-')
-		want=$(cols "$row")
-		got=$(cols "$out")
-		if [ "$want" = "$got" ]; then
-			printf 'history %s %-8s tree %s: %s=> MATCH\n' "$when" "$rev" "$c" "$got"
+		local out oh orow fnw fng want got
+		out=$(cd "$d" && go run ./cmd/tfbench -quick 2>/dev/null)
+		oh=$(grep -m1 '^| when' <<<"$out")
+		orow=$(grep -m1 -E '^\| [0-9]{2}-' <<<"$out")
+		fnw=$(awk -F'|' '{for (i = 4; i <= 9; i++) {gsub(/ /, "", $i); printf "%s ", $i}}' <<<"$row")
+		fng=$(awk -F'|' '{for (i = 4; i <= 9; i++) {gsub(/ /, "", $i); printf "%s ", $i}}' <<<"$orow")
+		want="$fnw$(cols "$hh" "$row" "B/key,vel MAE")"
+		got="$fng$(cols "$oh" "$orow" "B/key,vel MAE")"
+		# A column the old harness didn't print can't be checked here.
+		local wa ga i n=0 m=0 note=""
+		read -ra wa <<<"$want"
+		read -ra ga <<<"$got"
+		for i in "${!wa[@]}"; do
+			if [ "${ga[$i]:-}" = - ]; then
+				[ "${wa[$i]}" != - ] && note=" (${wa[$i]} not printed by that harness)"
+				continue
+			fi
+			n=$((n + 1))
+			[ "${wa[$i]}" = "${ga[$i]:-}" ] && m=$((m + 1))
+		done
+		if [ $n -gt 0 ] && [ $m = $n ]; then
+			printf 'history %s %-8s tree %s: %s=> MATCH %d/%d columns%s\n' "$when" "$rev" "$c" "$got" "$m" "$n" "$note"
 		else
-			printf 'history %s %-8s tree %s: recorded %s replayed %s=> MISMATCH\n' "$when" "$rev" "$c" "$want" "$got"
+			printf 'history %s %-8s tree %s: recorded %s replayed %s=> MISMATCH %d/%d columns\n' "$when" "$rev" "$c" "$want" "$got" "$m" "$n"
 			bad=1
 		fi
 	done < <(grep -E '^\| [0-9]{2}-[0-9]{2} ' results/history.md)

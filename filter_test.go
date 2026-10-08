@@ -150,8 +150,8 @@ func TestHeavyHitterSpill(t *testing.T) {
 	for range 1000 {
 		f.CheckAndTouchAt(h, 0, 1000)
 	}
-	// A full bucket spills into older ones, so heavy hitters keep their
-	// count (2617 events fit per horizon) instead of capping.
+	// A full bucket spills into older ones, so a burst keeps its count up to
+	// 1273 events (all buckets full; tfbench -exact, heavy_hitter).
 	if got := f.VelocityCountAt(h, f.Ticks(time.Minute), 1000); got < 950 || got > 1000 {
 		t.Fatalf("1000 hits counted as %d", got)
 	}

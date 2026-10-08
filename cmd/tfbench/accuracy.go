@@ -240,6 +240,10 @@ func printExact() {
 		fmt.Printf("velocity window=%ds abs_error_sum=%.0f exact_sum=%.0f  => %.4f\n", v.w/1000, v.errSum, v.exact, v.errSum/v.exact)
 	}
 	fmt.Printf("velocity mean_of_windows => %.4f\n", mean)
+	for _, n := range []int{100, 500, 725, 750, 775, 1000, 1273, 1274, 2617, 5000} {
+		b, s := heavyHitter(n)
+		fmt.Printf("heavy_hitter touches=%d count_burst=%d count_spread_over_horizon=%d\n", n, b, s)
+	}
 	probe, _ := tf.New(tf.Config{Capacity: capacity, Horizon: horizon})
 	fmt.Printf("memory capacity=%d slots=%d bytes=%d  => %.1f B/key\n", capacity, probe.Slots(), probe.Slots()*16, bytesPerKey())
 }
@@ -250,4 +254,20 @@ func relocations(f any) uint64 {
 		return r.Relocations()
 	}
 	return 0
+}
+
+// heavyHitter returns what VelocityCount(Horizon) reports for one key after
+// n touches: all in one tick (burst), and spread evenly over one horizon
+// (queried at the last touch).
+func heavyHitter(n int) (burst, spread int) {
+	b, _ := tf.New(tf.Config{Capacity: 1000, Horizon: horizon, Resolution: time.Millisecond})
+	s, _ := tf.New(tf.Config{Capacity: 1000, Horizon: horizon, Resolution: time.Millisecond})
+	h := tf.HashUint64(42)
+	var last uint64
+	for i := range n {
+		b.CheckAndTouchAt(h, 0, hTicks)
+		last = hTicks + uint64(i)*(hTicks-1)/uint64(max(n-1, 1))
+		s.CheckAndTouchAt(h, 0, last)
+	}
+	return b.VelocityCountAt(h, hTicks, hTicks), s.VelocityCountAt(h, hTicks, last)
 }

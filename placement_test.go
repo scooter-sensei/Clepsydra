@@ -2,6 +2,7 @@ package temporalfilter
 
 import (
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -347,4 +348,97 @@ func kuhnPlacesAll(keys [][2]int32, lines int) bool {
 		}
 	}
 	return true
+}
+
+// TestLoadThreshold computes the load threshold of 2-choice cuckoo hashing
+// with buckets of l slots: c*/l, where x solves 2l = x·Q(x,l)/Q(x,l+1),
+// c* = x/(2·Q(x,l)) and Q(x,y) = P(Poisson(x) >= y) (Cain, Sanders and
+// Wormald 2007; Fernholz and Ramachandran 2007). Below it, a placement of
+// all keys exists with high probability as the table grows. It checks the
+// values tabulated in Walzer, "What if we tried Less Power?" (arXiv
+// 2307.00644, §1.1.1) and the classic 1/2 for one slot.
+func TestLoadThreshold(t *testing.T) {
+	poissonTail := func(x float64, y int) float64 { // P(Poisson(x) >= y)
+		term, cdf := math.Exp(-x), 0.0
+		for j := 0; j < y; j++ {
+			cdf += term
+			term *= x / float64(j+1)
+		}
+		return 1 - cdf
+	}
+	threshold := func(l int) float64 {
+		lo, hi := 1e-9, 100.0
+		for range 200 {
+			x := (lo + hi) / 2
+			if x*poissonTail(x, l)/poissonTail(x, l+1) < float64(2*l) {
+				lo = x
+			} else {
+				hi = x
+			}
+		}
+		x := (lo + hi) / 2
+		return x / (2 * poissonTail(x, l)) / float64(l)
+	}
+	for _, c := range []struct {
+		l    int
+		want float64
+	}{{1, 0.5}, {2, 0.89701}, {3, 0.95915}, {4, 0.98037}} {
+		got := threshold(c.l)
+		t.Logf("placement threshold choices=2 slots=%d load=%.5f", c.l, got)
+		if math.Abs(got-c.want) > 5e-6 {
+			t.Errorf("slots=%d: threshold %.6f, want %.5f", c.l, got, c.want)
+		}
+	}
+}
+
+// TestComparedEntries measures how many stored entries an absent-key lookup
+// compares its 28-bit identity with, at the scorecard's static-FPR setup
+// (200k keys at the default 85% load). With the displaced bit it compares
+// only entries homed at its primary line; without it, every entry in both
+// candidate lines. Each comparison is a false positive with probability
+// 2^-28, so the expected FPR is the mean count / 2^28.
+func TestComparedEntries(t *testing.T) {
+	const capN, probes = 200_000, 1_000_000
+	f, err := New(Config{Capacity: capN, Horizon: time.Minute, Resolution: time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range uint64(capN) {
+		f.CheckAndTouchAt(HashUint64(i), 0, 1)
+	}
+	var with, without int
+	for i := range uint64(probes) {
+		h := HashUint64(capN + i)
+		fp := fingerprint(h)
+		p := f.primary(h)
+		a := f.alt(p, fp)
+		for li, l := range []uint64{p, a} {
+			if li == 1 && a == p {
+				break
+			}
+			for s := 0; s < wordsPerLine; s += 2 {
+				w0 := f.words[int(l)*wordsPerLine+s]
+				if w0 == 0 {
+					continue
+				}
+				without++
+				if (w0&dispBit != 0) == (li == 1) {
+					with++
+				}
+			}
+		}
+	}
+	mw, mo := float64(with)/probes, float64(without)/probes
+	t.Logf("placement compared_entries probes=%d with_displaced_bit=%.4f without=%.4f expected_fpr_with=%.3e without=%.3e",
+		probes, mw, mo, mw/(1<<28), mo/(1<<28))
+	stored, displaced := 0, 0
+	for i := 0; i < len(f.words); i += 2 {
+		if w0 := f.words[i]; w0 != 0 {
+			stored++
+			if w0&dispBit != 0 {
+				displaced++
+			}
+		}
+	}
+	t.Logf("placement displaced_entries stored=%d in_alternate_line=%d (%.1f%%)", stored, displaced, 100*float64(displaced)/float64(stored))
 }

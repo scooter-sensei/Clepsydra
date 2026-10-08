@@ -41,10 +41,10 @@ const (
 	decayEvery = 63
 	// relocDepth bounds the cuckoo path an insert into two full lines may
 	// take before evicting.
-	relocDepth = 4
+	relocDepth = 3
 	// relocBudget caps the alternate lines one insert may scan. The usable
 	// part above the first 8 shrinks with pressure (see claim).
-	relocBudget   = 1000
+	relocBudget   = 500
 	pressureShift = 16
 	pressureOne   = 1 << pressureShift
 )

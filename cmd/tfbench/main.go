@@ -12,6 +12,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"os"
 	"os/exec"
@@ -103,6 +104,71 @@ func churn(load float64, seed uint64) churnResult {
 		}
 	}
 	return churnResult{float64(fn) / float64(max(pos, 1)), float64(fp) / float64(max(neg, 1)), float64(live) / capacity}
+}
+
+// velocityMAE: 2000 keys with mixed traffic shapes (steady, bursty, ramp,
+// sparse, on/off) over 5 horizons; every ~1ms one random key is queried for a
+// random window. Returns sum|estimate-exact| / sum exact.
+func velocityMAE() float64 {
+	f, _ := tf.New(tf.Config{Capacity: capacity, Horizon: horizon, Resolution: time.Millisecond})
+	r := rand.New(rand.NewPCG(9, 9))
+	const nkeys, end = 2000, 5 * hTicks
+	type ev struct {
+		t uint64
+		k int
+	}
+	var evs []ev
+	times := make([][]uint64, nkeys)
+	poisson := func(t0, t1, rate float64, k int) {
+		for t := t0 + r.ExpFloat64()/rate; t < t1; t += r.ExpFloat64() / rate {
+			evs = append(evs, ev{uint64(t) + 1, k})
+		}
+	}
+	for k := range nkeys {
+		switch k % 5 {
+		case 0: // steady 0.2-5/s
+			poisson(0, end, (0.2+r.Float64()*4.8)/1000, k)
+		case 1: // bursts of 5-20 within 200ms, every ~10s
+			for t := r.ExpFloat64() * 10_000; t < end; t += r.ExpFloat64() * 10_000 {
+				for range 5 + r.IntN(16) {
+					evs = append(evs, ev{uint64(t+r.Float64()*200) + 1, k})
+				}
+			}
+		case 2: // ramp 0.1 -> 10/s
+			for t := 0.0; t < end; {
+				t += r.ExpFloat64() / ((0.1 + 9.9*t/end) / 1000)
+				evs = append(evs, ev{uint64(t) + 1, k})
+			}
+		case 3: // sparse, ~1 per 20s
+			poisson(0, end, 1.0/20_000, k)
+		case 4: // 5s on at 4/s, 5s off
+			for t := 0.0; t < end; t += 10_000 {
+				poisson(t, t+5000, 4.0/1000, k)
+			}
+		}
+	}
+	sort.Slice(evs, func(i, j int) bool { return evs[i].t < evs[j].t })
+	hs := make([]uint64, nkeys)
+	for k := range hs {
+		hs[k] = tf.HashUint64(uint64(k) + 1<<50)
+	}
+	wins := []uint64{1_000, 5_000, 15_000, 30_000, 60_000}
+	var errSum, exactSum float64
+	i := 0
+	for now := uint64(hTicks); now < end; now++ {
+		for i < len(evs) && evs[i].t <= now {
+			f.CheckAndTouchAt(hs[evs[i].k], 0, evs[i].t)
+			times[evs[i].k] = append(times[evs[i].k], evs[i].t)
+			i++
+		}
+		k, w := r.IntN(nkeys), wins[r.IntN(len(wins))]
+		ts := times[k]
+		exact := len(ts) - sort.Search(len(ts), func(j int) bool { return ts[j]+w > now })
+		got := f.VelocityCountAt(hs[k], w, now)
+		errSum += math.Abs(float64(got - exact))
+		exactSum += float64(exact)
+	}
+	return errSum / exactSum
 }
 
 // staticFPR: table at capacity, probe never-inserted keys with read-only Contains.
@@ -258,15 +324,16 @@ func main() {
 	c10, c20, c25 := churn(1.0, 2), churn(1.1, 3), churn(1.15, 4)
 	sfpr := staticFPR(50_000_000)
 	sp := spray()
+	vmae := velocityMAE()
 	probe, _ := tf.New(tf.Config{Capacity: capacity, Horizon: horizon})
 	bpk := float64(probe.Slots()*16) / capacity
 	var s speeds
 	if !*quick {
 		s = speed()
 	}
-	row := fmt.Sprintf("| %s | %s | %.3f%% | %.3f%% | %.3f%% | %.2e | %.2e | %.0f%% | %.1f | %.0f | %.0f | %.0f | %.0f | %.0f | %.0f | %.1f | %.0f |",
+	row := fmt.Sprintf("| %s | %s | %.3f%% | %.3f%% | %.3f%% | %.2e | %.2e | %.0f%% | %.1f | %.3f | %.0f | %.0f | %.0f | %.0f | %.0f | %.0f | %.1f | %.0f |",
 		time.Now().UTC().Format("01-02 15:04"), rev,
-		100*c10.fnr, 100*c20.fnr, 100*c25.fnr, c25.fpr, sfpr, 100*sp, bpk,
+		100*c10.fnr, 100*c20.fnr, 100*c25.fnr, c25.fpr, sfpr, 100*sp, bpk, vmae,
 		s.hitCold, s.batch, s.hitHot, s.insert, s.insertSat, s.velocity, s.parallel, s.str)
 	if *label != "" {
 		row += " " + *label + " |"
@@ -300,5 +367,5 @@ Spray = repeat offenders keeping exact counts after 20x-capacity spray. Latencie
 
 `
 
-const header = `| when (UTC) | rev | FN 1.0x | FN 1.1x | FN 1.15x | FP churn 1.15x | static FPR | spray | B/key | hit cold | batch | hit hot | insert | insert sat | velocity | parallel | str | change |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|`
+const header = `| when (UTC) | rev | FN 1.0x | FN 1.1x | FN 1.15x | FP churn 1.15x | static FPR | spray | B/key | vel MAE | hit cold | batch | hit hot | insert | insert sat | velocity | parallel | str | change |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|`

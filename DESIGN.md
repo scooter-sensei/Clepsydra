@@ -33,6 +33,7 @@ word1: tag(12) | epoch(4) | 7 velocity buckets (48)  age-graded counter
 | `CheckAndTouchBatch(hs, W, now, out)` | Same for many keys; issues every key's line load first so cache misses overlap | ~half the per-key time |
 | `VelocityCount(key, W) int` | Re-buckets to now, sums buckets inside W, interpolates the one the edge cuts | 1 line |
 | `TouchAndCount(key, W)` | Both in one pass | 1 line |
+| `TouchAndCountBatch`, `VelocityCountBatch` | Batched like CheckAndTouchBatch | ~a third less per key |
 | `ContainsAt(h, W, now)` | Read-only freshness check | 1 line |
 | `ContinuousDecay()` | Bounded slot reclaimer, paced by the clock (one table pass per horizon, ≤ 4 lines per step) | — |
 

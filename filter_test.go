@@ -343,6 +343,33 @@ func TestBatchMatchesSingle(t *testing.T) {
 	}
 }
 
+func TestCountBatchesMatchSingle(t *testing.T) {
+	a, b := newTest(t, 10_000, time.Minute), newTest(t, 10_000, time.Minute)
+	hs := make([]uint64, 5000)
+	for i := range hs {
+		hs[i] = HashUint64(uint64(i % 3000)) // repeats inside one batch too
+	}
+	seen, counts, vel := make([]bool, len(hs)), make([]int, len(hs)), make([]int, len(hs))
+	for round := range 3 {
+		now := uint64(1000 + round*2000)
+		a.TouchAndCountBatch(hs, 3000, now, seen, counts)
+		for i, h := range hs {
+			if s, c := b.TouchAndCountAt(h, 3000, now); seen[i] != s || counts[i] != c {
+				t.Fatalf("round %d key %d: batch %v/%d single %v/%d", round, i, seen[i], counts[i], s, c)
+			}
+		}
+		a.VelocityCountBatch(hs, 5000, now+500, vel)
+		for i, h := range hs {
+			if want := b.VelocityCountAt(h, 5000, now+500); vel[i] != want {
+				t.Fatalf("round %d key %d: velocity batch %d single %d", round, i, vel[i], want)
+			}
+		}
+	}
+	a.CheckAndTouchBatch(nil, 1, 1, nil) // empty batches are fine
+	a.TouchAndCountBatch(nil, 1, 1, nil, nil)
+	a.VelocityCountBatch(nil, 1, 1, nil)
+}
+
 func TestCoarseClock(t *testing.T) {
 	f, err := New(Config{Capacity: 100, Horizon: time.Minute, CoarseClock: time.Millisecond})
 	if err != nil {

@@ -252,22 +252,54 @@ func (f *Filter) ContainsAt(h, window, now uint64) bool {
 // cache misses (memory-level parallelism), then runs each operation against
 // lines that are already in flight or cached. out must be at least len(hs).
 func (f *Filter) CheckAndTouchBatch(hs []uint64, window, now uint64, out []bool) {
-	_ = out[len(hs)-1]
-	const chunk = 64 // ~ the core's outstanding-miss capacity, with headroom
-	for lo := 0; lo < len(hs); lo += chunk {
-		hi := min(lo+chunk, len(hs))
-		var sink uint64
-		for _, h := range hs[lo:hi] {
-			b := f.primary(h) * wordsPerLine
-			for l := uint64(0); l < wordsPerLine; l += 8 { // each 64-byte line of the bucket
-				sink += atomic.LoadUint64(&f.words[b+l])
-			}
-		}
-		runtime.KeepAlive(sink) // keep the prefetch loads
+	out = out[:len(hs)]
+	for lo := 0; lo < len(hs); lo += batchChunk {
+		hi := min(lo+batchChunk, len(hs))
+		f.warm(hs[lo:hi])
 		for i := lo; i < hi; i++ {
 			out[i], _ = f.touch(hs[i], window, now, false)
 		}
 	}
+}
+
+// TouchAndCountBatch is TouchAndCountAt over many pre-hashed keys, with the
+// overlapped loads of CheckAndTouchBatch. seen and counts must be at least
+// len(hs).
+func (f *Filter) TouchAndCountBatch(hs []uint64, window, now uint64, seen []bool, counts []int) {
+	seen, counts = seen[:len(hs)], counts[:len(hs)]
+	for lo := 0; lo < len(hs); lo += batchChunk {
+		hi := min(lo+batchChunk, len(hs))
+		f.warm(hs[lo:hi])
+		for i := lo; i < hi; i++ {
+			seen[i], counts[i] = f.touch(hs[i], window, now, true)
+		}
+	}
+}
+
+// VelocityCountBatch is VelocityCountAt over many pre-hashed keys, with the
+// overlapped loads of CheckAndTouchBatch. counts must be at least len(hs).
+func (f *Filter) VelocityCountBatch(hs []uint64, window, now uint64, counts []int) {
+	counts = counts[:len(hs)]
+	for lo := 0; lo < len(hs); lo += batchChunk {
+		hi := min(lo+batchChunk, len(hs))
+		f.warm(hs[lo:hi])
+		for i := lo; i < hi; i++ {
+			counts[i] = f.VelocityCountAt(hs[i], window, now)
+		}
+	}
+}
+
+// batchChunk is ~ a core's outstanding-miss capacity, with headroom.
+const batchChunk = 64
+
+// warm loads each key's primary line without using the result, so the misses
+// for a whole chunk are in flight at once.
+func (f *Filter) warm(hs []uint64) {
+	var sink uint64
+	for _, h := range hs {
+		sink += atomic.LoadUint64(&f.words[f.primary(h)*wordsPerLine])
+	}
+	runtime.KeepAlive(sink)
 }
 
 // Evictions counts live keys displaced because both candidate lines were full.

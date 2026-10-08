@@ -172,6 +172,28 @@ func BenchmarkCheckAndTouchBatch(b *testing.B) {
 	}
 }
 
+func BenchmarkTouchAndCountBatch(b *testing.B) {
+	f, hs := benchFilter(b)
+	w := f.Ticks(30 * time.Second)
+	seen, counts := make([]bool, 64), make([]int, 64)
+	b.ResetTimer()
+	for i := 0; i < b.N; i += 64 {
+		lo := i & (benchKeys - 1)
+		f.TouchAndCountBatch(hs[lo:lo+64], w, 2000+uint64(i>>10), seen, counts)
+	}
+}
+
+func BenchmarkVelocityCountBatch(b *testing.B) {
+	f, hs := benchFilter(b)
+	w := f.Ticks(30 * time.Second)
+	counts := make([]int, 64)
+	b.ResetTimer()
+	for i := 0; i < b.N; i += 64 {
+		lo := i & (benchKeys - 1)
+		f.VelocityCountBatch(hs[lo:lo+64], w, 2000, counts)
+	}
+}
+
 // Steady state near the limit: ~98% slot load, keys expiring as fast as they
 // arrive, so most inserts need a cuckoo path.
 func BenchmarkInsertNearFull(b *testing.B) {

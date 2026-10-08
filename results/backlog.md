@@ -19,6 +19,7 @@ Scorecard: `bash bench.sh "label"` (race tests + cmd/tfbench, appends to results
 12. Same-unit counter increment picks the first non-full bucket with one TrailingZeros instead of a loop. Hot-key hit 44 → 32 ns.
 13. Displaced bit (taken from the timestamp, now 47 bits): an entry records which of its two lines it is in, and lookups match it. A key is compared only with entries homed at its own primary line. Static FPR 3.2e-8 → 1.8e-8 (1e9 probes), no speed cost. Storing which bucket choice was used is a known way to extend a fingerprint by a bit.
 14. `Ticks` clamps negative durations to 0. A negative window used to wrap to a huge one and report every key as seen.
+15. `TouchAndCountBatch` and `VelocityCountBatch` (same overlapped loads as CheckAndTouchBatch). Median of 6 runs, 1M-key table: TouchAndCount 154 → 106 ns/key, VelocityCount 129 → 83 ns/key. Empty batches no longer panic.
 
 ## Tried, no gain
 - Reciprocal division for the built-in clock and `Ticks`: no change in the string path. The clock read itself (~38 ns in this VM, lfence/rdtscp-ordered) stops later work from overlapping, so the division was hidden.
@@ -44,5 +45,4 @@ Scorecard: `bash bench.sh "label"` (race tests + cmd/tfbench, appends to results
 - Hot path: two CASes per touch (~15 ns of the ~32 ns hot hit). Option: Resolution floor that skips the word0 CAS when the timestamp would not change.
 - String path: faster hashing.
 - Relocation copy-then-replace can still leave a duplicate if a touch lands on the copy mid-move. Rare; needs a test at >94% load with racing writers.
-- Batch variants for VelocityCount / TouchAndCount.
 - Near-full (>94%) inserts cost µs; consider a per-line overflow hint so misses skip the alternate line.

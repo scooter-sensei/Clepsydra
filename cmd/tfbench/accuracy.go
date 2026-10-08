@@ -134,7 +134,7 @@ func velocityMAE() (float64, []velWin) {
 		k, wi := r.IntN(nkeys), r.IntN(len(wins))
 		w := wins[wi]
 		ts := times[k]
-		exact := len(ts) - sort.Search(len(ts), func(j int) bool { return ts[j]+w > now })
+		exact := len(ts) - sort.Search(len(ts), func(j int) bool { return ts[j]+w >= now }) // in [now-w, now], as the filter counts
 		got := f.VelocityCountAt(hs[k], w, now)
 		errSum[wi] += math.Abs(float64(got - exact))
 		exactSum[wi] += float64(exact)
@@ -297,10 +297,7 @@ func steadyCount(every, window uint64) (lo, hi float64) {
 		if now < 2*hTicks {
 			continue
 		}
-		exact := float64(window/every + 1) // touches in (now-window, now]
-		if window%every == 0 {
-			exact--
-		}
+		exact := float64(window/every + 1) // touches in [now-window, now], as the filter counts
 		r := float64(f.VelocityCountAt(h, window, now)) / exact
 		lo, hi = min(lo, r), max(hi, r)
 	}

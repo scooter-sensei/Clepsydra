@@ -49,14 +49,15 @@ word1: tag(12) | epoch(4) | 7 velocity buckets (48)  age-graded counter
 
 ## Current numbers
 
-These come from the latest row of `results/history.md`: capacity 200k, horizon 60s, 4-vCPU Xeon @ 2.1GHz, latencies on a 1M-key table.
+These come from the latest row of `results/history.md`: capacity 200k, horizon 60s, 4-vCPU Xeon @ 2.1GHz. Latencies are on a 1M-key table, which fits this host's 260 MB L3, except "hit, DRAM" (32M keys, ~600 MB).
 
 - **Missed keys:** 0 at 85% and 94% slot load, 0.06% at 98%.
 - **False positives:** 1.8e-8 on 1e9 probes of never-inserted keys at capacity, and 0 on the churn workload.
 - **Memory:** 18.8 B per key.
 - **Velocity error:** 0.081, averaged over 1–60s windows and 5 traffic shapes. The original 6×8 linear register scored 0.129.
 - **Latency:**
-  - hit, cold table: ~85 ns
+  - hit, 1M-key table (L3): ~75–85 ns
+  - hit, DRAM-sized table: ~207 ns (batched: ~95 ns per key)
   - batched: ~60 ns per key
   - hit, cache-resident: ~30 ns
   - steady-state insert: ~200 ns

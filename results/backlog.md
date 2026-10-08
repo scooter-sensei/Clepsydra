@@ -33,11 +33,12 @@ Scorecard: `bash bench.sh "label"` (race tests + cmd/tfbench, appends to results
 - One CMPXCHG16B for both slot words instead of two 8-byte CASes: 19 vs 15 ns on this Xeon. Reverted.
 - Branchless 4-way fingerprint compare in find: hot hits ~10% faster, but cold lookups ~15% slower (the slot index becomes data-dependent, so the CPU can't run ahead on a predicted branch). Reverted.
 - 2 MiB huge-page mmap for the table: THP was granted, latency unchanged (Go heap already benefits or TLB isn't the bottleneck here).
-- 8-slot (128-byte) buckets: 0 misses at 98% load and 3x cheaper near-full inserts, but ~10% slower everywhere else. Reverted.
+- 8-slot (128-byte) buckets: 0 misses at 98% load and 3x cheaper near-full inserts, but ~10% slower everywhere else. Reverted. Re-tested on DRAM (round 8): near-full inserts 2945 → 464 ns and steady inserts slightly faster, but DRAM hits 208 → 227 ns, absent keys 127 → 200 ns (a bucket is two cache lines; the adjacent-line prefetcher doesn't make the second free), saturated inserts 514 → 793 ns, and ~2x false positives. Still not worth it.
 - Piecewise-linear density in the cut velocity bucket: slightly worse than uniform. Reverted.
 - Alternate-line prefetch (plain load and asm PREFETCHT0), two-choice insert: hits got slower. Reverted.
 - Lock-free duplicate repair (in-flight marker + lower index wins): cut duplicates 10x but can't be made symmetric. Replaced by the stripe lock.
 - Pure dyadic register (H/32, widths to 32 units): same mean MAE as the H/24 geometry but 60s error 0.040 vs 0.024.
+- Hot-key contention (round 8 check, not a change): 4 goroutines on 1 key run at 10 ns/op aggregate, 16 keys at 16 ns, 16K keys at 22 ns. Same-tick touches skip the word0 CAS and full registers skip the word1 CAS, so a bot storm doesn't ping-pong the line. Touch elision isn't needed.
 
 ## Decided
 - 2026-10-08: Priyasis chose to keep the 48-bit counter (exact heavy-hitter counts) over trading counter bits for identity bits. Options measured:

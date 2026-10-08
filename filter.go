@@ -69,7 +69,8 @@ type Filter struct {
 	words   []uint64 // 64-byte aligned, len = lines*wordsPerLine
 	lines   uint64   // any size; indexed by multiply-shift, not masking
 	horizon uint64   // ticks
-	unit    uint64   // ticks per velocity register unit (Horizon/32)
+	unit    uint64   // ticks per velocity register unit (Horizon/unitsPerHorizon)
+	unitInv uint64   // floor(2^64 / unit) + 1, for unitOf
 	res     time.Duration
 	clock   func() uint64
 	seed    maphash.Seed
@@ -92,7 +93,7 @@ func New(cfg Config) (*Filter, error) {
 		cfg.Resolution = time.Microsecond
 	}
 	horizon := uint64(cfg.Horizon / cfg.Resolution)
-	if horizon < unitsPerHorizon {
+	if horizon < 2*unitsPerHorizon { // unit >= 2 ticks
 		return nil, errors.New("temporalfilter: Horizon too small for Resolution")
 	}
 	if cfg.Load <= 0 {
@@ -110,6 +111,7 @@ func New(cfg Config) (*Filter, error) {
 		clock:   cfg.Clock,
 		seed:    maphash.MakeSeed(),
 	}
+	f.unitInv = ^uint64(0)/f.unit + 1
 	f.words = alignedWords(int(lines * wordsPerLine))
 	if f.clock == nil {
 		base, res := time.Now(), cfg.Resolution
@@ -288,26 +290,16 @@ func (f *Filter) find(line, fp, tg uint64) int {
 func (f *Filter) claim(h, fp, now uint64) int {
 	lines := [2]uint64{f.primary(h), f.alt(f.primary(h), fp)}
 	for {
-		victim, victimScore, victimW0 := -1, uint64(1<<64-1), uint64(0)
 		for _, line := range lines {
 			base := int(line * wordsPerLine)
 			for s := 0; s < wordsPerLine; s += 2 {
 				w0 := atomic.LoadUint64(&f.words[base+s])
-				ts := w0 & tsMask
-				if w0 == 0 || age(now, ts) > f.horizon {
+				if w0 == 0 || age(now, w0&tsMask) > f.horizon {
 					if atomic.CompareAndSwapUint64(&f.words[base+s], w0, fp<<48|now) {
 						return base + s
 					}
-					continue
-				}
-				score := f.mass(atomic.LoadUint64(&f.words[base+s+1]), ts, now)<<48 | ts
-				if score < victimScore {
-					victim, victimScore, victimW0 = base+s, score, w0
 				}
 			}
-		}
-		if victim < 0 {
-			continue
 		}
 		// Iterative deepening: all short paths before any long one. The deep
 		// budget shrinks as recent searches fail, so an overfull table falls
@@ -326,6 +318,18 @@ func (f *Filter) claim(h, fp, now uint64) int {
 			}
 		}
 		f.pressure.Store(p - p>>3 + pressureOne>>3) // EWMA toward "searches fail"
+		victim, victimScore, victimW0 := -1, uint64(1<<64-1), uint64(0)
+		for _, line := range lines {
+			base := int(line * wordsPerLine)
+			for s := 0; s < wordsPerLine; s += 2 {
+				w0 := atomic.LoadUint64(&f.words[base+s])
+				ts := w0 & tsMask
+				score := f.mass(atomic.LoadUint64(&f.words[base+s+1]), ts, now)<<48 | ts
+				if score < victimScore {
+					victim, victimScore, victimW0 = base+s, score, w0
+				}
+			}
+		}
 		if atomic.CompareAndSwapUint64(&f.words[victim], victimW0, fp<<48|now) {
 			f.evictions.Add(1)
 			return victim

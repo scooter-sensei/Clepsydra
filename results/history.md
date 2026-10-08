@@ -21,3 +21,4 @@ Spray = repeat offenders keeping exact counts after 20x-capacity spray. Latencie
 | 10-08 13:26 | 3e9277c | 0.000% | 0.000% | 0.191% | 0.00e+00 | 4.00e-08 | 100% | 18.8 | - | 92 | 59 | 30 | 228 | 425 | 76 | 22.0 | 170 | 85% target load, any-size table (-55% memory) |
 | 10-08 13:31 | 983b804 | 0.000% | 0.000% | 0.000% | 0.00e+00 | 6.00e-08 | 100% | 18.8 | - | 97 | 60 | 35 | 286 | 727 | 84 | 22.2 | 183 | 8-slot buckets (2 adjacent lines) — reverted: wins only above 94% load, ~10% slower elsewhere |
 | 10-08 13:34 | acea1cf | 0.000% | 0.000% | 0.066% | 0.00e+00 | 4.00e-08 | 100% | 18.8 | 0.038 | 76 | 55 | 35 | 196 | 427 | 74 | 20.3 | 212 | velocity MAE column; reloc depth 3/budget 500 |
+| 10-08 13:42 | ba0677c | 0.000% | 0.000% | 0.058% | 0.00e+00 | 4.00e-08 | 100% | 18.8 | 0.087 | 120 | 94 | 74 | 523 | 687 | 111 | 34.4 | 318 | age-graded velocity register (H/24 near now), spill on overflow |

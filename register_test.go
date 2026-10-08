@@ -4,6 +4,7 @@ import (
 	"math/rand/v2"
 	"slices"
 	"testing"
+	"time"
 )
 
 // Reference: keep an exact per-unit histogram and bucket it directly at the
@@ -89,5 +90,24 @@ func TestPackRoundTripAndSpill(t *testing.T) {
 	}
 	if got := unpack(r.pack()); got != r {
 		t.Fatalf("round trip %v -> %v", r, got)
+	}
+}
+
+func TestUnitOfMatchesDivision(t *testing.T) {
+	rng := rand.New(rand.NewPCG(5, 6))
+	for _, h := range []time.Duration{48 * time.Microsecond, time.Second, time.Minute, 7 * time.Hour} {
+		f, err := New(Config{Capacity: 10, Horizon: h})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for range 100_000 {
+			x := rng.Uint64() & tsMask
+			if rng.IntN(2) == 0 {
+				x = x/f.unit*f.unit + uint64(rng.IntN(3)) - 1 // around boundaries
+			}
+			if got, want := f.unitOf(x), int64(x/f.unit); got != want {
+				t.Fatalf("unit %d: unitOf(%d) = %d, want %d", f.unit, x, got, want)
+			}
+		}
 	}
 }

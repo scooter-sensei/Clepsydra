@@ -1,6 +1,9 @@
 package temporalfilter
 
-import "sync/atomic"
+import (
+	"math/bits"
+	"sync/atomic"
+)
 
 // Velocity register: 7 counters packed into the low 48 bits of word1.
 //
@@ -72,6 +75,10 @@ func (r *register) advance(u0, u1 int64) {
 		*r = register{}
 		return
 	}
+	var starts [nBuckets]int64
+	for j := range starts {
+		starts[j] = bucketStart(u1, j)
+	}
 	var out register
 	j := 0
 	for k := range r {
@@ -79,7 +86,7 @@ func (r *register) advance(u0, u1 int64) {
 			continue
 		}
 		start := bucketStart(u0, k)
-		for j < nBuckets && start < bucketStart(u1, j) {
+		for j < nBuckets && start < starts[j] {
 			j++
 		}
 		if j == nBuckets {
@@ -106,14 +113,30 @@ func regEpoch(w1 uint64, ref int64) int64 {
 // slot's lastTouch before this touch (the epoch reference); reset discards
 // counts left by a previous occupant or an expired run.
 func (f *Filter) bump(i int, tg, last, now uint64, reset bool) uint64 {
-	nowU := int64(now / f.unit)
+	nowU := f.unitOf(now)
 	for {
 		old := atomic.LoadUint64(&f.words[i])
+		if !reset && old>>tagShift == tg && old>>48&epochMask == uint64(nowU)&epochMask &&
+			regEpoch(old, f.unitOf(last)) == nowU {
+			// Fast path, same unit: increment the first bucket with room in
+			// place (spilling as add does). A full register stays as is.
+			nw := old
+			for j := range nBuckets {
+				if old>>bucketShift[j]&(1<<bucketBits[j]-1) != 1<<bucketBits[j]-1 {
+					nw = old + 1<<bucketShift[j]
+					break
+				}
+			}
+			if nw == old || atomic.CompareAndSwapUint64(&f.words[i], old, nw) {
+				return nw
+			}
+			continue
+		}
 		var r register
 		e := nowU
 		if !reset && old>>tagShift == tg {
 			r = unpack(old & regMask)
-			e = regEpoch(old, int64(last/f.unit))
+			e = regEpoch(old, f.unitOf(last))
 			if nowU > e {
 				r.advance(e, nowU)
 				e = nowU
@@ -135,8 +158,8 @@ func (f *Filter) aligned(w1, last, now uint64) (r register, nowU int64, ok bool)
 		return r, 0, false
 	}
 	r = unpack(w1 & regMask)
-	e := regEpoch(w1, int64(last/f.unit))
-	nowU = max(int64(now/f.unit), e)
+	e := regEpoch(w1, f.unitOf(last))
+	nowU = max(f.unitOf(now), e)
 	r.advance(e, nowU)
 	return r, nowU, true
 }
@@ -205,3 +228,13 @@ var (
 	bucketOff     = [nBuckets]int64{0, 1, 2, 4, 8, 16, 24}
 	bucketBits    = [nBuckets]uint{5, 5, 6, 7, 8, 8, 9}
 )
+
+// unitOf is t / f.unit via a precomputed reciprocal: one multiply instead of
+// a 64-bit divide on every touch.
+func (f *Filter) unitOf(t uint64) int64 {
+	q, _ := bits.Mul64(t, f.unitInv)
+	if q*f.unit > t {
+		q--
+	}
+	return int64(q)
+}

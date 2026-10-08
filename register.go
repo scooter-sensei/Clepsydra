@@ -60,10 +60,7 @@ func (r *register) add(j int, n uint64) {
 
 // bucketStart is b_j in units (may be negative near U = 0).
 func bucketStart(u int64, j int) int64 {
-	if j == 0 {
-		return u
-	}
-	return u>>bucketLogStep[j]<<bucketLogStep[j] - bucketOff[j]
+	return u&bucketStepMask[j] - bucketOff[j]
 }
 
 // advance re-buckets r from unit u0 to unit u1 >= u0.
@@ -151,68 +148,65 @@ func (f *Filter) bump(i int, tg, last, now uint64, reset bool) uint64 {
 	}
 }
 
-// aligned returns the register advanced to now's unit, or ok=false if it is
-// stale.
-func (f *Filter) aligned(w1, last, now uint64) (r register, nowU int64, ok bool) {
-	if age(now, last) > f.horizon {
-		return r, 0, false
-	}
-	r = unpack(w1 & regMask)
-	e := regEpoch(w1, f.unitOf(last))
-	nowU = max(f.unitOf(now), e)
-	r.advance(e, nowU)
-	return r, nowU, true
-}
-
-// mass is the register's total event count still inside the horizon.
+// mass is the register's event count in buckets that still reach inside
+// the horizon (for eviction scoring).
 func (f *Filter) mass(w1, last, now uint64) uint64 {
-	r, _, ok := f.aligned(w1, last, now)
-	if !ok {
+	if age(now, last) > f.horizon {
 		return 0
 	}
+	e := regEpoch(w1, f.unitOf(last))
+	oldest := int64(now-min(now, f.horizon)) / int64(f.unit) // unit of now-H, rounded down
 	var n uint64
-	for _, c := range r {
-		n += c
+	top := e + 1
+	for j := range nBuckets {
+		if top <= oldest {
+			break
+		}
+		n += w1 >> bucketShift[j] & (1<<bucketBits[j] - 1)
+		top = bucketStart(e, j)
 	}
 	return n
 }
 
-// estimate interpolates the count in (now-window, now]. Two facts from
-// word0 make it exact at the extremes: nothing happened after last, so a
-// window ending before it holds zero and one reaching it holds at least one;
-// and the newest non-empty bucket's events all lie in [its start, last]. The
-// one bucket the window's trailing edge cuts is assumed uniform.
+// estimate interpolates the count in (now-window, now] straight from the
+// buckets as they were laid out at the register's own epoch: no re-bucketing
+// to now, so no resolution is lost to merging. Two facts from word0 make it
+// exact at the extremes: nothing happened after last, so a window ending
+// before it holds zero and one reaching it holds at least one; and the
+// newest non-empty bucket's events all lie in [its start, last]. The one
+// bucket the window's trailing edge cuts is assumed uniform.
 func (f *Filter) estimate(w1, last, now, window uint64) int {
 	window = min(window, f.horizon)
 	if age(now, last) > window {
 		return 0
 	}
-	r, nowU, ok := f.aligned(w1, last, now)
-	if !ok {
-		return 0
-	}
-	// Bucket spans in ticks: [lo[j], hi[j]). The newest non-empty bucket ends
-	// at the last touch.
-	var lo, hi [nBuckets]float64
-	unit, top := float64(f.unit), float64(max(now, last))
-	newest := true
-	for j := range r {
-		lo[j], hi[j] = float64(bucketStart(nowU, j))*unit, top
-		if newest && r[j] > 0 {
-			hi[j] = max(lo[j], min(float64(last), top))
-			newest = false
-		}
-		top = lo[j]
-	}
+	e := regEpoch(w1, f.unitOf(last))
+	unit := float64(f.unit)
 	from := float64(now) - float64(window)
+	top := float64(e+1) * unit
+	newest := true
 	est := 0.0
-	for j, c := range r {
-		if from <= lo[j] {
-			est += float64(c)
+	for j := range nBuckets {
+		lo := float64(bucketStart(e, j)) * unit
+		c := float64(w1 >> bucketShift[j] & (1<<bucketBits[j] - 1))
+		hi := top
+		top = lo
+		if c == 0 {
+			if from >= lo {
+				break
+			}
 			continue
 		}
-		if from < hi[j] && hi[j] > lo[j] { // the cut bucket: assume uniform
-			est += float64(c) * (hi[j] - from) / (hi[j] - lo[j])
+		if newest {
+			hi = max(lo, min(float64(last), hi))
+			newest = false
+		}
+		if from <= lo {
+			est += c
+			continue
+		}
+		if from < hi {
+			est += c * (hi - from) / (hi - lo)
 		}
 		break
 	}
@@ -228,6 +222,13 @@ var (
 	bucketOff     = [nBuckets]int64{0, 1, 2, 4, 8, 16, 24}
 	bucketBits    = [nBuckets]uint{5, 5, 6, 7, 8, 8, 9}
 )
+
+var bucketStepMask = func() (m [nBuckets]int64) {
+	for j := range m {
+		m[j] = ^(int64(1)<<bucketLogStep[j] - 1)
+	}
+	return m
+}()
 
 // unitOf is t / f.unit via a precomputed reciprocal: one multiply instead of
 // a 64-bit divide on every touch.

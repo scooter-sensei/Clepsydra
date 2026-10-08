@@ -190,3 +190,21 @@ func BenchmarkInsertNearFull(b *testing.B) {
 	}
 	b.ReportMetric(float64(f.Evictions())/float64(b.N), "evict/op")
 }
+
+// VelocityCount with the table cache-resident: the estimator's CPU cost.
+func BenchmarkVelocityCountHot(b *testing.B) {
+	const n = 1 << 12
+	f, _ := New(Config{Capacity: n, Horizon: time.Minute})
+	hs := make([]uint64, n)
+	for i := range hs {
+		hs[i] = HashUint64(uint64(i))
+		for k := range 5 {
+			f.CheckAndTouchAt(hs[i], 0, 1000+uint64(k)*3_000_000)
+		}
+	}
+	w := f.Ticks(30 * time.Second)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		f.VelocityCountAt(hs[i&(n-1)], w, 20_000_000)
+	}
+}

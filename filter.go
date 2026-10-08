@@ -34,6 +34,9 @@ const (
 	// decayEvery gates the inline decay step to 1/64 of operations (by key
 	// hash) so the shared cursor's cache line is not touched on every call.
 	decayEvery = 63
+	// relocDepth bounds the cuckoo path an insert into two full lines may
+	// take before evicting.
+	relocDepth = 2
 )
 
 // Config sizes a Filter.
@@ -60,10 +63,11 @@ type Filter struct {
 	clock   func() uint64
 	seed    maphash.Seed
 
-	_         [64]byte
-	cursor    atomic.Uint64 // ContinuousDecay progress, in lines
-	_         [56]byte
-	evictions atomic.Uint64
+	_           [64]byte
+	cursor      atomic.Uint64 // ContinuousDecay progress, in lines
+	_           [56]byte
+	evictions   atomic.Uint64
+	relocations atomic.Uint64
 }
 
 // New allocates a Filter sized for ~50% slot load at cfg.Capacity.
@@ -153,7 +157,7 @@ func (f *Filter) VelocityCountAt(h, window, now uint64) int {
 	fp, tg := fingerprint(h), tag(h)
 	i := f.find(h&f.mask, fp, tg)
 	if i < 0 {
-		if i = f.find(f.alt(h), fp, tg); i < 0 {
+		if i = f.find(f.alt(h&f.mask, fp), fp, tg); i < 0 {
 			return 0
 		}
 	}
@@ -173,7 +177,7 @@ func (f *Filter) ContainsAt(h, window, now uint64) bool {
 	fp, tg := fingerprint(h), tag(h)
 	i := f.find(h&f.mask, fp, tg)
 	if i < 0 {
-		if i = f.find(f.alt(h), fp, tg); i < 0 {
+		if i = f.find(f.alt(h&f.mask, fp), fp, tg); i < 0 {
 			return false
 		}
 	}
@@ -184,6 +188,9 @@ func (f *Filter) ContainsAt(h, window, now uint64) bool {
 // Evictions counts live keys displaced because both candidate lines were full.
 func (f *Filter) Evictions() uint64 { return f.evictions.Load() }
 
+// Relocations counts entries moved to their alternate line to make room.
+func (f *Filter) Relocations() uint64 { return f.relocations.Load() }
+
 func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
 	if h&decayEvery == 0 {
 		f.decayStep(now, 1)
@@ -192,7 +199,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
 	for {
 		i := f.find(h&f.mask, fp, tg)
 		if i < 0 {
-			i = f.find(f.alt(h), fp, tg)
+			i = f.find(f.alt(h&f.mask, fp), fp, tg)
 		}
 		if i < 0 {
 			i = f.claim(h, fp, now)
@@ -235,14 +242,15 @@ func (f *Filter) find(line, fp uint64, tg uint8) int {
 }
 
 // claim installs fp in an empty or expired slot of the primary line, then the
-// alternate line. If all eight are live it evicts the one with the fewest
-// events in the horizon (oldest on ties), so a spray of fresh keys cannot
-// flush a repeat offender: one-off keys churn among themselves.
-// Returns word0 index.
+// alternate line. If all eight are live it tries to relocate one of them to
+// its own alternate line (one cuckoo step). Only then does it evict, taking
+// the slot with the fewest events in the horizon (oldest on ties), so a spray
+// of fresh keys cannot flush a repeat offender. Returns word0 index.
 func (f *Filter) claim(h, fp, now uint64) int {
+	lines := [2]uint64{h & f.mask, f.alt(h&f.mask, fp)}
 	for {
 		victim, victimScore, victimW0 := -1, uint64(1<<64-1), uint64(0)
-		for _, line := range [2]uint64{h & f.mask, f.alt(h)} {
+		for _, line := range lines {
 			base := int(line * wordsPerLine)
 			for s := 0; s < wordsPerLine; s += 2 {
 				w0 := atomic.LoadUint64(&f.words[base+s])
@@ -259,11 +267,66 @@ func (f *Filter) claim(h, fp, now uint64) int {
 				}
 			}
 		}
-		if victim >= 0 && atomic.CompareAndSwapUint64(&f.words[victim], victimW0, fp<<48|now) {
+		if victim < 0 {
+			continue
+		}
+		for _, line := range lines {
+			base := int(line * wordsPerLine)
+			for s := 0; s < wordsPerLine; s += 2 {
+				if f.relocate(base+s, line, fp<<48|now, now, relocDepth) {
+					return base + s
+				}
+			}
+		}
+		if atomic.CompareAndSwapUint64(&f.words[victim], victimW0, fp<<48|now) {
 			f.evictions.Add(1)
 			return victim
 		}
 	}
+}
+
+// relocate moves the entry at word index i (in line) to its alternate line
+// and installs mine in its place. If that line is full it first relocates one
+// of its entries, up to depth more steps (a bounded cuckoo path).
+// Copy-then-replace keeps every moved key findable throughout; if the source
+// changes mid-move the copy is withdrawn.
+func (f *Filter) relocate(i int, line, mine, now uint64, depth int) bool {
+	w0 := atomic.LoadUint64(&f.words[i])
+	if w0 == 0 {
+		return false
+	}
+	w1 := atomic.LoadUint64(&f.words[i+1])
+	a := f.alt(line, w0>>48)
+	base := int(a * wordsPerLine)
+	place := func(d int) bool { // d's word0 already holds w0
+		if old := atomic.LoadUint64(&f.words[d+1]); !atomic.CompareAndSwapUint64(&f.words[d+1], old, w1) {
+			atomic.CompareAndSwapUint64(&f.words[d], w0, 0)
+			return false
+		}
+		if atomic.CompareAndSwapUint64(&f.words[i], w0, mine) {
+			f.relocations.Add(1)
+			return true
+		}
+		atomic.CompareAndSwapUint64(&f.words[d], w0, 0) // source moved on; withdraw copy
+		return false
+	}
+	for s := 0; s < wordsPerLine; s += 2 {
+		d0 := atomic.LoadUint64(&f.words[base+s])
+		if d0 != 0 && age(now, d0&tsMask) <= f.horizon {
+			continue
+		}
+		if atomic.CompareAndSwapUint64(&f.words[base+s], d0, w0) {
+			return place(base + s)
+		}
+	}
+	if depth > 0 {
+		for s := 0; s < wordsPerLine; s += 2 {
+			if f.relocate(base+s, a, w0, now, depth-1) {
+				return place(base + s)
+			}
+		}
+	}
+	return false
 }
 
 // mass is the register's total event count still inside the horizon.
@@ -410,12 +473,15 @@ func (f *Filter) Occupancy(now uint64) int {
 // Slots returns the table's slot count.
 func (f *Filter) Slots() int { return len(f.words) / 2 }
 
-func (f *Filter) alt(h uint64) uint64 {
-	a := mix64(h^0x9e3779b97f4a7c15) & f.mask
-	if a == h&f.mask {
-		a ^= 1
+// alt is the other candidate line for fp stored in line. It depends only on
+// (line, fp), as in cuckoo filters, so a stored entry can be relocated
+// without knowing its key. alt(alt(l, fp), fp) == l.
+func (f *Filter) alt(line, fp uint64) uint64 {
+	x := mix64(fp*0x9e3779b97f4a7c15) & f.mask
+	if x == 0 {
+		x = 1
 	}
-	return a
+	return line ^ x
 }
 
 func fingerprint(h uint64) uint64 {

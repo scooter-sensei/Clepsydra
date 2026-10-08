@@ -234,7 +234,7 @@ func main() {
 	if len(dirty) > 0 {
 		rev += "+"
 	}
-	c5, c10, c15 := churn(0.5, 1), churn(1.0, 2), churn(1.5, 3)
+	c10, c20, c25 := churn(1.0, 2), churn(2.0, 3), churn(2.5, 4)
 	sfpr := staticFPR(5_000_000)
 	sp := spray()
 	var s speeds
@@ -243,7 +243,7 @@ func main() {
 	}
 	row := fmt.Sprintf("| %s | %s | %.3f%% | %.3f%% | %.3f%% | %.2e | %.2e | %.0f%% | %.0f | %.0f | %.0f | %.0f | %.1f | %.0f |",
 		time.Now().UTC().Format("01-02 15:04"), rev,
-		100*c5.fnr, 100*c10.fnr, 100*c15.fnr, c10.fpr, sfpr, 100*sp,
+		100*c10.fnr, 100*c20.fnr, 100*c25.fnr, c25.fpr, sfpr, 100*sp,
 		s.hitCold, s.hitHot, s.insert, s.velocity, s.parallel, s.str)
 	if *label != "" {
 		row += " " + *label + " |"
@@ -252,7 +252,7 @@ func main() {
 	}
 	fmt.Println(header)
 	fmt.Println(row)
-	fmt.Fprintf(os.Stderr, "(%.0fs; live keys/capacity: %.2f %.2f %.2f)\n", time.Since(t0).Seconds(), c5.live, c10.live, c15.live)
+	fmt.Fprintf(os.Stderr, "(%.0fs; live keys/capacity: %.2f %.2f %.2f)\n", time.Since(t0).Seconds(), c10.live, c20.live, c25.live)
 	if *label != "" && !*quick {
 		path := "results/history.md"
 		_ = os.MkdirAll("results", 0o755)
@@ -270,12 +270,12 @@ func main() {
 const intro = `# Temporal filter scorecard history
 
 Produced by ` + "`go run ./cmd/tfbench -label ...`" + `. Capacity 200k, horizon 60s.
-FN = missed keys on the churn workload at 0.5x / 1.0x / 1.5x capacity (ground truth: exact map).
-FP churn = false "seen" on the churn workload at 1.0x. Static FPR = 5M never-inserted probes at capacity.
+FN = missed keys on the churn workload at 1.0x / 2.0x / 2.5x the configured Capacity (the table is sized for ~38% slot load at 1.0x, ~95% at 2.5x) (ground truth: exact map).
+FP churn = false "seen" on the churn workload at 2.5x. Static FPR = 5M never-inserted probes at capacity.
 Spray = repeat offenders keeping exact counts after 20x-capacity spray. Latencies in ns/op (best of 3),
 1M-key table; parallel is per-op throughput with GOMAXPROCS goroutines; str = string key + built-in clock.
 
 `
 
-const header = `| when (UTC) | rev | FN 0.5x | FN 1.0x | FN 1.5x | FP churn | static FPR | spray | hit cold | hit hot | insert | velocity | parallel | str | change |
+const header = `| when (UTC) | rev | FN 1.0x | FN 2.0x | FN 2.5x | FP churn 2.5x | static FPR | spray | hit cold | hit hot | insert | velocity | parallel | str | change |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|`

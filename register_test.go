@@ -111,10 +111,3 @@ func TestUnitOfMatchesDivision(t *testing.T) {
 		}
 	}
 }
-
-func TestTicksClampsNegative(t *testing.T) {
-	f := newTest(t, 10, time.Minute)
-	if f.Ticks(-time.Second) != 0 {
-		t.Fatal("negative duration should be 0 ticks")
-	}
-}

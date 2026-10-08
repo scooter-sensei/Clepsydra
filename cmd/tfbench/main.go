@@ -12,352 +12,23 @@ package main
 import (
 	"flag"
 	"fmt"
-	"math"
-	"math/rand/v2"
 	"os"
 	"os/exec"
-	"runtime"
-	"sort"
 	"strings"
-	"sync"
-	"sync/atomic"
-	"testing"
 	"time"
-
-	tf "github.com/scooter-sensei/temporalfilter"
 )
-
-const (
-	capacity = 200_000
-	horizon  = 60 * time.Second
-	hTicks   = 60_000 // ms
-)
-
-var windows = []uint64{1_000, 10_000, 60_000}
-
-type churnResult struct{ fnr, fpr, live float64 }
-
-// churn drives a stream whose distinct live keys per horizon ≈ load×capacity.
-func churn(load float64, seed uint64) churnResult {
-	f, _ := tf.New(tf.Config{Capacity: capacity, Horizon: horizon, Resolution: time.Millisecond})
-	r := rand.New(rand.NewPCG(seed, 1))
-	const newFrac = 0.6
-	ratePerMs := load * capacity / (newFrac * hTicks) / 1.375 // calibrated: live keys per horizon ≈ load×capacity
-	type born struct {
-		h uint64
-		t uint64
-	}
-	var keys []born
-	last := map[uint64]uint64{}
-	var next uint64
-	var pos, neg, fn, fp int
-	for now := uint64(1); now < 4*hTicks; now++ {
-		n := int(ratePerMs)
-		if r.Float64() < ratePerMs-float64(n) {
-			n++
-		}
-		for range n {
-			var h uint64
-			if len(keys) == 0 || r.Float64() < newFrac {
-				next++
-				h = tf.HashUint64(next)
-				keys = append(keys, born{h, now})
-			} else { // repeat a key born within the last 1.5 horizons
-				lo := sort.Search(len(keys), func(i int) bool { return keys[i].t+hTicks*3/2 > now })
-				h = keys[lo+r.IntN(len(keys)-lo)].h
-			}
-			w := windows[r.IntN(len(windows))]
-			got := f.CheckAndTouchAt(h, w, now)
-			lt, ok := last[h]
-			want := ok && now-lt <= w
-			last[h] = now
-			if now < hTicks { // warm-up
-				continue
-			}
-			if want {
-				pos++
-				if !got {
-					fn++
-				}
-			} else {
-				neg++
-				if got {
-					fp++
-				}
-			}
-		}
-		if now%hTicks == 0 { // keep ground truth bounded
-			for k, t := range last {
-				if now-t > 2*hTicks {
-					delete(last, k)
-				}
-			}
-			cut := 0
-			for cut < len(keys) && keys[cut].t+2*hTicks < now {
-				cut++
-			}
-			keys = keys[cut:]
-		}
-	}
-	live := 0
-	for _, t := range last {
-		if 4*hTicks-t <= hTicks {
-			live++
-		}
-	}
-	return churnResult{float64(fn) / float64(max(pos, 1)), float64(fp) / float64(max(neg, 1)), float64(live) / capacity}
-}
-
-// velocityMAE: 2000 keys with mixed traffic shapes (steady, bursty, ramp,
-// sparse, on/off) over 5 horizons; every ~1ms one random key is queried for a
-// random window. Returns the mean over windows of sum|estimate-exact| / sum
-// exact, so short windows weigh as much as long ones.
-func velocityMAE() float64 {
-	f, _ := tf.New(tf.Config{Capacity: capacity, Horizon: horizon, Resolution: time.Millisecond})
-	r := rand.New(rand.NewPCG(9, 9))
-	const nkeys, end = 2000, 5 * hTicks
-	type ev struct {
-		t uint64
-		k int
-	}
-	var evs []ev
-	times := make([][]uint64, nkeys)
-	poisson := func(t0, t1, rate float64, k int) {
-		for t := t0 + r.ExpFloat64()/rate; t < t1; t += r.ExpFloat64() / rate {
-			evs = append(evs, ev{uint64(t) + 1, k})
-		}
-	}
-	for k := range nkeys {
-		switch k % 5 {
-		case 0: // steady 0.2-5/s
-			poisson(0, end, (0.2+r.Float64()*4.8)/1000, k)
-		case 1: // bursts of 5-20 within 200ms, every ~10s
-			for t := r.ExpFloat64() * 10_000; t < end; t += r.ExpFloat64() * 10_000 {
-				for range 5 + r.IntN(16) {
-					evs = append(evs, ev{uint64(t+r.Float64()*200) + 1, k})
-				}
-			}
-		case 2: // ramp 0.1 -> 10/s
-			for t := 0.0; t < end; {
-				t += r.ExpFloat64() / ((0.1 + 9.9*t/end) / 1000)
-				evs = append(evs, ev{uint64(t) + 1, k})
-			}
-		case 3: // sparse, ~1 per 20s
-			poisson(0, end, 1.0/20_000, k)
-		case 4: // 5s on at 4/s, 5s off
-			for t := 0.0; t < end; t += 10_000 {
-				poisson(t, t+5000, 4.0/1000, k)
-			}
-		}
-	}
-	sort.Slice(evs, func(i, j int) bool { return evs[i].t < evs[j].t })
-	hs := make([]uint64, nkeys)
-	for k := range hs {
-		hs[k] = tf.HashUint64(uint64(k) + 1<<50)
-	}
-	wins := []uint64{1_000, 5_000, 15_000, 30_000, 60_000}
-	errSum, exactSum := make([]float64, len(wins)), make([]float64, len(wins))
-	i := 0
-	for now := uint64(hTicks); now < end; now++ {
-		for i < len(evs) && evs[i].t <= now {
-			f.CheckAndTouchAt(hs[evs[i].k], 0, evs[i].t)
-			times[evs[i].k] = append(times[evs[i].k], evs[i].t)
-			i++
-		}
-		k, wi := r.IntN(nkeys), r.IntN(len(wins))
-		w := wins[wi]
-		ts := times[k]
-		exact := len(ts) - sort.Search(len(ts), func(j int) bool { return ts[j]+w > now })
-		got := f.VelocityCountAt(hs[k], w, now)
-		errSum[wi] += math.Abs(float64(got - exact))
-		exactSum[wi] += float64(exact)
-	}
-	mean := 0.0
-	for wi := range wins {
-		perWin := errSum[wi] / exactSum[wi]
-		fmt.Fprintf(os.Stderr, "vel MAE %2ds: %.3f\n", wins[wi]/1000, perWin)
-		mean += perWin / float64(len(wins))
-	}
-	return mean
-}
-
-// staticFPR: table at capacity, probe never-inserted keys with read-only Contains.
-func staticFPR(probes int) float64 {
-	f, _ := tf.New(tf.Config{Capacity: capacity, Horizon: horizon, Resolution: time.Millisecond})
-	for i := range capacity {
-		f.CheckAndTouchAt(tf.HashUint64(uint64(i)), 0, 1)
-	}
-	// FPR is ~1e-8, so it takes ~1e9 probes to see more than a handful;
-	// split them across cores.
-	var fp atomic.Int64
-	var wg sync.WaitGroup
-	workers := runtime.GOMAXPROCS(0)
-	for w := range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			n := 0
-			for i := w; i < probes; i += workers {
-				if f.ContainsAt(tf.HashUint64(uint64(capacity+i)), hTicks, 2) {
-					n++
-				}
-			}
-			fp.Add(int64(n))
-		}()
-	}
-	wg.Wait()
-	return float64(fp.Load()) / float64(probes)
-}
-
-// spray: 100 repeat offenders (20 hits each), then 20x capacity of one-off
-// keys inside the window. Returns the fraction of offenders still exact.
-func spray() float64 {
-	f, _ := tf.New(tf.Config{Capacity: capacity, Horizon: horizon, Resolution: time.Millisecond})
-	off := make([]uint64, 100)
-	for i := range off {
-		off[i] = tf.HashUint64(uint64(1<<40 + i))
-		for range 20 {
-			f.CheckAndTouchAt(off[i], 0, 1)
-		}
-	}
-	for i := range 20 * capacity {
-		f.CheckAndTouchAt(tf.HashUint64(uint64(i)), 0, 1+uint64(i%30_000))
-	}
-	ok := 0
-	for _, h := range off {
-		if f.VelocityCountAt(h, hTicks, 30_001) == 20 {
-			ok++
-		}
-	}
-	return float64(ok) / float64(len(off))
-}
-
-const benchKeys = 1 << 20
-
-func filled() (*tf.Filter, []uint64) {
-	f, _ := tf.New(tf.Config{Capacity: benchKeys, Horizon: horizon})
-	hs := make([]uint64, benchKeys)
-	for i := range hs {
-		hs[i] = tf.HashUint64(uint64(i))
-		f.CheckAndTouchAt(hs[i], 0, 1000)
-	}
-	return f, hs
-}
-
-func nsop(fn func(b *testing.B)) float64 {
-	best := 0.0
-	for range 3 { // best of 3: least disturbed by noisy neighbours
-		r := testing.Benchmark(fn)
-		v := float64(r.T.Nanoseconds()) / float64(r.N)
-		if best == 0 || v < best {
-			best = v
-		}
-	}
-	return best
-}
 
 type speeds struct{ hitCold, batch, hitHot, insert, insertSat, velocity, parallel, str, strCoarse, hitDRAM float64 }
-
-func speed() speeds {
-	f, hs := filled()
-	w := f.Ticks(30 * time.Second)
-	var s speeds
-	s.hitCold = nsop(func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			f.CheckAndTouchAt(hs[i&(benchKeys-1)], w, 2000+uint64(i>>10))
-		}
-	})
-	out := make([]bool, 64)
-	s.batch = nsop(func(b *testing.B) {
-		for i := 0; i < b.N; i += 64 {
-			lo := i & (benchKeys - 1)
-			f.CheckAndTouchBatch(hs[lo:lo+64], w, 2000+uint64(i>>10), out)
-		}
-	})
-	s.velocity = nsop(func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			f.VelocityCountAt(hs[i&(benchKeys-1)], w, 2000)
-		}
-	})
-	s.parallel = nsop(func(b *testing.B) {
-		var seed atomic.Uint64
-		b.RunParallel(func(pb *testing.PB) {
-			i := seed.Add(1) * 7919
-			for pb.Next() {
-				i++
-				f.CheckAndTouchAt(hs[i&(benchKeys-1)], w, 2000+i>>10)
-			}
-		})
-	})
-	// Steady-state insert: time advances so keys expire as fast as they
-	// arrive, holding ~1.0x capacity live.
-	var ctr uint64
-	perKey := f.Ticks(horizon) / benchKeys
-	s.insert = nsop(func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			ctr++
-			f.CheckAndTouchAt(tf.HashUint64(benchKeys+ctr), w, 1000+ctr*perKey)
-		}
-	})
-	// Saturated insert: worst case, every insert lands in full lines.
-	sat, _ := tf.New(tf.Config{Capacity: benchKeys / 4, Horizon: horizon}) // 512K slots
-	for i := range benchKeys {                                             // 2x overfilled
-		sat.CheckAndTouchAt(tf.HashUint64(uint64(i)), 0, 1000)
-	}
-	s.insertSat = nsop(func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			ctr++
-			sat.CheckAndTouchAt(tf.HashUint64(1<<40+ctr), w, 1000)
-		}
-	})
-	hot, _ := tf.New(tf.Config{Capacity: 4096, Horizon: horizon})
-	for i := range 4096 {
-		hot.CheckAndTouchAt(hs[i], 0, 1000)
-	}
-	s.hitHot = nsop(func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			hot.CheckAndTouchAt(hs[i&4095], w, 2000+uint64(i>>10))
-		}
-	})
-	// String keys on fresh 1M-key tables (the tables above have been
-	// written far into the future by the insert benchmarks).
-	keys := make([]string, benchKeys)
-	for i := range keys {
-		keys[i] = fmt.Sprintf("10.%d.%d.%d", i>>16, i>>8&255, i&255)
-	}
-	strBench := func(cfg tf.Config) float64 {
-		sf, _ := tf.New(cfg)
-		defer sf.Close()
-		for _, k := range keys {
-			sf.CheckAndTouch(k, time.Minute)
-		}
-		return nsop(func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				sf.CheckAndTouch(keys[i&(benchKeys-1)], 30*time.Second)
-			}
-		})
-	}
-	s.str = strBench(tf.Config{Capacity: benchKeys, Horizon: horizon})
-	s.strCoarse = strBench(tf.Config{Capacity: benchKeys, Horizon: horizon, CoarseClock: 100 * time.Microsecond})
-	// The 1M-key table (20 MB) fits this host's 260 MB L3. A 32M-key table
-	// (~600 MB) makes every lookup a DRAM miss, as in large deployments.
-	const hugeKeys = 1 << 25
-	big, _ := tf.New(tf.Config{Capacity: hugeKeys, Horizon: horizon})
-	for i := range uint64(hugeKeys) {
-		big.CheckAndTouchAt(tf.HashUint64(i), 0, 1000)
-	}
-	s.hitDRAM = nsop(func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			big.CheckAndTouchAt(tf.HashUint64(uint64(i*7919)%hugeKeys), w, 2000)
-		}
-	})
-	return s
-}
 
 func main() {
 	label := flag.String("label", "", "what changed in this iteration")
 	quick := flag.Bool("quick", false, "skip speed benchmarks")
+	exact := flag.Bool("exact", false, "print the deterministic metrics as raw counts (no timing, nothing written) and exit")
 	flag.Parse()
+	if *exact {
+		printExact()
+		return
+	}
 
 	t0 := time.Now()
 	commit, _ := exec.Command("git", "-c", "safe.directory=*", "rev-parse", "--short", "HEAD").Output()
@@ -367,11 +38,13 @@ func main() {
 		rev += "+"
 	}
 	c10, c20, c25 := churn(1.0, 2), churn(1.1, 3), churn(1.15, 4)
-	sfpr := staticFPR(1_000_000_000)
-	sp := spray()
-	vmae := velocityMAE()
-	probe, _ := tf.New(tf.Config{Capacity: capacity, Horizon: horizon})
-	bpk := float64(probe.Slots()*16) / capacity
+	sfpr := float64(staticFPR(fprProbes)) / fprProbes
+	sp := float64(spray()) / sprayOffenders
+	vmae, per := velocityMAE()
+	for _, v := range per {
+		fmt.Fprintf(os.Stderr, "vel MAE %2ds: %.3f\n", v.w/1000, v.errSum/v.exact)
+	}
+	bpk := bytesPerKey()
 	var s speeds
 	if !*quick {
 		s = speed()

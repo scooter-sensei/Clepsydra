@@ -146,15 +146,20 @@ func (f *Filter) nextReg(old, tg, last, now uint64, reset bool) uint64 {
 	return tg<<tagShift | uint64(e)&epochMask<<48 | r.pack()
 }
 
-// bump counts one event at now in the register at word index i.
-func (f *Filter) bump(i int, tg, last, now uint64, reset bool) uint64 {
+// bump counts one event at now in the register at word index i, which
+// must still carry tag tg. It reports false, writing nothing, if the slot has
+// been handed to another key since the caller found it.
+func (f *Filter) bump(i int, tg, last, now uint64, reset bool) (uint64, bool) {
 	for {
 		old := atomic.LoadUint64(&f.words[i])
+		if old>>tagShift != tg {
+			return 0, false
+		}
 		nw := f.nextReg(old, tg, last, now, reset)
 		if nw == old || atomic.CompareAndSwapUint64(&f.words[i], old, nw) {
-			return nw
+			return nw, true
 		}
-		reset = false // a concurrent writer already re-tagged it; merge
+		reset = false // a concurrent touch already reset it; merge
 	}
 }
 

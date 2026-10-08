@@ -31,3 +31,4 @@ Spray = repeat offenders keeping exact counts after 20x-capacity spray. Latencie
 
 Note 14:26: the host was noisy this round (cold-path benchmarks varied ±20% between back-to-back runs of the same binary). Compare cold columns across rows with care. The hot-hit gain held in 8 interleaved A/B runs (min 45 → 34 ns).
 | 10-08 14:46 | c8dbb54+ | 0.000% | 0.000% | 0.051% | 0.00e+00 | 1.80e-08 | 100% | 18.8 | 0.081 | 85 | 61 | 29 | 197 | 465 | 96 | 23.3 | 221 | 119 | displaced bit: match only entries homed at the key's primary line |
+| 10-08 15:12 | f07b04e+ | 0.000% | 0.000% | 0.051% | 0.00e+00 | 1.80e-08 | 100% | 18.8 | 0.081 | 90 | 58 | 35 | 222 | 483 | 93 | 21.9 | 196 | 122 | publish register with its key on install; bumps check the tag (no lost counts under relocation races); batched count APIs |

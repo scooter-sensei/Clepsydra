@@ -322,9 +322,12 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
 			mu := &f.claimMu[h>>(64-claimStripeBits)]
 			mu.Lock()
 			if i = f.locate(h, fp, tg); i < 0 {
-				i = f.claim(h, fp, now)
-				w1 := f.bump(i+1, tg, now, now, true)
+				w1 := f.nextReg(0, tg, now, now, true) // first event, published with the key
+				i = f.claim(h, fp, w1, now)
 				mu.Unlock()
+				if i < 0 {
+					continue
+				}
 				if !wantCount {
 					return false, 0
 				}
@@ -341,7 +344,10 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
 		if now > last && !atomic.CompareAndSwapUint64(&f.words[i], w0, w0&^tsMask|now) {
 			continue
 		}
-		w1 := f.bump(i+1, tg, last, now, stale)
+		w1, ok := f.bump(i+1, tg, last, now, stale)
+		if !ok {
+			continue // the slot was handed to another key after our CAS; look again
+		}
 		seen := !stale && age(now, last) <= window
 		if !wantCount {
 			return seen, 0
@@ -379,9 +385,12 @@ func (f *Filter) find(line, fpd, tg uint64) int {
 // alternate line. If all eight are live it tries to relocate one of them to
 // its own alternate line (one cuckoo step). Only then does it evict, taking
 // the slot with the fewest events in the horizon (oldest on ties), so a spray
-// of fresh keys cannot flush a repeat offender. Returns word0 index. The
-// caller holds the key's claim stripe.
-func (f *Filter) claim(h, fp, now uint64) int {
+// of fresh keys cannot flush a repeat offender. w1 is the new key's tagged
+// register, published together with its word0. Returns word0 index, or -1
+// if it lost a race for a slot and the caller should look the key up again
+// (a racing writer may have completed it). The caller holds the key's claim
+// stripe.
+func (f *Filter) claim(h, fp, w1, now uint64) int {
 	lines := [2]uint64{f.primary(h), f.alt(f.primary(h), fp)}
 	mine := [2]uint64{fp<<48 | now, fp<<48 | dispBit | now}
 	for {
@@ -390,9 +399,10 @@ func (f *Filter) claim(h, fp, now uint64) int {
 			for s := 0; s < wordsPerLine; s += 2 {
 				w0 := atomic.LoadUint64(&f.words[base+s])
 				if w0 == 0 || age(now, w0&tsMask) > f.horizon {
-					if f.install(base+s, w0, atomic.LoadUint64(&f.words[base+s+1]), mine[li]) {
+					if f.install(base+s, w0, atomic.LoadUint64(&f.words[base+s+1]), mine[li], w1) {
 						return base + s
 					}
+					return -1
 				}
 			}
 		}
@@ -405,7 +415,7 @@ func (f *Filter) claim(h, fp, now uint64) int {
 			for li, line := range lines {
 				base := int(line * wordsPerLine)
 				for s := 0; s < wordsPerLine; s += 2 {
-					if f.relocate(base+s, line, mine[li], now, depth, &budget) {
+					if f.relocate(base+s, line, mine[li], w1, now, depth, &budget) {
 						f.pressure.Store(p - p>>3) // EWMA toward "searches succeed"
 						return base + s
 					}
@@ -419,40 +429,42 @@ func (f *Filter) claim(h, fp, now uint64) int {
 			for s := 0; s < wordsPerLine; s += 2 {
 				w0 := atomic.LoadUint64(&f.words[base+s])
 				ts := w0 & tsMask
-				w1 := atomic.LoadUint64(&f.words[base+s+1])
-				score := f.mass(w1, ts, now)<<48 | ts
+				vw1 := atomic.LoadUint64(&f.words[base+s+1])
+				score := f.mass(vw1, ts, now)<<48 | ts
 				if score < victimScore {
-					victim, vli, victimScore, victimW0, victimW1 = base+s, li, score, w0, w1
+					victim, vli, victimScore, victimW0, victimW1 = base+s, li, score, w0, vw1
 				}
 			}
 		}
-		if f.install(victim, victimW0, victimW1, mine[vli]) {
+		if f.install(victim, victimW0, victimW1, mine[vli], w1) {
 			f.evictions.Add(1)
 			return victim
 		}
+		return -1
 	}
 }
 
-// install takes slot i (word index) for mine if it still holds w0/w1. It
-// clears word1 before publishing word0, so a late writer to the old
-// occupant's register can't stamp its tag over the new key.
-func (f *Filter) install(i int, w0, w1, mine uint64) bool {
-	if !atomic.CompareAndSwapUint64(&f.words[i+1], w1, 0) {
+// install hands slot i (word index), if it still holds w0/w1, to the entry
+// mine0/mine1. word1 goes first: a reader of the old occupant then sees a
+// foreign tag and misses rather than matching a half-written slot, and a
+// late writer to the old register (bump) sees the tag change and backs off.
+func (f *Filter) install(i int, w0, w1, mine0, mine1 uint64) bool {
+	if !atomic.CompareAndSwapUint64(&f.words[i+1], w1, mine1) {
 		return false
 	}
-	if atomic.CompareAndSwapUint64(&f.words[i], w0, mine) {
+	if atomic.CompareAndSwapUint64(&f.words[i], w0, mine0) {
 		return true
 	}
-	atomic.CompareAndSwapUint64(&f.words[i+1], 0, w1) // lost the slot; put word1 back
+	atomic.CompareAndSwapUint64(&f.words[i+1], mine1, w1) // lost the slot; put word1 back
 	return false
 }
 
 // relocate moves the entry at word index i (in line) to its alternate line
-// and installs mine in its place. If that line is full it first relocates one
-// of its entries, up to depth more steps (a bounded cuckoo path).
-// Copy-then-replace keeps every moved key findable throughout; if the source
-// changes mid-move the copy is withdrawn.
-func (f *Filter) relocate(i int, line, mine, now uint64, depth int, budget *int) bool {
+// and installs mine0/mine1 in its place. If that line is full it first
+// relocates one of its entries, up to depth more steps (a bounded cuckoo
+// path). Copy-then-replace keeps every moved key findable throughout; if the
+// source changes mid-move (a touch updated it) the copy is withdrawn.
+func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budget *int) bool {
 	w0 := atomic.LoadUint64(&f.words[i])
 	if w0 == 0 {
 		return false
@@ -464,13 +476,9 @@ func (f *Filter) relocate(i int, line, mine, now uint64, depth int, budget *int)
 	w1 := atomic.LoadUint64(&f.words[i+1])
 	a := f.alt(line, w0>>48)
 	base := int(a * wordsPerLine)
-	moved := w0 ^ dispBit       // displaced iff it wasn't
-	place := func(d int) bool { // d's word0 already holds moved
-		if old := atomic.LoadUint64(&f.words[d+1]); !atomic.CompareAndSwapUint64(&f.words[d+1], old, w1) {
-			atomic.CompareAndSwapUint64(&f.words[d], moved, 0)
-			return false
-		}
-		if f.install(i, w0, w1, mine) {
+	moved := w0 ^ dispBit         // displaced iff it wasn't
+	replace := func(d int) bool { // the copy is at d; now take the source
+		if f.install(i, w0, w1, mine0, mine1) {
 			f.relocations.Add(1)
 			return true
 		}
@@ -482,14 +490,14 @@ func (f *Filter) relocate(i int, line, mine, now uint64, depth int, budget *int)
 		if d0 != 0 && age(now, d0&tsMask) <= f.horizon {
 			continue
 		}
-		if atomic.CompareAndSwapUint64(&f.words[base+s], d0, moved) {
-			return place(base + s)
+		if f.install(base+s, d0, atomic.LoadUint64(&f.words[base+s+1]), moved, w1) {
+			return replace(base + s)
 		}
 	}
 	if depth > 0 {
 		for s := 0; s < wordsPerLine; s += 2 {
-			if f.relocate(base+s, a, moved, now, depth-1, budget) {
-				return place(base + s)
+			if f.relocate(base+s, a, moved, w1, now, depth-1, budget) {
+				return replace(base + s)
 			}
 		}
 	}

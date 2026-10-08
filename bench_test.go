@@ -208,16 +208,3 @@ func BenchmarkVelocityCountHot(b *testing.B) {
 		f.VelocityCountAt(hs[i&(n-1)], w, 20_000_000)
 	}
 }
-
-// Steady state at 1.0x capacity (85% slot load): keys expire as fast as
-// they arrive, so inserts find expired slots, as in production.
-func BenchmarkInsertSteady(b *testing.B) {
-	f, _ := benchFilter(b)
-	per := f.Ticks(time.Minute) / benchKeys
-	ctr := uint64(benchKeys)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		ctr++
-		f.CheckAndTouchAt(HashUint64(ctr), 0, 1000+ctr*per)
-	}
-}

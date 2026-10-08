@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	slotsPerLine = 8
+	slotsPerLine = 4
 	wordsPerLine = 2 * slotsPerLine
 	subWindows   = 6
 	tsMask       = 1<<48 - 1

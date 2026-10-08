@@ -2,75 +2,68 @@
 
 A fixed-memory, lock-free filter answering **"seen key X in the last W?"** and **"how many times in the last W?"** for any `W ≤ Horizon`, chosen per query.
 
-## Layout: everything for a key lives in one 64-byte cache line
+Measured history of every change is in `results/history.md`; ideas done, tried and queued are in `results/backlog.md`.
 
-The table is an array of 64-byte-aligned lines, each holding 4 slots of 2 words:
+## Layout
+
+The table is any number of 64-byte-aligned lines (multiply-shift indexing, no power-of-two rounding). Each line holds 4 slots of 2 words:
 
 ```
-word0: fp(16) | lastTouch(48)            freshness, exact to 1 tick (default 1µs, ~8.9y range)
-word1: tag(8) | epoch(8) | c0 c1 c2 c3 c4 c5 (6 × 8-bit)   velocity shift register
+word0: fp(16) | lastTouch(48)                       freshness, exact to 1 tick (default 1µs)
+word1: tag(12) | epoch(4) | 7 velocity buckets (48)  age-graded counter
 ```
 
-- **Identity** = 16-bit `fp` + 8-bit `tag` = 24-bit fingerprint, both in the same line, so no extra memory traffic.
-- **Placement**: primary line from the hash; overflow to one alternate line only when the primary has 4 live keys. Inserts prefer empty or expired slots, then evict the lowest-velocity of the 8 candidates (oldest on ties), so spraying fresh keys cannot flush a repeat offender.
-- **Velocity**: `c0` counts the current sub-window (`Horizon/5`), `c5` the oldest. Advancing time by `d` sub-windows is `ctr << 8d`.
+- **Identity** = 16-bit `fp` + 12-bit `tag` = 28 bits, both in the same line. The primary line uses hash bits 0..35, disjoint from the identity bits.
+- **Sizing**: `Config.Load` (default 0.85) is the slot occupancy at `Capacity`, which comes to ~19 B per key.
+- **Placement**: primary line first, then the alternate line `alt(l) = (x(fp) − l) mod lines`, which is its own inverse, so stored entries can move without their key.
+  - If both lines are full, a **bounded cuckoo search** (iterative deepening, depth 3) moves an entry to its alternate line.
+  - The search budget shrinks while recent searches fail (an EWMA), so an overfull table degrades to cheap eviction.
+  - Eviction takes the **lowest-velocity** slot (oldest on ties), so a spray of fresh keys can't flush a repeat offender.
+- **Velocity register** (`register.go`): 7 buckets that are 1, 1, 1–2, 2–4, 4–8, 8 and 8 units wide, where a unit is `Horizon/24`. Resolution is fine near now and coarse further back.
+  - Bucket boundaries only coarsen as time passes, so advancing any distance is one re-bucketing pass with no per-tick work and no sweep.
+  - Counter widths grow with bucket width (5,5,6,7,8,8,9 bits). A full bucket **spills** into older ones, so heavy hitters keep their counts (up to 2,617 per horizon) instead of capping.
+  - The 4-bit epoch is resolved against `lastTouch`'s unit.
 
 ## Operations
 
 | Op | What it does | Memory |
 |---|---|---|
-| `CheckAndTouch(key, W) bool` | CAS `lastTouch` to now, returns `now − lastTouch ≤ W`, bumps `c0` | 1 line on hit (primary), 2 on insert |
-| `VelocityCount(key, W) int` | Shifts the register to now and sums the sub-windows inside W, interpolating the oldest partial one | 1 line |
+| `CheckAndTouch(key, W) bool` | CAS `lastTouch` to now, returns `now − lastTouch ≤ W`, counts the event | 1 line on a primary hit |
+| `CheckAndTouchBatch(hs, W, now, out)` | Same for many keys; issues every key's line load first so cache misses overlap | ~half the per-key time |
+| `VelocityCount(key, W) int` | Re-buckets to now, sums buckets inside W, interpolates the one the edge cuts | 1 line |
 | `TouchAndCount(key, W)` | Both in one pass | 1 line |
 | `ContainsAt(h, W, now)` | Read-only freshness check | 1 line |
-| `ContinuousDecay()` | Bounded slot reclaimer, described below | ≤ 4 lines/step |
+| `ContinuousDecay()` | Bounded slot reclaimer, paced by the clock (one table pass per horizon, ≤ 4 lines per step) | — |
 
-`*At(hash, windowTicks, nowTicks)` variants take a pre-hashed key and a caller-cached clock for hot paths.
+`*At(hash, windowTicks, nowTicks)` variants take a pre-hashed key and a caller-cached clock.
 
 ## Why it avoids the classic problems
 
-- **No boundary artifacts in freshness.** `lastTouch` is an exact timestamp, so `W` is checked to the tick (tested at `age == W` and `W+1`). Rotating Bloom generations can't do this.
-- **No sweep spikes.** Expiry is arithmetic: every access compares `now` with `lastTouch` and shifts the register by elapsed sub-windows. Correctness never waits on a sweep.
-- **ContinuousDecay** only reclaims slots so occupancy stays honest. A shared cursor advances at `lines × elapsed / Horizon`, which is one table pass per horizon, paced by the clock. Callers claim at most 1–4 lines per step via CAS. It runs inline on 1/64 of operations (gated by key hash, so the cursor's cache line stays cold) and never blocks a reader. If it falls behind by more than a lap, it skips ahead safely.
-- **Velocity without per-event timestamps.** 48 bits per key. `lastTouch` sharpens the estimate: it is exactly 0 once `W < now − lastTouch`, at least 1 otherwise, and `c0`'s events are known to lie at or before `lastTouch`.
+- **No boundary artifacts in freshness.** `lastTouch` is exact, so `W` is checked to the tick.
+- **No sweep spikes.** Expiry and decay are arithmetic on every access. The reclaimer only frees slots, a few lines at a time, inline on 1/64 of operations.
+- **Velocity is gated by exact facts.**
+  - The count is 0 once `W < now − lastTouch`, and at least 1 otherwise.
+  - The newest non-empty bucket's events end at `lastTouch`.
 
-## Accuracy (from `filter_test.go`)
+## Current numbers
 
-- **Freshness FPR**: about `slots-probed × 2⁻²⁴ ≈ 2e-7`. Measured **0 / 1,000,000** probes at full capacity.
-- **False negatives** (evictions at capacity, ~38% slot load): **86 / 100,000 (0.09%)**. These only happen when both candidate lines are full of live keys, so oversize `Capacity` if FN matters more than memory.
-- **Velocity error**: at most the count in the one sub-window straddling the window's trailing edge (property-tested on Poisson and bursty traffic for W = 1s–60s). Resolution is `Horizon/5`. If you need 1s precision on a 60s horizon, run a second filter with a short horizon.
-- **Saturation**: 255 per sub-window (1,275 per horizon). Beyond that the key is already an outlier.
-- **Concurrency**: no lost updates on hits (CAS loops). Tested under `-race` with 8 writers.
+These come from the latest row of `results/history.md`: capacity 200k, horizon 60s, 4-vCPU Xeon @ 2.1GHz, latencies on a 1M-key table.
 
-## Performance
+- **Missed keys:** 0 at 85% and 94% slot load, 0.06% at 98%.
+- **False positives:** 4e-8 on probes of never-inserted keys at capacity, and 0 on the churn workload.
+- **Memory:** 18.8 B per key.
+- **Velocity error:** 0.087, averaged over 1–60s windows and 5 traffic shapes. The original 6×8 linear register scored 0.129.
+- **Latency:**
+  - hit, cold table: ~85 ns
+  - batched: ~60 ns per key
+  - hit, cache-resident: ~45 ns
+  - steady-state insert: ~190 ns
+  - VelocityCount: ~115 ns
+  - parallel hit: ~25 ns per op
 
-Measured on a 4-vCPU Xeon @ 2.1GHz with 1M live keys (32 MiB table, cold cache). Full output is in `bench.txt`.
+## Known limits
 
-| Benchmark | ns/op | allocs |
-|---|---|---|
-| CheckAndTouch hit, cache-resident | **~35** | 0 |
-| CheckAndTouch hit, cold table | ~130 | 0 |
-| CheckAndTouch hit, 4 goroutines (throughput) | **~26** | 0 |
-| CheckAndTouch miss/insert | ~230 | 0 |
-| VelocityCount | ~125 | 0 |
-| TouchAndCount | ~185 | 0 |
-| String key + built-in clock | ~245 | 0 |
-| Baseline: mutex + map, 1 goroutine | ~175 | 0 |
-| Baseline: mutex + map, 4 goroutines | ~280 | 0 |
-
-pprof on the cold hit path shows 71% in `find`, which is the single DRAM miss on the line, plus 13% in `touch` (the word0 CAS) and 10% in `bump`. The operation is memory-bound on exactly one line, as designed. On top of that the filter uses fixed memory (16 B/slot, sized for ~50% load), tracks velocity, and scales with cores. The mutex baseline has none of those.
-
-## Known limits / next steps
-
-1. **Insert touches 2 lines.** An overflow-hint bit per line would let most misses skip the alternate line.
-2. **Hot-path cost is two locked CASes.** Skipping the word0 CAS when `now − lastTouch` is under some resolution floor would roughly halve the cache-resident cost.
-3. **Duplicate-insert race.** Concurrent *first* inserts of the same key can land in two slots, which splits counts. This is rare and bounded.
-4. **Sub-window precision.** Below `Horizon/5` the count is interpolated, not exact.
-
-## Run
-
-```
-go test -race ./...
-go test -run '^$' -bench . -benchmem
-go test -run '^$' -bench CheckAndTouchHit$ -cpuprofile cpu.prof && go tool pprof -top cpu.prof
-```
+- Two locked CASes per touch, one per word. This is the floor of the cache-resident hit cost.
+- Inserts above ~94% slot load need cuckoo paths and cost µs. Size `Capacity` and `Load` for your live-key count.
+- Concurrent *first* inserts of one key can land in two slots, which splits counts. This is rare.
+- `HashUint64` is unkeyed. Use `Hash` (seeded) for attacker-controlled keys.

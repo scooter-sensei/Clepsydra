@@ -1,0 +1,33 @@
+goos: linux
+goarch: amd64
+pkg: github.com/scooter-sensei/temporalfilter
+cpu: Intel(R) Xeon(R) Processor @ 2.10GHz
+BenchmarkCheckAndTouchHit-4           	17607751	       127.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkCheckAndTouchHit-4           	20319289	       140.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkCheckAndTouchHit-4           	16414916	       126.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkCheckAndTouchMissInsert-4    	13028914	       230.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkCheckAndTouchMissInsert-4    	11471416	       237.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkCheckAndTouchMissInsert-4    	12689805	       230.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTouchAndCount-4              	16802316	       186.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTouchAndCount-4              	14613042	       197.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTouchAndCount-4              	14218525	       170.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkVelocityCount-4              	21857388	       135.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkVelocityCount-4              	22712228	       111.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkVelocityCount-4              	19319394	       129.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkCheckAndTouchParallel-4      	96681067	        26.51 ns/op	       0 B/op	       0 allocs/op
+BenchmarkCheckAndTouchParallel-4      	89124438	        26.83 ns/op	       0 B/op	       0 allocs/op
+BenchmarkCheckAndTouchParallel-4      	92300244	        24.84 ns/op	       0 B/op	       0 allocs/op
+BenchmarkCheckAndTouchString-4        	 9344548	       242.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkCheckAndTouchString-4        	10583887	       256.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkCheckAndTouchString-4        	 9078800	       235.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBaselineMutexMap-4           	11055721	       187.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBaselineMutexMap-4           	12306991	       164.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBaselineMutexMap-4           	12694132	       180.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBaselineMutexMapParallel-4   	 9821640	       291.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBaselineMutexMapParallel-4   	 9626452	       259.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBaselineMutexMapParallel-4   	 9898735	       296.1 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/scooter-sensei/temporalfilter	95.069s
+BenchmarkCheckAndTouchHitHot-4   	36906067	        35.40 ns/op	       0 B/op	       0 allocs/op
+BenchmarkCheckAndTouchHitHot-4   	27259695	        39.82 ns/op	       0 B/op	       0 allocs/op
+BenchmarkCheckAndTouchHitHot-4   	33885360	        33.25 ns/op	       0 B/op	       0 allocs/op

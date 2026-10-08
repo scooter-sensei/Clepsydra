@@ -7,7 +7,7 @@ FN a/b/c = missed keys on the churn workload at multiples of the configured Capa
 - from 13:26: 1.0x / 1.1x / 1.15x with the table sized for 85% load at 1.0x (85% / 94% / 98% slot load, ~19 B/key)
 
 B/key = table bytes per Capacity key. vel MAE = VelocityCount error: per window (1,5,15,30,60s) sum|est-exact|/sum exact, averaged over windows; 5 traffic shapes (from 13:36; the 13:34 row pooled all windows).
-FP churn = false "seen" on the churn workload at 1.0x. Static FPR = never-inserted probes at capacity (5M probes before 13:16, 50M after).
+FP churn = false "seen" on the churn workload at 1.0x. Static FPR = never-inserted probes at capacity (5M probes before 13:16, 50M after, 1e9 from 14:55).
 Spray = repeat offenders keeping exact counts after 20x-capacity spray. Latencies in ns/op (best of 3),
 1M-key table; batch = CheckAndTouchBatch per key (rows from 13:20); insert = steady state (keys expire as fast as they arrive), insert sat = every line full (rows before 13:10 measured only the saturated case, in the insert column); parallel is per-op throughput with GOMAXPROCS goroutines; str = string key + built-in clock; str coarse = same with CoarseClock (100µs cached clock), from 13:54. Before 13:57, str ran on a table the insert benchmarks had filled with future-dated keys, so it measured the eviction path; from 13:57 it uses a fresh 1M-key table.
 
@@ -29,3 +29,4 @@ Spray = repeat offenders keeping exact counts after 20x-capacity spray. Latencie
 | 10-08 14:26 | a8a2848+ | 0.000% | 0.000% | 0.051% | 0.00e+00 | 4.00e-08 | 100% | 18.8 | 0.081 | 89 | 60 | 32 | 220 | 500 | 111 | 27.8 | 214 | 123 | branchless first-free-bucket increment (hot keys) |
 
 Note 14:26: the host was noisy this round (cold-path benchmarks varied ±20% between back-to-back runs of the same binary). Compare cold columns across rows with care. The hot-hit gain held in 8 interleaved A/B runs (min 45 → 34 ns).
+| 10-08 14:46 | c8dbb54+ | 0.000% | 0.000% | 0.051% | 0.00e+00 | 1.80e-08 | 100% | 18.8 | 0.081 | 85 | 61 | 29 | 197 | 465 | 96 | 23.3 | 221 | 119 | displaced bit: match only entries homed at the key's primary line |

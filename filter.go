@@ -31,10 +31,14 @@ import (
 const (
 	slotsPerLine = 4
 	wordsPerLine = 2 * slotsPerLine
-	tsMask       = 1<<48 - 1
-	tagBits      = 12
-	tagShift     = 64 - tagBits
-	epochMask    = 0xf
+	// dispBit marks an entry living in its alternate line ("displaced").
+	// Lookups match it too, so a key is compared only with entries that
+	// share its primary line, wherever they live: half the false matches.
+	dispBit   = 1 << 47
+	tsMask    = dispBit - 1
+	tagBits   = 12
+	tagShift  = 64 - tagBits
+	epochMask = 0xf
 	// decayEvery gates the inline decay step to 1/64 of operations (by key
 	// hash) so the shared cursor's cache line is not touched on every call.
 	decayEvery = 63
@@ -217,11 +221,9 @@ func (f *Filter) TouchAndCountAt(h, window, now uint64) (bool, int) {
 // VelocityCountAt is VelocityCount on a pre-hashed key, in ticks.
 func (f *Filter) VelocityCountAt(h, window, now uint64) int {
 	fp, tg := fingerprint(h), tag(h)
-	i := f.find(f.primary(h), fp, tg)
+	i := f.locate(h, fp, tg)
 	if i < 0 {
-		if i = f.find(f.alt(f.primary(h), fp), fp, tg); i < 0 {
-			return 0
-		}
+		return 0
 	}
 	w0 := atomic.LoadUint64(&f.words[i])
 	if w0>>48 != fp || age(now, w0&tsMask) > f.horizon {
@@ -237,11 +239,9 @@ func (f *Filter) VelocityCountAt(h, window, now uint64) int {
 // ContainsAt reports whether h was touched within window, without touching it.
 func (f *Filter) ContainsAt(h, window, now uint64) bool {
 	fp, tg := fingerprint(h), tag(h)
-	i := f.find(f.primary(h), fp, tg)
+	i := f.locate(h, fp, tg)
 	if i < 0 {
-		if i = f.find(f.alt(f.primary(h), fp), fp, tg); i < 0 {
-			return false
-		}
+		return false
 	}
 	w0 := atomic.LoadUint64(&f.words[i])
 	return w0>>48 == fp && age(now, w0&tsMask) <= min(window, f.horizon)
@@ -282,21 +282,14 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
 	}
 	fp, tg := fingerprint(h), tag(h)
 	for {
-		i := f.find(f.primary(h), fp, tg)
-		if i < 0 {
-			i = f.find(f.alt(f.primary(h), fp), fp, tg)
-		}
+		i := f.locate(h, fp, tg)
 		if i < 0 {
 			// Miss: serialize first touches of the same key so two racers
 			// can't each claim a slot (which would split its count). The
 			// lock covers only this path; hits never take it.
 			mu := &f.claimMu[h>>(64-claimStripeBits)]
 			mu.Lock()
-			p := f.primary(h)
-			if i = f.find(p, fp, tg); i < 0 {
-				i = f.find(f.alt(p, fp), fp, tg)
-			}
-			if i < 0 {
+			if i = f.locate(h, fp, tg); i < 0 {
 				i = f.claim(h, fp, now)
 				w1 := f.bump(i+1, tg, now, now, true)
 				mu.Unlock()
@@ -313,7 +306,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
 		}
 		last := w0 & tsMask
 		stale := age(now, last) > f.horizon
-		if now > last && !atomic.CompareAndSwapUint64(&f.words[i], w0, fp<<48|now) {
+		if now > last && !atomic.CompareAndSwapUint64(&f.words[i], w0, w0&^tsMask|now) {
 			continue
 		}
 		w1 := f.bump(i+1, tg, last, now, stale)
@@ -325,14 +318,25 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
 	}
 }
 
-// find returns the word index of the slot matching fp and tag in line, or -1.
-// The tag lives in word1 of the same cache line, so identity is effectively a
-// 24-bit fingerprint at no extra memory traffic.
-func (f *Filter) find(line, fp, tg uint64) int {
+// locate returns the word index of h's slot, or -1: an undisplaced entry in
+// the primary line or a displaced one in the alternate line.
+func (f *Filter) locate(h, fp, tg uint64) int {
+	p := f.primary(h)
+	if i := f.find(p, fp<<1, tg); i >= 0 {
+		return i
+	}
+	return f.find(f.alt(p, fp), fp<<1|1, tg)
+}
+
+// find returns the word index of the slot in line whose fingerprint and
+// displaced bit equal fpd and whose tag is tg, or -1. The tag lives in word1
+// of the same cache line, so identity is effectively 28 bits at no extra
+// memory traffic.
+func (f *Filter) find(line, fpd, tg uint64) int {
 	base := int(line * wordsPerLine)
 	w := f.words[base : base+wordsPerLine : base+wordsPerLine]
 	for s := 0; s < wordsPerLine; s += 2 {
-		if atomic.LoadUint64(&w[s])>>48 == fp && atomic.LoadUint64(&w[s+1])>>tagShift == tg {
+		if atomic.LoadUint64(&w[s])>>47 == fpd && atomic.LoadUint64(&w[s+1])>>tagShift == tg {
 			return base + s
 		}
 	}
@@ -347,13 +351,14 @@ func (f *Filter) find(line, fp, tg uint64) int {
 // caller holds the key's claim stripe.
 func (f *Filter) claim(h, fp, now uint64) int {
 	lines := [2]uint64{f.primary(h), f.alt(f.primary(h), fp)}
+	mine := [2]uint64{fp<<48 | now, fp<<48 | dispBit | now}
 	for {
-		for _, line := range lines {
+		for li, line := range lines {
 			base := int(line * wordsPerLine)
 			for s := 0; s < wordsPerLine; s += 2 {
 				w0 := atomic.LoadUint64(&f.words[base+s])
 				if w0 == 0 || age(now, w0&tsMask) > f.horizon {
-					if f.install(base+s, w0, atomic.LoadUint64(&f.words[base+s+1]), fp<<48|now) {
+					if f.install(base+s, w0, atomic.LoadUint64(&f.words[base+s+1]), mine[li]) {
 						return base + s
 					}
 				}
@@ -365,10 +370,10 @@ func (f *Filter) claim(h, fp, now uint64) int {
 		p := f.pressure.Load()
 		budget := 8 + int(uint64(relocBudget-8)*(pressureOne-uint64(p))>>pressureShift)
 		for depth := 0; depth <= relocDepth; depth++ {
-			for _, line := range lines {
+			for li, line := range lines {
 				base := int(line * wordsPerLine)
 				for s := 0; s < wordsPerLine; s += 2 {
-					if f.relocate(base+s, line, fp<<48|now, now, depth, &budget) {
+					if f.relocate(base+s, line, mine[li], now, depth, &budget) {
 						f.pressure.Store(p - p>>3) // EWMA toward "searches succeed"
 						return base + s
 					}
@@ -376,8 +381,8 @@ func (f *Filter) claim(h, fp, now uint64) int {
 			}
 		}
 		f.pressure.Store(p - p>>3 + pressureOne>>3) // EWMA toward "searches fail"
-		victim, victimScore, victimW0, victimW1 := -1, uint64(1<<64-1), uint64(0), uint64(0)
-		for _, line := range lines {
+		victim, vli, victimScore, victimW0, victimW1 := -1, 0, uint64(1<<64-1), uint64(0), uint64(0)
+		for li, line := range lines {
 			base := int(line * wordsPerLine)
 			for s := 0; s < wordsPerLine; s += 2 {
 				w0 := atomic.LoadUint64(&f.words[base+s])
@@ -385,11 +390,11 @@ func (f *Filter) claim(h, fp, now uint64) int {
 				w1 := atomic.LoadUint64(&f.words[base+s+1])
 				score := f.mass(w1, ts, now)<<48 | ts
 				if score < victimScore {
-					victim, victimScore, victimW0, victimW1 = base+s, score, w0, w1
+					victim, vli, victimScore, victimW0, victimW1 = base+s, li, score, w0, w1
 				}
 			}
 		}
-		if f.install(victim, victimW0, victimW1, fp<<48|now) {
+		if f.install(victim, victimW0, victimW1, mine[vli]) {
 			f.evictions.Add(1)
 			return victim
 		}
@@ -427,16 +432,17 @@ func (f *Filter) relocate(i int, line, mine, now uint64, depth int, budget *int)
 	w1 := atomic.LoadUint64(&f.words[i+1])
 	a := f.alt(line, w0>>48)
 	base := int(a * wordsPerLine)
-	place := func(d int) bool { // d's word0 already holds w0
+	moved := w0 ^ dispBit       // displaced iff it wasn't
+	place := func(d int) bool { // d's word0 already holds moved
 		if old := atomic.LoadUint64(&f.words[d+1]); !atomic.CompareAndSwapUint64(&f.words[d+1], old, w1) {
-			atomic.CompareAndSwapUint64(&f.words[d], w0, 0)
+			atomic.CompareAndSwapUint64(&f.words[d], moved, 0)
 			return false
 		}
 		if f.install(i, w0, w1, mine) {
 			f.relocations.Add(1)
 			return true
 		}
-		atomic.CompareAndSwapUint64(&f.words[d], w0, 0) // source moved on; withdraw copy
+		atomic.CompareAndSwapUint64(&f.words[d], moved, 0) // source moved on; withdraw copy
 		return false
 	}
 	for s := 0; s < wordsPerLine; s += 2 {
@@ -444,13 +450,13 @@ func (f *Filter) relocate(i int, line, mine, now uint64, depth int, budget *int)
 		if d0 != 0 && age(now, d0&tsMask) <= f.horizon {
 			continue
 		}
-		if atomic.CompareAndSwapUint64(&f.words[base+s], d0, w0) {
+		if atomic.CompareAndSwapUint64(&f.words[base+s], d0, moved) {
 			return place(base + s)
 		}
 	}
 	if depth > 0 {
 		for s := 0; s < wordsPerLine; s += 2 {
-			if f.relocate(base+s, a, w0, now, depth-1, budget) {
+			if f.relocate(base+s, a, moved, now, depth-1, budget) {
 				return place(base + s)
 			}
 		}

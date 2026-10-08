@@ -9,11 +9,12 @@ Measured history of every change is in `results/history.md`; ideas done, tried a
 The table is any number of 64-byte-aligned lines (multiply-shift indexing, no power-of-two rounding). Each line holds 4 slots of 2 words:
 
 ```
-word0: fp(16) | lastTouch(48)                       freshness, exact to 1 tick (default 1µs)
+word0: fp(16) | displaced(1) | lastTouch(47)        freshness, exact to 1 tick (default 1µs, ~4.4 years)
 word1: tag(12) | epoch(4) | 7 velocity buckets (48)  age-graded counter
 ```
 
 - **Identity** = 16-bit `fp` + 12-bit `tag` = 28 bits, both in the same line. The primary line uses hash bits 0..35, disjoint from the identity bits.
+- **Displaced bit**: set when an entry lives in its alternate line, flipped whenever it moves. Lookups match it, so a key is only compared with entries homed at its own primary line. This halves false positives for free.
 - **Sizing**: `Config.Load` (default 0.85) is the slot occupancy at `Capacity`, which comes to ~19 B per key.
 - **Placement**: primary line first, then the alternate line `alt(l) = (x(fp) − l) mod lines`, which is its own inverse, so stored entries can move without their key.
   - If both lines are full, a **bounded cuckoo search** (iterative deepening, depth 3) moves an entry to its alternate line.
@@ -50,14 +51,14 @@ word1: tag(12) | epoch(4) | 7 velocity buckets (48)  age-graded counter
 These come from the latest row of `results/history.md`: capacity 200k, horizon 60s, 4-vCPU Xeon @ 2.1GHz, latencies on a 1M-key table.
 
 - **Missed keys:** 0 at 85% and 94% slot load, 0.06% at 98%.
-- **False positives:** 4e-8 on probes of never-inserted keys at capacity, and 0 on the churn workload.
+- **False positives:** 1.8e-8 on 1e9 probes of never-inserted keys at capacity, and 0 on the churn workload.
 - **Memory:** 18.8 B per key.
 - **Velocity error:** 0.081, averaged over 1–60s windows and 5 traffic shapes. The original 6×8 linear register scored 0.129.
 - **Latency:**
   - hit, cold table: ~85 ns
   - batched: ~60 ns per key
-  - hit, cache-resident: ~45 ns
-  - steady-state insert: ~220 ns
+  - hit, cache-resident: ~30 ns
+  - steady-state insert: ~200 ns
   - VelocityCount: ~90-100 ns cold, ~45 ns cache-resident
   - string key with CoarseClock: ~115 ns
   - parallel hit: ~25 ns per op

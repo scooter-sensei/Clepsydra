@@ -208,3 +208,60 @@ func BenchmarkVelocityCountHot(b *testing.B) {
 		f.VelocityCountAt(hs[i&(n-1)], w, 20_000_000)
 	}
 }
+
+// Lookup of keys never inserted, on a cold table at 85% slot load.
+func BenchmarkContainsAbsent(b *testing.B) {
+	f, _ := benchFilter(b)
+	w := f.Ticks(30 * time.Second)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		f.ContainsAt(HashUint64(uint64(1<<40+i)), w, 2000)
+	}
+}
+
+// Steady-state insert: time advances so keys expire as fast as they arrive,
+// holding ~1.0x capacity live (the scorecard's insert column).
+func BenchmarkInsertSteady(b *testing.B) {
+	f, _ := benchFilter(b)
+	w := f.Ticks(30 * time.Second)
+	perKey := f.Ticks(time.Minute) / benchKeys
+	ctr := uint64(0)
+	for range 2 * benchKeys { // until the initial keys have expired
+		ctr++
+		f.CheckAndTouchAt(HashUint64(benchKeys+ctr), w, 1000+ctr*perKey)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ctr++
+		f.CheckAndTouchAt(HashUint64(benchKeys+ctr), w, 1000+ctr*perKey)
+	}
+}
+
+func b2u(b bool) uint64 {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// Same, but each probe's key depends on the previous answer, so lookups
+// can't overlap: per-request latency rather than throughput.
+func BenchmarkContainsAbsentLatency(b *testing.B) {
+	f, _ := benchFilter(b)
+	w := f.Ticks(30 * time.Second)
+	dep := uint64(0)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		dep += b2u(f.ContainsAt(HashUint64(uint64(1<<40+i)+dep), w, 2000))
+	}
+}
+
+func BenchmarkHitLatency(b *testing.B) {
+	f, hs := benchFilter(b)
+	w := f.Ticks(30 * time.Second)
+	dep := uint64(0)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		dep += b2u(f.CheckAndTouchAt(hs[(uint64(i)+dep)&(benchKeys-1)], w, 2000+uint64(i>>10)))
+	}
+}

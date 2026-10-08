@@ -16,8 +16,10 @@ import (
 	"math/rand/v2"
 	"os"
 	"os/exec"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -185,13 +187,26 @@ func staticFPR(probes int) float64 {
 	for i := range capacity {
 		f.CheckAndTouchAt(tf.HashUint64(uint64(i)), 0, 1)
 	}
-	fp := 0
-	for i := range probes {
-		if f.ContainsAt(tf.HashUint64(uint64(capacity+i)), hTicks, 2) {
-			fp++
-		}
+	// FPR is ~1e-8, so it takes ~1e9 probes to see more than a handful;
+	// split them across cores.
+	var fp atomic.Int64
+	var wg sync.WaitGroup
+	workers := runtime.GOMAXPROCS(0)
+	for w := range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			n := 0
+			for i := w; i < probes; i += workers {
+				if f.ContainsAt(tf.HashUint64(uint64(capacity+i)), hTicks, 2) {
+					n++
+				}
+			}
+			fp.Add(int64(n))
+		}()
 	}
-	return float64(fp) / float64(probes)
+	wg.Wait()
+	return float64(fp.Load()) / float64(probes)
 }
 
 // spray: 100 repeat offenders (20 hits each), then 20x capacity of one-off
@@ -340,7 +355,7 @@ func main() {
 		rev += "+"
 	}
 	c10, c20, c25 := churn(1.0, 2), churn(1.1, 3), churn(1.15, 4)
-	sfpr := staticFPR(50_000_000)
+	sfpr := staticFPR(1_000_000_000)
 	sp := spray()
 	vmae := velocityMAE()
 	probe, _ := tf.New(tf.Config{Capacity: capacity, Horizon: horizon})
@@ -379,7 +394,7 @@ const intro = `# Temporal filter scorecard history
 
 Produced by ` + "`go run ./cmd/tfbench -label ...`" + `. Capacity 200k, horizon 60s.
 FN = missed keys on the churn workload at 1.0x / 2.0x / 2.5x the configured Capacity (the table is sized for ~38% slot load at 1.0x, ~95% at 2.5x) (ground truth: exact map).
-FP churn = false "seen" on the churn workload at the last load point. Static FPR = 50M never-inserted probes at capacity.
+FP churn = false "seen" on the churn workload at the last load point. Static FPR = 1e9 never-inserted probes at capacity.
 Spray = repeat offenders keeping exact counts after 20x-capacity spray. Latencies in ns/op (best of 3),
 1M-key table; batch = CheckAndTouchBatch per key; insert = steady state (keys expire as fast as they arrive), insert sat = every line full; parallel is per-op throughput with GOMAXPROCS goroutines; str = string key + built-in clock on a fresh 1M-key table; str coarse = same with CoarseClock (100µs cached clock).
 

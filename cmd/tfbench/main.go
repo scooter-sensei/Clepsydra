@@ -205,7 +205,7 @@ func speed() speeds {
 	})
 	// Saturated insert: worst case, every insert lands in full lines.
 	sat, _ := tf.New(tf.Config{Capacity: benchKeys / 4, Horizon: horizon}) // 512K slots
-	for i := range benchKeys { // 2x overfilled
+	for i := range benchKeys {                                             // 2x overfilled
 		sat.CheckAndTouchAt(tf.HashUint64(uint64(i)), 0, 1000)
 	}
 	s.insertSat = nsop(func(b *testing.B) {
@@ -249,7 +249,7 @@ func main() {
 		rev += "+"
 	}
 	c10, c20, c25 := churn(1.0, 2), churn(2.0, 3), churn(2.5, 4)
-	sfpr := staticFPR(5_000_000)
+	sfpr := staticFPR(50_000_000)
 	sp := spray()
 	var s speeds
 	if !*quick {
@@ -285,7 +285,7 @@ const intro = `# Temporal filter scorecard history
 
 Produced by ` + "`go run ./cmd/tfbench -label ...`" + `. Capacity 200k, horizon 60s.
 FN = missed keys on the churn workload at 1.0x / 2.0x / 2.5x the configured Capacity (the table is sized for ~38% slot load at 1.0x, ~95% at 2.5x) (ground truth: exact map).
-FP churn = false "seen" on the churn workload at 2.5x. Static FPR = 5M never-inserted probes at capacity.
+FP churn = false "seen" on the churn workload at 2.5x. Static FPR = 50M never-inserted probes at capacity.
 Spray = repeat offenders keeping exact counts after 20x-capacity spray. Latencies in ns/op (best of 3),
 1M-key table; insert = steady state (keys expire as fast as they arrive), insert sat = every line full; parallel is per-op throughput with GOMAXPROCS goroutines; str = string key + built-in clock.
 

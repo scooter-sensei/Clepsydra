@@ -6,7 +6,7 @@
 // four 2-word slots:
 //
 //	word0: fp(16) | lastTouch(48)          // freshness, CheckAndTouch
-//	word1: tag(8) | epoch(8) | c0..c5(6x8) // velocity shift register
+//	word1: tag(12) | epoch(4) | c0..c5(6x8) // velocity shift register
 //
 // c0 counts the newest sub-window, c5 the oldest. Advancing time by d
 // sub-windows is a left shift by 8*d bits, so decay is pure arithmetic on the
@@ -31,6 +31,9 @@ const (
 	tsMask       = 1<<48 - 1
 	ctrMask      = 1<<48 - 1
 	ctrMax       = 0xff
+	tagBits      = 12
+	tagShift     = 64 - tagBits
+	epochMask    = 0xf
 	// decayEvery gates the inline decay step to 1/64 of operations (by key
 	// hash) so the shared cursor's cache line is not touched on every call.
 	decayEvery = 63
@@ -173,7 +176,7 @@ func (f *Filter) VelocityCountAt(h, window, now uint64) int {
 		return 0
 	}
 	w1 := atomic.LoadUint64(&f.words[i+1])
-	if uint8(w1>>56) != tg {
+	if w1>>tagShift != tg {
 		return 0
 	}
 	return f.estimate(w1, w0&tsMask, now, window)
@@ -237,11 +240,11 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
 // find returns the word index of the slot matching fp and tag in line, or -1.
 // The tag lives in word1 of the same cache line, so identity is effectively a
 // 24-bit fingerprint at no extra memory traffic.
-func (f *Filter) find(line, fp uint64, tg uint8) int {
+func (f *Filter) find(line, fp, tg uint64) int {
 	base := int(line * wordsPerLine)
 	w := f.words[base : base+wordsPerLine : base+wordsPerLine]
 	for s := 0; s < wordsPerLine; s += 2 {
-		if atomic.LoadUint64(&w[s])>>48 == fp && uint8(atomic.LoadUint64(&w[s+1])>>56) == tg {
+		if atomic.LoadUint64(&w[s])>>48 == fp && atomic.LoadUint64(&w[s+1])>>tagShift == tg {
 			return base + s
 		}
 	}
@@ -349,12 +352,23 @@ func (f *Filter) relocate(i int, line, mine, now uint64, depth int, budget *int)
 	return false
 }
 
+// lag is how many sub-windows the register in w1 trails now. The stored
+// epoch is only 4 bits: callers only consult registers whose lastTouch is
+// within the horizon (< subWindows sub-windows), so mod 16 is unambiguous,
+// and lags of 8..15 mean the caller's clock is slightly behind (treated as 0).
+// ok is false once every counter has shifted out.
+func (f *Filter) lag(w1, now uint64) (d uint64, ok bool) {
+	d = (now/f.gran - w1>>48) & epochMask
+	if d > epochMask/2 {
+		return 0, true
+	}
+	return d, d < subWindows
+}
+
 // mass is the register's total event count still inside the horizon.
 func (f *Filter) mass(w1, now uint64) uint64 {
-	d := (now/f.gran - uint64(uint8(w1>>48))) & 0xff
-	if d >= 0x80 {
-		d = 0
-	} else if d >= subWindows {
+	d, ok := f.lag(w1, now)
+	if !ok {
 		return 0
 	}
 	ctr := w1 & ctrMask << (8 * d) & ctrMask
@@ -364,15 +378,15 @@ func (f *Filter) mass(w1, now uint64) uint64 {
 
 // bump advances the velocity shift register to now and increments c0.
 // reset discards counts left by a previous occupant or an expired run.
-func (f *Filter) bump(i int, tg uint8, now uint64, reset bool) uint64 {
+func (f *Filter) bump(i int, tg, now uint64, reset bool) uint64 {
 	nowE := now / f.gran
 	for {
 		old := atomic.LoadUint64(&f.words[i])
-		e := uint64(uint8(old >> 48))
+		e := old >> 48 & epochMask
 		ctr := old & ctrMask
-		if reset || uint8(old>>56) != tg {
+		if reset || old>>tagShift != tg {
 			ctr, e = 0, nowE
-		} else if d := (nowE - e) & 0xff; d < 0x80 { // d >= 0x80: caller's clock is behind; count in c0
+		} else if d := (nowE - e) & epochMask; d <= epochMask/2 { // else caller's clock is behind; count in c0
 			if d >= subWindows {
 				ctr = 0
 			} else {
@@ -383,7 +397,7 @@ func (f *Filter) bump(i int, tg uint8, now uint64, reset bool) uint64 {
 		if ctr&ctrMax != ctrMax {
 			ctr++
 		}
-		nw := uint64(tg)<<56 | (e&0xff)<<48 | ctr
+		nw := tg<<tagShift | (e&epochMask)<<48 | ctr
 		if atomic.CompareAndSwapUint64(&f.words[i], old, nw) {
 			return nw
 		}
@@ -404,10 +418,8 @@ func (f *Filter) estimate(w1, last, now, window uint64) int {
 		return 0
 	}
 	nowE := now / f.gran
-	d := (nowE - uint64(uint8(w1>>48))) & 0xff
-	if d >= 0x80 {
-		d = 0
-	} else if d >= subWindows {
+	d, ok := f.lag(w1, now)
+	if !ok {
 		return 0
 	}
 	ctr := w1 & ctrMask << (8 * d) & ctrMask
@@ -511,7 +523,9 @@ func fingerprint(h uint64) uint64 {
 	return 1
 }
 
-func tag(h uint64) uint8 { return uint8(h >> 40) }
+// tag is 12 more fingerprint bits, kept in word1: with the 16-bit fp the
+// slot identity is 28 bits.
+func tag(h uint64) uint64 { return h >> 36 & (1<<tagBits - 1) }
 
 // age is now-ts, or 0 if ts is ahead (a caller with a slightly stale clock).
 func age(now, ts uint64) uint64 {

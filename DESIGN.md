@@ -52,18 +52,19 @@ These come from the latest row of `results/history.md`: capacity 200k, horizon 6
 - **Missed keys:** 0 at 85% and 94% slot load, 0.06% at 98%.
 - **False positives:** 4e-8 on probes of never-inserted keys at capacity, and 0 on the churn workload.
 - **Memory:** 18.8 B per key.
-- **Velocity error:** 0.087, averaged over 1–60s windows and 5 traffic shapes. The original 6×8 linear register scored 0.129.
+- **Velocity error:** 0.081, averaged over 1–60s windows and 5 traffic shapes. The original 6×8 linear register scored 0.129.
 - **Latency:**
   - hit, cold table: ~85 ns
   - batched: ~60 ns per key
   - hit, cache-resident: ~45 ns
-  - steady-state insert: ~190 ns
-  - VelocityCount: ~115 ns
+  - steady-state insert: ~220 ns
+  - VelocityCount: ~90-100 ns cold, ~45 ns cache-resident
+  - string key with CoarseClock: ~115 ns
   - parallel hit: ~25 ns per op
 
 ## Known limits
 
 - Two locked CASes per touch, one per word. This is the floor of the cache-resident hit cost.
 - Inserts above ~94% slot load need cuckoo paths and cost µs. Size `Capacity` and `Load` for your live-key count.
-- Concurrent *first* inserts of one key can land in two slots, which splits counts. This is rare.
+- First touches of a key take a striped lock (256 stripes) so racing writers can't create two slots. Hits stay lock-free.
 - `HashUint64` is unkeyed. Use `Hash` (seeded) for attacker-controlled keys.

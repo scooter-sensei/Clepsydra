@@ -46,6 +46,9 @@ const (
 	relocBudget   = 500
 	pressureShift = 16
 	pressureOne   = 1 << pressureShift
+	// claimStripeBits sets 256 insert-path lock stripes, picked by the
+	// hash's top bits.
+	claimStripeBits = 8
 )
 
 // Config sizes a Filter.
@@ -91,6 +94,13 @@ type Filter struct {
 	relocations atomic.Uint64
 	_           [48]byte
 	pressure    atomic.Uint32 // EWMA of relocation-search failure, 0..pressureOne
+	_           [60]byte
+	claimMu     [1 << claimStripeBits]paddedMutex // serializes first touches per key
+}
+
+type paddedMutex struct {
+	sync.Mutex
+	_ [56]byte
 }
 
 // New allocates a Filter sized for cfg.Load slot occupancy at cfg.Capacity.
@@ -277,12 +287,25 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
 			i = f.find(f.alt(f.primary(h), fp), fp, tg)
 		}
 		if i < 0 {
-			i = f.claim(h, fp, now)
-			w1 := f.bump(i+1, tg, now, now, true)
-			if !wantCount {
-				return false, 0
+			// Miss: serialize first touches of the same key so two racers
+			// can't each claim a slot (which would split its count). The
+			// lock covers only this path; hits never take it.
+			mu := &f.claimMu[h>>(64-claimStripeBits)]
+			mu.Lock()
+			p := f.primary(h)
+			if i = f.find(p, fp, tg); i < 0 {
+				i = f.find(f.alt(p, fp), fp, tg)
 			}
-			return false, f.estimate(w1, now, now, window)
+			if i < 0 {
+				i = f.claim(h, fp, now)
+				w1 := f.bump(i+1, tg, now, now, true)
+				mu.Unlock()
+				if !wantCount {
+					return false, 0
+				}
+				return false, f.estimate(w1, now, now, window)
+			}
+			mu.Unlock() // another first touch got there first: count as a hit
 		}
 		w0 := atomic.LoadUint64(&f.words[i])
 		if w0>>48 != fp {
@@ -320,7 +343,8 @@ func (f *Filter) find(line, fp, tg uint64) int {
 // alternate line. If all eight are live it tries to relocate one of them to
 // its own alternate line (one cuckoo step). Only then does it evict, taking
 // the slot with the fewest events in the horizon (oldest on ties), so a spray
-// of fresh keys cannot flush a repeat offender. Returns word0 index.
+// of fresh keys cannot flush a repeat offender. Returns word0 index. The
+// caller holds the key's claim stripe.
 func (f *Filter) claim(h, fp, now uint64) int {
 	lines := [2]uint64{f.primary(h), f.alt(f.primary(h), fp)}
 	for {
@@ -329,7 +353,7 @@ func (f *Filter) claim(h, fp, now uint64) int {
 			for s := 0; s < wordsPerLine; s += 2 {
 				w0 := atomic.LoadUint64(&f.words[base+s])
 				if w0 == 0 || age(now, w0&tsMask) > f.horizon {
-					if atomic.CompareAndSwapUint64(&f.words[base+s], w0, fp<<48|now) {
+					if f.install(base+s, w0, atomic.LoadUint64(&f.words[base+s+1]), fp<<48|now) {
 						return base + s
 					}
 				}
@@ -352,23 +376,38 @@ func (f *Filter) claim(h, fp, now uint64) int {
 			}
 		}
 		f.pressure.Store(p - p>>3 + pressureOne>>3) // EWMA toward "searches fail"
-		victim, victimScore, victimW0 := -1, uint64(1<<64-1), uint64(0)
+		victim, victimScore, victimW0, victimW1 := -1, uint64(1<<64-1), uint64(0), uint64(0)
 		for _, line := range lines {
 			base := int(line * wordsPerLine)
 			for s := 0; s < wordsPerLine; s += 2 {
 				w0 := atomic.LoadUint64(&f.words[base+s])
 				ts := w0 & tsMask
-				score := f.mass(atomic.LoadUint64(&f.words[base+s+1]), ts, now)<<48 | ts
+				w1 := atomic.LoadUint64(&f.words[base+s+1])
+				score := f.mass(w1, ts, now)<<48 | ts
 				if score < victimScore {
-					victim, victimScore, victimW0 = base+s, score, w0
+					victim, victimScore, victimW0, victimW1 = base+s, score, w0, w1
 				}
 			}
 		}
-		if atomic.CompareAndSwapUint64(&f.words[victim], victimW0, fp<<48|now) {
+		if f.install(victim, victimW0, victimW1, fp<<48|now) {
 			f.evictions.Add(1)
 			return victim
 		}
 	}
+}
+
+// install takes slot i (word index) for mine if it still holds w0/w1. It
+// clears word1 before publishing word0, so a late writer to the old
+// occupant's register can't stamp its tag over the new key.
+func (f *Filter) install(i int, w0, w1, mine uint64) bool {
+	if !atomic.CompareAndSwapUint64(&f.words[i+1], w1, 0) {
+		return false
+	}
+	if atomic.CompareAndSwapUint64(&f.words[i], w0, mine) {
+		return true
+	}
+	atomic.CompareAndSwapUint64(&f.words[i+1], 0, w1) // lost the slot; put word1 back
+	return false
 }
 
 // relocate moves the entry at word index i (in line) to its alternate line
@@ -393,7 +432,7 @@ func (f *Filter) relocate(i int, line, mine, now uint64, depth int, budget *int)
 			atomic.CompareAndSwapUint64(&f.words[d], w0, 0)
 			return false
 		}
-		if atomic.CompareAndSwapUint64(&f.words[i], w0, mine) {
+		if f.install(i, w0, w1, mine) {
 			f.relocations.Add(1)
 			return true
 		}

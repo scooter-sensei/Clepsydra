@@ -12,16 +12,21 @@ Scorecard: `bash bench.sh "label"` (race tests + cmd/tfbench, appends to results
 6. Relocation depth 3 / budget 500: misses at 98% load 0.19% → 0.06%.
 7. Velocity register: 7 age-graded buckets (H/24 near now), closed-form advance, spill on overflow. Velocity MAE 0.129 → 0.087; heavy hitters no longer cap at 255.
 8. Register fast paths: lazy victim scoring, in-place same-unit increment, reciprocal instead of divide.
+9. VelocityCount estimates from the register's own epoch (no re-bucketing). Cache-resident 123 → 45 ns; MAE 0.087 → 0.081.
+10. CoarseClock option (cached clock, one refresher goroutine). String path 172 → 110 ns.
+11. Concurrent first touches of one key no longer land in two slots (striped lock on the miss path only). Was ~12% duplicate slots and ~5% lost counts with 8 racing writers; now 0. Steady insert +~15 ns.
 
 ## Tried, no gain
 - 2 MiB huge-page mmap for the table: THP was granted, latency unchanged (Go heap already benefits or TLB isn't the bottleneck here).
 - 8-slot (128-byte) buckets: 0 misses at 98% load and 3x cheaper near-full inserts, but ~10% slower everywhere else. Reverted.
 - Piecewise-linear density in the cut velocity bucket: slightly worse than uniform. Reverted.
+- Alternate-line prefetch (plain load and asm PREFETCHT0), two-choice insert: hits got slower. Reverted.
+- Lock-free duplicate repair (in-flight marker + lower index wins): cut duplicates 10x but can't be made symmetric. Replaced by the stripe lock.
 - Pure dyadic register (H/32, widths to 32 units): same mean MAE as the H/24 geometry but 60s error 0.040 vs 0.024.
 
 ## Next
-- VelocityCount is ~115 ns vs ~75 ns with the old register: skip re-bucketing when in the same unit, integer math in estimate.
 - Hot path: two CASes per touch. Option: Resolution floor that skips the word0 CAS when the timestamp would not change.
-- String path: cheaper clock (cached coarse clock option), faster hashing.
+- String path: faster hashing.
+- Relocation copy-then-replace can still leave a duplicate if a touch lands on the copy mid-move. Rare; needs a test at >94% load with racing writers.
 - Batch variants for VelocityCount / TouchAndCount.
 - Near-full (>94%) inserts cost µs; consider a per-line overflow hint so misses skip the alternate line.

@@ -256,7 +256,7 @@ func nsop(fn func(b *testing.B)) float64 {
 	return best
 }
 
-type speeds struct{ hitCold, batch, hitHot, insert, insertSat, velocity, parallel, str, strCoarse float64 }
+type speeds struct{ hitCold, batch, hitHot, insert, insertSat, velocity, parallel, str, strCoarse, hitDRAM float64 }
 
 func speed() speeds {
 	f, hs := filled()
@@ -339,6 +339,18 @@ func speed() speeds {
 	}
 	s.str = strBench(tf.Config{Capacity: benchKeys, Horizon: horizon})
 	s.strCoarse = strBench(tf.Config{Capacity: benchKeys, Horizon: horizon, CoarseClock: 100 * time.Microsecond})
+	// The 1M-key table (20 MB) fits this host's 260 MB L3. A 32M-key table
+	// (~600 MB) makes every lookup a DRAM miss, as in large deployments.
+	const hugeKeys = 1 << 25
+	big, _ := tf.New(tf.Config{Capacity: hugeKeys, Horizon: horizon})
+	for i := range uint64(hugeKeys) {
+		big.CheckAndTouchAt(tf.HashUint64(i), 0, 1000)
+	}
+	s.hitDRAM = nsop(func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			big.CheckAndTouchAt(tf.HashUint64(uint64(i*7919)%hugeKeys), w, 2000)
+		}
+	})
 	return s
 }
 
@@ -373,6 +385,7 @@ func main() {
 	} else {
 		row += " |"
 	}
+	row += fmt.Sprintf(" %.0f |", s.hitDRAM)
 	fmt.Println(header)
 	fmt.Println(row)
 	fmt.Fprintf(os.Stderr, "(%.0fs; live keys/capacity: %.2f %.2f %.2f)\n", time.Since(t0).Seconds(), c10.live, c20.live, c25.live)
@@ -396,9 +409,9 @@ Produced by ` + "`go run ./cmd/tfbench -label ...`" + `. Capacity 200k, horizon 
 FN = missed keys on the churn workload at 1.0x / 1.1x / 1.15x the configured Capacity, i.e. ~85% / 94% / 98% slot load at the default Load (ground truth: exact map). Two-choice, 4-slot cuckoo tables saturate at ~97.7% load, so the 1.15x column cannot reach 0 with this layout.
 FP churn = false "seen" on the churn workload at the last load point. Static FPR = 1e9 never-inserted probes at capacity.
 Spray = repeat offenders keeping exact counts after 20x-capacity spray. Latencies in ns/op (best of 3),
-1M-key table; batch = CheckAndTouchBatch per key; insert = steady state (keys expire as fast as they arrive), insert sat = every line full; parallel is per-op throughput with GOMAXPROCS goroutines; str = string key + built-in clock on a fresh 1M-key table; str coarse = same with CoarseClock (100µs cached clock).
+1M-key table (20 MB, which fits this host's 260 MB L3, so "cold" means L3); hit DRAM = hit on a 32M-key (~600 MB) table, every lookup a DRAM miss (last column, from 15:39); batch = CheckAndTouchBatch per key; insert = steady state (keys expire as fast as they arrive), insert sat = every line full; parallel is per-op throughput with GOMAXPROCS goroutines; str = string key + built-in clock on a fresh 1M-key table; str coarse = same with CoarseClock (100µs cached clock).
 
 `
 
-const header = `| when (UTC) | rev | FN 1.0x | FN 1.1x | FN 1.15x | FP churn 1.15x | static FPR | spray | B/key | vel MAE | hit cold | batch | hit hot | insert | insert sat | velocity | parallel | str | str coarse | change |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|`
+const header = `| when (UTC) | rev | FN 1.0x | FN 1.1x | FN 1.15x | FP churn 1.15x | static FPR | spray | B/key | vel MAE | hit cold | batch | hit hot | insert | insert sat | velocity | parallel | str | str coarse | change | hit DRAM |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|`

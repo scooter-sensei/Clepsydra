@@ -287,3 +287,83 @@ func BenchmarkHitLatency(b *testing.B) {
 		dep += b2u(f.CheckAndTouchAt(hs[(uint64(i)+dep)&(benchKeys-1)], w, 2000+uint64(i>>10)))
 	}
 }
+
+// Hits on a table shaped by churn (keys expiring as fast as they arrive),
+// where more keys sit in their alternate line than after a plain fill.
+func BenchmarkHitChurned(b *testing.B) {
+	f, _ := New(Config{Capacity: benchKeys, Horizon: time.Minute})
+	perKey := f.Ticks(time.Minute) / benchKeys
+	ctr := uint64(0)
+	for range 2 * benchKeys {
+		ctr++
+		f.CheckAndTouchAt(HashUint64(ctr), 0, 1000+ctr*perKey)
+	}
+	now := 1000 + ctr*perKey
+	w := f.Ticks(30 * time.Second)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		f.CheckAndTouchAt(HashUint64(ctr-uint64(i*7919)%(benchKeys*3/4)), w, now)
+	}
+}
+
+// A table far larger than any cache (32M keys, ~600 MB; this host's L3 is
+// 260 MB), so every lookup is a DRAM miss. Built once and shared.
+const hugeKeys = 1 << 25
+
+var huge struct {
+	once sync.Once
+	f    *Filter
+}
+
+func hugeFilter(b *testing.B) *Filter {
+	if testing.Short() {
+		b.Skip("builds a 600 MB table")
+	}
+	huge.once.Do(func() {
+		huge.f, _ = New(Config{Capacity: hugeKeys, Horizon: time.Minute})
+		for i := range uint64(hugeKeys) {
+			huge.f.CheckAndTouchAt(HashUint64(i), 0, 1000)
+		}
+	})
+	return huge.f
+}
+
+func BenchmarkHugeHit(b *testing.B) {
+	f := hugeFilter(b)
+	w := f.Ticks(30 * time.Second)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		f.CheckAndTouchAt(HashUint64(uint64(i*7919)%hugeKeys), w, 2000)
+	}
+}
+
+func BenchmarkHugeBatch(b *testing.B) {
+	f := hugeFilter(b)
+	w := f.Ticks(30 * time.Second)
+	hs, out := make([]uint64, 64), make([]bool, 64)
+	b.ResetTimer()
+	for i := 0; i < b.N; i += 64 {
+		for j := range hs {
+			hs[j] = HashUint64(uint64((i+j)*7919) % hugeKeys)
+		}
+		f.CheckAndTouchBatch(hs, w, 2000, out)
+	}
+}
+
+func BenchmarkHugeAbsent(b *testing.B) {
+	f := hugeFilter(b)
+	w := f.Ticks(30 * time.Second)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		f.ContainsAt(HashUint64(uint64(1<<40+i)), w, 2000)
+	}
+}
+
+func BenchmarkHugeVelocity(b *testing.B) {
+	f := hugeFilter(b)
+	w := f.Ticks(30 * time.Second)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		f.VelocityCountAt(HashUint64(uint64(i*7919)%hugeKeys), w, 2000)
+	}
+}

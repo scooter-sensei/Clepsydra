@@ -21,8 +21,11 @@ Scorecard: `bash bench.sh "label"` (race tests + cmd/tfbench, appends to results
 14. `Ticks` clamps negative durations to 0. A negative window used to wrap to a huge one and report every key as seen.
 15. `TouchAndCountBatch` and `VelocityCountBatch` (same overlapped loads as CheckAndTouchBatch). Median of 6 runs, 1M-key table: TouchAndCount 154 → 106 ns/key, VelocityCount 129 → 83 ns/key. Empty batches no longer panic.
 16. Installs publish the new key's register together with its word0, and touches only update a register that still carries their tag. A touch landing mid-install or mid-relocation used to reset a hot key's register: 12 of 20 runs of the relocation race test lost counts (up to 70), now 0 of 20. Saturated inserts ~10% faster (one write fewer).
+17. Scorecard: `hit DRAM` column (32M-key, ~600 MB table). This host's L3 is 260 MB, so the 1M-key "cold" table (20 MB) was really L3-resident. On DRAM: hit ~207 ns, batched ~95, absent-key ~115, VelocityCount ~190 (`go test -bench Huge`). Hits are latency-bound there because the CAS stops later lookups from overlapping; batches recover that overlap.
 
 ## Tried, no gain
+- Sending displaced entries home: at insert (before using the alternate line) and on hits found in the alternate line. Under churn, keys in their second line drop from 37% to 30% (inserts only) or 33% → 24% (with re-touches), but no measurable hit gain on the L3-resident table, inserts +15 ns, and hits on full tables +18 ns from failed attempts. Reverted.
+- Transparent huge pages (madvise) for tables ≥ 8 MB: granted (AnonHugePages matched the table), but no clear change on the 600 MB table either (hit 206–229 vs 196–246 ns). Reverted.
 - Reciprocal division for the built-in clock and `Ticks`: no change in the string path. The clock read itself (~38 ns in this VM, lfence/rdtscp-ordered) stops later work from overlapping, so the division was hidden.
 - Raw RDTSC clock: 19 ns vs 37 ns and doesn't block overlap (~20 ns saving on the string path), but needs TSC calibration and trust in invariant TSC across cores and VM migrations. Not done; CoarseClock already removes the clock cost.
 - Issuing all eight relocation candidates' alternate-line loads before the cuckoo search: no measurable change in steady or saturated inserts (the 1M-key benchmark table is mostly L3-resident; misses are cheap).

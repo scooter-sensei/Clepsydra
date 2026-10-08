@@ -468,7 +468,7 @@ func (f *Filter) install(i int, w0, w1, mine0, mine1 uint64) bool {
 // and installs mine0/mine1 in its place. If that line is full it first
 // relocates one of its entries, up to depth more steps (a bounded cuckoo
 // path). Copy-then-replace keeps every moved key findable throughout; if the
-// source changes mid-move (a touch updated it) the copy is withdrawn.
+// source changes mid-move (a touch updated it) the move is abandoned.
 func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budget *int) bool {
 	w0 := atomic.LoadUint64(&f.words[i])
 	if w0 == 0 {
@@ -487,7 +487,7 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
 			f.relocations.Add(1)
 			return true
 		}
-		atomic.CompareAndSwapUint64(&f.words[d], moved, 0) // source moved on; withdraw copy
+		f.abandon(i, d, w0, w1, moved, line, a) // a touch reached the source first
 		return false
 	}
 	for s := 0; s < wordsPerLine; s += 2 {
@@ -507,6 +507,98 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
 		}
 	}
 	return false
+}
+
+// abandon undoes a move whose source changed before it could be taken. The
+// copy at d may have counted touches of its own meanwhile, so it is retired
+// word1 first (a touch still holding it then sees a foreign tag and looks
+// again, instead of counting into a dead slot) and whatever it counted
+// beyond w1 is added back to the entry, which stays in line or a.
+func (f *Filter) abandon(i, d int, w0, w1, moved, line, a uint64) {
+	tg := w1 >> tagShift
+	var c1 uint64
+	for {
+		c1 = atomic.LoadUint64(&f.words[d+1])
+		if c1>>tagShift != tg {
+			return // the copy was evicted
+		}
+		if atomic.CompareAndSwapUint64(&f.words[d+1], c1, (tg^1)<<tagShift) {
+			break
+		}
+	}
+	last := w0 & tsMask
+	for {
+		c0 := atomic.LoadUint64(&f.words[d])
+		if c0>>47 != moved>>47 {
+			break
+		}
+		last = max(last, c0&tsMask)
+		if atomic.CompareAndSwapUint64(&f.words[d], c0, 0) {
+			break
+		}
+	}
+	if c1 == w1 {
+		return
+	}
+	// The copy's events beyond w1 all happened during the move, at the
+	// copy's own epoch: add them there, newest bucket first.
+	e := regEpoch(c1, f.unitOf(last))
+	base := unpack(w1 & regMask)
+	base.advance(regEpoch(w1, f.unitOf(w0&tsMask)), e)
+	n := uint64(0)
+	for k, c := range unpack(c1 & regMask) {
+		n += c - min(c, base[k])
+	}
+	if n == 0 {
+		return
+	}
+	fp := w0 >> 48
+	if f.fold(i, fp, tg, n, e, last) {
+		return
+	}
+	for _, l := range [2]uint64{line, a} { // the entry moved meanwhile
+		b := int(l * wordsPerLine)
+		for s := 0; s < wordsPerLine; s += 2 {
+			if f.fold(b+s, fp, tg, n, e, last) {
+				return
+			}
+		}
+	}
+}
+
+// fold counts n events at unit e (the latest at last) into the entry at word
+// index j, if it still holds key fp/tg.
+func (f *Filter) fold(j int, fp, tg, n uint64, e int64, last uint64) bool {
+	if atomic.LoadUint64(&f.words[j+1])>>tagShift != tg {
+		return false
+	}
+	for { // lastTouch first: the register's epoch is resolved against it
+		s0 := atomic.LoadUint64(&f.words[j])
+		if s0>>48 != fp {
+			return false
+		}
+		if s0&tsMask >= last || atomic.CompareAndSwapUint64(&f.words[j], s0, s0&^tsMask|last) {
+			break
+		}
+	}
+	for {
+		s1 := atomic.LoadUint64(&f.words[j+1])
+		if s1>>tagShift != tg {
+			return false
+		}
+		es := regEpoch(s1, f.unitOf(atomic.LoadUint64(&f.words[j])&tsMask))
+		var x register
+		x[0] = n
+		r, to := unpack(s1&regMask), max(es, e)
+		r.advance(es, to)
+		x.advance(e, to)
+		for k, c := range x {
+			r.add(k, c)
+		}
+		if atomic.CompareAndSwapUint64(&f.words[j+1], s1, tg<<tagShift|uint64(to)&epochMask<<48|r.pack()) {
+			return true
+		}
+	}
 }
 
 // ContinuousDecay reclaims expired slots at a rate set by the clock: one full

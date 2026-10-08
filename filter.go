@@ -41,6 +41,11 @@ const (
 	tagBits   = 12
 	tagShift  = 64 - tagBits
 	epochMask = 0xf
+	// busy is word1 while a slot is being handed over (install, abandon).
+	// No key has its tag, so no lookup or touch can match the slot until
+	// the new occupant's word1 replaces it.
+	tagBusy = 1<<tagBits - 1
+	busy    = tagBusy << tagShift
 	// decayEvery gates the inline decay step to 1/64 of operations (by key
 	// hash) so the shared cursor's cache line is not touched on every call.
 	decayEvery = 63
@@ -349,7 +354,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
 		if now > last && !atomic.CompareAndSwapUint64(&f.words[i], w0, w0&^tsMask|now) {
 			continue
 		}
-		w1, ok := f.bump(i+1, tg, last, now, stale)
+		w1, ok := f.bump(i, w0>>47, tg, last, now, stale)
 		if !ok {
 			continue // the slot was handed to another key after our CAS; look again
 		}
@@ -450,18 +455,20 @@ func (f *Filter) claim(h, fp, w1, now uint64) int {
 }
 
 // install hands slot i (word index), if it still holds w0/w1, to the entry
-// mine0/mine1. word1 goes first: a reader of the old occupant then sees a
-// foreign tag and misses rather than matching a half-written slot, and a
-// late writer to the old register (bump) sees the tag change and backs off.
+// mine0/mine1. word1 goes busy first: a reader of the old occupant then
+// misses rather than matching a half-written slot, and a late writer to the
+// old register (bump) backs off. Nobody else writes a busy word1, so it is
+// then set with plain stores.
 func (f *Filter) install(i int, w0, w1, mine0, mine1 uint64) bool {
-	if !atomic.CompareAndSwapUint64(&f.words[i+1], w1, mine1) {
+	if w1>>tagShift == tagBusy || !atomic.CompareAndSwapUint64(&f.words[i+1], w1, busy) {
 		return false
 	}
-	if atomic.CompareAndSwapUint64(&f.words[i], w0, mine0) {
-		return true
+	if !atomic.CompareAndSwapUint64(&f.words[i], w0, mine0) {
+		atomic.StoreUint64(&f.words[i+1], w1) // lost the slot; put word1 back
+		return false
 	}
-	atomic.CompareAndSwapUint64(&f.words[i+1], mine1, w1) // lost the slot; put word1 back
-	return false
+	atomic.StoreUint64(&f.words[i+1], mine1)
+	return true
 }
 
 // relocate moves the entry at word index i (in line) to its alternate line
@@ -511,9 +518,9 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
 
 // abandon undoes a move whose source changed before it could be taken. The
 // copy at d may have counted touches of its own meanwhile, so it is retired
-// word1 first (a touch still holding it then sees a foreign tag and looks
-// again, instead of counting into a dead slot) and whatever it counted
-// beyond w1 is added back to the entry, which stays in line or a.
+// word1 first (a touch still holding it then backs off and looks again,
+// instead of counting into a dead slot) and whatever it counted beyond w1 is
+// added back to the entry, which stays in line or a.
 func (f *Filter) abandon(i, d int, w0, w1, moved, line, a uint64) {
 	tg := w1 >> tagShift
 	var c1 uint64
@@ -522,7 +529,7 @@ func (f *Filter) abandon(i, d int, w0, w1, moved, line, a uint64) {
 		if c1>>tagShift != tg {
 			return // the copy was evicted
 		}
-		if atomic.CompareAndSwapUint64(&f.words[d+1], c1, (tg^1)<<tagShift) {
+		if atomic.CompareAndSwapUint64(&f.words[d+1], c1, busy) {
 			break
 		}
 	}
@@ -530,13 +537,14 @@ func (f *Filter) abandon(i, d int, w0, w1, moved, line, a uint64) {
 	for {
 		c0 := atomic.LoadUint64(&f.words[d])
 		if c0>>47 != moved>>47 {
-			break
+			break // swept
 		}
 		last = max(last, c0&tsMask)
 		if atomic.CompareAndSwapUint64(&f.words[d], c0, 0) {
 			break
 		}
 	}
+	atomic.StoreUint64(&f.words[d+1], 0)
 	if c1 == w1 {
 		return
 	}
@@ -642,6 +650,9 @@ func (f *Filter) sweepLine(line, now uint64) {
 			continue
 		}
 		w1 := atomic.LoadUint64(&f.words[base+s+1])
+		if w1>>tagShift == tagBusy {
+			continue // being handed over
+		}
 		if atomic.CompareAndSwapUint64(&f.words[base+s], w0, 0) {
 			atomic.CompareAndSwapUint64(&f.words[base+s+1], w1, 0)
 		}
@@ -691,8 +702,12 @@ func fingerprint(h uint64) uint64 {
 }
 
 // tag is 12 more fingerprint bits, kept in word1: with the 16-bit fp the
-// slot identity is 28 bits.
-func tag(h uint64) uint64 { return h >> 36 & (1<<tagBits - 1) }
+// slot identity is 28 bits. tagBusy is reserved; keys that would have it
+// share the tag below.
+func tag(h uint64) uint64 {
+	t := h >> 36 & (1<<tagBits - 1)
+	return t ^ (t+1)>>tagBits
+}
 
 // age is now-ts, or 0 if ts is ahead (a caller with a slightly stale clock).
 func age(now, ts uint64) uint64 {

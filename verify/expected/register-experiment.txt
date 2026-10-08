@@ -1,0 +1,35 @@
+normalized MAE (sum|est-exact| / sum exact), by window
+register                           traffic              1s      5s     15s     30s     60s
+linear 6x8 (H/5)                   steady 2/s        0.384   0.146   0.050   0.025   0.013
+linear 6x8 (H/5)                   bursty            0.748   0.407   0.168   0.095   0.049
+linear 6x8 (H/5)                   ramp 0.1->10/s    0.265   0.085   0.029   0.014   0.007
+linear 6x8 (H/5)                   sparse 1/20s      0.023   0.095   0.108   0.087   0.053
+linear 6x8 (H/5)                   on/off 5s         0.488   0.320   0.116   0.057   0.029
+dyadic 6 buckets (H/16 near now)   steady 2/s        0.308   0.086   0.049   0.034   0.024
+dyadic 6 buckets (H/16 near now)   bursty            0.549   0.152   0.156   0.146   0.115
+dyadic 6 buckets (H/16 near now)   ramp 0.1->10/s    0.214   0.049   0.027   0.019   0.016
+dyadic 6 buckets (H/16 near now)   sparse 1/20s      0.020   0.048   0.104   0.131   0.135
+dyadic 6 buckets (H/16 near now)   on/off 5s         0.309   0.116   0.117   0.078   0.049
+dyadic 7 buckets (H/32 near now)   steady 2/s        0.241   0.086   0.049   0.034   0.024
+dyadic 7 buckets (H/32 near now)   bursty            0.350   0.153   0.158   0.148   0.116
+dyadic 7 buckets (H/32 near now)   ramp 0.1->10/s    0.167   0.049   0.037   0.035   0.032
+dyadic 7 buckets (H/32 near now)   sparse 1/20s      0.017   0.048   0.104   0.131   0.135
+dyadic 7 buckets (H/32 near now)   on/off 5s         0.217   0.114   0.117   0.078   0.049
+laplace 3x16                       steady 2/s        0.755   0.108   0.332   0.058   0.376
+laplace 3x16                       bursty            0.389   0.284   0.324   0.185   0.373
+laplace 3x16                       ramp 0.1->10/s    0.625   0.062   0.223   0.039   0.266
+laplace 3x16                       sparse 1/20s      0.022   0.121   0.145   0.186   0.358
+laplace 3x16                       on/off 5s         0.446   0.238   0.332   0.068   0.376
+laplace 4x12                       steady 2/s        0.408   0.405   0.141   0.251   0.249
+laplace 4x12                       bursty            0.326   0.249   0.238   0.269   0.269
+laplace 4x12                       ramp 0.1->10/s    0.385   0.223   0.071   0.162   0.096
+laplace 4x12                       sparse 1/20s      0.018   0.121   0.145   0.182   0.271
+laplace 4x12                       on/off 5s         0.320   0.373   0.145   0.238   0.240
+
+mean over all traffic x windows:
+linear 6x8 (H/5)                   0.154
+dyadic 6 buckets (H/16 near now)   0.122
+dyadic 7 buckets (H/32 near now)   0.108
+laplace 3x16                       0.268
+laplace 4x12                       0.232
+

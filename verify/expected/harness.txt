@@ -1,0 +1,2027 @@
+harness a5292e3 Temporal filter prototype: sliding-window probabilistic register
+    churn load=1.00 seed=2 positives=99075 missed=14 negatives=628235 false_seen=0 live_at_end=199779 evictions=1386 relocations=0  => FN 0.014% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=40 negatives=691508 false_seen=0 live_at_end=219510 evictions=2722 relocations=0  => FN 0.037% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=57 negatives=723513 false_seen=0 live_at_end=229599 evictions=3676 relocations=0  => FN 0.050% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=190  => 1.90e-07 (95% interval 1.64e-07-2.19e-07)
+    spray offenders=100 exact=0  => 0%
+    velocity window=1s abs_error_sum=42295 exact_sum=114779  => 0.3685
+    velocity window=5s abs_error_sum=93906 exact_sum=570466  => 0.1646
+    velocity window=15s abs_error_sum=101974 exact_sum=1651571  => 0.0617
+    velocity window=30s abs_error_sum=106656 exact_sum=3272017  => 0.0326
+    velocity window=60s abs_error_sum=104346 exact_sum=6274665  => 0.0166
+    velocity mean_of_windows => 0.1288
+    burst window=1s touches=10 reported_min=1 reported_max=10
+    burst window=1s touches=31 reported_min=3 reported_max=31
+    burst window=1s touches=62 reported_min=5 reported_max=62
+    burst window=1s touches=100 reported_min=8 reported_max=100
+    burst window=1s touches=500 reported_min=21 reported_max=255
+    burst window=1s touches=762 reported_min=21 reported_max=255
+    burst window=1s touches=1000 reported_min=21 reported_max=255
+    burst window=1s touches=1273 reported_min=21 reported_max=255
+    burst window=1s touches=2000 reported_min=21 reported_max=255
+    burst window=5s touches=10 reported_min=4 reported_max=10
+    burst window=5s touches=31 reported_min=13 reported_max=31
+    burst window=5s touches=62 reported_min=26 reported_max=62
+    burst window=5s touches=100 reported_min=42 reported_max=100
+    burst window=5s touches=500 reported_min=107 reported_max=255
+    burst window=5s touches=762 reported_min=107 reported_max=255
+    burst window=5s touches=1000 reported_min=107 reported_max=255
+    burst window=5s touches=1273 reported_min=107 reported_max=255
+    burst window=5s touches=2000 reported_min=107 reported_max=255
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=255 reported_max=255
+    burst window=15s touches=762 reported_min=255 reported_max=255
+    burst window=15s touches=1000 reported_min=255 reported_max=255
+    burst window=15s touches=1273 reported_min=255 reported_max=255
+    burst window=15s touches=2000 reported_min=255 reported_max=255
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=255 reported_max=255
+    burst window=60s touches=762 reported_min=255 reported_max=255
+    burst window=60s touches=1000 reported_min=255 reported_max=255
+    burst window=60s touches=1273 reported_min=255 reported_max=255
+    burst window=60s touches=2000 reported_min=255 reported_max=255
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.929 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.952 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.412 max=1.000
+    steady window=1s rate=100/s reported/exact min=0.208 max=1.000
+    steady window=5s rate=1/s reported/exact min=0.833 max=1.000
+    steady window=5s rate=5/s reported/exact min=0.962 max=1.000
+    steady window=5s rate=10/s reported/exact min=0.980 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=1.000 max=1.015
+    steady window=5s rate=20/s reported/exact min=0.990 max=1.000
+    steady window=5s rate=50/s reported/exact min=0.422 max=1.000
+    steady window=5s rate=100/s reported/exact min=0.212 max=0.613
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.995 max=1.000
+    steady window=15s rate=20/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=50/s reported/exact min=0.425 max=0.621
+    steady window=15s rate=100/s reported/exact min=0.213 max=0.346
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.000 max=1.001
+    steady window=60s rate=13/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=20/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=50/s reported/exact min=0.425 max=0.474
+    steady window=60s rate=100/s reported/exact min=0.212 max=0.246
+    memory capacity=200000 slots=524288 bytes=8388608  => 41.9 B/key
+harness 2a526a8 Velocity-aware eviction, register geometry experiments, prior-art rese
+    churn load=1.00 seed=2 positives=99075 missed=13 negatives=628235 false_seen=0 live_at_end=199779 evictions=1381 relocations=0  => FN 0.013% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=41 negatives=691508 false_seen=0 live_at_end=219510 evictions=2707 relocations=0  => FN 0.038% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=62 negatives=723513 false_seen=0 live_at_end=229599 evictions=3666 relocations=0  => FN 0.055% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=190  => 1.90e-07 (95% interval 1.64e-07-2.19e-07)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=42295 exact_sum=114779  => 0.3685
+    velocity window=5s abs_error_sum=93906 exact_sum=570466  => 0.1646
+    velocity window=15s abs_error_sum=101974 exact_sum=1651571  => 0.0617
+    velocity window=30s abs_error_sum=106656 exact_sum=3272017  => 0.0326
+    velocity window=60s abs_error_sum=104346 exact_sum=6274665  => 0.0166
+    velocity mean_of_windows => 0.1288
+    burst window=1s touches=10 reported_min=1 reported_max=10
+    burst window=1s touches=31 reported_min=3 reported_max=31
+    burst window=1s touches=62 reported_min=5 reported_max=62
+    burst window=1s touches=100 reported_min=8 reported_max=100
+    burst window=1s touches=500 reported_min=21 reported_max=255
+    burst window=1s touches=762 reported_min=21 reported_max=255
+    burst window=1s touches=1000 reported_min=21 reported_max=255
+    burst window=1s touches=1273 reported_min=21 reported_max=255
+    burst window=1s touches=2000 reported_min=21 reported_max=255
+    burst window=5s touches=10 reported_min=4 reported_max=10
+    burst window=5s touches=31 reported_min=13 reported_max=31
+    burst window=5s touches=62 reported_min=26 reported_max=62
+    burst window=5s touches=100 reported_min=42 reported_max=100
+    burst window=5s touches=500 reported_min=107 reported_max=255
+    burst window=5s touches=762 reported_min=107 reported_max=255
+    burst window=5s touches=1000 reported_min=107 reported_max=255
+    burst window=5s touches=1273 reported_min=107 reported_max=255
+    burst window=5s touches=2000 reported_min=107 reported_max=255
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=255 reported_max=255
+    burst window=15s touches=762 reported_min=255 reported_max=255
+    burst window=15s touches=1000 reported_min=255 reported_max=255
+    burst window=15s touches=1273 reported_min=255 reported_max=255
+    burst window=15s touches=2000 reported_min=255 reported_max=255
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=255 reported_max=255
+    burst window=60s touches=762 reported_min=255 reported_max=255
+    burst window=60s touches=1000 reported_min=255 reported_max=255
+    burst window=60s touches=1273 reported_min=255 reported_max=255
+    burst window=60s touches=2000 reported_min=255 reported_max=255
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.929 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.952 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.412 max=1.000
+    steady window=1s rate=100/s reported/exact min=0.208 max=1.000
+    steady window=5s rate=1/s reported/exact min=0.833 max=1.000
+    steady window=5s rate=5/s reported/exact min=0.962 max=1.000
+    steady window=5s rate=10/s reported/exact min=0.980 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=1.000 max=1.015
+    steady window=5s rate=20/s reported/exact min=0.990 max=1.000
+    steady window=5s rate=50/s reported/exact min=0.422 max=1.000
+    steady window=5s rate=100/s reported/exact min=0.212 max=0.613
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.995 max=1.000
+    steady window=15s rate=20/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=50/s reported/exact min=0.425 max=0.621
+    steady window=15s rate=100/s reported/exact min=0.213 max=0.346
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.000 max=1.001
+    steady window=60s rate=13/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=20/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=50/s reported/exact min=0.425 max=0.474
+    steady window=60s rate=100/s reported/exact min=0.212 max=0.246
+    memory capacity=200000 slots=524288 bytes=8388608  => 41.9 B/key
+harness 597ee63 Partial-key cuckoo relocation (depth 2) before eviction; harder load p
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=1478  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=2991  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=0 relocations=4118  => FN 0.000% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=196  => 1.96e-07 (95% interval 1.70e-07-2.25e-07)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=42295 exact_sum=114779  => 0.3685
+    velocity window=5s abs_error_sum=93906 exact_sum=570466  => 0.1646
+    velocity window=15s abs_error_sum=101974 exact_sum=1651571  => 0.0617
+    velocity window=30s abs_error_sum=106656 exact_sum=3272017  => 0.0326
+    velocity window=60s abs_error_sum=104346 exact_sum=6274665  => 0.0166
+    velocity mean_of_windows => 0.1288
+    burst window=1s touches=10 reported_min=1 reported_max=10
+    burst window=1s touches=31 reported_min=3 reported_max=31
+    burst window=1s touches=62 reported_min=5 reported_max=62
+    burst window=1s touches=100 reported_min=8 reported_max=100
+    burst window=1s touches=500 reported_min=21 reported_max=255
+    burst window=1s touches=762 reported_min=21 reported_max=255
+    burst window=1s touches=1000 reported_min=21 reported_max=255
+    burst window=1s touches=1273 reported_min=21 reported_max=255
+    burst window=1s touches=2000 reported_min=21 reported_max=255
+    burst window=5s touches=10 reported_min=4 reported_max=10
+    burst window=5s touches=31 reported_min=13 reported_max=31
+    burst window=5s touches=62 reported_min=26 reported_max=62
+    burst window=5s touches=100 reported_min=42 reported_max=100
+    burst window=5s touches=500 reported_min=107 reported_max=255
+    burst window=5s touches=762 reported_min=107 reported_max=255
+    burst window=5s touches=1000 reported_min=107 reported_max=255
+    burst window=5s touches=1273 reported_min=107 reported_max=255
+    burst window=5s touches=2000 reported_min=107 reported_max=255
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=255 reported_max=255
+    burst window=15s touches=762 reported_min=255 reported_max=255
+    burst window=15s touches=1000 reported_min=255 reported_max=255
+    burst window=15s touches=1273 reported_min=255 reported_max=255
+    burst window=15s touches=2000 reported_min=255 reported_max=255
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=255 reported_max=255
+    burst window=60s touches=762 reported_min=255 reported_max=255
+    burst window=60s touches=1000 reported_min=255 reported_max=255
+    burst window=60s touches=1273 reported_min=255 reported_max=255
+    burst window=60s touches=2000 reported_min=255 reported_max=255
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.929 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.952 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.412 max=1.000
+    steady window=1s rate=100/s reported/exact min=0.208 max=1.000
+    steady window=5s rate=1/s reported/exact min=0.833 max=1.000
+    steady window=5s rate=5/s reported/exact min=0.962 max=1.000
+    steady window=5s rate=10/s reported/exact min=0.980 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=1.000 max=1.015
+    steady window=5s rate=20/s reported/exact min=0.990 max=1.000
+    steady window=5s rate=50/s reported/exact min=0.422 max=1.000
+    steady window=5s rate=100/s reported/exact min=0.212 max=0.613
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.995 max=1.000
+    steady window=15s rate=20/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=50/s reported/exact min=0.425 max=0.621
+    steady window=15s rate=100/s reported/exact min=0.213 max=0.346
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.000 max=1.001
+    steady window=60s rate=13/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=20/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=50/s reported/exact min=0.425 max=0.474
+    steady window=60s rate=100/s reported/exact min=0.212 max=0.246
+    memory capacity=200000 slots=524288 bytes=8388608  => 41.9 B/key
+harness 126bd87 Adaptive relocation budget (failure EWMA); saturated-insert benchmark
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=1361  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=2661  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=0 relocations=3644  => FN 0.000% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=196  => 1.96e-07 (95% interval 1.70e-07-2.25e-07)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=42295 exact_sum=114779  => 0.3685
+    velocity window=5s abs_error_sum=93906 exact_sum=570466  => 0.1646
+    velocity window=15s abs_error_sum=101974 exact_sum=1651571  => 0.0617
+    velocity window=30s abs_error_sum=106656 exact_sum=3272017  => 0.0326
+    velocity window=60s abs_error_sum=104346 exact_sum=6274665  => 0.0166
+    velocity mean_of_windows => 0.1288
+    burst window=1s touches=10 reported_min=1 reported_max=10
+    burst window=1s touches=31 reported_min=3 reported_max=31
+    burst window=1s touches=62 reported_min=5 reported_max=62
+    burst window=1s touches=100 reported_min=8 reported_max=100
+    burst window=1s touches=500 reported_min=21 reported_max=255
+    burst window=1s touches=762 reported_min=21 reported_max=255
+    burst window=1s touches=1000 reported_min=21 reported_max=255
+    burst window=1s touches=1273 reported_min=21 reported_max=255
+    burst window=1s touches=2000 reported_min=21 reported_max=255
+    burst window=5s touches=10 reported_min=4 reported_max=10
+    burst window=5s touches=31 reported_min=13 reported_max=31
+    burst window=5s touches=62 reported_min=26 reported_max=62
+    burst window=5s touches=100 reported_min=42 reported_max=100
+    burst window=5s touches=500 reported_min=107 reported_max=255
+    burst window=5s touches=762 reported_min=107 reported_max=255
+    burst window=5s touches=1000 reported_min=107 reported_max=255
+    burst window=5s touches=1273 reported_min=107 reported_max=255
+    burst window=5s touches=2000 reported_min=107 reported_max=255
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=255 reported_max=255
+    burst window=15s touches=762 reported_min=255 reported_max=255
+    burst window=15s touches=1000 reported_min=255 reported_max=255
+    burst window=15s touches=1273 reported_min=255 reported_max=255
+    burst window=15s touches=2000 reported_min=255 reported_max=255
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=255 reported_max=255
+    burst window=60s touches=762 reported_min=255 reported_max=255
+    burst window=60s touches=1000 reported_min=255 reported_max=255
+    burst window=60s touches=1273 reported_min=255 reported_max=255
+    burst window=60s touches=2000 reported_min=255 reported_max=255
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.929 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.952 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.412 max=1.000
+    steady window=1s rate=100/s reported/exact min=0.208 max=1.000
+    steady window=5s rate=1/s reported/exact min=0.833 max=1.000
+    steady window=5s rate=5/s reported/exact min=0.962 max=1.000
+    steady window=5s rate=10/s reported/exact min=0.980 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=1.000 max=1.015
+    steady window=5s rate=20/s reported/exact min=0.990 max=1.000
+    steady window=5s rate=50/s reported/exact min=0.422 max=1.000
+    steady window=5s rate=100/s reported/exact min=0.212 max=0.613
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.995 max=1.000
+    steady window=15s rate=20/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=50/s reported/exact min=0.425 max=0.621
+    steady window=15s rate=100/s reported/exact min=0.213 max=0.346
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.000 max=1.001
+    steady window=60s rate=13/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=20/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=50/s reported/exact min=0.425 max=0.474
+    steady window=60s rate=100/s reported/exact min=0.212 max=0.246
+    memory capacity=200000 slots=524288 bytes=8388608  => 41.9 B/key
+harness 4b5850b 28-bit slot identity: 4-bit epoch (mod 16 is enough under horizon gati
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=1361  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=2661  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=0 relocations=3644  => FN 0.000% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=14  => 1.40e-08 (95% interval 7.65e-09-2.35e-08)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=42295 exact_sum=114779  => 0.3685
+    velocity window=5s abs_error_sum=93906 exact_sum=570466  => 0.1646
+    velocity window=15s abs_error_sum=101974 exact_sum=1651571  => 0.0617
+    velocity window=30s abs_error_sum=106656 exact_sum=3272017  => 0.0326
+    velocity window=60s abs_error_sum=104346 exact_sum=6274665  => 0.0166
+    velocity mean_of_windows => 0.1288
+    burst window=1s touches=10 reported_min=1 reported_max=10
+    burst window=1s touches=31 reported_min=3 reported_max=31
+    burst window=1s touches=62 reported_min=5 reported_max=62
+    burst window=1s touches=100 reported_min=8 reported_max=100
+    burst window=1s touches=500 reported_min=21 reported_max=255
+    burst window=1s touches=762 reported_min=21 reported_max=255
+    burst window=1s touches=1000 reported_min=21 reported_max=255
+    burst window=1s touches=1273 reported_min=21 reported_max=255
+    burst window=1s touches=2000 reported_min=21 reported_max=255
+    burst window=5s touches=10 reported_min=4 reported_max=10
+    burst window=5s touches=31 reported_min=13 reported_max=31
+    burst window=5s touches=62 reported_min=26 reported_max=62
+    burst window=5s touches=100 reported_min=42 reported_max=100
+    burst window=5s touches=500 reported_min=107 reported_max=255
+    burst window=5s touches=762 reported_min=107 reported_max=255
+    burst window=5s touches=1000 reported_min=107 reported_max=255
+    burst window=5s touches=1273 reported_min=107 reported_max=255
+    burst window=5s touches=2000 reported_min=107 reported_max=255
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=255 reported_max=255
+    burst window=15s touches=762 reported_min=255 reported_max=255
+    burst window=15s touches=1000 reported_min=255 reported_max=255
+    burst window=15s touches=1273 reported_min=255 reported_max=255
+    burst window=15s touches=2000 reported_min=255 reported_max=255
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=255 reported_max=255
+    burst window=60s touches=762 reported_min=255 reported_max=255
+    burst window=60s touches=1000 reported_min=255 reported_max=255
+    burst window=60s touches=1273 reported_min=255 reported_max=255
+    burst window=60s touches=2000 reported_min=255 reported_max=255
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.929 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.952 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.412 max=1.000
+    steady window=1s rate=100/s reported/exact min=0.208 max=1.000
+    steady window=5s rate=1/s reported/exact min=0.833 max=1.000
+    steady window=5s rate=5/s reported/exact min=0.962 max=1.000
+    steady window=5s rate=10/s reported/exact min=0.980 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=1.000 max=1.015
+    steady window=5s rate=20/s reported/exact min=0.990 max=1.000
+    steady window=5s rate=50/s reported/exact min=0.422 max=1.000
+    steady window=5s rate=100/s reported/exact min=0.212 max=0.613
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.995 max=1.000
+    steady window=15s rate=20/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=50/s reported/exact min=0.425 max=0.621
+    steady window=15s rate=100/s reported/exact min=0.213 max=0.346
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.000 max=1.001
+    steady window=60s rate=13/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=20/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=50/s reported/exact min=0.425 max=0.474
+    steady window=60s rate=100/s reported/exact min=0.212 max=0.246
+    memory capacity=200000 slots=524288 bytes=8388608  => 41.9 B/key
+harness 151815d CheckAndTouchBatch: overlap cache misses across keys; batch column in 
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=1361  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=2661  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=0 relocations=3644  => FN 0.000% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=14  => 1.40e-08 (95% interval 7.65e-09-2.35e-08)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=42295 exact_sum=114779  => 0.3685
+    velocity window=5s abs_error_sum=93906 exact_sum=570466  => 0.1646
+    velocity window=15s abs_error_sum=101974 exact_sum=1651571  => 0.0617
+    velocity window=30s abs_error_sum=106656 exact_sum=3272017  => 0.0326
+    velocity window=60s abs_error_sum=104346 exact_sum=6274665  => 0.0166
+    velocity mean_of_windows => 0.1288
+    burst window=1s touches=10 reported_min=1 reported_max=10
+    burst window=1s touches=31 reported_min=3 reported_max=31
+    burst window=1s touches=62 reported_min=5 reported_max=62
+    burst window=1s touches=100 reported_min=8 reported_max=100
+    burst window=1s touches=500 reported_min=21 reported_max=255
+    burst window=1s touches=762 reported_min=21 reported_max=255
+    burst window=1s touches=1000 reported_min=21 reported_max=255
+    burst window=1s touches=1273 reported_min=21 reported_max=255
+    burst window=1s touches=2000 reported_min=21 reported_max=255
+    burst window=5s touches=10 reported_min=4 reported_max=10
+    burst window=5s touches=31 reported_min=13 reported_max=31
+    burst window=5s touches=62 reported_min=26 reported_max=62
+    burst window=5s touches=100 reported_min=42 reported_max=100
+    burst window=5s touches=500 reported_min=107 reported_max=255
+    burst window=5s touches=762 reported_min=107 reported_max=255
+    burst window=5s touches=1000 reported_min=107 reported_max=255
+    burst window=5s touches=1273 reported_min=107 reported_max=255
+    burst window=5s touches=2000 reported_min=107 reported_max=255
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=255 reported_max=255
+    burst window=15s touches=762 reported_min=255 reported_max=255
+    burst window=15s touches=1000 reported_min=255 reported_max=255
+    burst window=15s touches=1273 reported_min=255 reported_max=255
+    burst window=15s touches=2000 reported_min=255 reported_max=255
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=255 reported_max=255
+    burst window=60s touches=762 reported_min=255 reported_max=255
+    burst window=60s touches=1000 reported_min=255 reported_max=255
+    burst window=60s touches=1273 reported_min=255 reported_max=255
+    burst window=60s touches=2000 reported_min=255 reported_max=255
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.929 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.952 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.412 max=1.000
+    steady window=1s rate=100/s reported/exact min=0.208 max=1.000
+    steady window=5s rate=1/s reported/exact min=0.833 max=1.000
+    steady window=5s rate=5/s reported/exact min=0.962 max=1.000
+    steady window=5s rate=10/s reported/exact min=0.980 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=1.000 max=1.015
+    steady window=5s rate=20/s reported/exact min=0.990 max=1.000
+    steady window=5s rate=50/s reported/exact min=0.422 max=1.000
+    steady window=5s rate=100/s reported/exact min=0.212 max=0.613
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.995 max=1.000
+    steady window=15s rate=20/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=50/s reported/exact min=0.425 max=0.621
+    steady window=15s rate=100/s reported/exact min=0.213 max=0.346
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.000 max=1.001
+    steady window=60s rate=13/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=20/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=50/s reported/exact min=0.425 max=0.474
+    steady window=60s rate=100/s reported/exact min=0.212 max=0.246
+    memory capacity=200000 slots=524288 bytes=8388608  => 41.9 B/key
+harness 3e9277c Any-size table (multiply-shift index, x-l mod n alt); default 85% load
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=216 negatives=723513 false_seen=0 live_at_end=229599 evictions=15267 relocations=774604  => FN 0.191% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=32  => 3.20e-08 (95% interval 2.19e-08-4.52e-08)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=42295 exact_sum=114779  => 0.3685
+    velocity window=5s abs_error_sum=93906 exact_sum=570466  => 0.1646
+    velocity window=15s abs_error_sum=101974 exact_sum=1651571  => 0.0617
+    velocity window=30s abs_error_sum=106656 exact_sum=3272017  => 0.0326
+    velocity window=60s abs_error_sum=104346 exact_sum=6274665  => 0.0166
+    velocity mean_of_windows => 0.1288
+    burst window=1s touches=10 reported_min=1 reported_max=10
+    burst window=1s touches=31 reported_min=3 reported_max=31
+    burst window=1s touches=62 reported_min=5 reported_max=62
+    burst window=1s touches=100 reported_min=8 reported_max=100
+    burst window=1s touches=500 reported_min=21 reported_max=255
+    burst window=1s touches=762 reported_min=21 reported_max=255
+    burst window=1s touches=1000 reported_min=21 reported_max=255
+    burst window=1s touches=1273 reported_min=21 reported_max=255
+    burst window=1s touches=2000 reported_min=21 reported_max=255
+    burst window=5s touches=10 reported_min=4 reported_max=10
+    burst window=5s touches=31 reported_min=13 reported_max=31
+    burst window=5s touches=62 reported_min=26 reported_max=62
+    burst window=5s touches=100 reported_min=42 reported_max=100
+    burst window=5s touches=500 reported_min=107 reported_max=255
+    burst window=5s touches=762 reported_min=107 reported_max=255
+    burst window=5s touches=1000 reported_min=107 reported_max=255
+    burst window=5s touches=1273 reported_min=107 reported_max=255
+    burst window=5s touches=2000 reported_min=107 reported_max=255
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=255 reported_max=255
+    burst window=15s touches=762 reported_min=255 reported_max=255
+    burst window=15s touches=1000 reported_min=255 reported_max=255
+    burst window=15s touches=1273 reported_min=255 reported_max=255
+    burst window=15s touches=2000 reported_min=255 reported_max=255
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=255 reported_max=255
+    burst window=60s touches=762 reported_min=255 reported_max=255
+    burst window=60s touches=1000 reported_min=255 reported_max=255
+    burst window=60s touches=1273 reported_min=255 reported_max=255
+    burst window=60s touches=2000 reported_min=255 reported_max=255
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.929 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.952 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.412 max=1.000
+    steady window=1s rate=100/s reported/exact min=0.208 max=1.000
+    steady window=5s rate=1/s reported/exact min=0.833 max=1.000
+    steady window=5s rate=5/s reported/exact min=0.962 max=1.000
+    steady window=5s rate=10/s reported/exact min=0.980 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=1.000 max=1.015
+    steady window=5s rate=20/s reported/exact min=0.990 max=1.000
+    steady window=5s rate=50/s reported/exact min=0.422 max=1.000
+    steady window=5s rate=100/s reported/exact min=0.212 max=0.613
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.995 max=1.000
+    steady window=15s rate=20/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=50/s reported/exact min=0.425 max=0.621
+    steady window=15s rate=100/s reported/exact min=0.213 max=0.346
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.000 max=1.001
+    steady window=60s rate=13/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=20/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=50/s reported/exact min=0.425 max=0.474
+    steady window=60s rate=100/s reported/exact min=0.212 max=0.246
+    memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
+harness 983b804 8-slot 128-byte buckets; near-full insert benchmark
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=61712  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=183818  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=0 relocations=368254  => FN 0.000% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=56  => 5.60e-08 (95% interval 4.23e-08-7.27e-08)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=42295 exact_sum=114779  => 0.3685
+    velocity window=5s abs_error_sum=93906 exact_sum=570466  => 0.1646
+    velocity window=15s abs_error_sum=101974 exact_sum=1651571  => 0.0617
+    velocity window=30s abs_error_sum=106656 exact_sum=3272017  => 0.0326
+    velocity window=60s abs_error_sum=104346 exact_sum=6274665  => 0.0166
+    velocity mean_of_windows => 0.1288
+    burst window=1s touches=10 reported_min=1 reported_max=10
+    burst window=1s touches=31 reported_min=3 reported_max=31
+    burst window=1s touches=62 reported_min=5 reported_max=62
+    burst window=1s touches=100 reported_min=8 reported_max=100
+    burst window=1s touches=500 reported_min=21 reported_max=255
+    burst window=1s touches=762 reported_min=21 reported_max=255
+    burst window=1s touches=1000 reported_min=21 reported_max=255
+    burst window=1s touches=1273 reported_min=21 reported_max=255
+    burst window=1s touches=2000 reported_min=21 reported_max=255
+    burst window=5s touches=10 reported_min=4 reported_max=10
+    burst window=5s touches=31 reported_min=13 reported_max=31
+    burst window=5s touches=62 reported_min=26 reported_max=62
+    burst window=5s touches=100 reported_min=42 reported_max=100
+    burst window=5s touches=500 reported_min=107 reported_max=255
+    burst window=5s touches=762 reported_min=107 reported_max=255
+    burst window=5s touches=1000 reported_min=107 reported_max=255
+    burst window=5s touches=1273 reported_min=107 reported_max=255
+    burst window=5s touches=2000 reported_min=107 reported_max=255
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=255 reported_max=255
+    burst window=15s touches=762 reported_min=255 reported_max=255
+    burst window=15s touches=1000 reported_min=255 reported_max=255
+    burst window=15s touches=1273 reported_min=255 reported_max=255
+    burst window=15s touches=2000 reported_min=255 reported_max=255
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=255 reported_max=255
+    burst window=60s touches=762 reported_min=255 reported_max=255
+    burst window=60s touches=1000 reported_min=255 reported_max=255
+    burst window=60s touches=1273 reported_min=255 reported_max=255
+    burst window=60s touches=2000 reported_min=255 reported_max=255
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.929 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.952 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.412 max=1.000
+    steady window=1s rate=100/s reported/exact min=0.208 max=1.000
+    steady window=5s rate=1/s reported/exact min=0.833 max=1.000
+    steady window=5s rate=5/s reported/exact min=0.962 max=1.000
+    steady window=5s rate=10/s reported/exact min=0.980 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=1.000 max=1.015
+    steady window=5s rate=20/s reported/exact min=0.990 max=1.000
+    steady window=5s rate=50/s reported/exact min=0.422 max=1.000
+    steady window=5s rate=100/s reported/exact min=0.212 max=0.613
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.995 max=1.000
+    steady window=15s rate=20/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=50/s reported/exact min=0.425 max=0.621
+    steady window=15s rate=100/s reported/exact min=0.213 max=0.346
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.000 max=1.001
+    steady window=60s rate=13/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=20/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=50/s reported/exact min=0.425 max=0.474
+    steady window=60s rate=100/s reported/exact min=0.212 max=0.246
+    memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
+harness 9f2529f Back to 4-slot buckets: 8-slot only helps above 94% load and costs ~10
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=12 negatives=723513 false_seen=0 live_at_end=229599 evictions=916 relocations=1007843  => FN 0.011% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=32  => 3.20e-08 (95% interval 2.19e-08-4.52e-08)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=42295 exact_sum=114779  => 0.3685
+    velocity window=5s abs_error_sum=93906 exact_sum=570466  => 0.1646
+    velocity window=15s abs_error_sum=101974 exact_sum=1651571  => 0.0617
+    velocity window=30s abs_error_sum=106656 exact_sum=3272017  => 0.0326
+    velocity window=60s abs_error_sum=104346 exact_sum=6274665  => 0.0166
+    velocity mean_of_windows => 0.1288
+    burst window=1s touches=10 reported_min=1 reported_max=10
+    burst window=1s touches=31 reported_min=3 reported_max=31
+    burst window=1s touches=62 reported_min=5 reported_max=62
+    burst window=1s touches=100 reported_min=8 reported_max=100
+    burst window=1s touches=500 reported_min=21 reported_max=255
+    burst window=1s touches=762 reported_min=21 reported_max=255
+    burst window=1s touches=1000 reported_min=21 reported_max=255
+    burst window=1s touches=1273 reported_min=21 reported_max=255
+    burst window=1s touches=2000 reported_min=21 reported_max=255
+    burst window=5s touches=10 reported_min=4 reported_max=10
+    burst window=5s touches=31 reported_min=13 reported_max=31
+    burst window=5s touches=62 reported_min=26 reported_max=62
+    burst window=5s touches=100 reported_min=42 reported_max=100
+    burst window=5s touches=500 reported_min=107 reported_max=255
+    burst window=5s touches=762 reported_min=107 reported_max=255
+    burst window=5s touches=1000 reported_min=107 reported_max=255
+    burst window=5s touches=1273 reported_min=107 reported_max=255
+    burst window=5s touches=2000 reported_min=107 reported_max=255
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=255 reported_max=255
+    burst window=15s touches=762 reported_min=255 reported_max=255
+    burst window=15s touches=1000 reported_min=255 reported_max=255
+    burst window=15s touches=1273 reported_min=255 reported_max=255
+    burst window=15s touches=2000 reported_min=255 reported_max=255
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=255 reported_max=255
+    burst window=60s touches=762 reported_min=255 reported_max=255
+    burst window=60s touches=1000 reported_min=255 reported_max=255
+    burst window=60s touches=1273 reported_min=255 reported_max=255
+    burst window=60s touches=2000 reported_min=255 reported_max=255
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.929 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.952 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.412 max=1.000
+    steady window=1s rate=100/s reported/exact min=0.208 max=1.000
+    steady window=5s rate=1/s reported/exact min=0.833 max=1.000
+    steady window=5s rate=5/s reported/exact min=0.962 max=1.000
+    steady window=5s rate=10/s reported/exact min=0.980 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=1.000 max=1.015
+    steady window=5s rate=20/s reported/exact min=0.990 max=1.000
+    steady window=5s rate=50/s reported/exact min=0.422 max=1.000
+    steady window=5s rate=100/s reported/exact min=0.212 max=0.613
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.995 max=1.000
+    steady window=15s rate=20/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=50/s reported/exact min=0.425 max=0.621
+    steady window=15s rate=100/s reported/exact min=0.213 max=0.346
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.000 max=1.001
+    steady window=60s rate=13/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=20/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=50/s reported/exact min=0.425 max=0.474
+    steady window=60s rate=100/s reported/exact min=0.212 max=0.246
+    memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
+harness acea1cf Velocity accuracy in scorecard; relocation depth 3 / budget 500
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=75 negatives=723513 false_seen=0 live_at_end=229599 evictions=4610 relocations=931414  => FN 0.066% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=32  => 3.20e-08 (95% interval 2.19e-08-4.52e-08)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=42295 exact_sum=114779  => 0.3685
+    velocity window=5s abs_error_sum=93906 exact_sum=570466  => 0.1646
+    velocity window=15s abs_error_sum=101974 exact_sum=1651571  => 0.0617
+    velocity window=30s abs_error_sum=106656 exact_sum=3272017  => 0.0326
+    velocity window=60s abs_error_sum=104346 exact_sum=6274665  => 0.0166
+    velocity mean_of_windows => 0.1288
+    burst window=1s touches=10 reported_min=1 reported_max=10
+    burst window=1s touches=31 reported_min=3 reported_max=31
+    burst window=1s touches=62 reported_min=5 reported_max=62
+    burst window=1s touches=100 reported_min=8 reported_max=100
+    burst window=1s touches=500 reported_min=21 reported_max=255
+    burst window=1s touches=762 reported_min=21 reported_max=255
+    burst window=1s touches=1000 reported_min=21 reported_max=255
+    burst window=1s touches=1273 reported_min=21 reported_max=255
+    burst window=1s touches=2000 reported_min=21 reported_max=255
+    burst window=5s touches=10 reported_min=4 reported_max=10
+    burst window=5s touches=31 reported_min=13 reported_max=31
+    burst window=5s touches=62 reported_min=26 reported_max=62
+    burst window=5s touches=100 reported_min=42 reported_max=100
+    burst window=5s touches=500 reported_min=107 reported_max=255
+    burst window=5s touches=762 reported_min=107 reported_max=255
+    burst window=5s touches=1000 reported_min=107 reported_max=255
+    burst window=5s touches=1273 reported_min=107 reported_max=255
+    burst window=5s touches=2000 reported_min=107 reported_max=255
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=255 reported_max=255
+    burst window=15s touches=762 reported_min=255 reported_max=255
+    burst window=15s touches=1000 reported_min=255 reported_max=255
+    burst window=15s touches=1273 reported_min=255 reported_max=255
+    burst window=15s touches=2000 reported_min=255 reported_max=255
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=255 reported_max=255
+    burst window=60s touches=762 reported_min=255 reported_max=255
+    burst window=60s touches=1000 reported_min=255 reported_max=255
+    burst window=60s touches=1273 reported_min=255 reported_max=255
+    burst window=60s touches=2000 reported_min=255 reported_max=255
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.929 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.952 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.412 max=1.000
+    steady window=1s rate=100/s reported/exact min=0.208 max=1.000
+    steady window=5s rate=1/s reported/exact min=0.833 max=1.000
+    steady window=5s rate=5/s reported/exact min=0.962 max=1.000
+    steady window=5s rate=10/s reported/exact min=0.980 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=1.000 max=1.015
+    steady window=5s rate=20/s reported/exact min=0.990 max=1.000
+    steady window=5s rate=50/s reported/exact min=0.422 max=1.000
+    steady window=5s rate=100/s reported/exact min=0.212 max=0.613
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.995 max=1.000
+    steady window=15s rate=20/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=50/s reported/exact min=0.425 max=0.621
+    steady window=15s rate=100/s reported/exact min=0.213 max=0.346
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.000 max=1.001
+    steady window=60s rate=13/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=20/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=50/s reported/exact min=0.425 max=0.474
+    steady window=60s rate=100/s reported/exact min=0.212 max=0.246
+    memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
+harness ba0677c Velocity register: 7 age-graded buckets (1,1,1-2,2-4,4-8,8,8 units of 
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=66 negatives=723513 false_seen=0 live_at_end=229599 evictions=4481 relocations=931786  => FN 0.058% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=32  => 3.20e-08 (95% interval 2.19e-08-4.52e-08)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=26093 exact_sum=114779  => 0.2273
+    velocity window=5s abs_error_sum=37502 exact_sum=570466  => 0.0657
+    velocity window=15s abs_error_sum=115329 exact_sum=1651571  => 0.0698
+    velocity window=30s abs_error_sum=153846 exact_sum=3272017  => 0.0470
+    velocity window=60s abs_error_sum=150736 exact_sum=6274665  => 0.0240
+    velocity mean_of_windows => 0.0868
+    burst window=1s touches=10 reported_min=5 reported_max=10
+    burst window=1s touches=31 reported_min=14 reported_max=31
+    burst window=1s touches=62 reported_min=14 reported_max=43
+    burst window=1s touches=100 reported_min=14 reported_max=43
+    burst window=1s touches=500 reported_min=14 reported_max=43
+    burst window=1s touches=762 reported_min=14 reported_max=43
+    burst window=1s touches=1000 reported_min=14 reported_max=43
+    burst window=1s touches=1273 reported_min=14 reported_max=43
+    burst window=1s touches=2000 reported_min=14 reported_max=43
+    burst window=5s touches=10 reported_min=10 reported_max=10
+    burst window=5s touches=31 reported_min=31 reported_max=31
+    burst window=5s touches=62 reported_min=62 reported_max=62
+    burst window=5s touches=100 reported_min=64 reported_max=100
+    burst window=5s touches=500 reported_min=66 reported_max=125
+    burst window=5s touches=762 reported_min=66 reported_max=125
+    burst window=5s touches=1000 reported_min=66 reported_max=125
+    burst window=5s touches=1273 reported_min=66 reported_max=125
+    burst window=5s touches=2000 reported_min=66 reported_max=125
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=192 reported_max=376
+    burst window=15s touches=762 reported_min=192 reported_max=380
+    burst window=15s touches=1000 reported_min=192 reported_max=380
+    burst window=15s touches=1273 reported_min=192 reported_max=380
+    burst window=15s touches=2000 reported_min=192 reported_max=380
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=500 reported_max=500
+    burst window=60s touches=762 reported_min=762 reported_max=762
+    burst window=60s touches=1000 reported_min=766 reported_max=1000
+    burst window=60s touches=1273 reported_min=770 reported_max=1273
+    burst window=60s touches=2000 reported_min=770 reported_max=1273
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.857 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.619 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.235 max=0.706
+    steady window=1s rate=100/s reported/exact min=0.119 max=0.396
+    steady window=5s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=0.939 max=0.985
+    steady window=5s rate=20/s reported/exact min=0.624 max=0.743
+    steady window=5s rate=50/s reported/exact min=0.247 max=0.375
+    steady window=5s rate=100/s reported/exact min=0.124 max=0.218
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.955 max=0.970
+    steady window=15s rate=20/s reported/exact min=0.628 max=0.751
+    steady window=15s rate=50/s reported/exact min=0.252 max=0.375
+    steady window=15s rate=100/s reported/exact min=0.126 max=0.210
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.001 max=1.001
+    steady window=60s rate=13/s reported/exact min=0.965 max=0.971
+    steady window=60s rate=20/s reported/exact min=0.635 max=0.695
+    steady window=60s rate=50/s reported/exact min=0.254 max=0.337
+    steady window=60s rate=100/s reported/exact min=0.127 max=0.189
+    memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
+harness d5648a8 Register speed: lazy victim scoring, in-place same-unit increment, rec
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=66 negatives=723513 false_seen=0 live_at_end=229599 evictions=4481 relocations=931786  => FN 0.058% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=32  => 3.20e-08 (95% interval 2.19e-08-4.52e-08)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=26093 exact_sum=114779  => 0.2273
+    velocity window=5s abs_error_sum=37502 exact_sum=570466  => 0.0657
+    velocity window=15s abs_error_sum=115329 exact_sum=1651571  => 0.0698
+    velocity window=30s abs_error_sum=153846 exact_sum=3272017  => 0.0470
+    velocity window=60s abs_error_sum=150736 exact_sum=6274665  => 0.0240
+    velocity mean_of_windows => 0.0868
+    burst window=1s touches=10 reported_min=5 reported_max=10
+    burst window=1s touches=31 reported_min=14 reported_max=31
+    burst window=1s touches=62 reported_min=14 reported_max=43
+    burst window=1s touches=100 reported_min=14 reported_max=43
+    burst window=1s touches=500 reported_min=14 reported_max=43
+    burst window=1s touches=762 reported_min=14 reported_max=43
+    burst window=1s touches=1000 reported_min=14 reported_max=43
+    burst window=1s touches=1273 reported_min=14 reported_max=43
+    burst window=1s touches=2000 reported_min=14 reported_max=43
+    burst window=5s touches=10 reported_min=10 reported_max=10
+    burst window=5s touches=31 reported_min=31 reported_max=31
+    burst window=5s touches=62 reported_min=62 reported_max=62
+    burst window=5s touches=100 reported_min=64 reported_max=100
+    burst window=5s touches=500 reported_min=66 reported_max=125
+    burst window=5s touches=762 reported_min=66 reported_max=125
+    burst window=5s touches=1000 reported_min=66 reported_max=125
+    burst window=5s touches=1273 reported_min=66 reported_max=125
+    burst window=5s touches=2000 reported_min=66 reported_max=125
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=192 reported_max=376
+    burst window=15s touches=762 reported_min=192 reported_max=380
+    burst window=15s touches=1000 reported_min=192 reported_max=380
+    burst window=15s touches=1273 reported_min=192 reported_max=380
+    burst window=15s touches=2000 reported_min=192 reported_max=380
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=500 reported_max=500
+    burst window=60s touches=762 reported_min=762 reported_max=762
+    burst window=60s touches=1000 reported_min=766 reported_max=1000
+    burst window=60s touches=1273 reported_min=770 reported_max=1273
+    burst window=60s touches=2000 reported_min=770 reported_max=1273
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.857 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.619 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.235 max=0.706
+    steady window=1s rate=100/s reported/exact min=0.119 max=0.396
+    steady window=5s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=0.939 max=0.985
+    steady window=5s rate=20/s reported/exact min=0.624 max=0.743
+    steady window=5s rate=50/s reported/exact min=0.247 max=0.375
+    steady window=5s rate=100/s reported/exact min=0.124 max=0.218
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.955 max=0.970
+    steady window=15s rate=20/s reported/exact min=0.628 max=0.751
+    steady window=15s rate=50/s reported/exact min=0.252 max=0.375
+    steady window=15s rate=100/s reported/exact min=0.126 max=0.210
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.001 max=1.001
+    steady window=60s rate=13/s reported/exact min=0.965 max=0.971
+    steady window=60s rate=20/s reported/exact min=0.635 max=0.695
+    steady window=60s rate=50/s reported/exact min=0.254 max=0.337
+    steady window=60s rate=100/s reported/exact min=0.127 max=0.189
+    memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
+harness 24f133b Estimate from the register's own epoch (no re-bucketing on read): fast
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=58 negatives=723513 false_seen=0 live_at_end=229599 evictions=4575 relocations=932777  => FN 0.051% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=32  => 3.20e-08 (95% interval 2.19e-08-4.52e-08)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=26093 exact_sum=114779  => 0.2273
+    velocity window=5s abs_error_sum=33232 exact_sum=570466  => 0.0583
+    velocity window=15s abs_error_sum=84917 exact_sum=1651571  => 0.0514
+    velocity window=30s abs_error_sum=142817 exact_sum=3272017  => 0.0436
+    velocity window=60s abs_error_sum=150195 exact_sum=6274665  => 0.0239
+    velocity mean_of_windows => 0.0809
+    burst window=1s touches=10 reported_min=5 reported_max=10
+    burst window=1s touches=31 reported_min=14 reported_max=31
+    burst window=1s touches=62 reported_min=14 reported_max=43
+    burst window=1s touches=100 reported_min=14 reported_max=43
+    burst window=1s touches=500 reported_min=14 reported_max=43
+    burst window=1s touches=762 reported_min=14 reported_max=43
+    burst window=1s touches=1000 reported_min=14 reported_max=43
+    burst window=1s touches=1273 reported_min=14 reported_max=43
+    burst window=1s touches=2000 reported_min=14 reported_max=43
+    burst window=5s touches=10 reported_min=10 reported_max=10
+    burst window=5s touches=31 reported_min=31 reported_max=31
+    burst window=5s touches=62 reported_min=62 reported_max=62
+    burst window=5s touches=100 reported_min=64 reported_max=100
+    burst window=5s touches=500 reported_min=66 reported_max=125
+    burst window=5s touches=762 reported_min=66 reported_max=125
+    burst window=5s touches=1000 reported_min=66 reported_max=125
+    burst window=5s touches=1273 reported_min=66 reported_max=125
+    burst window=5s touches=2000 reported_min=66 reported_max=125
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=192 reported_max=376
+    burst window=15s touches=762 reported_min=192 reported_max=380
+    burst window=15s touches=1000 reported_min=192 reported_max=380
+    burst window=15s touches=1273 reported_min=192 reported_max=380
+    burst window=15s touches=2000 reported_min=192 reported_max=380
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=500 reported_max=500
+    burst window=60s touches=762 reported_min=762 reported_max=762
+    burst window=60s touches=1000 reported_min=766 reported_max=1000
+    burst window=60s touches=1273 reported_min=770 reported_max=1273
+    burst window=60s touches=2000 reported_min=770 reported_max=1273
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.857 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.619 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.235 max=0.706
+    steady window=1s rate=100/s reported/exact min=0.119 max=0.396
+    steady window=5s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=0.939 max=0.985
+    steady window=5s rate=20/s reported/exact min=0.624 max=0.743
+    steady window=5s rate=50/s reported/exact min=0.247 max=0.375
+    steady window=5s rate=100/s reported/exact min=0.124 max=0.218
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.955 max=0.970
+    steady window=15s rate=20/s reported/exact min=0.628 max=0.751
+    steady window=15s rate=50/s reported/exact min=0.252 max=0.375
+    steady window=15s rate=100/s reported/exact min=0.126 max=0.210
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.001 max=1.001
+    steady window=60s rate=13/s reported/exact min=0.965 max=0.971
+    steady window=60s rate=20/s reported/exact min=0.635 max=0.695
+    steady window=60s rate=50/s reported/exact min=0.254 max=0.337
+    steady window=60s rate=100/s reported/exact min=0.127 max=0.189
+    memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
+harness ade47fd CoarseClock option: cached clock refreshed by one goroutine; Close
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=58 negatives=723513 false_seen=0 live_at_end=229599 evictions=4575 relocations=932777  => FN 0.051% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=32  => 3.20e-08 (95% interval 2.19e-08-4.52e-08)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=26093 exact_sum=114779  => 0.2273
+    velocity window=5s abs_error_sum=33232 exact_sum=570466  => 0.0583
+    velocity window=15s abs_error_sum=84917 exact_sum=1651571  => 0.0514
+    velocity window=30s abs_error_sum=142817 exact_sum=3272017  => 0.0436
+    velocity window=60s abs_error_sum=150195 exact_sum=6274665  => 0.0239
+    velocity mean_of_windows => 0.0809
+    burst window=1s touches=10 reported_min=5 reported_max=10
+    burst window=1s touches=31 reported_min=14 reported_max=31
+    burst window=1s touches=62 reported_min=14 reported_max=43
+    burst window=1s touches=100 reported_min=14 reported_max=43
+    burst window=1s touches=500 reported_min=14 reported_max=43
+    burst window=1s touches=762 reported_min=14 reported_max=43
+    burst window=1s touches=1000 reported_min=14 reported_max=43
+    burst window=1s touches=1273 reported_min=14 reported_max=43
+    burst window=1s touches=2000 reported_min=14 reported_max=43
+    burst window=5s touches=10 reported_min=10 reported_max=10
+    burst window=5s touches=31 reported_min=31 reported_max=31
+    burst window=5s touches=62 reported_min=62 reported_max=62
+    burst window=5s touches=100 reported_min=64 reported_max=100
+    burst window=5s touches=500 reported_min=66 reported_max=125
+    burst window=5s touches=762 reported_min=66 reported_max=125
+    burst window=5s touches=1000 reported_min=66 reported_max=125
+    burst window=5s touches=1273 reported_min=66 reported_max=125
+    burst window=5s touches=2000 reported_min=66 reported_max=125
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=192 reported_max=376
+    burst window=15s touches=762 reported_min=192 reported_max=380
+    burst window=15s touches=1000 reported_min=192 reported_max=380
+    burst window=15s touches=1273 reported_min=192 reported_max=380
+    burst window=15s touches=2000 reported_min=192 reported_max=380
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=500 reported_max=500
+    burst window=60s touches=762 reported_min=762 reported_max=762
+    burst window=60s touches=1000 reported_min=766 reported_max=1000
+    burst window=60s touches=1273 reported_min=770 reported_max=1273
+    burst window=60s touches=2000 reported_min=770 reported_max=1273
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.857 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.619 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.235 max=0.706
+    steady window=1s rate=100/s reported/exact min=0.119 max=0.396
+    steady window=5s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=0.939 max=0.985
+    steady window=5s rate=20/s reported/exact min=0.624 max=0.743
+    steady window=5s rate=50/s reported/exact min=0.247 max=0.375
+    steady window=5s rate=100/s reported/exact min=0.124 max=0.218
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.955 max=0.970
+    steady window=15s rate=20/s reported/exact min=0.628 max=0.751
+    steady window=15s rate=50/s reported/exact min=0.252 max=0.375
+    steady window=15s rate=100/s reported/exact min=0.126 max=0.210
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.001 max=1.001
+    steady window=60s rate=13/s reported/exact min=0.965 max=0.971
+    steady window=60s rate=20/s reported/exact min=0.635 max=0.695
+    steady window=60s rate=50/s reported/exact min=0.254 max=0.337
+    steady window=60s rate=100/s reported/exact min=0.127 max=0.189
+    memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
+harness 40f9223 Overlap the alternate line's load with the primary scan; steady-insert
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=58 negatives=723513 false_seen=0 live_at_end=229599 evictions=4575 relocations=932777  => FN 0.051% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=32  => 3.20e-08 (95% interval 2.19e-08-4.52e-08)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=26093 exact_sum=114779  => 0.2273
+    velocity window=5s abs_error_sum=33232 exact_sum=570466  => 0.0583
+    velocity window=15s abs_error_sum=84917 exact_sum=1651571  => 0.0514
+    velocity window=30s abs_error_sum=142817 exact_sum=3272017  => 0.0436
+    velocity window=60s abs_error_sum=150195 exact_sum=6274665  => 0.0239
+    velocity mean_of_windows => 0.0809
+    burst window=1s touches=10 reported_min=5 reported_max=10
+    burst window=1s touches=31 reported_min=14 reported_max=31
+    burst window=1s touches=62 reported_min=14 reported_max=43
+    burst window=1s touches=100 reported_min=14 reported_max=43
+    burst window=1s touches=500 reported_min=14 reported_max=43
+    burst window=1s touches=762 reported_min=14 reported_max=43
+    burst window=1s touches=1000 reported_min=14 reported_max=43
+    burst window=1s touches=1273 reported_min=14 reported_max=43
+    burst window=1s touches=2000 reported_min=14 reported_max=43
+    burst window=5s touches=10 reported_min=10 reported_max=10
+    burst window=5s touches=31 reported_min=31 reported_max=31
+    burst window=5s touches=62 reported_min=62 reported_max=62
+    burst window=5s touches=100 reported_min=64 reported_max=100
+    burst window=5s touches=500 reported_min=66 reported_max=125
+    burst window=5s touches=762 reported_min=66 reported_max=125
+    burst window=5s touches=1000 reported_min=66 reported_max=125
+    burst window=5s touches=1273 reported_min=66 reported_max=125
+    burst window=5s touches=2000 reported_min=66 reported_max=125
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=192 reported_max=376
+    burst window=15s touches=762 reported_min=192 reported_max=380
+    burst window=15s touches=1000 reported_min=192 reported_max=380
+    burst window=15s touches=1273 reported_min=192 reported_max=380
+    burst window=15s touches=2000 reported_min=192 reported_max=380
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=500 reported_max=500
+    burst window=60s touches=762 reported_min=762 reported_max=762
+    burst window=60s touches=1000 reported_min=766 reported_max=1000
+    burst window=60s touches=1273 reported_min=770 reported_max=1273
+    burst window=60s touches=2000 reported_min=770 reported_max=1273
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.857 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.619 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.235 max=0.706
+    steady window=1s rate=100/s reported/exact min=0.119 max=0.396
+    steady window=5s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=0.939 max=0.985
+    steady window=5s rate=20/s reported/exact min=0.624 max=0.743
+    steady window=5s rate=50/s reported/exact min=0.247 max=0.375
+    steady window=5s rate=100/s reported/exact min=0.124 max=0.218
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.955 max=0.970
+    steady window=15s rate=20/s reported/exact min=0.628 max=0.751
+    steady window=15s rate=50/s reported/exact min=0.252 max=0.375
+    steady window=15s rate=100/s reported/exact min=0.126 max=0.210
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.001 max=1.001
+    steady window=60s rate=13/s reported/exact min=0.965 max=0.971
+    steady window=60s rate=20/s reported/exact min=0.635 max=0.695
+    steady window=60s rate=50/s reported/exact min=0.254 max=0.337
+    steady window=60s rate=100/s reported/exact min=0.127 max=0.189
+    memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
+harness bc2e12d Revert alternate-line prefetch: hits got slower
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=58 negatives=723513 false_seen=0 live_at_end=229599 evictions=4575 relocations=932777  => FN 0.051% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=32  => 3.20e-08 (95% interval 2.19e-08-4.52e-08)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=26093 exact_sum=114779  => 0.2273
+    velocity window=5s abs_error_sum=33232 exact_sum=570466  => 0.0583
+    velocity window=15s abs_error_sum=84917 exact_sum=1651571  => 0.0514
+    velocity window=30s abs_error_sum=142817 exact_sum=3272017  => 0.0436
+    velocity window=60s abs_error_sum=150195 exact_sum=6274665  => 0.0239
+    velocity mean_of_windows => 0.0809
+    burst window=1s touches=10 reported_min=5 reported_max=10
+    burst window=1s touches=31 reported_min=14 reported_max=31
+    burst window=1s touches=62 reported_min=14 reported_max=43
+    burst window=1s touches=100 reported_min=14 reported_max=43
+    burst window=1s touches=500 reported_min=14 reported_max=43
+    burst window=1s touches=762 reported_min=14 reported_max=43
+    burst window=1s touches=1000 reported_min=14 reported_max=43
+    burst window=1s touches=1273 reported_min=14 reported_max=43
+    burst window=1s touches=2000 reported_min=14 reported_max=43
+    burst window=5s touches=10 reported_min=10 reported_max=10
+    burst window=5s touches=31 reported_min=31 reported_max=31
+    burst window=5s touches=62 reported_min=62 reported_max=62
+    burst window=5s touches=100 reported_min=64 reported_max=100
+    burst window=5s touches=500 reported_min=66 reported_max=125
+    burst window=5s touches=762 reported_min=66 reported_max=125
+    burst window=5s touches=1000 reported_min=66 reported_max=125
+    burst window=5s touches=1273 reported_min=66 reported_max=125
+    burst window=5s touches=2000 reported_min=66 reported_max=125
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=192 reported_max=376
+    burst window=15s touches=762 reported_min=192 reported_max=380
+    burst window=15s touches=1000 reported_min=192 reported_max=380
+    burst window=15s touches=1273 reported_min=192 reported_max=380
+    burst window=15s touches=2000 reported_min=192 reported_max=380
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=500 reported_max=500
+    burst window=60s touches=762 reported_min=762 reported_max=762
+    burst window=60s touches=1000 reported_min=766 reported_max=1000
+    burst window=60s touches=1273 reported_min=770 reported_max=1273
+    burst window=60s touches=2000 reported_min=770 reported_max=1273
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.857 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.619 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.235 max=0.706
+    steady window=1s rate=100/s reported/exact min=0.119 max=0.396
+    steady window=5s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=0.939 max=0.985
+    steady window=5s rate=20/s reported/exact min=0.624 max=0.743
+    steady window=5s rate=50/s reported/exact min=0.247 max=0.375
+    steady window=5s rate=100/s reported/exact min=0.124 max=0.218
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.955 max=0.970
+    steady window=15s rate=20/s reported/exact min=0.628 max=0.751
+    steady window=15s rate=50/s reported/exact min=0.252 max=0.375
+    steady window=15s rate=100/s reported/exact min=0.126 max=0.210
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.001 max=1.001
+    steady window=60s rate=13/s reported/exact min=0.965 max=0.971
+    steady window=60s rate=20/s reported/exact min=0.635 max=0.695
+    steady window=60s rate=50/s reported/exact min=0.254 max=0.337
+    steady window=60s rate=100/s reported/exact min=0.127 max=0.189
+    memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
+harness a8a2848 Striped lock on first-touch path: no duplicate slots under racing inse
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=58 negatives=723513 false_seen=0 live_at_end=229599 evictions=4575 relocations=932777  => FN 0.051% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=32  => 3.20e-08 (95% interval 2.19e-08-4.52e-08)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=26093 exact_sum=114779  => 0.2273
+    velocity window=5s abs_error_sum=33232 exact_sum=570466  => 0.0583
+    velocity window=15s abs_error_sum=84917 exact_sum=1651571  => 0.0514
+    velocity window=30s abs_error_sum=142817 exact_sum=3272017  => 0.0436
+    velocity window=60s abs_error_sum=150195 exact_sum=6274665  => 0.0239
+    velocity mean_of_windows => 0.0809
+    burst window=1s touches=10 reported_min=5 reported_max=10
+    burst window=1s touches=31 reported_min=14 reported_max=31
+    burst window=1s touches=62 reported_min=14 reported_max=43
+    burst window=1s touches=100 reported_min=14 reported_max=43
+    burst window=1s touches=500 reported_min=14 reported_max=43
+    burst window=1s touches=762 reported_min=14 reported_max=43
+    burst window=1s touches=1000 reported_min=14 reported_max=43
+    burst window=1s touches=1273 reported_min=14 reported_max=43
+    burst window=1s touches=2000 reported_min=14 reported_max=43
+    burst window=5s touches=10 reported_min=10 reported_max=10
+    burst window=5s touches=31 reported_min=31 reported_max=31
+    burst window=5s touches=62 reported_min=62 reported_max=62
+    burst window=5s touches=100 reported_min=64 reported_max=100
+    burst window=5s touches=500 reported_min=66 reported_max=125
+    burst window=5s touches=762 reported_min=66 reported_max=125
+    burst window=5s touches=1000 reported_min=66 reported_max=125
+    burst window=5s touches=1273 reported_min=66 reported_max=125
+    burst window=5s touches=2000 reported_min=66 reported_max=125
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=192 reported_max=376
+    burst window=15s touches=762 reported_min=192 reported_max=380
+    burst window=15s touches=1000 reported_min=192 reported_max=380
+    burst window=15s touches=1273 reported_min=192 reported_max=380
+    burst window=15s touches=2000 reported_min=192 reported_max=380
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=500 reported_max=500
+    burst window=60s touches=762 reported_min=762 reported_max=762
+    burst window=60s touches=1000 reported_min=766 reported_max=1000
+    burst window=60s touches=1273 reported_min=770 reported_max=1273
+    burst window=60s touches=2000 reported_min=770 reported_max=1273
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.857 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.619 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.235 max=0.706
+    steady window=1s rate=100/s reported/exact min=0.119 max=0.396
+    steady window=5s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=0.939 max=0.985
+    steady window=5s rate=20/s reported/exact min=0.624 max=0.743
+    steady window=5s rate=50/s reported/exact min=0.247 max=0.375
+    steady window=5s rate=100/s reported/exact min=0.124 max=0.218
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.955 max=0.970
+    steady window=15s rate=20/s reported/exact min=0.628 max=0.751
+    steady window=15s rate=50/s reported/exact min=0.252 max=0.375
+    steady window=15s rate=100/s reported/exact min=0.126 max=0.210
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.001 max=1.001
+    steady window=60s rate=13/s reported/exact min=0.965 max=0.971
+    steady window=60s rate=20/s reported/exact min=0.635 max=0.695
+    steady window=60s rate=50/s reported/exact min=0.254 max=0.337
+    steady window=60s rate=100/s reported/exact min=0.127 max=0.189
+    memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
+harness c8dbb54 Pick the first non-full bucket with TrailingZeros on the same-unit fas
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=58 negatives=723513 false_seen=0 live_at_end=229599 evictions=4575 relocations=932777  => FN 0.051% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=32  => 3.20e-08 (95% interval 2.19e-08-4.52e-08)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=26093 exact_sum=114779  => 0.2273
+    velocity window=5s abs_error_sum=33232 exact_sum=570466  => 0.0583
+    velocity window=15s abs_error_sum=84917 exact_sum=1651571  => 0.0514
+    velocity window=30s abs_error_sum=142817 exact_sum=3272017  => 0.0436
+    velocity window=60s abs_error_sum=150195 exact_sum=6274665  => 0.0239
+    velocity mean_of_windows => 0.0809
+    burst window=1s touches=10 reported_min=5 reported_max=10
+    burst window=1s touches=31 reported_min=14 reported_max=31
+    burst window=1s touches=62 reported_min=14 reported_max=43
+    burst window=1s touches=100 reported_min=14 reported_max=43
+    burst window=1s touches=500 reported_min=14 reported_max=43
+    burst window=1s touches=762 reported_min=14 reported_max=43
+    burst window=1s touches=1000 reported_min=14 reported_max=43
+    burst window=1s touches=1273 reported_min=14 reported_max=43
+    burst window=1s touches=2000 reported_min=14 reported_max=43
+    burst window=5s touches=10 reported_min=10 reported_max=10
+    burst window=5s touches=31 reported_min=31 reported_max=31
+    burst window=5s touches=62 reported_min=62 reported_max=62
+    burst window=5s touches=100 reported_min=64 reported_max=100
+    burst window=5s touches=500 reported_min=66 reported_max=125
+    burst window=5s touches=762 reported_min=66 reported_max=125
+    burst window=5s touches=1000 reported_min=66 reported_max=125
+    burst window=5s touches=1273 reported_min=66 reported_max=125
+    burst window=5s touches=2000 reported_min=66 reported_max=125
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=192 reported_max=376
+    burst window=15s touches=762 reported_min=192 reported_max=380
+    burst window=15s touches=1000 reported_min=192 reported_max=380
+    burst window=15s touches=1273 reported_min=192 reported_max=380
+    burst window=15s touches=2000 reported_min=192 reported_max=380
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=500 reported_max=500
+    burst window=60s touches=762 reported_min=762 reported_max=762
+    burst window=60s touches=1000 reported_min=766 reported_max=1000
+    burst window=60s touches=1273 reported_min=770 reported_max=1273
+    burst window=60s touches=2000 reported_min=770 reported_max=1273
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.857 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.619 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.235 max=0.706
+    steady window=1s rate=100/s reported/exact min=0.119 max=0.396
+    steady window=5s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=0.939 max=0.985
+    steady window=5s rate=20/s reported/exact min=0.624 max=0.743
+    steady window=5s rate=50/s reported/exact min=0.247 max=0.375
+    steady window=5s rate=100/s reported/exact min=0.124 max=0.218
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.955 max=0.970
+    steady window=15s rate=20/s reported/exact min=0.628 max=0.751
+    steady window=15s rate=50/s reported/exact min=0.252 max=0.375
+    steady window=15s rate=100/s reported/exact min=0.126 max=0.210
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.001 max=1.001
+    steady window=60s rate=13/s reported/exact min=0.965 max=0.971
+    steady window=60s rate=20/s reported/exact min=0.635 max=0.695
+    steady window=60s rate=50/s reported/exact min=0.254 max=0.337
+    steady window=60s rate=100/s reported/exact min=0.127 max=0.189
+    memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
+harness 6bf61f0 Displaced bit: lookups match only entries homed at the key's primary l
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=58 negatives=723513 false_seen=0 live_at_end=229599 evictions=4575 relocations=932777  => FN 0.051% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=18  => 1.80e-08 (95% interval 1.07e-08-2.84e-08)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=26093 exact_sum=114779  => 0.2273
+    velocity window=5s abs_error_sum=33232 exact_sum=570466  => 0.0583
+    velocity window=15s abs_error_sum=84917 exact_sum=1651571  => 0.0514
+    velocity window=30s abs_error_sum=142817 exact_sum=3272017  => 0.0436
+    velocity window=60s abs_error_sum=150195 exact_sum=6274665  => 0.0239
+    velocity mean_of_windows => 0.0809
+    burst window=1s touches=10 reported_min=5 reported_max=10
+    burst window=1s touches=31 reported_min=14 reported_max=31
+    burst window=1s touches=62 reported_min=14 reported_max=43
+    burst window=1s touches=100 reported_min=14 reported_max=43
+    burst window=1s touches=500 reported_min=14 reported_max=43
+    burst window=1s touches=762 reported_min=14 reported_max=43
+    burst window=1s touches=1000 reported_min=14 reported_max=43
+    burst window=1s touches=1273 reported_min=14 reported_max=43
+    burst window=1s touches=2000 reported_min=14 reported_max=43
+    burst window=5s touches=10 reported_min=10 reported_max=10
+    burst window=5s touches=31 reported_min=31 reported_max=31
+    burst window=5s touches=62 reported_min=62 reported_max=62
+    burst window=5s touches=100 reported_min=64 reported_max=100
+    burst window=5s touches=500 reported_min=66 reported_max=125
+    burst window=5s touches=762 reported_min=66 reported_max=125
+    burst window=5s touches=1000 reported_min=66 reported_max=125
+    burst window=5s touches=1273 reported_min=66 reported_max=125
+    burst window=5s touches=2000 reported_min=66 reported_max=125
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=192 reported_max=376
+    burst window=15s touches=762 reported_min=192 reported_max=380
+    burst window=15s touches=1000 reported_min=192 reported_max=380
+    burst window=15s touches=1273 reported_min=192 reported_max=380
+    burst window=15s touches=2000 reported_min=192 reported_max=380
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=500 reported_max=500
+    burst window=60s touches=762 reported_min=762 reported_max=762
+    burst window=60s touches=1000 reported_min=766 reported_max=1000
+    burst window=60s touches=1273 reported_min=770 reported_max=1273
+    burst window=60s touches=2000 reported_min=770 reported_max=1273
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.857 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.619 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.235 max=0.706
+    steady window=1s rate=100/s reported/exact min=0.119 max=0.396
+    steady window=5s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=0.939 max=0.985
+    steady window=5s rate=20/s reported/exact min=0.624 max=0.743
+    steady window=5s rate=50/s reported/exact min=0.247 max=0.375
+    steady window=5s rate=100/s reported/exact min=0.124 max=0.218
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.955 max=0.970
+    steady window=15s rate=20/s reported/exact min=0.628 max=0.751
+    steady window=15s rate=50/s reported/exact min=0.252 max=0.375
+    steady window=15s rate=100/s reported/exact min=0.126 max=0.210
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.001 max=1.001
+    steady window=60s rate=13/s reported/exact min=0.965 max=0.971
+    steady window=60s rate=20/s reported/exact min=0.635 max=0.695
+    steady window=60s rate=50/s reported/exact min=0.254 max=0.337
+    steady window=60s rate=100/s reported/exact min=0.127 max=0.189
+    memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
+harness f9c9127 Ticks clamps negative durations; scorecard legend: FN load points and 
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=58 negatives=723513 false_seen=0 live_at_end=229599 evictions=4575 relocations=932777  => FN 0.051% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=18  => 1.80e-08 (95% interval 1.07e-08-2.84e-08)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=26093 exact_sum=114779  => 0.2273
+    velocity window=5s abs_error_sum=33232 exact_sum=570466  => 0.0583
+    velocity window=15s abs_error_sum=84917 exact_sum=1651571  => 0.0514
+    velocity window=30s abs_error_sum=142817 exact_sum=3272017  => 0.0436
+    velocity window=60s abs_error_sum=150195 exact_sum=6274665  => 0.0239
+    velocity mean_of_windows => 0.0809
+    burst window=1s touches=10 reported_min=5 reported_max=10
+    burst window=1s touches=31 reported_min=14 reported_max=31
+    burst window=1s touches=62 reported_min=14 reported_max=43
+    burst window=1s touches=100 reported_min=14 reported_max=43
+    burst window=1s touches=500 reported_min=14 reported_max=43
+    burst window=1s touches=762 reported_min=14 reported_max=43
+    burst window=1s touches=1000 reported_min=14 reported_max=43
+    burst window=1s touches=1273 reported_min=14 reported_max=43
+    burst window=1s touches=2000 reported_min=14 reported_max=43
+    burst window=5s touches=10 reported_min=10 reported_max=10
+    burst window=5s touches=31 reported_min=31 reported_max=31
+    burst window=5s touches=62 reported_min=62 reported_max=62
+    burst window=5s touches=100 reported_min=64 reported_max=100
+    burst window=5s touches=500 reported_min=66 reported_max=125
+    burst window=5s touches=762 reported_min=66 reported_max=125
+    burst window=5s touches=1000 reported_min=66 reported_max=125
+    burst window=5s touches=1273 reported_min=66 reported_max=125
+    burst window=5s touches=2000 reported_min=66 reported_max=125
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=192 reported_max=376
+    burst window=15s touches=762 reported_min=192 reported_max=380
+    burst window=15s touches=1000 reported_min=192 reported_max=380
+    burst window=15s touches=1273 reported_min=192 reported_max=380
+    burst window=15s touches=2000 reported_min=192 reported_max=380
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=500 reported_max=500
+    burst window=60s touches=762 reported_min=762 reported_max=762
+    burst window=60s touches=1000 reported_min=766 reported_max=1000
+    burst window=60s touches=1273 reported_min=770 reported_max=1273
+    burst window=60s touches=2000 reported_min=770 reported_max=1273
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.857 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.619 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.235 max=0.706
+    steady window=1s rate=100/s reported/exact min=0.119 max=0.396
+    steady window=5s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=0.939 max=0.985
+    steady window=5s rate=20/s reported/exact min=0.624 max=0.743
+    steady window=5s rate=50/s reported/exact min=0.247 max=0.375
+    steady window=5s rate=100/s reported/exact min=0.124 max=0.218
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.955 max=0.970
+    steady window=15s rate=20/s reported/exact min=0.628 max=0.751
+    steady window=15s rate=50/s reported/exact min=0.252 max=0.375
+    steady window=15s rate=100/s reported/exact min=0.126 max=0.210
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.001 max=1.001
+    steady window=60s rate=13/s reported/exact min=0.965 max=0.971
+    steady window=60s rate=20/s reported/exact min=0.635 max=0.695
+    steady window=60s rate=50/s reported/exact min=0.254 max=0.337
+    steady window=60s rate=100/s reported/exact min=0.127 max=0.189
+    memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
+harness f07b04e TouchAndCountBatch and VelocityCountBatch; empty batches no longer pan
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=58 negatives=723513 false_seen=0 live_at_end=229599 evictions=4575 relocations=932777  => FN 0.051% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=18  => 1.80e-08 (95% interval 1.07e-08-2.84e-08)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=26093 exact_sum=114779  => 0.2273
+    velocity window=5s abs_error_sum=33232 exact_sum=570466  => 0.0583
+    velocity window=15s abs_error_sum=84917 exact_sum=1651571  => 0.0514
+    velocity window=30s abs_error_sum=142817 exact_sum=3272017  => 0.0436
+    velocity window=60s abs_error_sum=150195 exact_sum=6274665  => 0.0239
+    velocity mean_of_windows => 0.0809
+    burst window=1s touches=10 reported_min=5 reported_max=10
+    burst window=1s touches=31 reported_min=14 reported_max=31
+    burst window=1s touches=62 reported_min=14 reported_max=43
+    burst window=1s touches=100 reported_min=14 reported_max=43
+    burst window=1s touches=500 reported_min=14 reported_max=43
+    burst window=1s touches=762 reported_min=14 reported_max=43
+    burst window=1s touches=1000 reported_min=14 reported_max=43
+    burst window=1s touches=1273 reported_min=14 reported_max=43
+    burst window=1s touches=2000 reported_min=14 reported_max=43
+    burst window=5s touches=10 reported_min=10 reported_max=10
+    burst window=5s touches=31 reported_min=31 reported_max=31
+    burst window=5s touches=62 reported_min=62 reported_max=62
+    burst window=5s touches=100 reported_min=64 reported_max=100
+    burst window=5s touches=500 reported_min=66 reported_max=125
+    burst window=5s touches=762 reported_min=66 reported_max=125
+    burst window=5s touches=1000 reported_min=66 reported_max=125
+    burst window=5s touches=1273 reported_min=66 reported_max=125
+    burst window=5s touches=2000 reported_min=66 reported_max=125
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=192 reported_max=376
+    burst window=15s touches=762 reported_min=192 reported_max=380
+    burst window=15s touches=1000 reported_min=192 reported_max=380
+    burst window=15s touches=1273 reported_min=192 reported_max=380
+    burst window=15s touches=2000 reported_min=192 reported_max=380
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=500 reported_max=500
+    burst window=60s touches=762 reported_min=762 reported_max=762
+    burst window=60s touches=1000 reported_min=766 reported_max=1000
+    burst window=60s touches=1273 reported_min=770 reported_max=1273
+    burst window=60s touches=2000 reported_min=770 reported_max=1273
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.857 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.619 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.235 max=0.706
+    steady window=1s rate=100/s reported/exact min=0.119 max=0.396
+    steady window=5s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=0.939 max=0.985
+    steady window=5s rate=20/s reported/exact min=0.624 max=0.743
+    steady window=5s rate=50/s reported/exact min=0.247 max=0.375
+    steady window=5s rate=100/s reported/exact min=0.124 max=0.218
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.955 max=0.970
+    steady window=15s rate=20/s reported/exact min=0.628 max=0.751
+    steady window=15s rate=50/s reported/exact min=0.252 max=0.375
+    steady window=15s rate=100/s reported/exact min=0.126 max=0.210
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.001 max=1.001
+    steady window=60s rate=13/s reported/exact min=0.965 max=0.971
+    steady window=60s rate=20/s reported/exact min=0.635 max=0.695
+    steady window=60s rate=50/s reported/exact min=0.254 max=0.337
+    steady window=60s rate=100/s reported/exact min=0.127 max=0.189
+    memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
+harness e42327a Publish the register with its key on install; touches back off if the 
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=58 negatives=723513 false_seen=0 live_at_end=229599 evictions=4575 relocations=932777  => FN 0.051% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=18  => 1.80e-08 (95% interval 1.07e-08-2.84e-08)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=26093 exact_sum=114779  => 0.2273
+    velocity window=5s abs_error_sum=33232 exact_sum=570466  => 0.0583
+    velocity window=15s abs_error_sum=84917 exact_sum=1651571  => 0.0514
+    velocity window=30s abs_error_sum=142817 exact_sum=3272017  => 0.0436
+    velocity window=60s abs_error_sum=150195 exact_sum=6274665  => 0.0239
+    velocity mean_of_windows => 0.0809
+    burst window=1s touches=10 reported_min=5 reported_max=10
+    burst window=1s touches=31 reported_min=14 reported_max=31
+    burst window=1s touches=62 reported_min=14 reported_max=43
+    burst window=1s touches=100 reported_min=14 reported_max=43
+    burst window=1s touches=500 reported_min=14 reported_max=43
+    burst window=1s touches=762 reported_min=14 reported_max=43
+    burst window=1s touches=1000 reported_min=14 reported_max=43
+    burst window=1s touches=1273 reported_min=14 reported_max=43
+    burst window=1s touches=2000 reported_min=14 reported_max=43
+    burst window=5s touches=10 reported_min=10 reported_max=10
+    burst window=5s touches=31 reported_min=31 reported_max=31
+    burst window=5s touches=62 reported_min=62 reported_max=62
+    burst window=5s touches=100 reported_min=64 reported_max=100
+    burst window=5s touches=500 reported_min=66 reported_max=125
+    burst window=5s touches=762 reported_min=66 reported_max=125
+    burst window=5s touches=1000 reported_min=66 reported_max=125
+    burst window=5s touches=1273 reported_min=66 reported_max=125
+    burst window=5s touches=2000 reported_min=66 reported_max=125
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=192 reported_max=376
+    burst window=15s touches=762 reported_min=192 reported_max=380
+    burst window=15s touches=1000 reported_min=192 reported_max=380
+    burst window=15s touches=1273 reported_min=192 reported_max=380
+    burst window=15s touches=2000 reported_min=192 reported_max=380
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=500 reported_max=500
+    burst window=60s touches=762 reported_min=762 reported_max=762
+    burst window=60s touches=1000 reported_min=766 reported_max=1000
+    burst window=60s touches=1273 reported_min=770 reported_max=1273
+    burst window=60s touches=2000 reported_min=770 reported_max=1273
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.857 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.619 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.235 max=0.706
+    steady window=1s rate=100/s reported/exact min=0.119 max=0.396
+    steady window=5s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=0.939 max=0.985
+    steady window=5s rate=20/s reported/exact min=0.624 max=0.743
+    steady window=5s rate=50/s reported/exact min=0.247 max=0.375
+    steady window=5s rate=100/s reported/exact min=0.124 max=0.218
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.955 max=0.970
+    steady window=15s rate=20/s reported/exact min=0.628 max=0.751
+    steady window=15s rate=50/s reported/exact min=0.252 max=0.375
+    steady window=15s rate=100/s reported/exact min=0.126 max=0.210
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.001 max=1.001
+    steady window=60s rate=13/s reported/exact min=0.965 max=0.971
+    steady window=60s rate=20/s reported/exact min=0.635 max=0.695
+    steady window=60s rate=50/s reported/exact min=0.254 max=0.337
+    steady window=60s rate=100/s reported/exact min=0.127 max=0.189
+    memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
+harness e980ce2 Verification: count-cap and threshold checks, compared-entries test, c
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=58 negatives=723513 false_seen=0 live_at_end=229599 evictions=4575 relocations=932777  => FN 0.051% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=18  => 1.80e-08 (95% interval 1.07e-08-2.84e-08)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=26093 exact_sum=114779  => 0.2273
+    velocity window=5s abs_error_sum=33232 exact_sum=570466  => 0.0583
+    velocity window=15s abs_error_sum=84917 exact_sum=1651571  => 0.0514
+    velocity window=30s abs_error_sum=142817 exact_sum=3272017  => 0.0436
+    velocity window=60s abs_error_sum=150195 exact_sum=6274665  => 0.0239
+    velocity mean_of_windows => 0.0809
+    burst window=1s touches=10 reported_min=5 reported_max=10
+    burst window=1s touches=31 reported_min=14 reported_max=31
+    burst window=1s touches=62 reported_min=14 reported_max=43
+    burst window=1s touches=100 reported_min=14 reported_max=43
+    burst window=1s touches=500 reported_min=14 reported_max=43
+    burst window=1s touches=762 reported_min=14 reported_max=43
+    burst window=1s touches=1000 reported_min=14 reported_max=43
+    burst window=1s touches=1273 reported_min=14 reported_max=43
+    burst window=1s touches=2000 reported_min=14 reported_max=43
+    burst window=5s touches=10 reported_min=10 reported_max=10
+    burst window=5s touches=31 reported_min=31 reported_max=31
+    burst window=5s touches=62 reported_min=62 reported_max=62
+    burst window=5s touches=100 reported_min=64 reported_max=100
+    burst window=5s touches=500 reported_min=66 reported_max=125
+    burst window=5s touches=762 reported_min=66 reported_max=125
+    burst window=5s touches=1000 reported_min=66 reported_max=125
+    burst window=5s touches=1273 reported_min=66 reported_max=125
+    burst window=5s touches=2000 reported_min=66 reported_max=125
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=192 reported_max=376
+    burst window=15s touches=762 reported_min=192 reported_max=380
+    burst window=15s touches=1000 reported_min=192 reported_max=380
+    burst window=15s touches=1273 reported_min=192 reported_max=380
+    burst window=15s touches=2000 reported_min=192 reported_max=380
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=500 reported_max=500
+    burst window=60s touches=762 reported_min=762 reported_max=762
+    burst window=60s touches=1000 reported_min=766 reported_max=1000
+    burst window=60s touches=1273 reported_min=770 reported_max=1273
+    burst window=60s touches=2000 reported_min=770 reported_max=1273
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.857 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.619 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.235 max=0.706
+    steady window=1s rate=100/s reported/exact min=0.119 max=0.396
+    steady window=5s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=0.939 max=0.985
+    steady window=5s rate=20/s reported/exact min=0.624 max=0.743
+    steady window=5s rate=50/s reported/exact min=0.247 max=0.375
+    steady window=5s rate=100/s reported/exact min=0.124 max=0.218
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.955 max=0.970
+    steady window=15s rate=20/s reported/exact min=0.628 max=0.751
+    steady window=15s rate=50/s reported/exact min=0.252 max=0.375
+    steady window=15s rate=100/s reported/exact min=0.126 max=0.210
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.001 max=1.001
+    steady window=60s rate=13/s reported/exact min=0.965 max=0.971
+    steady window=60s rate=20/s reported/exact min=0.635 max=0.695
+    steady window=60s rate=50/s reported/exact min=0.254 max=0.337
+    steady window=60s rate=100/s reported/exact min=0.127 max=0.189
+    memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
+harness 0e073a5 Relocation: fold an abandoned copy's counts back into the entry
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=58 negatives=723513 false_seen=0 live_at_end=229599 evictions=4575 relocations=932777  => FN 0.051% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=18  => 1.80e-08 (95% interval 1.07e-08-2.84e-08)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=26093 exact_sum=114779  => 0.2273
+    velocity window=5s abs_error_sum=33232 exact_sum=570466  => 0.0583
+    velocity window=15s abs_error_sum=84917 exact_sum=1651571  => 0.0514
+    velocity window=30s abs_error_sum=142817 exact_sum=3272017  => 0.0436
+    velocity window=60s abs_error_sum=150195 exact_sum=6274665  => 0.0239
+    velocity mean_of_windows => 0.0809
+    burst window=1s touches=10 reported_min=5 reported_max=10
+    burst window=1s touches=31 reported_min=14 reported_max=31
+    burst window=1s touches=62 reported_min=14 reported_max=43
+    burst window=1s touches=100 reported_min=14 reported_max=43
+    burst window=1s touches=500 reported_min=14 reported_max=43
+    burst window=1s touches=762 reported_min=14 reported_max=43
+    burst window=1s touches=1000 reported_min=14 reported_max=43
+    burst window=1s touches=1273 reported_min=14 reported_max=43
+    burst window=1s touches=2000 reported_min=14 reported_max=43
+    burst window=5s touches=10 reported_min=10 reported_max=10
+    burst window=5s touches=31 reported_min=31 reported_max=31
+    burst window=5s touches=62 reported_min=62 reported_max=62
+    burst window=5s touches=100 reported_min=64 reported_max=100
+    burst window=5s touches=500 reported_min=66 reported_max=125
+    burst window=5s touches=762 reported_min=66 reported_max=125
+    burst window=5s touches=1000 reported_min=66 reported_max=125
+    burst window=5s touches=1273 reported_min=66 reported_max=125
+    burst window=5s touches=2000 reported_min=66 reported_max=125
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=192 reported_max=376
+    burst window=15s touches=762 reported_min=192 reported_max=380
+    burst window=15s touches=1000 reported_min=192 reported_max=380
+    burst window=15s touches=1273 reported_min=192 reported_max=380
+    burst window=15s touches=2000 reported_min=192 reported_max=380
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=500 reported_max=500
+    burst window=60s touches=762 reported_min=762 reported_max=762
+    burst window=60s touches=1000 reported_min=766 reported_max=1000
+    burst window=60s touches=1273 reported_min=770 reported_max=1273
+    burst window=60s touches=2000 reported_min=770 reported_max=1273
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.857 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.619 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.235 max=0.706
+    steady window=1s rate=100/s reported/exact min=0.119 max=0.396
+    steady window=5s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=0.939 max=0.985
+    steady window=5s rate=20/s reported/exact min=0.624 max=0.743
+    steady window=5s rate=50/s reported/exact min=0.247 max=0.375
+    steady window=5s rate=100/s reported/exact min=0.124 max=0.218
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.955 max=0.970
+    steady window=15s rate=20/s reported/exact min=0.628 max=0.751
+    steady window=15s rate=50/s reported/exact min=0.252 max=0.375
+    steady window=15s rate=100/s reported/exact min=0.126 max=0.210
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.001 max=1.001
+    steady window=60s rate=13/s reported/exact min=0.965 max=0.971
+    steady window=60s rate=20/s reported/exact min=0.635 max=0.695
+    steady window=60s rate=50/s reported/exact min=0.254 max=0.337
+    steady window=60s rate=100/s reported/exact min=0.127 max=0.189
+    memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
+harness 75db206 Slot hand-over: busy word1, so a touch can't count into a newcomer wit
+    churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
+    churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
+    churn load=1.15 seed=4 positives=113040 missed=58 negatives=723513 false_seen=0 live_at_end=229599 evictions=4575 relocations=932777  => FN 0.051% FP 0.00e+00 live/capacity 1.15
+    static_fpr probes=1000000000 false_positives=18  => 1.80e-08 (95% interval 1.07e-08-2.84e-08)
+    spray offenders=100 exact=100  => 100%
+    velocity window=1s abs_error_sum=26093 exact_sum=114779  => 0.2273
+    velocity window=5s abs_error_sum=33232 exact_sum=570466  => 0.0583
+    velocity window=15s abs_error_sum=84917 exact_sum=1651571  => 0.0514
+    velocity window=30s abs_error_sum=142817 exact_sum=3272017  => 0.0436
+    velocity window=60s abs_error_sum=150195 exact_sum=6274665  => 0.0239
+    velocity mean_of_windows => 0.0809
+    burst window=1s touches=10 reported_min=5 reported_max=10
+    burst window=1s touches=31 reported_min=14 reported_max=31
+    burst window=1s touches=62 reported_min=14 reported_max=43
+    burst window=1s touches=100 reported_min=14 reported_max=43
+    burst window=1s touches=500 reported_min=14 reported_max=43
+    burst window=1s touches=762 reported_min=14 reported_max=43
+    burst window=1s touches=1000 reported_min=14 reported_max=43
+    burst window=1s touches=1273 reported_min=14 reported_max=43
+    burst window=1s touches=2000 reported_min=14 reported_max=43
+    burst window=5s touches=10 reported_min=10 reported_max=10
+    burst window=5s touches=31 reported_min=31 reported_max=31
+    burst window=5s touches=62 reported_min=62 reported_max=62
+    burst window=5s touches=100 reported_min=64 reported_max=100
+    burst window=5s touches=500 reported_min=66 reported_max=125
+    burst window=5s touches=762 reported_min=66 reported_max=125
+    burst window=5s touches=1000 reported_min=66 reported_max=125
+    burst window=5s touches=1273 reported_min=66 reported_max=125
+    burst window=5s touches=2000 reported_min=66 reported_max=125
+    burst window=15s touches=10 reported_min=10 reported_max=10
+    burst window=15s touches=31 reported_min=31 reported_max=31
+    burst window=15s touches=62 reported_min=62 reported_max=62
+    burst window=15s touches=100 reported_min=100 reported_max=100
+    burst window=15s touches=500 reported_min=192 reported_max=376
+    burst window=15s touches=762 reported_min=192 reported_max=380
+    burst window=15s touches=1000 reported_min=192 reported_max=380
+    burst window=15s touches=1273 reported_min=192 reported_max=380
+    burst window=15s touches=2000 reported_min=192 reported_max=380
+    burst window=60s touches=10 reported_min=10 reported_max=10
+    burst window=60s touches=31 reported_min=31 reported_max=31
+    burst window=60s touches=62 reported_min=62 reported_max=62
+    burst window=60s touches=100 reported_min=100 reported_max=100
+    burst window=60s touches=500 reported_min=500 reported_max=500
+    burst window=60s touches=762 reported_min=762 reported_max=762
+    burst window=60s touches=1000 reported_min=766 reported_max=1000
+    burst window=60s touches=1273 reported_min=770 reported_max=1273
+    burst window=60s touches=2000 reported_min=770 reported_max=1273
+    steady window=1s rate=1/s reported/exact min=0.500 max=1.000
+    steady window=1s rate=5/s reported/exact min=0.833 max=1.000
+    steady window=1s rate=10/s reported/exact min=0.909 max=1.000
+    steady window=1s rate=12/s reported/exact min=0.923 max=1.000
+    steady window=1s rate=13/s reported/exact min=0.857 max=1.000
+    steady window=1s rate=20/s reported/exact min=0.619 max=1.000
+    steady window=1s rate=50/s reported/exact min=0.235 max=0.706
+    steady window=1s rate=100/s reported/exact min=0.119 max=0.396
+    steady window=5s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=5s rate=12/s reported/exact min=0.984 max=1.000
+    steady window=5s rate=13/s reported/exact min=0.939 max=0.985
+    steady window=5s rate=20/s reported/exact min=0.624 max=0.743
+    steady window=5s rate=50/s reported/exact min=0.247 max=0.375
+    steady window=5s rate=100/s reported/exact min=0.124 max=0.218
+    steady window=15s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=15s rate=12/s reported/exact min=1.000 max=1.006
+    steady window=15s rate=13/s reported/exact min=0.955 max=0.970
+    steady window=15s rate=20/s reported/exact min=0.628 max=0.751
+    steady window=15s rate=50/s reported/exact min=0.252 max=0.375
+    steady window=15s rate=100/s reported/exact min=0.126 max=0.210
+    steady window=60s rate=1/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=5/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=10/s reported/exact min=1.000 max=1.000
+    steady window=60s rate=12/s reported/exact min=1.001 max=1.001
+    steady window=60s rate=13/s reported/exact min=0.965 max=0.971
+    steady window=60s rate=20/s reported/exact min=0.635 max=0.695
+    steady window=60s rate=50/s reported/exact min=0.254 max=0.337
+    steady window=60s rate=100/s reported/exact min=0.127 max=0.189
+    memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
+harness 597ee63-on-8381fd2 (tfbench -quick row)
+    | 0.013% | 1.392% | 5.016% | 0.00e+00 | 4.00e-07 | 100% | 0 | 0 | 0 | 0 | 0.0 | 0 | |

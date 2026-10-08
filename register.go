@@ -31,6 +31,16 @@ var bucketShift = func() (sh [nBuckets]uint) {
 	return sh
 }()
 
+// bucketBase maps a register bit to the shift of the bucket holding it.
+var bucketBase = func() (b [48]uint8) {
+	for j := range nBuckets {
+		for k := bucketShift[j]; k < bucketShift[j]+bucketBits[j]; k++ {
+			b[k] = uint8(bucketShift[j])
+		}
+	}
+	return b
+}()
+
 type register [nBuckets]uint64
 
 func unpack(w1 uint64) (r register) {
@@ -106,42 +116,42 @@ func regEpoch(w1 uint64, ref int64) int64 {
 	return ref - d
 }
 
-// bump advances the register to now and counts one event. last is the
-// slot's lastTouch before this touch (the epoch reference); reset discards
-// counts left by a previous occupant or an expired run.
-func (f *Filter) bump(i int, tg, last, now uint64, reset bool) uint64 {
+// nextReg returns word1 after counting one event at now in old, the
+// register of key tg last touched at last. reset (or a tag mismatch) starts
+// a fresh register. A full register in the current unit comes back as is.
+func (f *Filter) nextReg(old, tg, last, now uint64, reset bool) uint64 {
 	nowU := f.unitOf(now)
+	if !reset && old>>tagShift == tg && old>>48&epochMask == uint64(nowU)&epochMask &&
+		regEpoch(old, f.unitOf(last)) == nowU {
+		// Fast path, same unit: increment the first bucket with room in
+		// place (spilling as add does). Buckets are contiguous from bit 0,
+		// so the lowest zero bit of the register lies in that bucket.
+		free := ^old & regMask
+		if free == 0 {
+			return old // every bucket full
+		}
+		return old + 1<<bucketBase[bits.TrailingZeros64(free)]
+	}
+	var r register
+	e := nowU
+	if !reset && old>>tagShift == tg {
+		r = unpack(old & regMask)
+		e = regEpoch(old, f.unitOf(last))
+		if nowU > e {
+			r.advance(e, nowU)
+			e = nowU
+		} // else a caller with a slightly stale clock: count at e
+	}
+	r.add(0, 1)
+	return tg<<tagShift | uint64(e)&epochMask<<48 | r.pack()
+}
+
+// bump counts one event at now in the register at word index i.
+func (f *Filter) bump(i int, tg, last, now uint64, reset bool) uint64 {
 	for {
 		old := atomic.LoadUint64(&f.words[i])
-		if !reset && old>>tagShift == tg && old>>48&epochMask == uint64(nowU)&epochMask &&
-			regEpoch(old, f.unitOf(last)) == nowU {
-			// Fast path, same unit: increment the first bucket with room in
-			// place (spilling as add does). A full register stays as is.
-			nw := old
-			for j := range nBuckets {
-				if old>>bucketShift[j]&(1<<bucketBits[j]-1) != 1<<bucketBits[j]-1 {
-					nw = old + 1<<bucketShift[j]
-					break
-				}
-			}
-			if nw == old || atomic.CompareAndSwapUint64(&f.words[i], old, nw) {
-				return nw
-			}
-			continue
-		}
-		var r register
-		e := nowU
-		if !reset && old>>tagShift == tg {
-			r = unpack(old & regMask)
-			e = regEpoch(old, f.unitOf(last))
-			if nowU > e {
-				r.advance(e, nowU)
-				e = nowU
-			} // else a caller with a slightly stale clock: count at e
-		}
-		r.add(0, 1)
-		nw := tg<<tagShift | uint64(e)&epochMask<<48 | r.pack()
-		if atomic.CompareAndSwapUint64(&f.words[i], old, nw) {
+		nw := f.nextReg(old, tg, last, now, reset)
+		if nw == old || atomic.CompareAndSwapUint64(&f.words[i], old, nw) {
 			return nw
 		}
 		reset = false // a concurrent writer already re-tagged it; merge

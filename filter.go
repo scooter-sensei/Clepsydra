@@ -312,10 +312,10 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
 			continue // slot was reclaimed between find and load; retry
 		}
 		last := w0 & tsMask
+		stale := age(now, last) > f.horizon
 		if now > last && !atomic.CompareAndSwapUint64(&f.words[i], w0, fp<<48|now) {
 			continue
 		}
-		stale := age(now, last) > f.horizon
 		w1 := f.bump(i+1, tg, last, now, stale)
 		seen := !stale && age(now, last) <= window
 		if !wantCount {

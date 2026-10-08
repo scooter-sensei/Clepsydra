@@ -16,7 +16,11 @@ Scorecard: `bash bench.sh "label"` (race tests + cmd/tfbench, appends to results
 10. CoarseClock option (cached clock, one refresher goroutine). String path 172 → 110 ns.
 11. Concurrent first touches of one key no longer land in two slots (striped lock on the miss path only). Was ~12% duplicate slots and ~5% lost counts with 8 racing writers; now 0. Steady insert +~15 ns.
 
+12. Same-unit counter increment picks the first non-full bucket with one TrailingZeros instead of a loop. Hot-key hit 44 → 32 ns.
+
 ## Tried, no gain
+- One CMPXCHG16B for both slot words instead of two 8-byte CASes: 19 vs 15 ns on this Xeon. Reverted.
+- Branchless 4-way fingerprint compare in find: hot hits ~10% faster, but cold lookups ~15% slower (the slot index becomes data-dependent, so the CPU can't run ahead on a predicted branch). Reverted.
 - 2 MiB huge-page mmap for the table: THP was granted, latency unchanged (Go heap already benefits or TLB isn't the bottleneck here).
 - 8-slot (128-byte) buckets: 0 misses at 98% load and 3x cheaper near-full inserts, but ~10% slower everywhere else. Reverted.
 - Piecewise-linear density in the cut velocity bucket: slightly worse than uniform. Reverted.
@@ -25,7 +29,7 @@ Scorecard: `bash bench.sh "label"` (race tests + cmd/tfbench, appends to results
 - Pure dyadic register (H/32, widths to 32 units): same mean MAE as the H/24 geometry but 60s error 0.040 vs 0.024.
 
 ## Next
-- Hot path: two CASes per touch. Option: Resolution floor that skips the word0 CAS when the timestamp would not change.
+- Hot path: two CASes per touch (~15 ns of the ~32 ns hot hit). Option: Resolution floor that skips the word0 CAS when the timestamp would not change.
 - String path: faster hashing.
 - Relocation copy-then-replace can still leave a duplicate if a touch lands on the copy mid-move. Rare; needs a test at >94% load with racing writers.
 - Batch variants for VelocityCount / TouchAndCount.

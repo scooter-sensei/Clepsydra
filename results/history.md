@@ -26,3 +26,6 @@ Spray = repeat offenders keeping exact counts after 20x-capacity spray. Latencie
 | 10-08 13:52 | 24f133b | 0.000% | 0.000% | 0.051% | 0.00e+00 | 4.00e-08 | 100% | 18.8 | 0.081 | 101 | 62 | 40 | 216 | 466 | 106 | 25.6 | 263 | - | estimate without re-bucketing; mask bucket starts |
 | 10-08 13:54 | ade47fd | 0.000% | 0.000% | 0.051% | 0.00e+00 | 4.00e-08 | 100% | 18.8 | 0.081 | 86 | 53 | 46 | 202 | 590 | 98 | 25.7 | 263 | 78 | CoarseClock option (cached clock) |
 | 10-08 14:10 | bc2e12d+ | 0.000% | 0.000% | 0.051% | 0.00e+00 | 4.00e-08 | 100% | 18.8 | 0.081 | 80 | 60 | 44 | 223 | 463 | 102 | 27.4 | 179 | 117 | no duplicate slots on concurrent first insert (striped claim lock) |
+| 10-08 14:26 | a8a2848+ | 0.000% | 0.000% | 0.051% | 0.00e+00 | 4.00e-08 | 100% | 18.8 | 0.081 | 89 | 60 | 32 | 220 | 500 | 111 | 27.8 | 214 | 123 | branchless first-free-bucket increment (hot keys) |
+
+Note 14:26: the host was noisy this round (cold-path benchmarks varied ±20% between back-to-back runs of the same binary). Compare cold columns across rows with care. The hot-hit gain held in 8 interleaved A/B runs (min 45 → 34 ns).

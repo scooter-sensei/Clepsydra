@@ -171,3 +171,22 @@ func BenchmarkCheckAndTouchBatch(b *testing.B) {
 		f.CheckAndTouchBatch(hs[lo:lo+64], w, 2000+uint64(i>>10), out)
 	}
 }
+
+// Steady state near the limit: ~98% slot load, keys expiring as fast as they
+// arrive, so most inserts need a cuckoo path.
+func BenchmarkInsertNearFull(b *testing.B) {
+	const n = 1 << 18
+	f, _ := New(Config{Capacity: n, Horizon: time.Minute})
+	live := uint64(n * 115 / 100) // ~98% of slots
+	per := f.Ticks(time.Minute) / live
+	var ctr uint64
+	for ; ctr < live; ctr++ {
+		f.CheckAndTouchAt(HashUint64(ctr), 0, 1+ctr*per)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ctr++
+		f.CheckAndTouchAt(HashUint64(ctr), 0, 1+ctr*per)
+	}
+	b.ReportMetric(float64(f.Evictions())/float64(b.N), "evict/op")
+}

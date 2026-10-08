@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	slotsPerLine = 4
+	slotsPerLine = 8
 	wordsPerLine = 2 * slotsPerLine
 	subWindows   = 6
 	tsMask       = 1<<48 - 1
@@ -41,10 +41,10 @@ const (
 	decayEvery = 63
 	// relocDepth bounds the cuckoo path an insert into two full lines may
 	// take before evicting.
-	relocDepth = 2
+	relocDepth = 4
 	// relocBudget caps the alternate lines one insert may scan. The usable
 	// part above the first 8 shrinks with pressure (see claim).
-	relocBudget   = 200
+	relocBudget   = 1000
 	pressureShift = 16
 	pressureOne   = 1 << pressureShift
 )
@@ -122,7 +122,8 @@ func New(cfg Config) (*Filter, error) {
 
 func alignedWords(n int) []uint64 {
 	buf := make([]uint64, n+wordsPerLine)
-	off := int((64-uintptr(unsafe.Pointer(&buf[0]))&63)&63) / 8
+	const align = wordsPerLine * 8 // bytes per bucket
+	off := int((align-uintptr(unsafe.Pointer(&buf[0]))%align)%align) / 8
 	return buf[off : off+n : off+n]
 }
 
@@ -213,7 +214,10 @@ func (f *Filter) CheckAndTouchBatch(hs []uint64, window, now uint64, out []bool)
 		hi := min(lo+chunk, len(hs))
 		var sink uint64
 		for _, h := range hs[lo:hi] {
-			sink += atomic.LoadUint64(&f.words[(f.primary(h))*wordsPerLine])
+			b := f.primary(h) * wordsPerLine
+			for l := uint64(0); l < wordsPerLine; l += 8 { // each 64-byte line of the bucket
+				sink += atomic.LoadUint64(&f.words[b+l])
+			}
 		}
 		runtime.KeepAlive(sink) // keep the prefetch loads
 		for i := lo; i < hi; i++ {

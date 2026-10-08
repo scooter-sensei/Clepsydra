@@ -18,3 +18,4 @@ Spray = repeat offenders keeping exact counts after 20x-capacity spray. Latencie
 | 10-08 13:13 | 126bd87 | 0.000% | 0.000% | 0.000% | 0.00e+00 | 2.00e-07 | 100% | 41.9 | 99 | - | 30 | 218 | 384 | 132 | 19.0 | 207 | adaptive cuckoo budget: deep search only while it succeeds |
 | 10-08 13:16 | 4b5850b | 0.000% | 0.000% | 0.000% | 0.00e+00 | 4.00e-08 | 100% | 41.9 | 95 | - | 25 | 205 | 394 | 103 | 18.1 | 260 | 28-bit identity (12-bit tag, 4-bit epoch) |
 | 10-08 13:21 | 151815d | 0.000% | 0.000% | 0.000% | 0.00e+00 | 4.00e-08 | 100% | 41.9 | 101 | 45 | 31 | 219 | 373 | 108 | 19.2 | 201 | batched API (memory-level parallelism) |
+| 10-08 13:26 | 3e9277c | 0.000% | 0.000% | 0.191% | 0.00e+00 | 4.00e-08 | 100% | 18.8 | 92 | 59 | 30 | 228 | 425 | 76 | 22.0 | 170 | 85% target load, any-size table (-55% memory) |

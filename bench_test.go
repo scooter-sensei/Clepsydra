@@ -160,3 +160,14 @@ func BenchmarkInsertSaturated(b *testing.B) {
 		f.CheckAndTouchAt(HashUint64(uint64(1<<40+i)), w, 1000)
 	}
 }
+
+func BenchmarkCheckAndTouchBatch(b *testing.B) {
+	f, hs := benchFilter(b)
+	w := f.Ticks(30 * time.Second)
+	out := make([]bool, 64)
+	b.ResetTimer()
+	for i := 0; i < b.N; i += 64 {
+		lo := i & (benchKeys - 1)
+		f.CheckAndTouchBatch(hs[lo:lo+64], w, 2000+uint64(i>>10), out)
+	}
+}

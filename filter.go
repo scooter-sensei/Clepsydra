@@ -19,6 +19,7 @@ import (
 	"errors"
 	"hash/maphash"
 	"math/bits"
+	"runtime"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -97,7 +98,6 @@ func New(cfg Config) (*Filter, error) {
 		lines <<= 1
 	}
 	f := &Filter{
-		words:   alignedWords(int(lines * wordsPerLine)),
 		mask:    lines - 1,
 		lines:   lines,
 		horizon: horizon,
@@ -106,6 +106,7 @@ func New(cfg Config) (*Filter, error) {
 		clock:   cfg.Clock,
 		seed:    maphash.MakeSeed(),
 	}
+	f.words = alignedWords(int(lines * wordsPerLine))
 	if f.clock == nil {
 		base, res := time.Now(), cfg.Resolution
 		f.clock = func() uint64 { return uint64(time.Since(base)/res) + 1 }
@@ -193,6 +194,26 @@ func (f *Filter) ContainsAt(h, window, now uint64) bool {
 	}
 	w0 := atomic.LoadUint64(&f.words[i])
 	return w0>>48 == fp && age(now, w0&tsMask) <= min(window, f.horizon)
+}
+
+// CheckAndTouchBatch is CheckAndTouchAt over many pre-hashed keys. It first
+// issues one independent load per key's primary line so the CPU overlaps the
+// cache misses (memory-level parallelism), then runs each operation against
+// lines that are already in flight or cached. out must be at least len(hs).
+func (f *Filter) CheckAndTouchBatch(hs []uint64, window, now uint64, out []bool) {
+	_ = out[len(hs)-1]
+	const chunk = 64 // ~ the core's outstanding-miss capacity, with headroom
+	for lo := 0; lo < len(hs); lo += chunk {
+		hi := min(lo+chunk, len(hs))
+		var sink uint64
+		for _, h := range hs[lo:hi] {
+			sink += atomic.LoadUint64(&f.words[(h&f.mask)*wordsPerLine])
+		}
+		runtime.KeepAlive(sink) // keep the prefetch loads
+		for i := lo; i < hi; i++ {
+			out[i], _ = f.touch(hs[i], window, now, false)
+		}
+	}
 }
 
 // Evictions counts live keys displaced because both candidate lines were full.

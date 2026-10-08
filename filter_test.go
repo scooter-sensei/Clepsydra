@@ -272,6 +272,7 @@ func TestConcurrentMixedRace(t *testing.T) {
 					f.CheckAndTouchAt(h, f.Ticks(50*time.Millisecond), now)
 				case 1:
 					f.VelocityCountAt(h, f.Ticks(50*time.Millisecond), now)
+					f.CheckAndTouchBatch([]uint64{h, h ^ 1, h ^ 2}, f.Ticks(50*time.Millisecond), now, make([]bool, 3))
 				default:
 					f.ContinuousDecay()
 				}
@@ -320,4 +321,22 @@ func TestSprayCannotEvictRepeatOffender(t *testing.T) {
 		}
 	}
 	t.Logf("evictions during spray: %d", f.Evictions())
+}
+
+func TestBatchMatchesSingle(t *testing.T) {
+	a, b := newTest(t, 10_000, time.Minute), newTest(t, 10_000, time.Minute)
+	hs := make([]uint64, 5000)
+	for i := range hs {
+		hs[i] = HashUint64(uint64(i % 3000)) // repeats inside one batch too
+	}
+	out := make([]bool, len(hs))
+	for round := range 3 {
+		now := uint64(1000 + round*2000)
+		a.CheckAndTouchBatch(hs, 3000, now, out)
+		for i, h := range hs {
+			if want := b.CheckAndTouchAt(h, 3000, now); out[i] != want {
+				t.Fatalf("round %d key %d: batch %v single %v", round, i, out[i], want)
+			}
+		}
+	}
 }

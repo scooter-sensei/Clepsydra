@@ -18,6 +18,7 @@ package temporalfilter
 import (
 	"errors"
 	"hash/maphash"
+	"math"
 	"math/bits"
 	"runtime"
 	"sync/atomic"
@@ -56,6 +57,10 @@ type Config struct {
 	Horizon time.Duration
 	// Resolution is the clock tick. Default 1µs (48-bit timestamps last ~8.9y).
 	Resolution time.Duration
+	// Load is the target slot occupancy when Capacity keys are live.
+	// Default 0.85; cuckoo relocation keeps misses at zero up to ~0.95.
+	// Lower values trade memory for headroom above Capacity.
+	Load float64
 	// Clock, if set, returns the current tick. It must be monotonic.
 	// Default: monotonic time since New, in Resolution units.
 	Clock func() uint64
@@ -64,10 +69,9 @@ type Config struct {
 // Filter is safe for concurrent use without locks.
 type Filter struct {
 	words   []uint64 // 64-byte aligned, len = lines*wordsPerLine
-	mask    uint64   // lines-1
-	lines   uint64
-	horizon uint64 // ticks
-	gran    uint64 // ticks per velocity sub-window
+	lines   uint64   // any size; indexed by multiply-shift, not masking
+	horizon uint64   // ticks
+	gran    uint64   // ticks per velocity sub-window
 	res     time.Duration
 	clock   func() uint64
 	seed    maphash.Seed
@@ -81,7 +85,7 @@ type Filter struct {
 	pressure    atomic.Uint32 // EWMA of relocation-search failure, 0..pressureOne
 }
 
-// New allocates a Filter sized for ~50% slot load at cfg.Capacity.
+// New allocates a Filter sized for cfg.Load slot occupancy at cfg.Capacity.
 func New(cfg Config) (*Filter, error) {
 	if cfg.Capacity <= 0 || cfg.Horizon <= 0 {
 		return nil, errors.New("temporalfilter: Capacity and Horizon must be positive")
@@ -93,12 +97,14 @@ func New(cfg Config) (*Filter, error) {
 	if horizon < subWindows-1 {
 		return nil, errors.New("temporalfilter: Horizon too small for Resolution")
 	}
-	lines := uint64(2)
-	for lines*slotsPerLine < uint64(cfg.Capacity)*2 {
-		lines <<= 1
+	if cfg.Load <= 0 {
+		cfg.Load = 0.85
 	}
+	if cfg.Load > 1 {
+		return nil, errors.New("temporalfilter: Load must be <= 1")
+	}
+	lines := max(2, uint64(math.Ceil(float64(cfg.Capacity)/(cfg.Load*slotsPerLine))))
 	f := &Filter{
-		mask:    lines - 1,
 		lines:   lines,
 		horizon: horizon,
 		gran:    (horizon + subWindows - 2) / (subWindows - 1), // ceil(H/5): 5 full + 1 partial >= H
@@ -166,9 +172,9 @@ func (f *Filter) TouchAndCountAt(h, window, now uint64) (bool, int) {
 // VelocityCountAt is VelocityCount on a pre-hashed key, in ticks.
 func (f *Filter) VelocityCountAt(h, window, now uint64) int {
 	fp, tg := fingerprint(h), tag(h)
-	i := f.find(h&f.mask, fp, tg)
+	i := f.find(f.primary(h), fp, tg)
 	if i < 0 {
-		if i = f.find(f.alt(h&f.mask, fp), fp, tg); i < 0 {
+		if i = f.find(f.alt(f.primary(h), fp), fp, tg); i < 0 {
 			return 0
 		}
 	}
@@ -186,9 +192,9 @@ func (f *Filter) VelocityCountAt(h, window, now uint64) int {
 // ContainsAt reports whether h was touched within window, without touching it.
 func (f *Filter) ContainsAt(h, window, now uint64) bool {
 	fp, tg := fingerprint(h), tag(h)
-	i := f.find(h&f.mask, fp, tg)
+	i := f.find(f.primary(h), fp, tg)
 	if i < 0 {
-		if i = f.find(f.alt(h&f.mask, fp), fp, tg); i < 0 {
+		if i = f.find(f.alt(f.primary(h), fp), fp, tg); i < 0 {
 			return false
 		}
 	}
@@ -207,7 +213,7 @@ func (f *Filter) CheckAndTouchBatch(hs []uint64, window, now uint64, out []bool)
 		hi := min(lo+chunk, len(hs))
 		var sink uint64
 		for _, h := range hs[lo:hi] {
-			sink += atomic.LoadUint64(&f.words[(h&f.mask)*wordsPerLine])
+			sink += atomic.LoadUint64(&f.words[(f.primary(h))*wordsPerLine])
 		}
 		runtime.KeepAlive(sink) // keep the prefetch loads
 		for i := lo; i < hi; i++ {
@@ -228,9 +234,9 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
 	}
 	fp, tg := fingerprint(h), tag(h)
 	for {
-		i := f.find(h&f.mask, fp, tg)
+		i := f.find(f.primary(h), fp, tg)
 		if i < 0 {
-			i = f.find(f.alt(h&f.mask, fp), fp, tg)
+			i = f.find(f.alt(f.primary(h), fp), fp, tg)
 		}
 		if i < 0 {
 			i = f.claim(h, fp, now)
@@ -278,7 +284,7 @@ func (f *Filter) find(line, fp, tg uint64) int {
 // the slot with the fewest events in the horizon (oldest on ties), so a spray
 // of fresh keys cannot flush a repeat offender. Returns word0 index.
 func (f *Filter) claim(h, fp, now uint64) int {
-	lines := [2]uint64{h & f.mask, f.alt(h&f.mask, fp)}
+	lines := [2]uint64{f.primary(h), f.alt(f.primary(h), fp)}
 	for {
 		victim, victimScore, victimW0 := -1, uint64(1<<64-1), uint64(0)
 		for _, line := range lines {
@@ -492,7 +498,7 @@ func (f *Filter) decayStep(now uint64, budget uint64) int {
 		return 0 // another caller took this step
 	}
 	for l := start; l < start+n; l++ {
-		f.sweepLine(l&f.mask, now)
+		f.sweepLine(l%f.lines, now)
 	}
 	return int(n)
 }
@@ -526,15 +532,24 @@ func (f *Filter) Occupancy(now uint64) int {
 // Slots returns the table's slot count.
 func (f *Filter) Slots() int { return len(f.words) / 2 }
 
+// primary is h's home line. It uses hash bits 0..35, disjoint from the
+// fingerprint (48..63) and tag (36..47), so keys sharing a line share no
+// identity bits. Multiply-shift lets the table be any size.
+func (f *Filter) primary(h uint64) uint64 {
+	hi, _ := bits.Mul64(h<<28, f.lines) // bits 0..35 moved to the top
+	return hi
+}
+
 // alt is the other candidate line for fp stored in line. It depends only on
 // (line, fp), as in cuckoo filters, so a stored entry can be relocated
-// without knowing its key. alt(alt(l, fp), fp) == l.
+// without knowing its key: alt(l) = (x - l) mod lines is its own inverse.
+// For one or two lines per fp, alt(l) == l; those keys get one line.
 func (f *Filter) alt(line, fp uint64) uint64 {
-	x := mix64(fp*0x9e3779b97f4a7c15) & f.mask
-	if x == 0 {
-		x = 1
+	x, _ := bits.Mul64(mix64(fp*0x9e3779b97f4a7c15), f.lines)
+	if x >= line {
+		return x - line
 	}
-	return line ^ x
+	return x + f.lines - line
 }
 
 func fingerprint(h uint64) uint64 {

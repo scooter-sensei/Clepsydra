@@ -255,16 +255,18 @@ func main() {
 	if len(dirty) > 0 {
 		rev += "+"
 	}
-	c10, c20, c25 := churn(1.0, 2), churn(2.0, 3), churn(2.5, 4)
+	c10, c20, c25 := churn(1.0, 2), churn(1.1, 3), churn(1.15, 4)
 	sfpr := staticFPR(50_000_000)
 	sp := spray()
+	probe, _ := tf.New(tf.Config{Capacity: capacity, Horizon: horizon})
+	bpk := float64(probe.Slots()*16) / capacity
 	var s speeds
 	if !*quick {
 		s = speed()
 	}
-	row := fmt.Sprintf("| %s | %s | %.3f%% | %.3f%% | %.3f%% | %.2e | %.2e | %.0f%% | %.0f | %.0f | %.0f | %.0f | %.0f | %.0f | %.1f | %.0f |",
+	row := fmt.Sprintf("| %s | %s | %.3f%% | %.3f%% | %.3f%% | %.2e | %.2e | %.0f%% | %.1f | %.0f | %.0f | %.0f | %.0f | %.0f | %.0f | %.1f | %.0f |",
 		time.Now().UTC().Format("01-02 15:04"), rev,
-		100*c10.fnr, 100*c20.fnr, 100*c25.fnr, c25.fpr, sfpr, 100*sp,
+		100*c10.fnr, 100*c20.fnr, 100*c25.fnr, c25.fpr, sfpr, 100*sp, bpk,
 		s.hitCold, s.batch, s.hitHot, s.insert, s.insertSat, s.velocity, s.parallel, s.str)
 	if *label != "" {
 		row += " " + *label + " |"
@@ -292,11 +294,11 @@ const intro = `# Temporal filter scorecard history
 
 Produced by ` + "`go run ./cmd/tfbench -label ...`" + `. Capacity 200k, horizon 60s.
 FN = missed keys on the churn workload at 1.0x / 2.0x / 2.5x the configured Capacity (the table is sized for ~38% slot load at 1.0x, ~95% at 2.5x) (ground truth: exact map).
-FP churn = false "seen" on the churn workload at 2.5x. Static FPR = 50M never-inserted probes at capacity.
+FP churn = false "seen" on the churn workload at the last load point. Static FPR = 50M never-inserted probes at capacity.
 Spray = repeat offenders keeping exact counts after 20x-capacity spray. Latencies in ns/op (best of 3),
 1M-key table; batch = CheckAndTouchBatch per key; insert = steady state (keys expire as fast as they arrive), insert sat = every line full; parallel is per-op throughput with GOMAXPROCS goroutines; str = string key + built-in clock.
 
 `
 
-const header = `| when (UTC) | rev | FN 1.0x | FN 2.0x | FN 2.5x | FP churn 2.5x | static FPR | spray | hit cold | batch | hit hot | insert | insert sat | velocity | parallel | str | change |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|`
+const header = `| when (UTC) | rev | FN 1.0x | FN 1.1x | FN 1.15x | FP churn 1.15x | static FPR | spray | B/key | hit cold | batch | hit hot | insert | insert sat | velocity | parallel | str | change |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|`

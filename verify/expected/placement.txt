@@ -2,7 +2,7 @@ placement load=1.00 seed=2 inserts=635004 oracle_drops=0 oracle_peak_slot_load=0
 placement load=1.00 shortest_path_moves(moves:inserts) 0:491582 1:137519 2:5903
 placement load=1.10 seed=3 inserts=698944 oracle_drops=0 oracle_peak_slot_load=0.9338 oracle_missed=0 filter_evictions=0 filter_missed=0 positives=108572
 placement load=1.10 shortest_path_moves(moves:inserts) 0:407213 1:205257 2:84545 3:1929
-placement load=1.15 seed=4 inserts=731739 oracle_drops=0 oracle_peak_slot_load=0.9780 oracle_missed=0 filter_evictions=4575 filter_missed=58 positives=113040
+placement load=1.15 seed=4 inserts=731739 oracle_drops=0 oracle_peak_slot_load=0.9780 oracle_missed=0 filter_evictions=4577 filter_missed=0 positives=113040
 placement load=1.15 shortest_path_moves(moves:inserts) 0:311651 1:101659 2:104202 3:135815 4:75006 5:3406
 agreed on 12941 feasible and 2933 infeasible inserts
 placement threshold choices=2 slots=1 load=0.50000

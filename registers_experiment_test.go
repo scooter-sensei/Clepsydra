@@ -18,7 +18,7 @@ import (
 
 const expH = 60_000.0
 
-type register interface {
+type velReg interface {
 	name() string
 	add(t float64)                      // record an event at t (non-decreasing)
 	count(now, w, last float64) float64 // estimate events in (now-w, now]
@@ -295,12 +295,12 @@ func TestRegisterExperiment(t *testing.T) {
 		t.Skip()
 	}
 	wins := []float64{1000, 5000, 15_000, 30_000, 60_000}
-	makers := []func() register{
-		func() register { return newLinear() },
-		func() register { return newDyadic(6, 6, 7, 8, 9, 12) },
-		func() register { return newDyadic(5, 5, 6, 6, 7, 8, 11) },
-		func() register { return newLaplace([]float64{expH / 16, expH / 4, expH}, 16) },
-		func() register { return newLaplace([]float64{expH / 32, expH / 8, expH / 3, expH}, 12) },
+	makers := []func() velReg{
+		func() velReg { return newLinear() },
+		func() velReg { return newDyadic(6, 6, 7, 8, 9, 12) },
+		func() velReg { return newDyadic(5, 5, 6, 6, 7, 8, 11) },
+		func() velReg { return newLaplace([]float64{expH / 16, expH / 4, expH}, 16) },
+		func() velReg { return newLaplace([]float64{expH / 32, expH / 8, expH / 3, expH}, 12) },
 	}
 	var out strings.Builder
 	fmt.Fprintf(&out, "\nnormalized MAE (sum|est-exact| / sum exact), by window\n%-34s %-15s", "register", "traffic")

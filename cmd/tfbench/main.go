@@ -108,7 +108,8 @@ func churn(load float64, seed uint64) churnResult {
 
 // velocityMAE: 2000 keys with mixed traffic shapes (steady, bursty, ramp,
 // sparse, on/off) over 5 horizons; every ~1ms one random key is queried for a
-// random window. Returns sum|estimate-exact| / sum exact.
+// random window. Returns the mean over windows of sum|estimate-exact| / sum
+// exact, so short windows weigh as much as long ones.
 func velocityMAE() float64 {
 	f, _ := tf.New(tf.Config{Capacity: capacity, Horizon: horizon, Resolution: time.Millisecond})
 	r := rand.New(rand.NewPCG(9, 9))
@@ -153,7 +154,7 @@ func velocityMAE() float64 {
 		hs[k] = tf.HashUint64(uint64(k) + 1<<50)
 	}
 	wins := []uint64{1_000, 5_000, 15_000, 30_000, 60_000}
-	var errSum, exactSum float64
+	errSum, exactSum := make([]float64, len(wins)), make([]float64, len(wins))
 	i := 0
 	for now := uint64(hTicks); now < end; now++ {
 		for i < len(evs) && evs[i].t <= now {
@@ -161,14 +162,21 @@ func velocityMAE() float64 {
 			times[evs[i].k] = append(times[evs[i].k], evs[i].t)
 			i++
 		}
-		k, w := r.IntN(nkeys), wins[r.IntN(len(wins))]
+		k, wi := r.IntN(nkeys), r.IntN(len(wins))
+		w := wins[wi]
 		ts := times[k]
 		exact := len(ts) - sort.Search(len(ts), func(j int) bool { return ts[j]+w > now })
 		got := f.VelocityCountAt(hs[k], w, now)
-		errSum += math.Abs(float64(got - exact))
-		exactSum += float64(exact)
+		errSum[wi] += math.Abs(float64(got - exact))
+		exactSum[wi] += float64(exact)
 	}
-	return errSum / exactSum
+	mean := 0.0
+	for wi := range wins {
+		perWin := errSum[wi] / exactSum[wi]
+		fmt.Fprintf(os.Stderr, "vel MAE %2ds: %.3f\n", wins[wi]/1000, perWin)
+		mean += perWin / float64(len(wins))
+	}
+	return mean
 }
 
 // staticFPR: table at capacity, probe never-inserted keys with read-only Contains.

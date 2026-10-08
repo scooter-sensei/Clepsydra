@@ -6,13 +6,14 @@
 // four 2-word slots:
 //
 //	word0: fp(16) | lastTouch(48)          // freshness, CheckAndTouch
-//	word1: tag(12) | epoch(4) | c0..c5(6x8) // velocity shift register
+//	word1: tag(12) | epoch(4) | b0..b6 (7 buckets, 48 bits) // velocity register
 //
-// c0 counts the newest sub-window, c5 the oldest. Advancing time by d
-// sub-windows is a left shift by 8*d bits, so decay is pure arithmetic on the
-// clock: there is no background sweep on the correctness path. A key's home is
-// its primary line; it overflows to a second line only when the primary holds
-// four live keys.
+// The velocity register keeps 7 buckets whose widths grow with age (1, 1,
+// 1-2, 2-4, ... units of Horizon/32): fine resolution near now, coarse in the
+// past (register.go). Advancing time re-buckets arithmetically from the clock,
+// so there is no background sweep on the correctness path. A key's home is
+// its primary line; relocation moves entries to their alternate line to make
+// room.
 package temporalfilter
 
 import (
@@ -29,10 +30,7 @@ import (
 const (
 	slotsPerLine = 4
 	wordsPerLine = 2 * slotsPerLine
-	subWindows   = 6
 	tsMask       = 1<<48 - 1
-	ctrMask      = 1<<48 - 1
-	ctrMax       = 0xff
 	tagBits      = 12
 	tagShift     = 64 - tagBits
 	epochMask    = 0xf
@@ -71,7 +69,7 @@ type Filter struct {
 	words   []uint64 // 64-byte aligned, len = lines*wordsPerLine
 	lines   uint64   // any size; indexed by multiply-shift, not masking
 	horizon uint64   // ticks
-	gran    uint64   // ticks per velocity sub-window
+	unit    uint64   // ticks per velocity register unit (Horizon/32)
 	res     time.Duration
 	clock   func() uint64
 	seed    maphash.Seed
@@ -94,7 +92,7 @@ func New(cfg Config) (*Filter, error) {
 		cfg.Resolution = time.Microsecond
 	}
 	horizon := uint64(cfg.Horizon / cfg.Resolution)
-	if horizon < subWindows-1 {
+	if horizon < unitsPerHorizon {
 		return nil, errors.New("temporalfilter: Horizon too small for Resolution")
 	}
 	if cfg.Load <= 0 {
@@ -107,7 +105,7 @@ func New(cfg Config) (*Filter, error) {
 	f := &Filter{
 		lines:   lines,
 		horizon: horizon,
-		gran:    (horizon + subWindows - 2) / (subWindows - 1), // ceil(H/5): 5 full + 1 partial >= H
+		unit:    (horizon + unitsPerHorizon - 1) / unitsPerHorizon,
 		res:     cfg.Resolution,
 		clock:   cfg.Clock,
 		seed:    maphash.MakeSeed(),
@@ -244,7 +242,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
 		}
 		if i < 0 {
 			i = f.claim(h, fp, now)
-			w1 := f.bump(i+1, tg, now, true)
+			w1 := f.bump(i+1, tg, now, now, true)
 			if !wantCount {
 				return false, 0
 			}
@@ -259,7 +257,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) (bool, int) {
 			continue
 		}
 		stale := age(now, last) > f.horizon
-		w1 := f.bump(i+1, tg, now, stale)
+		w1 := f.bump(i+1, tg, last, now, stale)
 		seen := !stale && age(now, last) <= window
 		if !wantCount {
 			return seen, 0
@@ -302,7 +300,7 @@ func (f *Filter) claim(h, fp, now uint64) int {
 					}
 					continue
 				}
-				score := f.mass(atomic.LoadUint64(&f.words[base+s+1]), now)<<48 | ts
+				score := f.mass(atomic.LoadUint64(&f.words[base+s+1]), ts, now)<<48 | ts
 				if score < victimScore {
 					victim, victimScore, victimW0 = base+s, score, w0
 				}
@@ -381,97 +379,6 @@ func (f *Filter) relocate(i int, line, mine, now uint64, depth int, budget *int)
 		}
 	}
 	return false
-}
-
-// lag is how many sub-windows the register in w1 trails now. The stored
-// epoch is only 4 bits: callers only consult registers whose lastTouch is
-// within the horizon (< subWindows sub-windows), so mod 16 is unambiguous,
-// and lags of 8..15 mean the caller's clock is slightly behind (treated as 0).
-// ok is false once every counter has shifted out.
-func (f *Filter) lag(w1, now uint64) (d uint64, ok bool) {
-	d = (now/f.gran - w1>>48) & epochMask
-	if d > epochMask/2 {
-		return 0, true
-	}
-	return d, d < subWindows
-}
-
-// mass is the register's total event count still inside the horizon.
-func (f *Filter) mass(w1, now uint64) uint64 {
-	d, ok := f.lag(w1, now)
-	if !ok {
-		return 0
-	}
-	ctr := w1 & ctrMask << (8 * d) & ctrMask
-	ctr = ctr&0x00ff00ff00ff + ctr>>8&0x00ff00ff00ff // pairwise byte sums
-	return ctr&0xffff + ctr>>16&0xffff + ctr>>32&0xffff
-}
-
-// bump advances the velocity shift register to now and increments c0.
-// reset discards counts left by a previous occupant or an expired run.
-func (f *Filter) bump(i int, tg, now uint64, reset bool) uint64 {
-	nowE := now / f.gran
-	for {
-		old := atomic.LoadUint64(&f.words[i])
-		e := old >> 48 & epochMask
-		ctr := old & ctrMask
-		if reset || old>>tagShift != tg {
-			ctr, e = 0, nowE
-		} else if d := (nowE - e) & epochMask; d <= epochMask/2 { // else caller's clock is behind; count in c0
-			if d >= subWindows {
-				ctr = 0
-			} else {
-				ctr = ctr << (8 * d) & ctrMask
-			}
-			e = nowE
-		}
-		if ctr&ctrMax != ctrMax {
-			ctr++
-		}
-		nw := tg<<tagShift | (e&epochMask)<<48 | ctr
-		if atomic.CompareAndSwapUint64(&f.words[i], old, nw) {
-			return nw
-		}
-		reset = false // a concurrent writer already re-tagged it; merge
-	}
-}
-
-// estimate interpolates the count in (now-window, now] from the register.
-// Two facts from word0 make it exact at the extremes: nothing happened after
-// last, so a window ending before it holds zero and one reaching it holds at
-// least one; and c0's events all lie in [start of current sub-window, last].
-// Older sub-windows assume events are uniform inside the one partially covered.
-func (f *Filter) estimate(w1, last, now, window uint64) int {
-	if window > f.horizon {
-		window = f.horizon
-	}
-	if age(now, last) > window {
-		return 0
-	}
-	nowE := now / f.gran
-	d, ok := f.lag(w1, now)
-	if !ok {
-		return 0
-	}
-	ctr := w1 & ctrMask << (8 * d) & ctrMask
-	g := float64(f.gran)
-	subStart := nowE * f.gran
-	from := now - min(window, now) // window start
-	est := float64(ctr & 0xff)
-	if from > subStart && last > subStart {
-		est *= min(1, float64(last-min(from, last))/float64(last-subStart))
-	}
-	r := float64(window)/g - float64(now-subStart)/g // sub-windows still to cover
-	for k := 1; k < subWindows && r > 0; k++ {
-		c := float64(ctr >> (8 * k) & 0xff)
-		if r >= 1 {
-			est += c
-		} else {
-			est += c * r
-		}
-		r--
-	}
-	return max(1, int(est+0.5))
 }
 
 // ContinuousDecay reclaims expired slots at a rate set by the clock: one full

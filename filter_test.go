@@ -66,13 +66,14 @@ func TestExactBoundary(t *testing.T) {
 }
 
 // Velocity estimate vs exact sliding count for Poisson and bursty traffic.
-// The interpolation error is bounded by the count in the one sub-window that
-// straddles the window's trailing edge.
+// The interpolation error is bounded by the count in the one bucket the
+// window's trailing edge cuts; at age W that bucket lies within ages
+// (W/2 - unit, 2W + unit].
 func TestVelocityAccuracy(t *testing.T) {
 	const horizon = 60 * time.Second
 	f := newTest(t, 1000, horizon)
 	r := rand.New(rand.NewPCG(1, 2))
-	g := f.gran
+	u := f.unit
 
 	for trial := 0; trial < 200; trial++ {
 		h := HashUint64(uint64(trial) + 1000)
@@ -95,12 +96,11 @@ func TestVelocityAccuracy(t *testing.T) {
 		for _, w := range []time.Duration{time.Second, 5 * time.Second, 30 * time.Second, horizon} {
 			wt := f.Ticks(w)
 			exact, edge := 0, 0
-			edgeStart := (now-wt)/g*g - g
 			for _, e := range events {
 				if e+wt > now {
 					exact++
 				}
-				if e >= edgeStart && e < edgeStart+3*g {
+				if a := now - e; a+2*u > wt/2 && a <= 2*wt+2*u {
 					edge++
 				}
 			}
@@ -123,8 +123,8 @@ func TestVelocityBurstAndDecay(t *testing.T) {
 		t.Fatalf("60s count = %d, want 10", got)
 	}
 	// Windows at or above one sub-window (Horizon/5 = 12s) resolve the burst.
-	if got := f.VelocityCountAt(h, f.Ticks(30*time.Second), now+f.Ticks(20*time.Second)); got != 10 {
-		t.Fatalf("30s count 20s later = %d, want 10", got)
+	if got := f.VelocityCountAt(h, f.Ticks(30*time.Second), now+f.Ticks(20*time.Second)); got < 9 || got > 10 {
+		t.Fatalf("30s count 20s later = %d, want ~10", got)
 	}
 	// Below sub-window resolution the estimate is bounded, never zero while
 	// the key is fresh, and exactly zero once the window passes the last touch.
@@ -144,14 +144,16 @@ func TestVelocityBurstAndDecay(t *testing.T) {
 	}
 }
 
-func TestSaturation(t *testing.T) {
+func TestHeavyHitterSpill(t *testing.T) {
 	f := newTest(t, 100, time.Minute)
 	h := HashUint64(5)
 	for range 1000 {
 		f.CheckAndTouchAt(h, 0, 1000)
 	}
-	if got := f.VelocityCountAt(h, f.Ticks(time.Minute), 1000); got != 255 {
-		t.Fatalf("saturated count = %d, want 255", got)
+	// A full bucket spills into older ones, so heavy hitters keep their
+	// count (2617 events fit per horizon) instead of capping.
+	if got := f.VelocityCountAt(h, f.Ticks(time.Minute), 1000); got < 950 || got > 1000 {
+		t.Fatalf("1000 hits counted as %d", got)
 	}
 }
 

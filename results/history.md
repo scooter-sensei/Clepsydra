@@ -6,7 +6,7 @@ FN a/b/c = missed keys on the churn workload at multiples of the configured Capa
 - 13:06 to 13:25: 1.0x / 2.0x / 2.5x (38% / 76% / 95% slot load, 41.9 B/key)
 - from 13:26: 1.0x / 1.1x / 1.15x with the table sized for 85% load at 1.0x (85% / 94% / 98% slot load, ~19 B/key)
 
-B/key = table bytes per Capacity key. vel MAE = VelocityCount error, sum|est-exact|/sum exact, over 5 traffic shapes and windows 1-60s (rows from 13:33).
+B/key = table bytes per Capacity key. vel MAE = VelocityCount error: per window (1,5,15,30,60s) sum|est-exact|/sum exact, averaged over windows; 5 traffic shapes (from 13:36; the 13:34 row pooled all windows).
 FP churn = false "seen" on the churn workload at 1.0x. Static FPR = never-inserted probes at capacity (5M probes before 13:16, 50M after).
 Spray = repeat offenders keeping exact counts after 20x-capacity spray. Latencies in ns/op (best of 3),
 1M-key table; batch = CheckAndTouchBatch per key (rows from 13:20); insert = steady state (keys expire as fast as they arrive), insert sat = every line full (rows before 13:10 measured only the saturated case, in the insert column); parallel is per-op throughput with GOMAXPROCS goroutines; str = string key + built-in clock.
@@ -20,3 +20,4 @@ Spray = repeat offenders keeping exact counts after 20x-capacity spray. Latencie
 | 10-08 13:21 | 151815d | 0.000% | 0.000% | 0.000% | 0.00e+00 | 4.00e-08 | 100% | 41.9 | - | 101 | 45 | 31 | 219 | 373 | 108 | 19.2 | 201 | batched API (memory-level parallelism) |
 | 10-08 13:26 | 3e9277c | 0.000% | 0.000% | 0.191% | 0.00e+00 | 4.00e-08 | 100% | 18.8 | - | 92 | 59 | 30 | 228 | 425 | 76 | 22.0 | 170 | 85% target load, any-size table (-55% memory) |
 | 10-08 13:31 | 983b804 | 0.000% | 0.000% | 0.000% | 0.00e+00 | 6.00e-08 | 100% | 18.8 | - | 97 | 60 | 35 | 286 | 727 | 84 | 22.2 | 183 | 8-slot buckets (2 adjacent lines) — reverted: wins only above 94% load, ~10% slower elsewhere |
+| 10-08 13:34 | acea1cf | 0.000% | 0.000% | 0.066% | 0.00e+00 | 4.00e-08 | 100% | 18.8 | 0.038 | 76 | 55 | 35 | 196 | 427 | 74 | 20.3 | 212 | velocity MAE column; reloc depth 3/budget 500 |

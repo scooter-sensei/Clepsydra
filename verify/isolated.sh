@@ -7,9 +7,10 @@
 #
 # Docker path: the official Go image pinned by digest, --network none, the
 # repository passed in as a read-only git bundle. The image is the only
-# input besides the bundle; pull it once beforehand (it is the multi-arch
-# golang:1.24.7-bookworm index, also served as
-# mirror.gcr.io/library/golang:1.24.7-bookworm).
+# input besides the bundle; pull it once beforehand from either registry
+# (same content, same digest):
+#   docker pull golang:1.24.7-bookworm@sha256:b8bae5bd9ba9b1f89b635c91c24cc75cea335a16fb5076310f38566fc674b1ec
+#   docker pull mirror.gcr.io/library/golang:1.24.7-bookworm@sha256:b8bae5bd9ba9b1f89b635c91c24cc75cea335a16fb5076310f38566fc674b1ec
 #
 # unshare path: needs Go 1.24.7 on PATH and unprivileged user namespaces.
 # The run gets a new network namespace (loopback only), env -i, and fresh
@@ -19,7 +20,7 @@
 # The report lands in ./verify-report-isolated (override with OUT=...).
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
-IMAGE=${IMAGE:-golang:1.24.7-bookworm@sha256:b8bae5bd9ba9b1f89b635c91c24cc75cea335a16fb5076310f38566fc674b1ec}
+DIGEST=sha256:b8bae5bd9ba9b1f89b635c91c24cc75cea335a16fb5076310f38566fc674b1ec
 OUT=${OUT:-$PWD/verify-report-isolated}
 rm -rf "$OUT" && mkdir -p "$OUT"
 tmp=$(mktemp -d)
@@ -38,8 +39,13 @@ fi
 echo "isolation: $mode" | tee "$OUT/isolation.txt"
 case $mode in
 docker)
+	if [ -z "${IMAGE:-}" ]; then
+		for IMAGE in golang@$DIGEST mirror.gcr.io/library/golang@$DIGEST; do
+			docker image inspect "$IMAGE" >/dev/null 2>&1 && break
+		done
+	fi
 	docker image inspect "$IMAGE" >/dev/null 2>&1 || {
-		echo "image $IMAGE not present locally; pull it first (docker pull)" >&2
+		echo "image $IMAGE not present locally; pull it first (see the top of this script)" >&2
 		exit 2
 	}
 	echo "image: $IMAGE" >>"$OUT/isolation.txt"

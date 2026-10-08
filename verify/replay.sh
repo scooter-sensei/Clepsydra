@@ -22,21 +22,27 @@ tree() { # tree <rev> <dir>: export a commit's files (no .git)
 }
 
 # runmany <dir> <test binary> <regex> <runs>: runs a test binary <runs> times,
-# 4 at a time (the contention makes races show), and prints how many failed.
+# PAR (default 4) at a time, and prints how many failed. Contention between
+# runs makes most races show; TestAbandonedMoveKeepsCounts needs its eight
+# workers truly parallel, so it runs alone (PAR=1).
 runmany() {
 	: >"$1/fails"
-	seq "$4" | xargs -P 4 -I{} sh -c '"$1" -test.run "$2" -test.count 1 >"$3/run.$4.log" 2>&1 || echo "$4" >>"$3/fails"' _ "$2" "$3" "$1" {}
+	seq "$4" | xargs -P "${PAR:-4}" -I{} sh -c '"$1" -test.run "$2" -test.count 1 >"$3/run.$4.log" 2>&1 || echo "$4" >>"$3/fails"' _ "$2" "$3" "$1" {}
 	wc -l <"$1/fails" | tr -d ' '
 }
 
 fixes() {
 	local n=${1:-20}
-	# name | commit with the bug | commit with the fix | test files copied from HEAD | test regex | runs
+	# name | commit with the bug | commit with the fix | test files copied from HEAD | test regex | runs | env
 	# Duplicate slots: the striped lock (a8a2848) removed most; the install
 	# order in e42327a removed the rare rest (a race with relocation), so
-	# both cases end at e42327a. Racy cases get enough runs that a bug
-	# failing 2.5% of runs is missed with probability < 1e-4.
-	while IFS='|' read -r name old fix files re runs; do
+	# both cases end at e42327a. Lost counts under relocation: e42327a's
+	# install order removed the common cause (38 of 200 runs before); the
+	# relocation test still lost one count in about 1 of 1,000-7,000 runs
+	# until 0e073a5 (abandoned moves) and 75db206 (same-tag hand-over), so
+	# that case ends at 75db206. Racy cases get enough runs that the bug is
+	# missed with probability < 1e-4.
+	while IFS='|' read -r name old fix files re runs env; do
 		[ -z "$name" ] && continue
 		runs=${runs:-$n}
 		local res=()
@@ -48,33 +54,36 @@ fixes() {
 				res+=("build-failed")
 				continue
 			fi
-			res+=("$(runmany "$d" "$d/fix.test" "$re" "$runs")/$runs")
+			res+=("$( [ -n "$env" ] && export $env; runmany "$d" "$d/fix.test" "$re" "$runs")/$runs")
 		done
 		local verdict=REPRODUCED
 		if [ "${res[0]%%/*}" = 0 ] || [ "${res[0]}" = build-failed ] || [ "${res[1]%%/*}" != 0 ]; then
 			verdict="NOT REPRODUCED"
 			bad=1
 		fi
-		printf 'fix %-26s bug at %s failed %-9s | fixed at %s failed %-9s => %s\n' "$name" "$old" "${res[0]}" "$fix" "${res[1]}" "$verdict"
-		cat "$WORK/fix-$name-$old"/run.*.log 2>/dev/null | grep -h -E 'slots used|counted [0-9]+ of|Ticks\(|panic:' | sed 's/^ *//' | sort | uniq -c | sort -rn | head -3 | sed 's/^/    bug run: /'
+		printf 'fix %-29s bug at %s failed %-9s | fixed at %s failed %-9s => %s\n' "$name" "$old" "${res[0]}" "$fix" "${res[1]}" "$verdict"
+		cat "$WORK/fix-$name-$old"/run.*.log 2>/dev/null | grep -h -E 'slots used|counted [0-9]+ of|rounds lost counts \(|Ticks\(|panic:' | sed 's/^ *//' | sort | uniq -c | sort -rn | head -3 | sed 's/^/    bug run: /'
 	done <<-LIST
 	duplicate-slots|bc2e12d|e42327a|dup_test.go|^TestConcurrentFirstInsertNoDuplicates$|
 	duplicate-slots-after-lock|a8a2848|e42327a|dup_test.go|^TestConcurrentFirstInsertNoDuplicates$|400
-	lost-counts-relocation|f07b04e|e42327a|reloc_race_test.go|^TestTouchRacingRelocationKeepsCounts$|200
+	lost-counts-relocation|f07b04e|75db206|reloc_race_test.go|^TestTouchRacingRelocationKeepsCounts$|200
+	lost-counts-abandoned-move|2187079|0e073a5|abandon_test.go|^TestAbandonedMoveKeepsCounts$|20|TF_DISTINCT_TAGS=1 PAR=1
+	lost-counts-same-tag-handover|0e073a5|75db206|abandon_test.go|^TestAbandonedMoveKeepsCounts$|200|PAR=1
 	negative-ticks|6bf61f0|f9c9127|regress_test.go|^TestRegressNegativeTicks$|3
 	empty-batch-panic|502871a|f07b04e|regress_test.go|^TestRegressEmptyBatch$|3
 	LIST
 }
 
-# stress [N]: the two racy regression tests at the working tree, N runs each
+# stress [N]: the racy regression tests at the working tree, N runs each
 # (default 300), 4 at a time. Any failure is a live bug.
 stress() {
 	local n=${1:-300} d="$WORK/stress"
 	mkdir -p "$d"
 	go test -c -o "$d/t.test" .
-	for re in '^TestConcurrentFirstInsertNoDuplicates$' '^TestTouchRacingRelocationKeepsCounts$'; do
-		local f
-		f=$(runmany "$d" "$d/t.test" "$re" "$n")
+	for re in '^TestConcurrentFirstInsertNoDuplicates$' '^TestTouchRacingRelocationKeepsCounts$' '^TestAbandonedMoveKeepsCounts$'; do
+		local f par=4
+		[ "$re" = '^TestAbandonedMoveKeepsCounts$' ] && par=1
+		f=$(PAR=$par runmany "$d" "$d/t.test" "$re" "$n")
 		printf 'stress %-44s failed %s/%s\n' "$re" "$f" "$n"
 		[ "$f" = 0 ] || bad=1
 	done

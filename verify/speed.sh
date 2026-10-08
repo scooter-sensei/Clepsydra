@@ -42,6 +42,7 @@ ab "Striped first-touch lock (a8a2848): insert cost" bc2e12d a8a2848 'CheckAndTo
 ab "TrailingZeros increment (c8dbb54): hot-key hit" a8a2848 c8dbb54 'CheckAndTouchHitHot$'
 ab "Displaced bit (6bf61f0): no speed cost" c8dbb54 6bf61f0 'CheckAndTouchHit$|CheckAndTouchHitHot$|CheckAndTouchMissInsert$|VelocityCount$'
 ab "Register published with key (e42327a): saturated inserts" f07b04e e42327a 'InsertSaturated$|InsertSteady$'
+ab "Count-race fixes (0e073a5, 75db206): busy hand-over, word0 re-read on every hit" 2187079 75db206 'CheckAndTouchHit$|CheckAndTouchHitHot$|TouchAndCount$|CheckAndTouchMissInsert$|InsertSteady$|InsertSaturated$'
 ab "Estimate without re-bucketing (24f133b): VelocityCount" d5648a8 24f133b 'VelocityCount$'
 ab "Depth 4 / budget 1000 (9f2529f) vs depth 3 / budget 500 (acea1cf): insert cost" 9f2529f acea1cf 'InsertSaturated$|InsertNearFull$|CheckAndTouchMissInsert$'
 ab "Branchless find (reverted)" 1e0ef14 "1e0ef14+$X/branchless-find.patch" 'CheckAndTouchHit$|CheckAndTouchHitHot$|VelocityCount$'

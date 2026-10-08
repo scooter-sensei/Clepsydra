@@ -1,6 +1,6 @@
 # Sliding-Window Probabilistic Register (Temporal Filter)
 
-A fixed-memory filter answering **"seen key X in the last W?"** and **"how many times in the last W?"** for any `W ≤ Horizon`, chosen per query. Hits are lock-free (CAS on the slot's two words); a key's first touch takes one of 256 striped locks.
+A fixed-memory filter answering **"seen key X in the last W?"** and **"how many times in the last W?"** for any `W ≤ Horizon`, chosen per query. The window is `[now − W, now]`: an event exactly `W` ago is inside it. Hits are lock-free (CAS on the slot's two words); a key's first touch takes one of 256 striped locks.
 
 **Checking these claims.** Tags like [D1] point to `verify/claims.md`, which gives the command, the expected result and its status for every claim. `verify/isolated.sh` re-runs all deterministic checks in a fresh, offline container and compares them byte for byte with `verify/expected/`. Speed figures are from one host (4-vCPU Xeon @ 2.1 GHz, 260 MB L3) and are reported, not checked.
 
@@ -15,7 +15,7 @@ word0: fp(16) | displaced(1) | lastTouch(47)        freshness, exact to 1 tick (
 word1: tag(12) | epoch(4) | 7 velocity buckets (48)  age-graded counter
 ```
 
-- **Identity** = 16-bit `fp` + 12-bit `tag` = 28 bits, both in the same line. The primary line uses hash bits 0..35, disjoint from the identity bits.
+- **Identity** = 16-bit `fp` + 12-bit `tag` = 28 bits, both in the same line (one tag value is reserved for slots changing hands). The primary line uses hash bits 0..35, disjoint from the identity bits.
 - **Displaced bit**: set when an entry lives in its alternate line, flipped whenever it moves. Lookups match it, so a key is only compared with entries homed at its own primary line: 3.40 entries per absent-key lookup instead of 6.80 at 85% load [D11]. That halves the expected false-positive rate (1.27e-8 vs 2.53e-8); measured 18 vs 32 false positives in 1e9 probes [R3].
 - **Sizing**: `Config.Load` (default 0.85) is the slot occupancy at `Capacity`: 18.8 B per key [D6].
 - **Placement**: primary line first, then the alternate line `alt(l) = (x(fp) − l) mod lines`, which is its own inverse, so stored entries can move without their key. At 85% load, 18.9% of keys sit in their alternate line [D11].
@@ -26,7 +26,7 @@ word1: tag(12) | epoch(4) | 7 velocity buckets (48)  age-graded counter
   - Bucket boundaries only coarsen as time passes, so advancing any distance is one re-bucketing pass with no per-tick work and no sweep.
   - Counter widths grow with bucket width (5,5,6,7,8,8,9 bits). A full bucket **spills** into older ones.
   - **Count limits** [D7]: the newest bucket holds 31 events per unit (2.5 s at a 60 s horizon). Overflow spills into older buckets, which shorter windows don't cover and which age out sooner, so heavy traffic is undercounted:
-    - Steady traffic reads within 1% up to 12 events/s per key (15–60 s windows). At 13/s it reads 2–6% low, at 20/s 25–37% low, at 100/s 79–88% low.
+    - Steady traffic reads within 1% up to 12 events/s per key (15–60 s windows; within 2% at 5 s). At 13/s it reads 3–5% low, at 20/s 25–37% low, at 100/s 79–87% low.
     - A burst in one tick reads at most 43 in a 1 s window, 125 in 5 s, 380 in 15 s and 1,273 in 60 s, and as little as 14, 66, 192 and 770, depending on where it falls in the 8-unit bucket cycle.
     - Windows shorter than one unit are approximate at any rate: a 10-event burst reads as 5–10 in a 1 s window.
   - The 4-bit epoch is resolved against `lastTouch`'s unit.
@@ -71,4 +71,5 @@ word1: tag(12) | epoch(4) | 7 velocity buckets (48)  age-graded counter
 - Above ~94% slot load, inserts need cuckoo paths and the bounded search starts evicting (above). A deeper search would cut those misses at some insert cost; it hasn't been re-measured.
 - Per-key counts undercount above ~12 events/s sustained, and bursts beyond the newest bucket's 31 events read low in short windows [D7]. Wider low buckets would raise this at the cost of identity or timestamp bits.
 - First touches of a key take a striped lock (256 stripes) so racing writers can't create two slots [R2]. Hits stay lock-free.
+- **Counts under concurrency** [R2, D14]. A slot changes hands with word1 set to a reserved "busy" tag before word0 changes, and a touch re-reads word0 after word1 before its CAS, so a touch never counts into another key's register unless the two share all 28 identity bits. A move abandoned because a touch reached the source first adds the copy's counts back to the entry.
 - `HashUint64` is unkeyed. Use `Hash` (seeded) for attacker-controlled keys.

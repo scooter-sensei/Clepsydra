@@ -38,3 +38,4 @@ Note 14:26: the host was noisy this round (cold-path benchmarks varied ±20% bet
 | 10-08 20:14 | 1a89bb4 | 0.000% | 0.000% | 0.000% | 0.00e+00 | 1.80e-08 | 100% | 18.8 | 0.081 | 79 | 56 | 37 | 238 | 710 | 95 | 22.0 | 174 | 113 | security: keyed hash, eviction stash, saturated bit | 205 |
 | 10-09 04:14 | e4cc7dc | 0.000% | 0.000% | 0.000% | 0.00e+00 | 1.80e-08 | 100% | 18.8 | 0.081 | 157 | 80 | 38 | 382 | 1590 | 174 | 53.8 | 251 | 173 | overflow sketch (no erased histories, per-key Degraded), ConstantTime mode | 270 |
 | 10-09 05:38 | 43bbd6d | 0.000% | 0.000% | 0.000% | 0.00e+00 | 1.80e-08 | 100% | 18.8 | 0.081 | 163 | 85 | 37 | 394 | 1011 | 168 | 46.5 | 264 | 216 | lazy 8-bit overflow sketch, SpillMin 4 | 263 |
+| 10-09 07:35 | cdc9018 | 0.000% | 0.000% | 0.000% | 0.00e+00 | 1.80e-08 | 100% | 18.8 | 0.081 | 180 | 88 | 38 | 491 | 1076 | 187 | 43.9 | 264 | 229 | ghost overflow table, Count CT pad | 310 |

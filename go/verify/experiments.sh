@@ -7,14 +7,15 @@
 # Speed effects are host-dependent: verify/ab.sh fbe6968 fbe6968+verify/experiments/<name>.patch <bench>.
 # verify/experiments/README.md describes each patch.
 set -uo pipefail
-cd "$(git rev-parse --show-toplevel)"
+cd "$(dirname "$0")/.."
+. verify/lib.sh
 WORK=${WORK:-$(mktemp -d)}
 BASE=fbe6968
 root=$PWD
 
 prep() { # prep <name> [patch]: tree at BASE plus the patch and today's harness
 	local d="$WORK/exp-$1"
-	mkdir -p "$d" && git archive "$BASE" | tar -x -C "$d"
+	export_tree "$BASE" "$d"
 	[ -n "${2:-}" ] && (cd "$d" && git apply "$root/$2")
 	rm -rf "$d/cmd/tfbench" && mkdir -p "$d/cmd" && cp -r cmd/tfbench "$d/cmd/" && cp -r internal "$d/"
 	echo "$d"

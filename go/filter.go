@@ -91,7 +91,7 @@ type Config struct {
 	// key: a keyed PRF, the same in every process that uses the key. Default:
 	// a random per-filter maphash seed, also secret but not a PRF. Either
 	// way an attacker who can't learn the key can't pick inputs that land on
-	// a chosen line, identity or lock stripe (SECURITY.md).
+	// a chosen line, identity or lock stripe (docs/SECURITY.md).
 	Key *[16]byte
 	// Stash is the number of eviction-stash entries (24 B each). A live key
 	// evicted from a full table is kept there, and its freshness and counts
@@ -129,7 +129,7 @@ type Config struct {
 	// than the cache); only calls that run past it still leak. Count's
 	// paths differ far less, so its pad is a running estimate of its own
 	// 99.5th-percentile latency, capped at ConstantTime. With AutoPad,
-	// Touch's pad is estimated the same way. SECURITY.md has the
+	// Touch's pad is estimated the same way. docs/SECURITY.md has the
 	// measurements. Each call costs at least its pad in CPU.
 	ConstantTime time.Duration
 }
@@ -318,7 +318,7 @@ func (f *Filter) HashUint64(k uint64) uint64 {
 // Result is the full answer of Touch and Count, including how far it can be
 // trusted. A fail-closed caller (rate limit, abuse check) should treat
 // Saturated as "over any limit above Count" and, while Degraded, a key not
-// Seen as possibly a returning one. SECURITY.md has the threat model.
+// Seen as possibly a returning one. docs/SECURITY.md has the threat model.
 type Result struct {
 	// Seen: the key was touched within the window (before this touch).
 	Seen bool

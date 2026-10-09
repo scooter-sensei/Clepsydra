@@ -1,6 +1,6 @@
 # Claims and how each is checked
 
-Every claim made about this filter (DESIGN.md, RESEARCH.md, results/, and the project thread) is listed here with the command that checks it, the result, and a status:
+Every claim made about this filter (docs/DESIGN.md, docs/RESEARCH.md, results/, and the project thread) is listed here with the command that checks it, the result, and a status:
 
 - **checked**: deterministic; `verify/run.sh` re-computes it and requires a byte-for-byte match with `verify/expected/`.
 - **replayed**: re-derived from the git history by `verify/replay.sh` (old commits, or today's harness on old library code).
@@ -26,13 +26,13 @@ Run everything: `verify/isolated.sh` (fresh clone from a git bundle, official Go
 | D9 | The oracle is right | `go test -run TestOracleMatchesMaxFlow -v` | on small overloaded tables it agrees with from-scratch max bipartite b-matching on 12,941 feasible and 2,933 infeasible inserts; every drop carries a checked Hall-violation certificate |
 | D10 | Load threshold for 2 choices × 4 slots is 98.04% | `go test -run TestLoadThreshold -v` | 0.98037, solved from the Cain–Sanders–Wormald / Fernholz–Ramachandran equation; matches Walzer, [arXiv 2307.00644](https://arxiv.org/abs/2307.00644) §1.1.1 (0.89701, 0.95915, 0.98037 for 2, 3, 4 slots) |
 | D11 | The displaced bit halves the entries an absent lookup compares | `go test -run TestComparedEntries -v` | 3.3998 vs 6.7989 entries per lookup (1e6 probes), expected FPR 1.267e-8 vs 2.533e-8; 18.9% of keys sit in their alternate line at 85% load |
-| D12 | Register prototypes (RESEARCH.md §3.2–3.3) | `go test -run TestRegisterExperiment -v` | table in `verify/expected/register-experiment.txt`: means linear 0.154, dyadic-7 0.108, Laplace 3×16 0.268 |
+| D12 | Register prototypes (docs/RESEARCH.md §3.2–3.3) | `go test -run TestRegisterExperiment -v` | table in `verify/expected/register-experiment.txt`: means linear 0.154, dyadic-7 0.108, Laplace 3×16 0.268 |
 | D13 | Tests pass, including under the race detector | `go vet ./...`, `go test ./...`, `go test -race -short ./...` | pass |
 | D14 | The racy regression tests hold at HEAD: no duplicate slots, no lost counts under relocation or eviction to the stash | `verify/replay.sh stress 300` (4 runs at a time; `verify/run.sh` runs this) | 0 of 300 failures each, four tests (the first three also 0 of 1,000 each in a separate run) |
 | D15 | Hits skip the word0 CAS within one tick, and a full register skips the word1 CAS | derived: `touch` (`if now > last && !CAS`), `bump` (`nw == old`) | code |
 | D16 | 2^46 µs ≈ 2.23 years (47 bits / 4.46 years before the saturated bit took one); 1.8e-8 FPR ≈ one false hit per minute at 1M absent-key lookups/s | derived: arithmetic | 7.04e13 µs = 2.23 y; 1.8e-8 × 1e6 × 60 = 1.08 |
 
-## Attacks (checked; SECURITY.md)
+## Attacks (checked; docs/SECURITY.md)
 
 `verify/run.sh` runs these tests and compares their output with `verify/expected/attacks.txt`. The workloads are seeded and single-threaded; the keyed hash uses a random seed but only appears where any seed gives the same result.
 
@@ -163,4 +163,4 @@ Measured by `verify/speed.sh` on one host (4-vCPU Xeon @ 2.1 GHz, 260 MB L3, Go 
 | "Absent keys skip the second line read (64% of misses at 85% load)" | thread, round 4 status | how it was computed wasn't recorded |
 | Asm PREFETCHT0 and "two-choice insert" variants of the alternate-line prefetch | backlog, thread round 3 | code not kept (the plain-load version is 6c1f5dd) |
 | Mechanism explanations: the clock read "stops later work from overlapping", hits on DRAM are "latency-bound because the CAS stops later lookups from overlapping", "the adjacent-line prefetcher doesn't make the second [line] free", "Go heap already benefits or TLB isn't the bottleneck" | backlog | hypotheses offered to explain measurements; never tested directly |
-| Literature summaries and originality judgments | RESEARCH.md §1–2 | check them against the linked sources; the search wasn't exhaustive |
+| Literature summaries and originality judgments | docs/RESEARCH.md §1–2 | check them against the linked sources; the search wasn't exhaustive |

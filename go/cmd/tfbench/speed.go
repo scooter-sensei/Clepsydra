@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	tf "github.com/scooter-sensei/temporalfilter"
+	tf "github.com/scooter-sensei/clepsydra/go"
 )
 
 const benchKeys = 1 << 20

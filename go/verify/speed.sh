@@ -6,7 +6,8 @@
 #
 #   verify/speed.sh > verify/speed.md
 set -uo pipefail
-cd "$(git rev-parse --show-toplevel)"
+cd "$(dirname "$0")/.."
+. verify/lib.sh
 X=verify/experiments
 ab() { # ab <claim> <A> <B> <regex> [rounds]
 	echo "### $1"

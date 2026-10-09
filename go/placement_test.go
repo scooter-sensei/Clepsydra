@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/scooter-sensei/temporalfilter/internal/workload"
+	"github.com/scooter-sensei/clepsydra/go/internal/workload"
 )
 
 // TestPlacementLimit asks whether the scorecard's missed keys are forced by

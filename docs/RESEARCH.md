@@ -1,6 +1,6 @@
 # Temporal Filter: prior art, originality, new directions
 
-Written at the first prototype (commits 564d865–eeb5521) and corrected on 2026-10-08 during the verification pass; corrections are marked. Measured claims carry tags that `verify/claims.md` maps to a check. Literature summaries in §1–2 come from the linked sources as read then: check them there.
+Written at the first prototype (commits 564d865–eeb5521) and corrected on 2026-10-08 during the verification pass; corrections are marked. Measured claims carry tags that `go/verify/claims.md` maps to a check. Literature summaries in §1–2 come from the linked sources as read then: check them there.
 
 ## 1. What already exists
 
@@ -31,17 +31,17 @@ These judgments are relative to the sources in §1, found in a non-exhaustive se
 
 ## 3. New directions explored this round
 
-### 3.1 Velocity-aware eviction (implemented, in `filter.go`)
+### 3.1 Velocity-aware eviction (implemented, in `go/filter.go`)
 
 **Problem I found:** with oldest-first eviction, an attacker can spray fresh keys to overflow the table and **evict their own repeat key**. That is a fraud-evasion vector none of the papers above discuss.
 
 **Change:** when both candidate lines are full, evict the slot with the fewest events in the horizon, oldest on ties. One-off keys churn among themselves.
 
-**Evidence:** `TestSprayCannotEvictRepeatOffender` sprays 20× capacity of one-off keys. All 50 offender keys keep their exact count of 20. The same test **fails with oldest-first eviction** (`verify/experiments/oldest-first-eviction.patch`) [E1]. Insert latency was reported as unchanged at the time; re-measured, miss-insert went from 83 to 110 ns (`verify/ab.sh 564d865 eeb5521 'CheckAndTouchMissInsert$'`; claims S6, X19).
+**Evidence:** `TestSprayCannotEvictRepeatOffender` sprays 20× capacity of one-off keys. All 50 offender keys keep their exact count of 20. The same test **fails with oldest-first eviction** (`go/verify/experiments/oldest-first-eviction.patch`) [E1]. Insert latency was reported as unchanged at the time; re-measured, miss-insert went from 83 to 110 ns (`go/verify/ab.sh 564d865 eeb5521 'CheckAndTouchMissInsert$'`; claims S6, X19).
 
 TinyLFU uses frequency for cache *admission*. Using it as an anti-evasion eviction policy in a temporal filter appears to be new.
 
-### 3.2 Dyadic carry-shift register (prototyped, `registers_experiment_test.go`)
+### 3.2 Dyadic carry-shift register (prototyped, `go/registers_experiment_test.go`)
 
 This uses the same 48 bits, but the buckets get wider with age: 1, 1, 1–2, 2–4, … units.
 
@@ -61,7 +61,7 @@ Ranges span the 5 traffic shapes; `go test -run TestRegisterExperiment -v` print
 
 The dyadic register roughly halves short-window error (mean over shapes at 1s: 0.38 → 0.20; at 5s: 0.21 → 0.09), which is where fraud velocity rules live ("5 cards in 10s"). It loses on 60s windows (0.030 → 0.071).
 
-**What shipped:** an age-graded variant of this register with `Horizon/24` units and counter widths 5,5,6,7,8,8,9 (`register.go`), which scores 0.081 on the scorecard's velocity metric against the linear register's 0.129 [D5, R3].
+**What shipped:** an age-graded variant of this register with `Horizon/24` units and counter widths 5,5,6,7,8,8,9 (`go/register.go`), which scores 0.081 on the scorecard's velocity metric against the linear register's 0.129 [D5, R3].
 
 ### 3.3 Laplace register (prototyped; negative result)
 

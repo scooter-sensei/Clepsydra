@@ -12,7 +12,8 @@
 # unkeyed. Expected files were produced on linux/amd64 with Go 1.24.7; other
 # architectures may differ (Go may fuse floating-point multiply-adds there).
 set -uo pipefail
-cd "$(git rev-parse --show-toplevel)"
+cd "$(dirname "$0")/.."
+. verify/lib.sh
 OUT=${OUT:-verify-report}
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)

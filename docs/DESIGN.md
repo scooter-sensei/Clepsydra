@@ -2,9 +2,9 @@
 
 A fixed-memory filter answering **"seen key X in the last W?"** and **"how many times in the last W?"** for any `W ≤ Horizon`, chosen per query. The window is `[now − W, now]`: an event exactly `W` ago is inside it. Hits are lock-free (CAS on the slot's two words); a key's first touch takes one of 256 striped locks.
 
-**Checking these claims.** Tags like [D1] point to `verify/claims.md`, which gives the command, the expected result and its status for every claim. `verify/isolated.sh` re-runs all deterministic checks in a fresh, offline container and compares them byte for byte with `verify/expected/`. Speed figures are from one host (4-vCPU Xeon @ 2.1 GHz, 260 MB L3) and are reported, not checked.
+**Checking these claims.** Tags like [D1] point to `go/verify/claims.md`, which gives the command, the expected result and its status for every claim. `go/verify/isolated.sh` re-runs all deterministic checks in a fresh, offline container and compares them byte for byte with `go/verify/expected/`. Speed figures are from one host (4-vCPU Xeon @ 2.1 GHz, 260 MB L3) and are reported, not checked.
 
-Measured history of every change is in `results/history.md`; ideas done, tried and queued are in `results/backlog.md`.
+Measured history of every change is in `go/results/history.md`; ideas done, tried and queued are in `go/results/backlog.md`.
 
 ## Layout
 
@@ -24,8 +24,8 @@ word1: tag(12) | epoch(4) | 7 velocity buckets (48)  age-graded counter
   - The search budget shrinks while recent searches fail (an EWMA), so an overfull table degrades to cheap eviction.
   - Eviction takes the **lowest-velocity** slot (oldest on ties), so a spray of fresh keys can't flush a repeat offender [D4, E1].
   - The evicted entry goes to the **stash**: 4-way sets, one entry per 64 slots by default (`Config.Stash`), keyed by the entry's full identity. A first touch that misses the table looks there while it may hold a live entry, and takes the history back. A full set keeps the entries with more events. The victim is stashed under its own claim stripe, so its next first touch finds it in the table or in the stash, never in between [A6].
-  - A history the stash drops goes to the **overflow ghost table** (`ghost.go`): one 21-bit entry per history (14-bit fingerprint, 5-bit event count saturating at 31, 2-bit Horizon/2 slice of its newest event), three to a word, 23 entries and a floor per 64-byte bucket, one unit of 16 B per 4 slots (`Config.Overflow`, 1.5 entries per slot), allocated on the first drop [A11]. A second drop of the same key merges into its entry. A full bucket keeps its heaviest histories: the lightest (the newcomer included) leaves, and the bucket's floor rises to its count. A key's answer adds its own entries to `Count` and `Upper` and the floor to `Upper` alone, so `Upper` never reads below the truth and other keys' histories add nothing unless a fingerprint matches. All of a history's events count while its newest one is in the window: `Upper` stays a bound, `Count` reads high for windows shorter than the horizon. Before an add moves to a new slice, entries dead by then are cleared (the whole table, once per Horizon/2, like the sketch's ring), so the 2-bit slices decode unambiguously. Reads take one cache line. Histories with fewer than 4 events (`Config.SpillMin`) are shed instead: cheap floods can't fill the table, and inserts into a full table stay as cheap as with the sketch [A10, S35]. It replaced a count-min sketch of the same bytes (4 rows × 4 slices of 8-bit counters, count-mean-min with a 3σ noise threshold), still in `overflow.go` for the experiments: under a 2x heavy flood the sketch's noise reached every key [A9, A11]. A returning key starts a fresh slot, so table and overflow never count the same event, and overflow answers can't make a key look heavier for eviction [A7].
-- **Velocity register** (`register.go`): 7 buckets that are 1, 1, 1–2, 2–4, 4–8, 8 and 8 units wide, where a unit is `Horizon/24`. Resolution is fine near now and coarse further back.
+  - A history the stash drops goes to the **overflow ghost table** (`go/ghost.go`): one 21-bit entry per history (14-bit fingerprint, 5-bit event count saturating at 31, 2-bit Horizon/2 slice of its newest event), three to a word, 23 entries and a floor per 64-byte bucket, one unit of 16 B per 4 slots (`Config.Overflow`, 1.5 entries per slot), allocated on the first drop [A11]. A second drop of the same key merges into its entry. A full bucket keeps its heaviest histories: the lightest (the newcomer included) leaves, and the bucket's floor rises to its count. A key's answer adds its own entries to `Count` and `Upper` and the floor to `Upper` alone, so `Upper` never reads below the truth and other keys' histories add nothing unless a fingerprint matches. All of a history's events count while its newest one is in the window: `Upper` stays a bound, `Count` reads high for windows shorter than the horizon. Before an add moves to a new slice, entries dead by then are cleared (the whole table, once per Horizon/2, like the sketch's ring), so the 2-bit slices decode unambiguously. Reads take one cache line. Histories with fewer than 4 events (`Config.SpillMin`) are shed instead: cheap floods can't fill the table, and inserts into a full table stay as cheap as with the sketch [A10, S35]. It replaced a count-min sketch of the same bytes (4 rows × 4 slices of 8-bit counters, count-mean-min with a 3σ noise threshold), still in `go/overflow.go` for the experiments: under a 2x heavy flood the sketch's noise reached every key [A9, A11]. A returning key starts a fresh slot, so table and overflow never count the same event, and overflow answers can't make a key look heavier for eviction [A7].
+- **Velocity register** (`go/register.go`): 7 buckets that are 1, 1, 1–2, 2–4, 4–8, 8 and 8 units wide, where a unit is `Horizon/24`. Resolution is fine near now and coarse further back.
   - Bucket boundaries only coarsen as time passes, so advancing any distance is one re-bucketing pass with no per-tick work and no sweep.
   - Counter widths grow with bucket width (5,5,6,7,8,8,9 bits). A full bucket **spills** into older ones.
   - **Count limits** [D7]: the newest bucket holds 31 events per unit (2.5 s at a 60 s horizon). Overflow spills into older buckets, which shorter windows don't cover and which age out sooner, so heavy traffic is undercounted:
@@ -64,13 +64,13 @@ word1: tag(12) | epoch(4) | 7 velocity buckets (48)  age-graded counter
 
 - **No boundary artifacts in freshness.** `lastTouch` is exact, so `W` is checked to the tick (`TestExactBoundary`).
 - **Bounded reclaim work.** Expiry is arithmetic on every access, so answers never depend on the reclaimer. The reclaimer frees at most 4 lines per call (1 when run inline) — a property of the code (`decayStep`), not a measured latency distribution.
-- **Velocity is gated by exact facts** (`estimate` in `register.go`).
+- **Velocity is gated by exact facts** (`estimate` in `go/register.go`).
   - The count is 0 once `W < now − lastTouch`, and at least 1 otherwise.
   - The newest non-empty bucket's events end at `lastTouch`.
 
 ## Current numbers
 
-**Deterministic** (checked by `verify/run.sh`; capacity 200k, horizon 60s, `cmd/tfbench`):
+**Deterministic** (checked by `go/verify/run.sh`; capacity 200k, horizon 60s, `go/cmd/tfbench`):
 
 - **Missed keys** [D1]: 0 at 85%, 94% and 97.8% slot load (1.15x Capacity). Before the stash, 58 of 113,040 (0.051%) at 97.8%.
 - **Evictions at 97.8%** [D8, D10]: not the layout. The load threshold for 2 choices × 4 slots is 98.04%, and an exact placement oracle on the same stream places every key (0 forced drops). The filter's ~4,575 evictions come from its bounded search: the oracle's shortest paths needed 5 moves for 3,406 inserts, past the filter's 4. The stash now gives every evicted key that returns its history back.
@@ -78,7 +78,7 @@ word1: tag(12) | epoch(4) | 7 velocity buckets (48)  age-graded counter
 - **Memory** [D6]: 18.8 B per key.
 - **Velocity error** [D5]: 0.081, averaged over 1–60s windows and 5 traffic shapes. The original 6×8 linear register scored 0.129 on the same harness [R3].
 
-**Speed** (one host; `verify/speed.md` has the runs, `verify/ab.sh` repeats them; compare ratios, not absolute numbers): see `verify/speed.md`.
+**Speed** (one host; `go/verify/speed.md` has the runs, `go/verify/ab.sh` repeats them; compare ratios, not absolute numbers): see `go/verify/speed.md`.
 
 ## Known limits
 

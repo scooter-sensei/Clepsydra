@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Replays recorded results against the commits that produced them. Run from
-# the repository root (a git checkout with full history).
+# Replays recorded results against the commits that produced them. Needs a
+# git checkout with full history.
 #
 #   verify/replay.sh fixes [N]   each bug-fix test: fails on the commit with the bug, passes on the fix
 #   verify/replay.sh stress [N]  the racy regression tests at the working tree, N runs each
@@ -12,13 +12,14 @@
 # Each subcommand prints one result line per case and exits non-zero if a
 # case did not reproduce.
 set -uo pipefail
-cd "$(git rev-parse --show-toplevel)"
+cd "$(dirname "$0")/.."
+. verify/lib.sh
 WORK=${WORK:-$(mktemp -d)}
 HEAD_REV=$(git rev-parse --short HEAD)
 bad=0
 
 tree() { # tree <rev> <dir>: export a commit's files (no .git)
-	rm -rf "$2" && mkdir -p "$2" && git archive "$1" | tar -x -C "$2"
+	rm -rf "$2" && export_tree "$1" "$2"
 }
 
 # runmany <dir> <test binary> <regex> <runs>: runs a test binary <runs> times,
@@ -150,7 +151,12 @@ harness() {
 	# Today's accuracy harness against each library version.
 	local h="$WORK/harness-src"
 	tree HEAD "$h"
-	for c in $(git rev-list --reverse HEAD -- filter.go register.go | cut -c1-7); do
+	# Commits that only moved the library (into go/) are skipped.
+	local c prev="" lib
+	for c in $(git rev-list --reverse HEAD -- ':/filter.go' ':/register.go' ':/go/filter.go' ':/go/register.go' | cut -c1-7); do
+		lib=$(git -C "$TOP" ls-tree "$c" filter.go register.go go/filter.go go/register.go | awk '{print $3}')
+		[ "$lib" = "$prev" ] && continue
+		prev=$lib
 		local d="$WORK/harness-$c"
 		tree "$c" "$d"
 		rm -rf "$d/cmd/tfbench" "$d/internal" && mkdir -p "$d/cmd"
@@ -162,7 +168,7 @@ harness() {
 	# with the b3e9aa5 harness (2.5x load point) on the a1a7c69 library.
 	local d="$WORK/harness-b3e9aa5-on-a1a7c69"
 	tree a1a7c69 "$d"
-	rm -rf "$d/cmd/tfbench" && mkdir -p "$d/cmd" && git archive b3e9aa5 cmd/tfbench | tar -x -C "$d"
+	rm -rf "$d/cmd/tfbench" && mkdir -p "$d/cmd" && git -C "$TOP" archive b3e9aa5 cmd/tfbench | tar -x -C "$d"
 	printf 'harness b3e9aa5-on-a1a7c69 (tfbench -quick row)\n'
 	(cd "$d" && go run ./cmd/tfbench -quick 2>/dev/null | grep -E '^\| [0-9]{2}-') |
 		sed -E 's/^\| [0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2} \| *\|/|/; s/^/    /' # drop the timestamp and empty rev

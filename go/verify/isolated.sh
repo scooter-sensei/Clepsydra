@@ -52,7 +52,7 @@ docker)
 	docker run --rm --network none \
 		-v "$tmp/repo.bundle:/in/repo.bundle:ro" -v "$OUT:/out" \
 		"${goenv[@]/#/-e}" -e OUT=/out -e WORK=/tmp/work \
-		"$IMAGE" bash -c 'git clone -q /in/repo.bundle /src && cd /src && verify/run.sh "$@"' _ "$@"
+		"$IMAGE" bash -c 'git clone -q /in/repo.bundle /src && cd /src && go/verify/run.sh "$@"' _ "$@"
 	;;
 unshare)
 	gobin=$(dirname "$(command -v go)")
@@ -61,7 +61,7 @@ unshare)
 	(cd "$tmp/src" && env -i PATH="$gobin:/usr/bin:/bin" HOME="$tmp/home" \
 		GOCACHE="$tmp/gocache" GOPATH="$tmp/gopath" GOMODCACHE="$tmp/gomodcache" \
 		"${goenv[@]}" OUT="$OUT" WORK="$tmp/work" \
-		unshare -rn verify/run.sh "$@")
+		unshare -rn go/verify/run.sh "$@")
 	;;
 *)
 	echo "unknown ISOLATION=$mode" >&2

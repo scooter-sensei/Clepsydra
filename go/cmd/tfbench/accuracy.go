@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	tf "github.com/scooter-sensei/temporalfilter"
-	"github.com/scooter-sensei/temporalfilter/internal/workload"
+	tf "github.com/scooter-sensei/clepsydra/go"
+	"github.com/scooter-sensei/clepsydra/go/internal/workload"
 )
 
 // The accuracy workloads use only the API every commit has had (New,

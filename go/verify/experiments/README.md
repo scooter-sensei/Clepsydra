@@ -1,7 +1,7 @@
 # Reverted experiments as re-runnable patches
 
-Every `*.patch` here is a plain `git diff` against **fbe6968** (HEAD of
-`github.com/scooter-sensei/temporalfilter`, Go 1.24.7), except
+Every `*.patch` here is a plain `git diff` against **fbe6968** (Go 1.24.7; the module was then at the repository root, as
+`github.com/scooter-sensei/temporalfilter`), except
 `lockfree-dup-repair-70546b2.patch` (applies to **70546b2**) and
 `insert-saturated-bench-b3e9aa5.patch` (adds 378bc37's saturated-insert
 benchmark to **b3e9aa5**, for the speed comparison in `verify/speed.sh`).
@@ -93,7 +93,7 @@ compared with benchstat, works too.
 
 ## 1. oldest-first-eviction.patch (deterministic)
 
-**Claim** (RESEARCH.md §3.1): "`TestSprayCannotEvictRepeatOffender` sprays 20× capacity of one-off keys. All 50 offender keys keep their exact count of 20. The same test **fails with the old oldest-first policy**. Insert latency is unchanged (~230 ns)."
+**Claim** (docs/RESEARCH.md §3.1): "`TestSprayCannotEvictRepeatOffender` sprays 20× capacity of one-off keys. All 50 offender keys keep their exact count of 20. The same test **fails with the old oldest-first policy**. Insert latency is unchanged (~230 ns)."
 
 **Change:** the eviction victim score in `claim` becomes `ts` (oldest timestamp only) instead of `mass<<48 | ts`. This is the original session's sed edit.
 
@@ -214,9 +214,9 @@ go test -count=1 -run ZZTHP -v .                         # with patch; baseline:
 
 ## 9. spill-counts.patch (speed, plus a deterministic sanity row and a concurrent audit)
 
-**Claim:** "Per-line spill counts (skip the alternate line when nothing homed at the primary line is displaced; exact under a concurrent audit). Absent lookups ~10% faster, but steady inserts +15% and near-full inserts +15% from the extra counter traffic, and alternate-line hits wait on one more load. Reverted; the displaced bit it needed was kept (item 13). Patch: `results/experiments/spill-counts.diff`."
+**Claim:** "Per-line spill counts (skip the alternate line when nothing homed at the primary line is displaced; exact under a concurrent audit). Absent lookups ~10% faster, but steady inserts +15% and near-full inserts +15% from the extra counter traffic, and alternate-line hits wait on one more load. Reverted; the displaced bit it needed was kept (item 13). Patch: `results/experiments/spill-counts.diff`." (that original diff against 68eee6c was dropped in the cleanup; git history keeps it)
 
-**Change:** this is `results/experiments/spill-counts.diff`, ported from 68eee6c to HEAD. It adds an 8-bit per-line count of displaced entries homed at that line (packed 4 per uint32). `locate` skips the alternate line when the count is 0. The counts are maintained in `claim` (free slot and eviction), `relocate` (copy, replace, withdraw, return home) and `sweepLine`, using the original rules: count before a displaced copy can exist, uncount only after it is gone, saturate at 255.
+**Change:** the original spill-counts diff, ported from 68eee6c to HEAD. It adds an 8-bit per-line count of displaced entries homed at that line (packed 4 per uint32). `locate` skips the alternate line when the count is 0. The counts are maintained in `claim` (free slot and eviction), `relocate` (copy, replace, withdraw, return home) and `sweepLine`, using the original rules: count before a displaced copy can exist, uncount only after it is gone, saturate at 255.
 
 **Porting notes:** HEAD already has the displaced bit, so `locate` keeps HEAD's displaced-bit matching and adds the spill skip. HEAD's `install` writes both words (register first), so the original's separate word1 CAS inside `place` is folded into `install`. The concurrent audit test from the session (`spill_test.go`, `TestSpillCountsNeverUnderCount`) is included, with its two-line search switched to HEAD's `findAny`. The original diff still applies cleanly at 68eee6c (`git apply --check` ok).
 

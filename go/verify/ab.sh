@@ -10,7 +10,8 @@
 # Prints min and median ns/op per benchmark and the B/A ratio of medians.
 # Speed is host-dependent: compare ratios, not absolute numbers.
 set -euo pipefail
-cd "$(git rev-parse --show-toplevel)"
+cd "$(dirname "$0")/.."
+. verify/lib.sh
 [ $# -ge 3 ] || { sed -n '2,12p' "$0"; exit 2; }
 A=$1 B=$2 RE=$3 ROUNDS=${4:-8}
 tmp=$(mktemp -d)
@@ -18,7 +19,7 @@ trap 'rm -rf "$tmp"' EXIT
 
 build() { # build <spec> <name>
 	local rev=${1%%+*} d="$tmp/$2"
-	mkdir -p "$d" && git archive "$rev" | tar -x -C "$d"
+	export_tree "$rev" "$d"
 	local root=$PWD p patches
 	IFS=+ read -ra patches <<<"${1#"$rev"}"
 	for p in "${patches[@]}"; do

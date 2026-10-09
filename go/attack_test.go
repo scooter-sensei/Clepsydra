@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// Attacks on the filter (SECURITY.md), each measured against the defence:
+// Attacks on the filter (docs/SECURITY.md), each measured against the defence:
 // forged identities and lock-stripe floods need the hash to be unkeyed;
 // eviction floods need the stash to be off or overrun; heavy hitters need
 // the count to read low without saying so.
@@ -306,7 +306,7 @@ func TestAttackFloodCollateral(t *testing.T) {
 }
 
 // TestAttackHeavyHitter: a key sending faster than the register holds reads
-// low (DESIGN.md, count limits). That must never happen silently: whenever
+// low (docs/DESIGN.md, count limits). That must never happen silently: whenever
 // Saturated is false, Upper must be >= the exact count. Steady and bursty
 // senders from 1 to 500 events/s, queried for 1-60 s windows at random
 // times, against an exact log of their events.

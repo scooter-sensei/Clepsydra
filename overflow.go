@@ -10,54 +10,81 @@ import (
 
 // Overflow sketch: where a history goes when the stash has to drop it. It is
 // a count-min sketch over (key identity, time slice): every dropped event is
-// added to sketchRows counters, one per row. Collisions only add other keys'
-// events, so the smallest of a key's counters is never below its true count
-// (Upper), and no flood can erase a history before it ages out. Count is the
+// added to one counter per row. Collisions only add other keys' events, so
+// the smallest of a key's counters is never below its true count (Upper),
+// and no flood can erase a history before it ages out. Count is the
 // count-mean-min estimate (Deng & Rafiei 2007): each counter less the other
 // keys' events expected in it, the median over rows. It is unbiased, so a
 // flood raises keys that never spilled by noise around 0, not by the
-// flood's average load. Slices are Horizon/sliceParts long; a ring of
-// sketchSlices covers the horizon plus the slice being written, and a ring
-// position is cleared when a newer slice takes it.
+// flood's average load. Slices are Horizon/parts long; a ring of parts+2
+// covers the horizon plus the slice being written, and a ring position is
+// cleared when a newer slice takes it. The default shape (4 rows, 8-bit
+// counters, Horizon/2 slices) packs a column's ring into one word; it beat
+// 16-bit counters and Horizon/4 slices at two thirds of the memory
+// (verify/claims.md A9).
 //
 // Adds are lock-free (a CAS per row); only handing a ring position to a new
 // slice takes the mutex. Reads are lock-free; counters only grow while
 // their slice is live.
 
 const (
-	sketchRows   = 4
-	sliceParts   = 4
-	sketchSlices = sliceParts + 2
-	// Counters are 16 bits, two slices to a word. cellSat marks a counter
-	// that took a saturated history or reached its cap: its count is a floor.
-	// A key reads saturated only if all its counters carry it.
-	cellSat   = 1 << 15
-	cellMask  = cellSat - 1
-	cellWords = sketchSlices / 2
+	maxRows   = 4
+	maxSlices = 6
 	// sigmas: a slice's count-mean-min estimate counts only above this many
 	// standard deviations of its noise, so keys that never spilled read
 	// exact Counts, and a spilled one at most this much low.
 	sigmas = 3
 )
 
+// sketchShape is the sketch's geometry: rows, counter bits (8 or 16), and
+// slices per horizon (the ring holds parts+2).
+type sketchShape struct{ rows, bits, parts int }
+
+var defaultShape = sketchShape{rows: 4, bits: 8, parts: 2}
+
+// bytes is the memory of a sketch of width w.
+func (sh sketchShape) bytes(w uint64) uint64 {
+	per := uint64(32 / sh.bits)
+	return uint64(sh.rows) * w * ((uint64(sh.parts) + 2 + per - 1) / per) * 4
+}
+
 type sketch struct {
-	cells    []uint32 // [row][column][slice/2], 16 bits per slice
+	cells    []uint32 // [row][column][slice / per], bits per slice
 	w        uint64   // columns per row
-	sliceLen uint64   // ticks
+	rows     int
+	bits     uint64
+	per      uint64 // counters per word
+	nsl      uint64 // ring slices
+	cw       uint64 // words per column
+	cmask    uint32 // counter value mask
+	csat     uint32 // counter's saturated flag: its count is a floor
+	sliceLen uint64 // ticks
 	horizon  uint64
 	mu       sync.Mutex
-	epochs   [sketchSlices]atomic.Uint64 // slice number + 1 held by each ring position
-	totals   [sketchSlices]atomic.Uint64 // events added to each slice (the same in every row)
-	squares  [sketchSlices]atomic.Uint64 // sum of each add's n squared: the noise's variance × w
+	epochs   [maxSlices]atomic.Uint64 // slice number + 1 held by each ring position
+	totals   [maxSlices]atomic.Uint64 // events added to each slice (the same in every row)
+	squares  [maxSlices]atomic.Uint64 // sum of each add's n squared: the noise's variance × w
 	// until is a tick before which some slice may hold a live count.
 	until atomic.Uint64
 }
 
-func newSketch(w, horizon uint64) *sketch {
+func newSketch(w, horizon uint64, sh sketchShape) *sketch {
+	w = max(w, 2)
+	per := uint64(32 / sh.bits)
+	nsl := uint64(sh.parts + 2)
+	cw := (nsl + per - 1) / per
+	parts := uint64(sh.parts)
 	return &sketch{
-		cells:    make([]uint32, sketchRows*max(w, 2)*cellWords),
-		w:        max(w, 2),
-		sliceLen: (horizon + sliceParts - 1) / sliceParts,
+		cells:    make([]uint32, uint64(sh.rows)*w*cw),
+		w:        w,
+		rows:     sh.rows,
+		bits:     uint64(sh.bits),
+		per:      per,
+		nsl:      nsl,
+		cw:       cw,
+		cmask:    1<<(sh.bits-1) - 1,
+		csat:     1 << (sh.bits - 1),
+		sliceLen: (horizon + parts - 1) / parts,
 		horizon:  horizon,
 	}
 }
@@ -65,12 +92,12 @@ func newSketch(w, horizon uint64) *sketch {
 // col is id's counter group in row r.
 func (s *sketch) col(id uint64, r int) uint64 {
 	c, _ := bits.Mul64(mix64(id+uint64(r)*0x9e3779b97f4a7c15), s.w)
-	return (uint64(r)*s.w + c) * cellWords
+	return (uint64(r)*s.w + c) * s.cw
 }
 
 // cell loads the counter of ring position p in the group at base.
 func (s *sketch) cell(base, p uint64) uint32 {
-	return atomic.LoadUint32(&s.cells[base+p/2]) >> (16 * (p & 1)) & 0xffff
+	return atomic.LoadUint32(&s.cells[base+p/s.per]) >> (s.bits * (p % s.per)) & (s.csat | s.cmask)
 }
 
 // add counts n events of id at tick t (sat: the count is a floor).
@@ -79,25 +106,26 @@ func (s *sketch) add(id, t, n uint64, sat bool, now uint64) {
 		return
 	}
 	sl := t / s.sliceLen
-	p := sl % sketchSlices
+	p := sl % s.nsl
 	if e := s.epochs[p].Load(); e != sl+1 {
 		if e > sl+1 {
 			return // a newer slice took this place: t is past the horizon
 		}
 		s.renew(p, sl)
 	}
-	sh := 16 * (p & 1)
-	for r := range sketchRows {
-		w := &s.cells[s.col(id, r)+p/2]
+	sh := s.bits * (p % s.per)
+	full := s.csat | s.cmask
+	for r := range s.rows {
+		w := &s.cells[s.col(id, r)+p/s.per]
 		for {
 			old := atomic.LoadUint32(w)
-			c := old >> sh & 0xffff
-			v := uint64(c&cellMask) + n
-			nc := uint32(min(v, cellMask)) | c&cellSat
-			if sat || v >= cellMask {
-				nc |= cellSat
+			c := old >> sh & full
+			v := uint64(c&s.cmask) + n
+			nc := uint32(min(v, uint64(s.cmask))) | c&s.csat
+			if sat || v >= uint64(s.cmask) {
+				nc |= s.csat
 			}
-			if atomic.CompareAndSwapUint32(w, old, old&^(0xffff<<sh)|nc<<sh) {
+			if atomic.CompareAndSwapUint32(w, old, old&^(full<<sh)|nc<<sh) {
 				break
 			}
 		}
@@ -125,8 +153,8 @@ func (s *sketch) renew(p, sl uint64) {
 		return
 	}
 	s.epochs[p].Store(0)
-	keep := ^uint32(0xffff << (16 * (p & 1)))
-	for i := p / 2; i < uint64(len(s.cells)); i += cellWords {
+	keep := ^((s.csat | s.cmask) << (s.bits * (p % s.per)))
+	for i := p / s.per; i < uint64(len(s.cells)); i += s.cw {
 		atomic.AndUint32(&s.cells[i], keep)
 	}
 	s.totals[p].Store(0)
@@ -144,22 +172,22 @@ func (s *sketch) renew(p, sl uint64) {
 func (s *sketch) estimate(id, window, now uint64, full bool) (r Result, ok bool) {
 	cur := now / s.sliceLen
 	oldest := uint64(0)
-	if cur >= sketchSlices-1 {
-		oldest = cur - (sketchSlices - 2)
+	if cur >= s.nsl-1 {
+		oldest = cur - (s.nsl - 2)
 	}
-	var c [sketchSlices][sketchRows]uint64
-	var sat [sketchSlices]bool
+	var c [maxSlices][maxRows]uint64
+	var sat [maxSlices]bool
 	for i := range sat {
 		sat[i] = true
 	}
-	for row := range sketchRows {
+	for row := range s.rows {
 		base := s.col(id, row)
 		any := false
 		for sl := oldest; sl <= cur; sl++ {
-			p := sl % sketchSlices
+			p := sl % s.nsl
 			v := s.cell(base, p)
-			c[p][row] = uint64(v & cellMask)
-			sat[p] = sat[p] && v&cellSat != 0
+			c[p][row] = uint64(v & s.cmask)
+			sat[p] = sat[p] && v&s.csat != 0
 			any = any || v != 0 && s.epochs[p].Load() == sl+1
 		}
 		if !any && !full {
@@ -169,12 +197,12 @@ func (s *sketch) estimate(id, window, now uint64, full bool) (r Result, ok bool)
 	from := int64(now) - int64(window)
 	est := 0.0
 	for sl := oldest; sl <= cur; sl++ {
-		p := sl % sketchSlices
+		p := sl % s.nsl
 		start, end := int64(sl*s.sliceLen), int64(min(sl*s.sliceLen+s.sliceLen-1, now))
 		if s.epochs[p].Load() != sl+1 || end < from || age(now, uint64(end)) > s.horizon {
 			continue
 		}
-		lo := slices.Min(c[p][:])
+		lo := slices.Min(c[p][:s.rows])
 		if lo == 0 {
 			continue
 		}
@@ -182,12 +210,12 @@ func (s *sketch) estimate(id, window, now uint64, full bool) (r Result, ok bool)
 		r.Saturated = r.Saturated || sat[p]
 		// Count-mean-min: each row less the noise expected in its counter.
 		total := float64(s.totals[p].Load())
-		var d [sketchRows]float64
-		for row, v := range c[p] {
+		var d [maxRows]float64
+		for row, v := range c[p][:s.rows] {
 			d[row] = float64(v) - (total-float64(v))/float64(s.w-1)
 		}
-		slices.Sort(d[:])
-		m := min((d[sketchRows/2-1]+d[sketchRows/2])/2, float64(lo))
+		slices.Sort(d[:s.rows])
+		m := min((d[(s.rows-1)/2]+d[s.rows/2])/2, float64(lo))
 		// Other keys' events arrive in lumps (a history at a time), so the
 		// noise's variance is the sum of the lumps' squares over w.
 		if m < sigmas*math.Sqrt(float64(s.squares[p].Load())/float64(s.w)) {
@@ -214,10 +242,15 @@ func (f *Filter) spill(id, w0, w1, now uint64) {
 	if age(now, last) > f.horizon {
 		return
 	}
-	if f.sk == nil {
+	if f.skW == 0 {
 		f.dropped(now)
 		return
 	}
+	if f.spillMin > 1 && f.mass(w1, last, now) < f.spillMin {
+		f.shed.Add(1)
+		return
+	}
+	sk := f.overflow()
 	f.folded.Add(1)
 	sat := w0&satBit != 0 && hot(w1)
 	e := regEpoch(w1, f.unitOf(last))
@@ -229,11 +262,27 @@ func (f *Filter) spill(id, w0, w1, now uint64) {
 			// The bucket's newest tick (lastTouch for the newest): placing
 			// its events as late as possible only widens the windows that
 			// see them.
-			f.sk.add(id, min(top-1, last), c, sat, now)
+			sk.add(id, min(top-1, last), c, sat, now)
 		}
 		if lo <= 0 {
 			break
 		}
 		top = uint64(lo) * f.unit
 	}
+}
+
+// overflow returns the overflow sketch, allocating it on the first spill:
+// a filter that never drops a history never pays for it.
+func (f *Filter) overflow() *sketch {
+	if sk := f.sk.Load(); sk != nil {
+		return sk
+	}
+	f.skMu.Lock()
+	defer f.skMu.Unlock()
+	if sk := f.sk.Load(); sk != nil {
+		return sk
+	}
+	sk := newSketch(f.skW, f.horizon, f.skShape)
+	f.sk.Store(sk)
+	return sk
 }

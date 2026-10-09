@@ -226,21 +226,24 @@ func TestAttackEvictionReset(t *testing.T) {
 
 // TestAttackFloodCollateral: offenders with k events each, then a flood of
 // keys sent k+1 times each (heavier than the offenders, so they evict them)
-// at 1x to 16x the table's slots. Afterwards: how the offenders read (Upper
+// at 1x to 16x the table's slots, or a cheap flood of one-event keys, all
+// within 30 s. Afterwards: how the offenders read (Upper
 // never below the truth; Count's shortfall), and how keys never sent read
 // (Degraded, Seen, Upper). Without the sketch every new key reads Degraded
 // once any history is lost.
 func TestAttackFloodCollateral(t *testing.T) {
 	const k, offenders, probes = 20, 200, 20_000
 	window := uint64(60_000)
+	floods := []struct{ mult, weight int }{{1, k + 1}, {4, k + 1}, {16, k + 1}, {16, 1}}
 	for _, sk := range []bool{false, true} {
-		for _, mult := range []int{1, 4, 16} {
+		for _, fl := range floods {
+			mult := fl.mult
 			var opts []func(*Config)
 			if !sk {
 				opts = append(opts, noSketch)
 			}
 			f, now := attackFilter(t, 4096, 0, opts...)
-			rng := rand.New(rand.NewPCG(11, uint64(mult)))
+			rng := rand.New(rand.NewPCG(11, uint64(mult*100+fl.weight)))
 			for range f.Slots() * 85 / 100 {
 				*now++
 				f.TouchAt(rng.Uint64(), 0, *now)
@@ -253,12 +256,15 @@ func TestAttackFloodCollateral(t *testing.T) {
 				}
 				*now++
 			}
-			for range f.Slots() * mult {
+			per := max(1, f.Slots()*mult/30_000)
+			for i := range f.Slots() * mult {
 				h := rng.Uint64()
-				for range k + 1 {
+				for range fl.weight {
 					f.TouchAt(h, 0, *now)
 				}
-				*now++
+				if i%per == 0 {
+					*now++ // the flood spans at most 30 s of the 60 s horizon
+				}
 			}
 			*now++
 			low, below, shortfall := 0, 0, 0
@@ -286,9 +292,9 @@ func TestAttackFloodCollateral(t *testing.T) {
 				}
 				upper += r.Upper
 			}
-			t.Logf("sketch %-5v flood %2dx slots (%7d events): offenders Upper<true %d/%d, Count low %3d/%d (mean shortfall %4.1f); new keys Degraded %5.1f%% Seen %5.2f%% mean Upper %6.1f, denied by a strict limit of %d: %5.1f%%; folded %d lost %d",
-				sk, mult, f.Slots()*mult*(k+1), below, offenders, low, offenders, float64(shortfall)/float64(max(low, 1)),
-				100*float64(deg)/probes, 100*float64(seen)/probes, float64(upper)/probes, k, 100*float64(strict)/probes, f.Folded(), f.Lost())
+			t.Logf("sketch %-5v flood %2dx slots x %2d (%7d events): offenders Upper<true %d/%d, Count low %3d/%d (mean shortfall %4.1f); new keys Degraded %5.1f%% Seen %5.2f%% mean Upper %6.1f, denied by a strict limit of %d: %5.1f%%; folded %d shed %d lost %d",
+				sk, mult, fl.weight, f.Slots()*mult*fl.weight, below, offenders, low, offenders, float64(shortfall)/float64(max(low, 1)),
+				100*float64(deg)/probes, 100*float64(seen)/probes, float64(upper)/probes, k, 100*float64(strict)/probes, f.Folded(), f.Shed(), f.Lost())
 			if sk && (below > 0 || f.Lost() > 0) {
 				t.Errorf("sketch: %d offenders read Upper below the truth, %d lost", below, f.Lost())
 			}

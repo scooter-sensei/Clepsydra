@@ -71,6 +71,11 @@ attacks() {
 		grep -vE '^(=== |--- |PASS|ok |FAIL)' | sed -E 's/^ *[a-z_]+\.go:[0-9]+: //'
 }
 
+sketch_experiments() {
+	TF_EXP=1 go test -count=1 -run '^(TestSketchShapes|TestSpillThreshold)$' -v . |
+		grep -vE '^(=== |--- |PASS|ok |FAIL)' | sed -E 's/^ *[a-z_]+\.go:[0-9]+: //'
+}
+
 timing() {
 	TF_TIMING=1 go test -count=1 -run '^TestTimingLeak$' -v . | grep -E 'ConstantTime' | sed -E 's/^ *[a-z_]+\.go:[0-9]+: //'
 }
@@ -88,6 +93,7 @@ check exact verify/expected/exact.txt go run ./cmd/tfbench -exact
 check placement verify/expected/placement.txt placement
 check register-experiment verify/expected/register-experiment.txt register_experiment
 check attacks verify/expected/attacks.txt attacks
+check sketch-experiments verify/expected/sketch-experiments.txt sketch_experiments
 check fixes - verify/replay.sh fixes
 check stress - verify/replay.sh stress 300
 check history - verify/replay.sh history

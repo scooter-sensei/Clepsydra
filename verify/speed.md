@@ -329,3 +329,22 @@ ConstantTime 0s    Touch: unseen p50/p99/p99.9  368/ 2081/22982 ns, seen  240/  
 ConstantTime 3µs   Count: unseen p50/p99/p99.9 3093/ 3233/32281 ns, seen 3093/ 3233/30668 ns; KS D = 0.011 (best single-timing guess right 50.6%)
 ConstantTime 3µs   Touch: unseen p50/p99/p99.9 3093/ 4083/32863 ns, seen 3093/ 3355/33078 ns; KS D = 0.015 (best single-timing guess right 50.8%)
 ```
+
+### Lazy 8-bit sketch and SpillMin (S32)
+
+```
+verify/ab.sh a96dc28 <round commit> 'CheckAndTouchHit$|CheckAndTouchHitHot|TouchAndCount$|VelocityCount$|VelocityCountHot|InsertSteady|InsertSaturated|InsertNearFull|ContainsAbsent$|CheckAndTouchParallel|HugeHit$|HugeAbsent$' 6
+benchmark (ns/op)                       A min   A median      B min   B median     B/A
+BenchmarkTouchAndCount-4                215.4      223.4      203.6      214.0    0.96
+BenchmarkInsertSteady-4                 350.1      383.7      328.7      379.4    0.99
+BenchmarkHugeAbsent-4                   157.5      170.9      140.7      158.1    0.93
+BenchmarkCheckAndTouchHit-4             149.1      180.9      168.5      179.1    0.99
+BenchmarkContainsAbsent-4                79.5       93.7       71.8       94.5    1.01
+BenchmarkInsertNearFull-4              3093.0     3263.0     3170.0     3514.0    1.08
+BenchmarkVelocityCount-4                157.0      173.6      154.3      164.9    0.95
+BenchmarkInsertSaturated-4             1328.0     1446.0      892.7     1004.8    0.69
+BenchmarkCheckAndTouchHitHot-4           37.5       38.2       37.9       38.9    1.02
+BenchmarkVelocityCountHot-4              57.7       59.5       56.1       56.4    0.95
+BenchmarkHugeHit-4                      250.2      279.2      280.6      285.0    1.02
+BenchmarkCheckAndTouchParallel-4         62.3       75.8       47.4       71.8    0.95
+```

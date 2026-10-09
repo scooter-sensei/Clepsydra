@@ -1,0 +1,276 @@
+diff --git b/filter.go a/filter.go
+index 50abd1f..46b0205 100644
+--- b/filter.go
++++ a/filter.go
+@@ -167,6 +167,9 @@ type Filter struct {
+ 	shed       atomic.Uint64
+ 	ct         bool          // Config.ConstantTime > 0
+ 	pad        time.Duration // Config.ConstantTime
++	padMode    int
++	quantum    atomic.Int64 // padAdaptive's current pad, ns
++	quiet      atomic.Int64
+ }
+ 
+ // forceCT turns ConstantTime on in every filter (tests: TF_CT=1).
+@@ -641,8 +644,54 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) Result {
+ 
+ // waitOut spins until the ConstantTime pad has passed since t0.
+ func (f *Filter) waitOut(t0 time.Time) {
+-	for time.Since(t0) < f.pad {
++	pad := f.pad
++	switch f.padMode {
++	case padAdaptive:
++		pad = f.adaptPad(time.Since(t0))
++	case padSleep:
++		if d := pad - time.Since(t0); d > 0 {
++			time.Sleep(d)
++		}
++		return
++	}
++	if f.padMode == padYield {
++		for time.Since(t0) < pad {
++			runtime.Gosched()
++		}
++		return
++	}
++	for time.Since(t0) < pad {
++	}
++}
++
++// Pad modes (experiments): spin to a fixed pad, sleep to it, or spin to an
++// adaptive quantum that doubles whenever a call overruns it (Askarov, Zhang
++// and Myers 2010) and halves after a long run of calls under half of it.
++const (
++	padSpin = iota
++	padSleep
++	padAdaptive
++	padYield // spin, but let other goroutines run meanwhile
++)
++
++func (f *Filter) adaptPad(d time.Duration) time.Duration {
++	q := time.Duration(f.quantum.Load())
++	if q == 0 {
++		q = f.pad
++	}
++	if d > q {
++		for q < d {
++			q *= 2
++		}
++		f.quantum.Store(int64(q))
++		f.quiet.Store(0)
++		return q
++	}
++	if d < q/2 && f.quiet.Add(1) >= 1<<14 && q/2 >= f.pad {
++		f.quantum.CompareAndSwap(int64(q), int64(q/2))
++		f.quiet.Store(0)
+ 	}
++	return q
+ }
+ 
+ // hit counts a touch in slot i, which held the key when it was found. ok is
+diff --git b/sip13_test.go a/sip13_test.go
+new file mode 100644
+index 0000000..9181e87
+--- /dev/null
++++ a/sip13_test.go
+@@ -0,0 +1,43 @@
++package temporalfilter
++
++import (
++	"os"
++	"testing"
++)
++
++// sip13 is SipHash-1-3 on 8 bytes (as Rust's std HashMap uses): one
++// compression and three finalization rounds instead of two and four.
++func (k sipKey) sip13(x uint64) uint64 {
++	v0, v1, v2, v3 := k.init()
++	v3 ^= x
++	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++	v0 ^= x
++	last := uint64(8 << 56)
++	v3 ^= last
++	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++	v0 ^= last
++	v2 ^= 0xff
++	for range 3 {
++		v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++	}
++	return v0 ^ v1 ^ v2 ^ v3
++}
++
++var sinkH uint64
++
++func BenchmarkSipVariants(b *testing.B) {
++	if os.Getenv("TF_EXP") == "" {
++		b.Skip("set TF_EXP=1")
++	}
++	k := sipKey{1, 2}
++	b.Run("2-4", func(b *testing.B) {
++		for i := range b.N {
++			sinkH += k.uint64(uint64(i))
++		}
++	})
++	b.Run("1-3", func(b *testing.B) {
++		for i := range b.N {
++			sinkH += k.sip13(uint64(i))
++		}
++	})
++}
+diff --git b/timing_test.go a/timing_test.go
+index 71e1d38..a242166 100644
+--- b/timing_test.go
++++ a/timing_test.go
+@@ -1,9 +1,12 @@
+ package temporalfilter
+ 
+ import (
++	"fmt"
+ 	"math/rand/v2"
+ 	"os"
+ 	"slices"
++	"sync"
++	"syscall"
+ 	"testing"
+ 	"time"
+ )
+@@ -88,3 +91,139 @@ func abs(x float64) float64 {
+ 	}
+ 	return x
+ }
++
++// TestTimingModes compares ways to pad ConstantTime calls (TF_TIMING=1):
++// leak (KS D on Touch and Count), median latency and CPU per call.
++func TestTimingModes(t *testing.T) {
++	if os.Getenv("TF_TIMING") == "" {
++		t.Skip("set TF_TIMING=1")
++	}
++	const capacity, probes = 1 << 21, 20_000
++	modes := []struct {
++		name string
++		mode int
++		pad  time.Duration
++	}{
++		{"spin 3us", padSpin, 3 * time.Microsecond},
++		{"spin 10us", padSpin, 10 * time.Microsecond},
++		{"adaptive from 1us", padAdaptive, time.Microsecond},
++		{"sleep 50us", padSleep, 50 * time.Microsecond},
++		{"sleep 200us", padSleep, 200 * time.Microsecond},
++	}
++	for _, m := range modes {
++		line := ""
++		for _, op := range []string{"Touch", "Count"} {
++			now := uint64(1)
++			f, err := New(Config{Capacity: capacity, Horizon: time.Minute, Resolution: time.Millisecond,
++				Clock: func() uint64 { return now }})
++			if err != nil {
++				t.Fatal(err)
++			}
++			rng := rand.New(rand.NewPCG(3, 4))
++			seen := make([]uint64, capacity)
++			for i := range seen {
++				seen[i] = f.HashUint64(rng.Uint64())
++				f.TouchAt(seen[i], 0, now)
++			}
++			f.ct, f.pad, f.padMode = true, m.pad, m.mode // after the fill: padding it would take minutes
++			now += 1000
++			kind := make([]int, probes)
++			hs := make([]uint64, probes)
++			for i := range hs {
++				kind[i] = rng.IntN(2)
++				hs[i] = f.HashUint64(rng.Uint64())
++				if kind[i] == 1 {
++					hs[i] = seen[rng.IntN(len(seen))]
++				}
++			}
++			var ts [2][]float64
++			cpu0 := cpuTime()
++			w0 := time.Now()
++			for i, h := range hs {
++				t0 := time.Now()
++				if op == "Count" {
++					f.CountAt(h, 60_000, now)
++				} else {
++					f.TouchAt(h, 60_000, now)
++				}
++				ts[kind[i]] = append(ts[kind[i]], float64(time.Since(t0).Nanoseconds()))
++			}
++			wall := time.Since(w0)
++			cpu := cpuTime() - cpu0
++			slices.Sort(ts[0])
++			slices.Sort(ts[1])
++			all := append(append([]float64{}, ts[0]...), ts[1]...)
++			slices.Sort(all)
++			line += fmt.Sprintf(" | %s D %.3f (%.1f%%) p50 %6.1f us cpu %5.2f us/op", op, ks(ts[0], ts[1]), 50+50*ks(ts[0], ts[1]),
++				all[len(all)/2]/1000, float64(cpu.Nanoseconds())/probes/1000)
++			_ = wall
++		}
++		t.Logf("%-18s%s", m.name, line)
++	}
++}
++
++func cpuTime() time.Duration {
++	var ru syscall.Rusage
++	syscall.Getrusage(syscall.RUSAGE_SELF, &ru)
++	return time.Duration(ru.Utime.Nano() + ru.Stime.Nano())
++}
++
++// TestTimingThroughput: 16 goroutines of ConstantTime touches on 4 cores,
++// spinning or yielding while padded, plus one goroutine timing seen and
++// unseen probes (TF_TIMING=1).
++func TestTimingThroughput(t *testing.T) {
++	if os.Getenv("TF_TIMING") == "" {
++		t.Skip("set TF_TIMING=1")
++	}
++	const capacity, workers, per, probes = 1 << 21, 16, 20_000, 10_000
++	for _, m := range []struct {
++		name string
++		mode int
++		pad  time.Duration
++	}{{"none", padSpin, 0}, {"spin 3us", padSpin, 3 * time.Microsecond}, {"yield 3us", padYield, 3 * time.Microsecond}, {"yield 10us", padYield, 10 * time.Microsecond}} {
++		now := uint64(1)
++		f, _ := New(Config{Capacity: capacity, Horizon: time.Minute, Resolution: time.Millisecond, Clock: func() uint64 { return now }})
++		rng := rand.New(rand.NewPCG(3, 4))
++		seen := make([]uint64, capacity)
++		for i := range seen {
++			seen[i] = f.HashUint64(rng.Uint64())
++			f.TouchAt(seen[i], 0, now)
++		}
++		now += 1000
++		f.ct, f.pad, f.padMode = m.pad > 0, m.pad, m.mode
++		var wg sync.WaitGroup
++		t0 := time.Now()
++		for w := range workers {
++			wg.Add(1)
++			go func() {
++				defer wg.Done()
++				r := rand.New(rand.NewPCG(uint64(w), 5))
++				for range per {
++					f.TouchAt(seen[r.IntN(len(seen))], 60_000, now)
++				}
++			}()
++		}
++		var ts [2][]float64
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			r := rand.New(rand.NewPCG(9, 9))
++			for range probes {
++				k := r.IntN(2)
++				h := f.HashUint64(r.Uint64())
++				if k == 1 {
++					h = seen[r.IntN(len(seen))]
++				}
++				s := time.Now()
++				f.TouchAt(h, 60_000, now)
++				ts[k] = append(ts[k], float64(time.Since(s).Nanoseconds()))
++			}
++		}()
++		wg.Wait()
++		el := time.Since(t0)
++		slices.Sort(ts[0])
++		slices.Sort(ts[1])
++		t.Logf("%-10s %5.2f M ops/s; probe p50 unseen %6.1f us seen %6.1f us; KS D %.3f (%.1f%%)", m.name,
++			float64(workers*per+probes)/el.Seconds()/1e6, ts[0][len(ts[0])/2]/1000, ts[1][len(ts[1])/2]/1000, ks(ts[0], ts[1]), 50+50*ks(ts[0], ts[1]))
++	}
++}

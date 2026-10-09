@@ -100,15 +100,22 @@ type Config struct {
 	// with more events. Default (0): one entry per 64 slots. Negative: none.
 	Stash int
 	// Overflow is the width of the overflow sketch (counters per row; 4 rows
-	// x 6 time slices x 2 B, so 48 B per unit of width). A history the stash
-	// has to drop is added there, so no flood can erase it within the
-	// horizon: Upper never reads below a key's true count. Count adds the
-	// key's sketch estimate only where it stands out from other keys' noise,
-	// and then sets Degraded. The noise grows with the events dropped per
-	// unit of width. Default (0): one per 8 slots, 6 B per slot. Negative:
-	// none; dropped histories are then lost and every unseen key reads
-	// Degraded for a horizon after a drop.
+	// x 4 time slices of Horizon/2 x 1 B, so 16 B per unit of width). A
+	// history the stash has to drop is added there, so no flood can erase it
+	// within the horizon: Upper never reads below a key's true count. Count
+	// adds the key's sketch estimate only where it stands out from other
+	// keys' noise, and then sets Degraded. The noise grows with the events
+	// dropped per unit of width. The sketch is allocated on the first drop,
+	// so a filter that never overflows its stash doesn't pay for it. Default
+	// (0): one per 4 slots, 4 B per slot once allocated. Negative: none;
+	// dropped histories are then lost and every unseen key reads Degraded
+	// for a horizon after a drop.
 	Overflow int
+	// SpillMin: a dropped history with fewer events than this in the horizon
+	// is shed (Shed counts it) instead of going to the overflow sketch, so a
+	// flood of cheap keys adds no noise there. A key can then lose up to
+	// SpillMin-1 events per eviction. Default (0): 4. 1 or less: spill all.
+	SpillMin int
 	// ConstantTime, if > 0, hides from response times whether a key was
 	// seen. Every operation does the same lookups whatever the key's state
 	// (both candidate lines, the stash set and every sketch row, under the
@@ -159,7 +166,12 @@ type Filter struct {
 	folded     atomic.Uint64
 	_          [24]byte
 	stashMu    [stashStripes]paddedMutex
-	sk         *sketch       // nil: no overflow sketch
+	sk         atomic.Pointer[sketch] // nil until the first spill
+	skMu       sync.Mutex
+	skW        uint64 // sketch width; 0: no overflow sketch
+	skShape    sketchShape
+	spillMin   uint64 // histories lighter than this aren't spilled (Shed)
+	shed       atomic.Uint64
 	ct         bool          // Config.ConstantTime > 0
 	pad        time.Duration // Config.ConstantTime
 }
@@ -210,11 +222,16 @@ func New(cfg Config) (*Filter, error) {
 		f.stash = make([]stashEntry, f.stashN*stashWays)
 	}
 	if cfg.Overflow == 0 {
-		cfg.Overflow = int(max(64, lines*slotsPerLine/8))
+		cfg.Overflow = int(max(64, lines*slotsPerLine/4))
 	}
 	if cfg.Overflow > 0 {
-		f.sk = newSketch(uint64(cfg.Overflow), horizon)
+		f.skW = uint64(cfg.Overflow)
+		f.skShape = defaultShape
 	}
+	if cfg.SpillMin == 0 {
+		cfg.SpillMin = 4
+	}
+	f.spillMin = uint64(max(cfg.SpillMin, 1))
 	f.ct, f.pad = cfg.ConstantTime > 0 || forceCT, cfg.ConstantTime
 	f.unitInv = ^uint64(0)/f.unit + 1
 	f.words = alignedWords(int(lines * wordsPerLine))
@@ -392,7 +409,7 @@ func (f *Filter) countCT(h, window, now uint64) Result {
 	} else {
 		r.Degraded = f.lostRecently(now)
 	}
-	if f.sk != nil {
+	if f.sk.Load() != nil {
 		f.addSketch(&r, h, window, now)
 	}
 	f.waitOut(t0)
@@ -460,7 +477,8 @@ func (f *Filter) slotWords(i int, fp, tg uint64) (w0, w1 uint64, ok bool) {
 // sketchLive: the overflow sketch may hold a count at now. ConstantTime
 // reads it whatever it holds.
 func (f *Filter) sketchLive(now uint64) bool {
-	return f.sk != nil && (f.ct || now <= f.sk.until.Load())
+	sk := f.sk.Load()
+	return sk != nil && (f.ct || now <= sk.until.Load())
 }
 
 // addSketch adds h's events in the overflow sketch to r, the answer from
@@ -470,7 +488,7 @@ func (f *Filter) sketchLive(now uint64) bool {
 // own events), Count only the part that clears the noise, and Degraded is
 // set when there is such a part: the key likely has a dropped history.
 func (f *Filter) addSketch(r *Result, h, window, now uint64) {
-	s, ok := f.sk.estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now, f.ct)
+	s, ok := f.sk.Load().estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now, f.ct)
 	if !ok {
 		return
 	}
@@ -569,6 +587,10 @@ func (f *Filter) Lost() uint64 { return f.lost.Load() }
 // Folded counts histories the stash pushed into the overflow sketch. Their
 // keys' answers are approximate (Degraded) until they age out.
 func (f *Filter) Folded() uint64 { return f.folded.Load() }
+
+// Shed counts dropped histories lighter than Config.SpillMin, discarded
+// instead of spilled to the overflow sketch.
+func (f *Filter) Shed() uint64 { return f.shed.Load() }
 
 // Restored counts returning keys whose history came back from the stash.
 func (f *Filter) Restored() uint64 { return f.restored.Load() }
@@ -686,7 +708,7 @@ func (f *Filter) touchCT(h, window, now uint64, wantCount bool) Result {
 			break
 		}
 	}
-	if f.sk != nil {
+	if f.sk.Load() != nil {
 		f.addSketch(&r, h, window, now)
 	}
 	f.waitOut(t0)

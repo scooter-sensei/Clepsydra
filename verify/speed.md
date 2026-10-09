@@ -333,7 +333,7 @@ ConstantTime 3µs   Touch: unseen p50/p99/p99.9 3093/ 4083/32863 ns, seen 3093/ 
 ### Lazy 8-bit sketch and SpillMin (S32)
 
 ```
-verify/ab.sh a96dc28 <round commit> 'CheckAndTouchHit$|CheckAndTouchHitHot|TouchAndCount$|VelocityCount$|VelocityCountHot|InsertSteady|InsertSaturated|InsertNearFull|ContainsAbsent$|CheckAndTouchParallel|HugeHit$|HugeAbsent$' 6
+verify/ab.sh a96dc28 a55178e 'CheckAndTouchHit$|CheckAndTouchHitHot|TouchAndCount$|VelocityCount$|VelocityCountHot|InsertSteady|InsertSaturated|InsertNearFull|ContainsAbsent$|CheckAndTouchParallel|HugeHit$|HugeAbsent$' 6
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkTouchAndCount-4                215.4      223.4      203.6      214.0    0.96
 BenchmarkInsertSteady-4                 350.1      383.7      328.7      379.4    0.99

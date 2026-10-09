@@ -25,7 +25,7 @@ func TestSketchShapes(t *testing.T) {
 		gh   bool
 	}
 	cfgs := []cfg{
-		{"16b r4 s4 /8 (55c82ed)", sketchShape{4, 16, 4}, 8, false},
+		{"16b r4 s4 /8 (dd30cbc)", sketchShape{4, 16, 4}, 8, false},
 		{"16b r4 s4 /16", sketchShape{4, 16, 4}, 16, false},
 		{"16b r4 s4 /4", sketchShape{4, 16, 4}, 4, false},
 		{"8b  r4 s4 /8", sketchShape{4, 8, 4}, 8, false},

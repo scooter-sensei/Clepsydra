@@ -4,7 +4,7 @@
 #   verify/ab.sh <A> <B> <bench-regex> [rounds]
 #
 # A and B are git revisions, optionally with patches: HEAD,
-# HEAD+verify/experiments/branchless-find.patch, 983b804. Each version's test
+# HEAD+verify/experiments/branchless-find.patch, 4103013. Each version's test
 # binary is built once; the binaries then run alternately (A, B, A, B, ...)
 # `rounds` times (default 8), so drift and noisy neighbours hit both sides.
 # Prints min and median ns/op per benchmark and the B/A ratio of medians.

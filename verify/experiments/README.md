@@ -1,24 +1,24 @@
 # Reverted experiments as re-runnable patches
 
-Every `*.patch` here is a plain `git diff` against **1e0ef14** (HEAD of
+Every `*.patch` here is a plain `git diff` against **fbe6968** (HEAD of
 `github.com/scooter-sensei/temporalfilter`, Go 1.24.7), except
-`lockfree-dup-repair-bc2e12d.patch` (applies to **bc2e12d**) and
-`insert-saturated-bench-597ee63.patch` (adds 126bd87's saturated-insert
-benchmark to **597ee63**, for the speed comparison in `verify/speed.sh`).
+`lockfree-dup-repair-70546b2.patch` (applies to **70546b2**) and
+`insert-saturated-bench-b3e9aa5.patch` (adds 378bc37's saturated-insert
+benchmark to **b3e9aa5**, for the speed comparison in `verify/speed.sh`).
 
 ```sh
-git clone /mnt/project-files/temporal-filter tf && cd tf && git checkout 1e0ef14
+git clone /mnt/project-files/temporal-filter tf && cd tf && git checkout fbe6968
 git apply verify/experiments/<name>.patch     # or: verify/experiments.sh, verify/ab.sh
 ```
 
 The experiment code was recovered from the earlier session transcript, which
 recorded the edits as Python and heredoc scripts. Each patch's notes say where
-the code was ported to HEAD and how. ("HEAD" in these notes means 1e0ef14.)
+the code was ported to HEAD and how. ("HEAD" in these notes means fbe6968.)
 The raw logs of the checks below were not kept; `verify/experiments.sh`
 re-runs every deterministic one and `verify/run.sh` compares the result with
 `verify/expected/experiments.txt`.
 
-Each patch was applied to a fresh worktree at 1e0ef14 and checked with
+Each patch was applied to a fresh worktree at fbe6968 and checked with
 `git apply`, `go build ./...`, `go vet ./...` and `go test -short -count=1 ./...`.
 Nine patches were also run with `go test -race -short -count=1 .`
 (see the race check section at the end). No speed benchmarks were run. Any
@@ -36,14 +36,14 @@ ns/op in the notes are the original session's numbers, given as context only.
 | homing | yes | pass | alt-line share 37.3% → 30.2% (steady), 33.5% → 23.9% (re-touch) |
 | thp-madvise | yes | pass | AnonHugePages 307200 kB with patch, 0 kB without (on this host) |
 | reloc-prefetch | yes | pass | none; speed only |
-| spill-counts | yes (ported from c8dbb54) | pass | audit: 5883 lines exact, 0 over, 0 under; tfbench row identical to HEAD |
+| spill-counts | yes (ported from 68eee6c) | pass | audit: 5883 lines exact, 0 over, 0 under; tfbench row identical to HEAD |
 | register-46 | yes | **FAIL (intended)**: TestHeavyHitterSpill "1000 hits counted as 876" | static FPR 7.00e-09, vel MAE 0.085 |
 | register-44 | yes | **FAIL (intended)**: TestHeavyHitterSpill "1000 hits counted as 627" | static FPR 0.00e+00, vel MAE 0.088 |
 | piecewise-linear | yes | pass | vel MAE 0.083 (HEAD 0.081) |
 | eight-slot | yes | pass | FN 1.15x 0.000% (HEAD 0.051%); static FPR 2.90e-08 (HEAD 1.80e-08) |
 | lockfree-dup-repair | yes (port; stripe lock removed) | **FAIL (intended)**: TestConcurrentFirstInsertNoDuplicates (duplicates are reduced, not removed) | nondeterministic: mean 196 dup slots vs 1112 with no lock (60 runs) |
 | lockfree-dup-nolock-control | yes | **FAIL (intended)**: same test | control for the row above |
-| lockfree-dup-repair-bc2e12d | yes, **on bc2e12d** | **FAIL (intended)**: same test | original code: mean 102 vs 1592 (60 runs) |
+| lockfree-dup-repair-70546b2 | yes, **on 70546b2** | **FAIL (intended)**: same test | original code: mean 102 vs 1592 (60 runs) |
 | contention-bench | yes | pass | none; speed only |
 | dyadic-h32 (extra, for item 15) | yes | pass (one test fixture made geometry-independent) | vel MAE per window 0.204 0.065 0.057 0.045 **0.038**, mean 0.082 |
 
@@ -64,7 +64,7 @@ vel MAE 15s: 0.051
 vel MAE 30s: 0.044
 vel MAE 60s: 0.024
 | when (UTC) | rev | FN 1.0x | FN 1.1x | FN 1.15x | FP churn 1.15x | static FPR | spray | B/key | vel MAE | hit cold | batch | hit hot | insert | insert sat | velocity | parallel | str | str coarse | change | hit DRAM |
-| 10-08 16:06 | 1e0ef14 | 0.000% | 0.000% | 0.051% | 0.00e+00 | 1.80e-08 | 100% | 18.8 | 0.081 | 0 | 0 | 0 | 0 | 0 | 0 | 0.0 | 0 | 0 | | 0 |
+| 10-08 16:06 | fbe6968 | 0.000% | 0.000% | 0.051% | 0.00e+00 | 1.80e-08 | 100% | 18.8 | 0.081 | 0 | 0 | 0 | 0 | 0 | 0 | 0.0 | 0 | 0 | | 0 |
 ```
 
 One `-quick` run took 13–21 s on this 4-vCPU host.
@@ -77,8 +77,8 @@ the spread.
 
 ```sh
 R=/path/to/temporal-filter
-git -C $R worktree add /tmp/ab-base 1e0ef14
-git -C $R worktree add /tmp/ab-exp  1e0ef14 && git -C /tmp/ab-exp apply /path/to/out/<name>.patch
+git -C $R worktree add /tmp/ab-base fbe6968
+git -C $R worktree add /tmp/ab-exp  fbe6968 && git -C /tmp/ab-exp apply /path/to/out/<name>.patch
 (cd /tmp/ab-base && go test -c -o /tmp/base.test .) && (cd /tmp/ab-exp && go test -c -o /tmp/exp.test .)
 for r in 1 2 3 4 5 6; do for v in base exp; do
   /tmp/$v.test -test.run '^$' -test.bench '<REGEX>' -test.benchtime=<T> | grep ^Benchmark | sed "s/^/$v /"
@@ -216,9 +216,9 @@ go test -count=1 -run ZZTHP -v .                         # with patch; baseline:
 
 **Claim:** "Per-line spill counts (skip the alternate line when nothing homed at the primary line is displaced; exact under a concurrent audit). Absent lookups ~10% faster, but steady inserts +15% and near-full inserts +15% from the extra counter traffic, and alternate-line hits wait on one more load. Reverted; the displaced bit it needed was kept (item 13). Patch: `results/experiments/spill-counts.diff`."
 
-**Change:** this is `results/experiments/spill-counts.diff`, ported from c8dbb54 to HEAD. It adds an 8-bit per-line count of displaced entries homed at that line (packed 4 per uint32). `locate` skips the alternate line when the count is 0. The counts are maintained in `claim` (free slot and eviction), `relocate` (copy, replace, withdraw, return home) and `sweepLine`, using the original rules: count before a displaced copy can exist, uncount only after it is gone, saturate at 255.
+**Change:** this is `results/experiments/spill-counts.diff`, ported from 68eee6c to HEAD. It adds an 8-bit per-line count of displaced entries homed at that line (packed 4 per uint32). `locate` skips the alternate line when the count is 0. The counts are maintained in `claim` (free slot and eviction), `relocate` (copy, replace, withdraw, return home) and `sweepLine`, using the original rules: count before a displaced copy can exist, uncount only after it is gone, saturate at 255.
 
-**Porting notes:** HEAD already has the displaced bit, so `locate` keeps HEAD's displaced-bit matching and adds the spill skip. HEAD's `install` writes both words (register first), so the original's separate word1 CAS inside `place` is folded into `install`. The concurrent audit test from the session (`spill_test.go`, `TestSpillCountsNeverUnderCount`) is included, with its two-line search switched to HEAD's `findAny`. The original diff still applies cleanly at c8dbb54 (`git apply --check` ok).
+**Porting notes:** HEAD already has the displaced bit, so `locate` keeps HEAD's displaced-bit matching and adds the spill skip. HEAD's `install` writes both words (register first), so the original's separate word1 CAS inside `place` is folded into `install`. The concurrent audit test from the session (`spill_test.go`, `TestSpillCountsNeverUnderCount`) is included, with its two-line search switched to HEAD's `findAny`. The original diff still applies cleanly at 68eee6c (`git apply --check` ok).
 
 **Deterministic and correctness checks:**
 ```sh
@@ -245,9 +245,9 @@ go test -count=1 -run '^TestHeavyHitterSpill$' -v .
 ```
 **Result (full rows; speed columns are 0 under -quick):**
 ```
-HEAD       | 10-08 16:06 | 1e0ef14  | 0.000% | 0.000% | 0.051% | 0.00e+00 | 1.80e-08 | 100% | 18.8 | 0.081 | 0 | 0 | 0 | 0 | 0 | 0 | 0.0 | 0 | 0 | | 0 |
-register-46| 10-08 16:10 | 1e0ef14+ | 0.000% | 0.000% | 0.055% | 0.00e+00 | 7.00e-09 | 100% | 18.8 | 0.085 | 0 | 0 | 0 | 0 | 0 | 0 | 0.0 | 0 | 0 | | 0 |
-register-44| 10-08 16:10 | 1e0ef14+ | 0.000% | 0.000% | 0.062% | 0.00e+00 | 0.00e+00 | 100% | 18.8 | 0.088 | 0 | 0 | 0 | 0 | 0 | 0 | 0.0 | 0 | 0 | | 0 |
+HEAD       | 10-08 16:06 | fbe6968  | 0.000% | 0.000% | 0.051% | 0.00e+00 | 1.80e-08 | 100% | 18.8 | 0.081 | 0 | 0 | 0 | 0 | 0 | 0 | 0.0 | 0 | 0 | | 0 |
+register-46| 10-08 16:10 | fbe6968+ | 0.000% | 0.000% | 0.055% | 0.00e+00 | 7.00e-09 | 100% | 18.8 | 0.085 | 0 | 0 | 0 | 0 | 0 | 0 | 0.0 | 0 | 0 | | 0 |
+register-44| 10-08 16:10 | fbe6968+ | 0.000% | 0.000% | 0.062% | 0.00e+00 | 0.00e+00 | 100% | 18.8 | 0.088 | 0 | 0 | 0 | 0 | 0 | 0 | 0.0 | 0 | 0 | | 0 |
 vel MAE 1s/5s/15s/30s/60s: HEAD 0.227 0.058 0.051 0.044 0.024 | 46: 0.227 0.058 0.053 0.057 0.031 | 44: 0.227 0.058 0.053 0.057 0.045
 ```
 These match the original session's rows exactly.
@@ -275,13 +275,13 @@ These match the original session's rows exactly.
 
 **Claim:** "8-slot (128-byte) buckets: 0 misses at 98% load and 3x cheaper near-full inserts, but ~10% slower everywhere else. Reverted. Re-tested on DRAM (round 8): near-full inserts 2945 → 464 ns and steady inserts slightly faster, but DRAM hits 208 → 227 ns, absent keys 127 → 200 ns …, saturated inserts 514 → 793 ns, and ~2x false positives. Still not worth it."
 
-**Change:** this is the round-8 port. `slotsPerLine = 8` (a 128-byte bucket made of two cache lines, aligned to 128 B by the existing `alignedWords`), and `warm` loads both 64-byte lines of each bucket. The original commit 983b804 also set relocDepth 4 and relocBudget 1000. Those were relocation settings under test at the time, and the round-8 port did not carry them, so they are not included here.
+**Change:** this is the round-8 port. `slotsPerLine = 8` (a 128-byte bucket made of two cache lines, aligned to 128 B by the existing `alignedWords`), and `warm` loads both 64-byte lines of each bucket. The original commit 4103013 also set relocDepth 4 and relocBudget 1000. Those were relocation settings under test at the time, and the round-8 port did not carry them, so they are not included here.
 
 **Measure:** `go run ./cmd/tfbench -quick`
 
 **Result:**
 ```
-eight-slot | 10-08 16:12 | 1e0ef14+ | 0.000% | 0.000% | 0.000% | 0.00e+00 | 2.90e-08 | 100% | 18.8 | 0.081 | ...
+eight-slot | 10-08 16:12 | fbe6968+ | 0.000% | 0.000% | 0.000% | 0.00e+00 | 2.90e-08 | 100% | 18.8 | 0.081 | ...
 ```
 - FN at 1.15x is **0.000%** (HEAD 0.051%), so the "0 misses at 98% load" part holds.
 - Static FPR is **2.90e-08** against 1.80e-08, about **1.6x**. The "~2x" in the claim was stated, not measured, in round 8.
@@ -292,11 +292,11 @@ eight-slot | 10-08 16:12 | 1e0ef14+ | 0.000% | 0.000% | 0.000% | 0.00e+00 | 2.90
 
 **Claim:** "Lock-free duplicate repair (in-flight marker + lower index wins): cut duplicates 10x but can't be made symmetric. Replaced by the stripe lock."
 
-The transcript holds the complete code: three edits on top of bc2e12d, before the stripe lock existed. Replaying those edits on bc2e12d reproduces the diff the session printed, byte for byte. Three files:
+The transcript holds the complete code: three edits on top of 70546b2, before the stripe lock existed. Replaying those edits on 70546b2 reproduces the diff the session printed, byte for byte. Three files:
 
-- **lockfree-dup-repair-bc2e12d.patch** is the original, applied to **bc2e12d**, not HEAD. It has the in-flight marker (`install` zeroes word1 before publishing word0, and `find`/`dup` match fp with word1 == 0), a claim-time scan for a racing insert of the same key, `claim` returning -1 on a lost slot, and a post-claim `dup` check where the higher index yields. It also adds the session's `dup_test.go`.
+- **lockfree-dup-repair-70546b2.patch** is the original, applied to **70546b2**, not HEAD. It has the in-flight marker (`install` zeroes word1 before publishing word0, and `find`/`dup` match fp with word1 == 0), a claim-time scan for a racing insert of the same key, `claim` returning -1 on a lost slot, and a post-claim `dup` check where the higher index yields. It also adds the session's `dup_test.go`.
   ```sh
-  git checkout bc2e12d && git apply lockfree-dup-repair-bc2e12d.patch
+  git checkout 70546b2 && git apply lockfree-dup-repair-70546b2.patch
   ```
 - **lockfree-dup-repair.patch** is the port to HEAD. It removes the stripe lock from `touch` and adds the same-key scan in `claim` (which gains a `tg` parameter), the `dup` helper, and the higher-index-yields step.
   - **Deviation:** there is no in-flight marker. HEAD's `install` publishes the new key's register in word1 *before* word0. So the state "fp visible, word1 not yet written" that the marker covered cannot occur, and matching `word1 == 0` would be dead code.
@@ -313,8 +313,8 @@ for r in $(seq 60); do ./x.test -test.run TestConcurrentFirstInsertNoDuplicates 
 ```
 lf-nolock (HEAD, no lock)      runs=60 mean=1112 median=1187 p90=2493 max=2591 runs_with_dups=39
 lf-port   (HEAD port)          runs=60 mean=196  median=176  p90=434  max=552  runs_with_dups=50
-lf-orig-base (bc2e12d)         runs=60 mean=1592 median=2471 p90=2736 max=2775 runs_with_dups=48
-lf-orig   (bc2e12d + original) runs=60 mean=102  median=106  p90=197  max=227  runs_with_dups=53
+lf-orig-base (70546b2)         runs=60 mean=1592 median=2471 p90=2736 max=2775 runs_with_dups=48
+lf-orig   (70546b2 + original) runs=60 mean=102  median=106  p90=197  max=227  runs_with_dups=53
 ```
 - The original cuts duplicates about 16x by mean (23x by median). The original session saw 1889–2648 against 149–230.
 - The HEAD port cuts them about 6x.
@@ -345,10 +345,10 @@ The claim came from swapping the geometry constants in register.go and running `
 
 **Result (deterministic, `go run ./cmd/tfbench -quick`):**
 ```
-dyadic-h32 | 10-08 16:12 | 1e0ef14+ | 0.000% | 0.000% | 0.059% | 0.00e+00 | 1.80e-08 | 100% | 18.8 | 0.082 | ...
+dyadic-h32 | 10-08 16:12 | fbe6968+ | 0.000% | 0.000% | 0.059% | 0.00e+00 | 1.80e-08 | 100% | 18.8 | 0.082 | ...
 vel MAE 1s/5s/15s/30s/60s: H/32 0.204 0.065 0.057 0.045 0.038 (mean 0.082) | HEAD H/24 0.227 0.058 0.051 0.044 0.024 (mean 0.081)
 ```
-Mean MAE is the same within 0.001, and the 60 s error is **0.038 vs 0.024**. The backlog's 0.040 was measured with the older estimator (before commit 24f133b). HEAD's estimator gives 0.038, the same value the session measured after that change.
+Mean MAE is the same within 0.001, and the 60 s error is **0.038 vs 0.024**. The backlog's 0.040 was measured with the older estimator (before commit a477d31). HEAD's estimator gives 0.038, the same value the session measured after that change.
 
 ## Race check
 
@@ -362,7 +362,7 @@ Mean MAE is the same within 0.001, and the 60 s error is **0.038 vs 0.024**. The
 
 | Patch | Applies to | What it does | Where it is measured |
 |---|---|---|---|
-| pad-modes-and-sip13 | a55178e and later | sleep, adaptive and yield ConstantTime pads; SipHash-1-3 | `results/security-cost-2026-10-09.md`, claims S30, S31 |
-| ct-shadow-and-prefetch-toggle | e0a1e21 and later | shadow work in ConstantTime (each path also runs the other's, read-only), `TestCTProfile` (pad sweep), `TF_NOPF=1` to skip the alternate-line prefetch | `results/overflow-ct-2026-10-09.md`, claim S33 |
-| no-alt-prefetch | e0a1e21 and later | removes the alternate-line prefetch from `claim` (speed A/B) | claim S35 |
-| spillmin4 | e0a1e21 only | SpillMin default 4 instead of 1; it is commit 49df095 | claim S35 |
+| pad-modes-and-sip13 | 150fac4 and later | sleep, adaptive and yield ConstantTime pads; SipHash-1-3 | `results/security-cost-2026-10-09.md`, claims S30, S31 |
+| ct-shadow-and-prefetch-toggle | 9314d89 and later | shadow work in ConstantTime (each path also runs the other's, read-only), `TestCTProfile` (pad sweep), `TF_NOPF=1` to skip the alternate-line prefetch | `results/overflow-ct-2026-10-09.md`, claim S33 |
+| no-alt-prefetch | 9314d89 and later | removes the alternate-line prefetch from `claim` (speed A/B) | claim S35 |
+| spillmin4 | 9314d89 only | SpillMin default 4 instead of 1; it is commit ae0b5ad | claim S35 |

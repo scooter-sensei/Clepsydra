@@ -34,13 +34,13 @@ runmany() {
 fixes() {
 	local n=${1:-20}
 	# name | commit with the bug | commit with the fix | test files copied from HEAD | test regex | runs | env
-	# Duplicate slots: the striped lock (a8a2848) removed most; the install
-	# order in e42327a removed the rare rest (a race with relocation), so
-	# both cases end at e42327a. Lost counts under relocation: e42327a's
+	# Duplicate slots: the striped lock (593bd1b) removed most; the install
+	# order in f31512c removed the rare rest (a race with relocation), so
+	# both cases end at f31512c. Lost counts under relocation: f31512c's
 	# install order removed the common cause (38 of 200 runs before); the
 	# relocation test still lost one count in about 1 of 1,000-7,000 runs
-	# until 0e073a5 (abandoned moves) and 75db206 (same-tag hand-over), so
-	# that case ends at 75db206. Racy cases get enough runs that the bug is
+	# until 4a037a5 (abandoned moves) and d7fb2b5 (same-tag hand-over), so
+	# that case ends at d7fb2b5. Racy cases get enough runs that the bug is
 	# missed with probability < 1e-4.
 	while IFS='|' read -r name old fix files re runs env; do
 		[ -z "$name" ] && continue
@@ -64,13 +64,13 @@ fixes() {
 		printf 'fix %-29s bug at %s failed %-9s | fixed at %s failed %-9s => %s\n' "$name" "$old" "${res[0]}" "$fix" "${res[1]}" "$verdict"
 		cat "$WORK/fix-$name-$old"/run.*.log 2>/dev/null | grep -h -E 'slots used|counted [0-9]+ of|rounds lost counts \(|Ticks\(|panic:' | sed 's/^ *//' | sort | uniq -c | sort -rn | head -3 | sed 's/^/    bug run: /'
 	done <<-LIST
-	duplicate-slots|bc2e12d|e42327a|dup_test.go|^TestConcurrentFirstInsertNoDuplicates$|
-	duplicate-slots-after-lock|a8a2848|e42327a|dup_test.go|^TestConcurrentFirstInsertNoDuplicates$|400
-	lost-counts-relocation|f07b04e|75db206|reloc_race_test.go|^TestTouchRacingRelocationKeepsCounts$|200
-	lost-counts-abandoned-move|2187079|0e073a5|abandon_test.go|^TestAbandonedMoveKeepsCounts$|20|TF_DISTINCT_TAGS=1 PAR=1
-	lost-counts-same-tag-handover|0e073a5|75db206|abandon_test.go|^TestAbandonedMoveKeepsCounts$|200|PAR=1
-	negative-ticks|6bf61f0|f9c9127|regress_test.go|^TestRegressNegativeTicks$|3
-	empty-batch-panic|502871a|f07b04e|regress_test.go|^TestRegressEmptyBatch$|3
+	duplicate-slots|70546b2|f31512c|dup_test.go|^TestConcurrentFirstInsertNoDuplicates$|
+	duplicate-slots-after-lock|593bd1b|f31512c|dup_test.go|^TestConcurrentFirstInsertNoDuplicates$|400
+	lost-counts-relocation|d1db914|d7fb2b5|reloc_race_test.go|^TestTouchRacingRelocationKeepsCounts$|200
+	lost-counts-abandoned-move|07e2d35|4a037a5|abandon_test.go|^TestAbandonedMoveKeepsCounts$|20|TF_DISTINCT_TAGS=1 PAR=1
+	lost-counts-same-tag-handover|4a037a5|d7fb2b5|abandon_test.go|^TestAbandonedMoveKeepsCounts$|200|PAR=1
+	negative-ticks|99c054a|a01e3dc|regress_test.go|^TestRegressNegativeTicks$|3
+	empty-batch-panic|2921fd4|d1db914|regress_test.go|^TestRegressEmptyBatch$|3
 	LIST
 }
 
@@ -159,11 +159,11 @@ harness() {
 		(cd "$d" && go run -tags accuracyonly ./cmd/tfbench -exact 2>&1) | sed 's/^/    /'
 	done
 	# Backlog item 1 ("missed keys at 2.5x load: 5.0% -> 0%") was measured
-	# with the 597ee63 harness (2.5x load point) on the 8381fd2 library.
-	local d="$WORK/harness-597ee63-on-8381fd2"
-	tree 8381fd2 "$d"
-	rm -rf "$d/cmd/tfbench" && mkdir -p "$d/cmd" && git archive 597ee63 cmd/tfbench | tar -x -C "$d"
-	printf 'harness 597ee63-on-8381fd2 (tfbench -quick row)\n'
+	# with the b3e9aa5 harness (2.5x load point) on the a1a7c69 library.
+	local d="$WORK/harness-b3e9aa5-on-a1a7c69"
+	tree a1a7c69 "$d"
+	rm -rf "$d/cmd/tfbench" && mkdir -p "$d/cmd" && git archive b3e9aa5 cmd/tfbench | tar -x -C "$d"
+	printf 'harness b3e9aa5-on-a1a7c69 (tfbench -quick row)\n'
 	(cd "$d" && go run ./cmd/tfbench -quick 2>/dev/null | grep -E '^\| [0-9]{2}-') |
 		sed -E 's/^\| [0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2} \| *\|/|/; s/^/    /' # drop the timestamp and empty rev
 }

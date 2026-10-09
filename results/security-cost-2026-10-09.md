@@ -1,6 +1,6 @@
 # Security and cost round (2026-10-09)
 
-Starting point: 55c82ed..a96dc28. The overflow sketch stopped floods from erasing histories, but it cost 7.1 B per key from the start, saturated inserts ran 65% slower, and `ConstantTime` burned at least 3 µs of CPU per call. Two weaknesses were left. A cheap flood of one-event keys made a strict limit turn away every new key. A heavy flood hid dropped histories from `Count`.
+Starting point: dd30cbc..08c8ea0. The overflow sketch stopped floods from erasing histories, but it cost 7.1 B per key from the start, saturated inserts ran 65% slower, and `ConstantTime` burned at least 3 µs of CPU per call. Two weaknesses were left. A cheap flood of one-event keys made a strict limit turn away every new key. A heavy flood hid dropped histories from `Count`.
 
 ## Adopted
 

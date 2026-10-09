@@ -1,6 +1,6 @@
 # Temporal Filter: prior art, originality, new directions
 
-Written at the first prototype (commits a5292e3–2a526a8) and corrected on 2026-10-08 during the verification pass; corrections are marked. Measured claims carry tags that `verify/claims.md` maps to a check. Literature summaries in §1–2 come from the linked sources as read then: check them there.
+Written at the first prototype (commits 564d865–eeb5521) and corrected on 2026-10-08 during the verification pass; corrections are marked. Measured claims carry tags that `verify/claims.md` maps to a check. Literature summaries in §1–2 come from the linked sources as read then: check them there.
 
 ## 1. What already exists
 
@@ -37,7 +37,7 @@ These judgments are relative to the sources in §1, found in a non-exhaustive se
 
 **Change:** when both candidate lines are full, evict the slot with the fewest events in the horizon, oldest on ties. One-off keys churn among themselves.
 
-**Evidence:** `TestSprayCannotEvictRepeatOffender` sprays 20× capacity of one-off keys. All 50 offender keys keep their exact count of 20. The same test **fails with oldest-first eviction** (`verify/experiments/oldest-first-eviction.patch`) [E1]. Insert latency was reported as unchanged at the time; re-measured, miss-insert went from 83 to 110 ns (`verify/ab.sh a5292e3 2a526a8 'CheckAndTouchMissInsert$'`; claims S6, X19).
+**Evidence:** `TestSprayCannotEvictRepeatOffender` sprays 20× capacity of one-off keys. All 50 offender keys keep their exact count of 20. The same test **fails with oldest-first eviction** (`verify/experiments/oldest-first-eviction.patch`) [E1]. Insert latency was reported as unchanged at the time; re-measured, miss-insert went from 83 to 110 ns (`verify/ab.sh 564d865 eeb5521 'CheckAndTouchMissInsert$'`; claims S6, X19).
 
 TinyLFU uses frequency for cache *admission*. Using it as an anti-evasion eviction policy in a temporal filter appears to be new.
 

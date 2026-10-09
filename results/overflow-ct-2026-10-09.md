@@ -29,7 +29,7 @@ Two open problems from `security-cost-2026-10-09.md`, with one constraint: **no 
 | Fixed 1 µs pad for both | `Count` D 0.012–0.018, `Touch` D 0.14–0.17 | `Touch`'s inserts run past it |
 | Deferring evictions and relocations off the call path (insert into the stash, relocate later) | not run: a key waiting in the stash would make its next touch take the slow path, which is itself a seen-key signal, and it needs a background worker | the extra machinery and its leak outweigh the saving |
 
-Patches: `verify/experiments/ct-shadow-and-prefetch-toggle.patch` (shadow work, `TestCTProfile`, `TF_NOPF=1` disables the prefetch), `no-alt-prefetch.patch`, `spillmin4.patch` (against e0a1e21; it is commit 49df095).
+Patches: `verify/experiments/ct-shadow-and-prefetch-toggle.patch` (shadow work, `TestCTProfile`, `TF_NOPF=1` disables the prefetch), `no-alt-prefetch.patch`, `spillmin4.patch` (against 9314d89; it is commit ae0b5ad).
 
 ## Data
 
@@ -58,11 +58,11 @@ fixed 3us         1.06 M ops/s; probe p50 unseen    3.1 us seen    3.1 us; KS D 
 3us, auto Count   2.19 M ops/s; probe p50 unseen    1.6 us seen    1.6 us; KS D 0.015 (50.7%); Count pad 1041 ns
 ```
 
-Speed, `verify/ab.sh 0651be5 49df095` (6 rounds, B/A of medians):
+Speed, `verify/ab.sh 5ac63d5 ae0b5ad` (6 rounds, B/A of medians):
 
 ```
-A = 0651be5
-B = 49df095
+A = 5ac63d5
+B = ae0b5ad
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkTouchAndCount-4                210.0      235.6      229.7      241.2    1.02
 BenchmarkInsertSteady-4                 400.9      441.6      429.2      445.6    1.01

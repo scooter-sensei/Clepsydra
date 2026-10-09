@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Re-runs the deterministic effect of each reverted experiment. The patches
-# in verify/experiments/ are diffs against 1e0ef14 (the last commit of the
+# in verify/experiments/ are diffs against fbe6968 (the last commit of the
 # improvement loop; its library code matches HEAD's apart from comments).
 # Each one is applied to a fresh export of that commit, then today's accuracy
 # harness (cmd/tfbench -exact) and the patch's own tests run on it.
-# Speed effects are host-dependent: verify/ab.sh 1e0ef14 1e0ef14+verify/experiments/<name>.patch <bench>.
+# Speed effects are host-dependent: verify/ab.sh fbe6968 fbe6968+verify/experiments/<name>.patch <bench>.
 # verify/experiments/README.md describes each patch.
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 WORK=${WORK:-$(mktemp -d)}
-BASE=1e0ef14
+BASE=fbe6968
 root=$PWD
 
 prep() { # prep <name> [patch]: tree at BASE plus the patch and today's harness

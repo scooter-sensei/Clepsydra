@@ -10,9 +10,9 @@ go version go1.24.7 linux/amd64; Intel(R) Xeon(R) Processor @ 2.10GHz x 4; L3 26
 
 ```
 | when (UTC) | rev | FN a | FN b | FN c | FP churn | static FPR | spray | B/key | vel MAE | hit cold | batch | hit hot | insert | insert sat | velocity | parallel | str | str coarse | change | hit DRAM |
-| 10-08 17:47 | 64c01d8 | 0.000% | 0.000% | 0.051% | 0.00e+00 | 1.80e-08 | 100% | 18.8 | 0.081 | 62 | 38 | 24 | 158 | 375 | 68 | 18.2 | 119 | 73 | | 165 |
-| 10-08 17:48 | 64c01d8 | 0.000% | 0.000% | 0.051% | 0.00e+00 | 1.80e-08 | 100% | 18.8 | 0.081 | 66 | 38 | 25 | 159 | 368 | 67 | 17.9 | 115 | 75 | | 154 |
-| 10-08 17:49 | 64c01d8 | 0.000% | 0.000% | 0.051% | 0.00e+00 | 1.80e-08 | 100% | 18.8 | 0.081 | 66 | 38 | 25 | 161 | 381 | 70 | 18.2 | 121 | 73 | | 158 |
+| 10-08 17:47 | 5d32749 | 0.000% | 0.000% | 0.051% | 0.00e+00 | 1.80e-08 | 100% | 18.8 | 0.081 | 62 | 38 | 24 | 158 | 375 | 68 | 18.2 | 119 | 73 | | 165 |
+| 10-08 17:48 | 5d32749 | 0.000% | 0.000% | 0.051% | 0.00e+00 | 1.80e-08 | 100% | 18.8 | 0.081 | 66 | 38 | 25 | 159 | 368 | 67 | 17.9 | 115 | 75 | | 154 |
+| 10-08 17:49 | 5d32749 | 0.000% | 0.000% | 0.051% | 0.00e+00 | 1.80e-08 | 100% | 18.8 | 0.081 | 66 | 38 | 25 | 161 | 381 | 70 | 18.2 | 121 | 73 | | 158 |
 ```
 
 ## Comparisons
@@ -50,52 +50,52 @@ BenchmarkHugeVelocity-4                 140.7      142.3      131.7      140.0  
 BenchmarkHugeHit-4                      167.0      174.4      158.8      174.3    1.00
 ```
 
-### Adaptive relocation budget (126bd87): overfull-table insert
+### Adaptive relocation budget (378bc37): overfull-table insert
 
 ```
-verify/ab.sh 597ee63+verify/experiments/insert-saturated-bench-597ee63.patch 126bd87 'InsertSaturated$' 4
+verify/ab.sh b3e9aa5+verify/experiments/insert-saturated-bench-b3e9aa5.patch 378bc37 'InsertSaturated$' 4
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkInsertSaturated-4             3608.0     3728.5      298.4      304.2    0.08
 ```
 
-### Velocity-aware eviction (2a526a8): insert cost
+### Velocity-aware eviction (eeb5521): insert cost
 
 ```
-verify/ab.sh a5292e3 2a526a8 'CheckAndTouchMissInsert$' 8
+verify/ab.sh 564d865 eeb5521 'CheckAndTouchMissInsert$' 8
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkCheckAndTouchMissInsert-4       81.0       83.0      106.4      109.5    1.32
 ```
 
-### Striped first-touch lock (a8a2848): insert cost
+### Striped first-touch lock (593bd1b): insert cost
 
 ```
-verify/ab.sh bc2e12d a8a2848 'CheckAndTouchMissInsert$|CheckAndTouchHit$' 8
+verify/ab.sh 70546b2 593bd1b 'CheckAndTouchMissInsert$|CheckAndTouchHit$' 8
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkCheckAndTouchMissInsert-4      465.9      488.8      493.0      509.6    1.04
 BenchmarkCheckAndTouchHit-4              61.6       63.7       63.4       64.4    1.01
 ```
 
-### Striped first-touch lock (a8a2848): steady insert (benchmark from HEAD, added as a patch)
+### Striped first-touch lock (593bd1b): steady insert (benchmark from HEAD, added as a patch)
 
 ```
-verify/ab.sh bc2e12d+verify/experiments/insert-steady-bench-bc2e12d.patch a8a2848+verify/experiments/insert-steady-bench-bc2e12d.patch 'InsertSteady$|CheckAndTouchMissInsert$' 8
+verify/ab.sh 70546b2+verify/experiments/insert-steady-bench-70546b2.patch 593bd1b+verify/experiments/insert-steady-bench-70546b2.patch 'InsertSteady$|CheckAndTouchMissInsert$' 8
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkCheckAndTouchMissInsert-4      501.8      518.1      529.2      541.2    1.04
 BenchmarkInsertSteady-4                 143.7      154.9      166.5      174.1    1.12
 ```
 
-### TrailingZeros increment (c8dbb54): hot-key hit
+### TrailingZeros increment (68eee6c): hot-key hit
 
 ```
-verify/ab.sh a8a2848 c8dbb54 'CheckAndTouchHitHot$' 8
+verify/ab.sh 593bd1b 68eee6c 'CheckAndTouchHitHot$' 8
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkCheckAndTouchHitHot-4           33.0       34.0       25.6       26.1    0.77
 ```
 
-### Displaced bit (6bf61f0): speed cost
+### Displaced bit (99c054a): speed cost
 
 ```
-verify/ab.sh c8dbb54 6bf61f0 'CheckAndTouchHit$|CheckAndTouchHitHot$|CheckAndTouchMissInsert$|VelocityCount$' 8
+verify/ab.sh 68eee6c 99c054a 'CheckAndTouchHit$|CheckAndTouchHitHot$|CheckAndTouchMissInsert$|VelocityCount$' 8
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkCheckAndTouchMissInsert-4      495.8      504.0      495.3      515.9    1.02
 BenchmarkCheckAndTouchHit-4              60.3       61.3       60.4       62.7    1.02
@@ -103,19 +103,19 @@ BenchmarkVelocityCount-4                 67.3       68.4       66.8       72.3  
 BenchmarkCheckAndTouchHitHot-4           24.5       25.6       24.1       25.5    1.00
 ```
 
-### Register published with key (e42327a): saturated inserts
+### Register published with key (f31512c): saturated inserts
 
 ```
-verify/ab.sh f07b04e e42327a 'InsertSaturated$|InsertSteady$' 8
+verify/ab.sh d1db914 f31512c 'InsertSaturated$|InsertSteady$' 8
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkInsertSteady-4                 170.6      173.4      161.1      168.1    0.97
 BenchmarkInsertSaturated-4              373.3      386.8      375.8      394.2    1.02
 ```
 
-### Count-race fixes (0e073a5, 75db206): busy hand-over, word0 re-read on every hit
+### Count-race fixes (4a037a5, d7fb2b5): busy hand-over, word0 re-read on every hit
 
 ```
-verify/ab.sh 2187079 75db206 'CheckAndTouchHit$|CheckAndTouchHitHot$|TouchAndCount$|CheckAndTouchMissInsert$|InsertSteady$|InsertSaturated$' 8
+verify/ab.sh 07e2d35 d7fb2b5 'CheckAndTouchHit$|CheckAndTouchHitHot$|TouchAndCount$|CheckAndTouchMissInsert$|InsertSteady$|InsertSaturated$' 8
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkTouchAndCount-4                 96.5       98.1       94.9       98.1    1.00
 BenchmarkCheckAndTouchMissInsert-4      508.0      531.2      521.7      542.3    1.02
@@ -125,18 +125,18 @@ BenchmarkInsertSaturated-4              352.0      375.8      367.5      385.9  
 BenchmarkCheckAndTouchHitHot-4           26.1       27.5       26.0       28.0    1.02
 ```
 
-### Estimate without re-bucketing (24f133b): VelocityCount
+### Estimate without re-bucketing (a477d31): VelocityCount
 
 ```
-verify/ab.sh d5648a8 24f133b 'VelocityCount$' 8
+verify/ab.sh 0a00063 a477d31 'VelocityCount$' 8
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkVelocityCount-4                 84.8       88.2       68.6       71.1    0.81
 ```
 
-### Depth 4 / budget 1000 (9f2529f) vs depth 3 / budget 500 (acea1cf): insert cost
+### Depth 4 / budget 1000 (6aa1c1b) vs depth 3 / budget 500 (7fbc51a): insert cost
 
 ```
-verify/ab.sh 9f2529f acea1cf 'InsertSaturated$|InsertNearFull$|CheckAndTouchMissInsert$' 8
+verify/ab.sh 6aa1c1b 7fbc51a 'InsertSaturated$|InsertNearFull$|CheckAndTouchMissInsert$' 8
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkCheckAndTouchMissInsert-4      508.9      529.0      446.8      464.1    0.88
 BenchmarkInsertNearFull-4              3303.0     3344.5     2142.0     2256.0    0.67
@@ -146,7 +146,7 @@ BenchmarkInsertSaturated-4              342.3      350.4      310.8      326.9  
 ### Branchless find (reverted)
 
 ```
-verify/ab.sh 1e0ef14 1e0ef14+verify/experiments/branchless-find.patch 'CheckAndTouchHit$|CheckAndTouchHitHot$|VelocityCount$' 8
+verify/ab.sh fbe6968 fbe6968+verify/experiments/branchless-find.patch 'CheckAndTouchHit$|CheckAndTouchHitHot$|VelocityCount$' 8
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkCheckAndTouchHit-4              61.5       64.4       54.6       55.7    0.87
 BenchmarkVelocityCount-4                 69.2       71.0       82.2       84.1    1.18
@@ -156,7 +156,7 @@ BenchmarkCheckAndTouchHitHot-4           26.9       27.2       21.0       21.6  
 ### One CMPXCHG16B vs two CASes (reverted): microbenchmark
 
 ```
-verify/ab.sh 1e0ef14+verify/experiments/cas2-cmpxchg16b.patch 1e0ef14+verify/experiments/cas2-cmpxchg16b.patch 'ZZTwoCAS|ZZCAS2' 8
+verify/ab.sh fbe6968+verify/experiments/cas2-cmpxchg16b.patch fbe6968+verify/experiments/cas2-cmpxchg16b.patch 'ZZTwoCAS|ZZCAS2' 8
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkZZCAS2-4                        13.8       14.4       13.2       14.1    0.98
 BenchmarkZZTwoCAS-4                      11.3       11.9       11.4       11.8    1.00
@@ -165,7 +165,7 @@ BenchmarkZZTwoCAS-4                      11.3       11.9       11.4       11.8  
 ### One CMPXCHG16B on the hit path (reverted)
 
 ```
-verify/ab.sh 1e0ef14 1e0ef14+verify/experiments/cas2-cmpxchg16b.patch 'CheckAndTouchHit$|CheckAndTouchHitHot$' 8
+verify/ab.sh fbe6968 fbe6968+verify/experiments/cas2-cmpxchg16b.patch 'CheckAndTouchHit$|CheckAndTouchHitHot$' 8
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkCheckAndTouchHit-4              62.1       64.2       64.5       66.6    1.04
 BenchmarkCheckAndTouchHitHot-4           26.5       27.3       29.7       30.4    1.11
@@ -174,7 +174,7 @@ BenchmarkCheckAndTouchHitHot-4           26.5       27.3       29.7       30.4  
 ### Per-line spill counts (reverted)
 
 ```
-verify/ab.sh 1e0ef14 1e0ef14+verify/experiments/spill-counts.patch 'ContainsAbsent$|InsertSteady$|InsertNearFull$|CheckAndTouchHit$' 8
+verify/ab.sh fbe6968 fbe6968+verify/experiments/spill-counts.patch 'ContainsAbsent$|InsertSteady$|InsertNearFull$|CheckAndTouchHit$' 8
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkInsertSteady-4                 157.1      164.9      179.0      180.3    1.09
 BenchmarkCheckAndTouchHit-4              61.8       64.7       61.7       63.6    0.98
@@ -185,7 +185,7 @@ BenchmarkInsertNearFull-4              2219.0     2304.5     2433.0     2513.0  
 ### Homing (reverted)
 
 ```
-verify/ab.sh 1e0ef14 1e0ef14+verify/experiments/homing.patch 'HitChurned$|InsertSteady$|CheckAndTouchHit$' 8
+verify/ab.sh fbe6968 fbe6968+verify/experiments/homing.patch 'HitChurned$|InsertSteady$|CheckAndTouchHit$' 8
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkInsertSteady-4                 158.9      161.8      179.7      184.2    1.14
 BenchmarkCheckAndTouchHit-4              62.0       63.8       64.9       67.4    1.06
@@ -195,7 +195,7 @@ BenchmarkHitChurned-4                    79.0       81.7       77.8       81.0  
 ### Relocation prefetch (reverted)
 
 ```
-verify/ab.sh 1e0ef14 1e0ef14+verify/experiments/reloc-prefetch.patch 'InsertSteady$|InsertSaturated$' 8
+verify/ab.sh fbe6968 fbe6968+verify/experiments/reloc-prefetch.patch 'InsertSteady$|InsertSaturated$' 8
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkInsertSteady-4                 155.8      160.4      159.9      170.1    1.06
 BenchmarkInsertSaturated-4              347.8      368.3      354.4      366.2    0.99
@@ -204,15 +204,15 @@ BenchmarkInsertSaturated-4              347.8      368.3      354.4      366.2  
 ### Reciprocal clock division (reverted)
 
 ```
-verify/ab.sh 1e0ef14 1e0ef14+verify/experiments/reciprocal-clock.patch 'CheckAndTouchString$' 8
+verify/ab.sh fbe6968 fbe6968+verify/experiments/reciprocal-clock.patch 'CheckAndTouchString$' 8
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkCheckAndTouchString-4          113.5      115.9      111.2      116.2    1.00
 ```
 
-### Alternate-line prefetch (40f9223, reverted in bc2e12d)
+### Alternate-line prefetch (6c1f5dd, reverted in 70546b2)
 
 ```
-verify/ab.sh 7ca297c 40f9223 'CheckAndTouchHit$|CheckAndTouchMissInsert$' 8
+verify/ab.sh bed5c07 6c1f5dd 'CheckAndTouchHit$|CheckAndTouchMissInsert$' 8
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkCheckAndTouchMissInsert-4      464.9      490.1      457.5      490.1    1.00
 BenchmarkCheckAndTouchHit-4              63.7       64.4       63.0       65.6    1.02
@@ -221,7 +221,7 @@ BenchmarkCheckAndTouchHit-4              63.7       64.4       63.0       65.6  
 ### 8-slot buckets (reverted), incl. DRAM table
 
 ```
-verify/ab.sh 1e0ef14 1e0ef14+verify/experiments/eight-slot.patch 'HugeHit$|HugeAbsent$|InsertNearFull$|InsertSaturated$|InsertSteady$' 3
+verify/ab.sh fbe6968 fbe6968+verify/experiments/eight-slot.patch 'HugeHit$|HugeAbsent$|InsertNearFull$|InsertSaturated$|InsertSteady$' 3
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkInsertSteady-4                 157.2      161.3      146.7      150.7    0.93
 BenchmarkHugeAbsent-4                    86.4       89.1      131.5      134.5    1.51
@@ -233,7 +233,7 @@ BenchmarkHugeHit-4                      168.8      169.9      172.5      185.1  
 ### THP madvise (reverted), DRAM table
 
 ```
-verify/ab.sh 1e0ef14 1e0ef14+verify/experiments/thp-madvise.patch 'HugeHit$|HugeAbsent$|HugeBatch$' 3
+verify/ab.sh fbe6968 fbe6968+verify/experiments/thp-madvise.patch 'HugeHit$|HugeAbsent$|HugeBatch$' 3
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkHugeAbsent-4                    83.6       86.7       74.2       75.1    0.87
 BenchmarkHugeBatch-4                     73.2       73.6       68.4       68.5    0.93
@@ -243,7 +243,7 @@ BenchmarkHugeHit-4                      168.5      170.3      137.2      138.8  
 Same comparison with 6 rounds (THP mode `madvise` on this host):
 
 ```
-verify/ab.sh 1e0ef14 1e0ef14+verify/experiments/thp-madvise.patch 'HugeHit$|HugeAbsent$|HugeBatch$' 6
+verify/ab.sh fbe6968 fbe6968+verify/experiments/thp-madvise.patch 'HugeHit$|HugeAbsent$|HugeBatch$' 6
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkHugeAbsent-4                    84.2       86.3       74.0       76.6    0.89
 BenchmarkHugeBatch-4                     76.3       77.7       66.8       68.7    0.89
@@ -253,7 +253,7 @@ BenchmarkHugeHit-4                      171.2      174.3      138.8      145.9  
 ### Hot-key contention (benchmark only)
 
 ```
-verify/ab.sh 1e0ef14+verify/experiments/contention-bench.patch 1e0ef14+verify/experiments/contention-bench.patch 'Contended|Uncontended' 3
+verify/ab.sh fbe6968+verify/experiments/contention-bench.patch fbe6968+verify/experiments/contention-bench.patch 'Contended|Uncontended' 3
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkContended16-4                   12.4       12.8       12.3       12.5    0.97
 BenchmarkUncontended-4                   18.9       19.2       18.6       19.4    1.01
@@ -264,7 +264,7 @@ BenchmarkContended1-4                     6.9        7.3        7.0        7.1  
 ### Security changes: keyed hash, stash, saturated bit, Result (S27)
 
 ```
-verify/ab.sh 5c57619 afdd877 'CheckAndTouchHit$|CheckAndTouchHitHot|TouchAndCount$|VelocityCount$|VelocityCountHot|InsertSteady|InsertSaturated|InsertNearFull|ContainsAbsent$|CheckAndTouchString|CheckAndTouchParallel' 8
+verify/ab.sh c5fa7bf 2d4682b 'CheckAndTouchHit$|CheckAndTouchHitHot|TouchAndCount$|VelocityCount$|VelocityCountHot|InsertSteady|InsertSaturated|InsertNearFull|ContainsAbsent$|CheckAndTouchString|CheckAndTouchParallel' 8
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkTouchAndCount-4                118.5      126.6      123.9      128.2    1.01
 BenchmarkInsertSteady-4                 208.3      220.9      221.8      233.4    1.06
@@ -284,7 +284,7 @@ BenchmarkCheckAndTouchParallel-4         23.8       24.6       24.4       26.0  
 This host was ~2x slower than for S27 on the same day's runs; compare ratios. B is the commit that adds `overflow.go` (code identical to the A/B build).
 
 ```
-verify/ab.sh 64a4b30 55c82ed 'CheckAndTouchHit$|CheckAndTouchHitHot|TouchAndCount$|VelocityCount$|VelocityCountHot|InsertSteady|InsertSaturated|InsertNearFull|ContainsAbsent$|CheckAndTouchParallel|HugeHit$|HugeAbsent$' 6
+verify/ab.sh 5f57f59 dd30cbc 'CheckAndTouchHit$|CheckAndTouchHitHot|TouchAndCount$|VelocityCount$|VelocityCountHot|InsertSteady|InsertSaturated|InsertNearFull|ContainsAbsent$|CheckAndTouchParallel|HugeHit$|HugeAbsent$' 6
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkTouchAndCount-4                183.6      220.3      222.8      225.1    1.02
 BenchmarkInsertSteady-4                 337.1      368.0      381.9      404.7    1.10
@@ -303,7 +303,7 @@ BenchmarkCheckAndTouchParallel-4         71.0       78.7       53.6       68.0  
 Every filter in ConstantTime mode, no pad (`TF_CT=1`; A ignores it):
 
 ```
-TF_CT=1 verify/ab.sh 64a4b30 55c82ed 'CheckAndTouchHit$|CheckAndTouchHitHot|VelocityCountHot|TouchAndCount$|InsertSteady|InsertSaturated|ContainsAbsent$|HugeHit$|HugeAbsent$' 3
+TF_CT=1 verify/ab.sh 5f57f59 dd30cbc 'CheckAndTouchHit$|CheckAndTouchHitHot|VelocityCountHot|TouchAndCount$|InsertSteady|InsertSaturated|ContainsAbsent$|HugeHit$|HugeAbsent$' 3
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkTouchAndCount-4                200.1      213.0      595.1      616.1    2.89
 BenchmarkInsertSteady-4                 278.8      326.8      911.2      972.1    2.97
@@ -333,7 +333,7 @@ ConstantTime 3µs   Touch: unseen p50/p99/p99.9 3093/ 4083/32863 ns, seen 3093/ 
 ### Lazy 8-bit sketch and SpillMin (S32)
 
 ```
-verify/ab.sh a96dc28 a55178e 'CheckAndTouchHit$|CheckAndTouchHitHot|TouchAndCount$|VelocityCount$|VelocityCountHot|InsertSteady|InsertSaturated|InsertNearFull|ContainsAbsent$|CheckAndTouchParallel|HugeHit$|HugeAbsent$' 6
+verify/ab.sh 08c8ea0 150fac4 'CheckAndTouchHit$|CheckAndTouchHitHot|TouchAndCount$|VelocityCount$|VelocityCountHot|InsertSteady|InsertSaturated|InsertNearFull|ContainsAbsent$|CheckAndTouchParallel|HugeHit$|HugeAbsent$' 6
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkTouchAndCount-4                215.4      223.4      203.6      214.0    0.96
 BenchmarkInsertSteady-4                 350.1      383.7      328.7      379.4    0.99
@@ -352,7 +352,7 @@ BenchmarkCheckAndTouchParallel-4         62.3       75.8       47.4       71.8  
 ### Ghost table, Count pad, alternate-line prefetch (S35)
 
 ```
-verify/ab.sh 0651be5 49df095 'CheckAndTouchHit$|CheckAndTouchHitHot|TouchAndCount$|VelocityCount$|VelocityCountHot|InsertSteady|InsertSaturated|InsertNearFull|ContainsAbsent$|CheckAndTouchParallel|HugeHit$|HugeAbsent$' 6
+verify/ab.sh 5ac63d5 ae0b5ad 'CheckAndTouchHit$|CheckAndTouchHitHot|TouchAndCount$|VelocityCount$|VelocityCountHot|InsertSteady|InsertSaturated|InsertNearFull|ContainsAbsent$|CheckAndTouchParallel|HugeHit$|HugeAbsent$' 6
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkTouchAndCount-4                210.0      235.6      229.7      241.2    1.02
 BenchmarkInsertSteady-4                 400.9      441.6      429.2      445.6    1.01
@@ -369,7 +369,7 @@ BenchmarkCheckAndTouchParallel-4         62.7       72.4       63.7       74.4  
 ```
 
 ```
-verify/ab.sh 0651be5 e0a1e21 (same benchmarks, 6 rounds; SpillMin 1)
+verify/ab.sh 5ac63d5 9314d89 (same benchmarks, 6 rounds; SpillMin 1)
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkTouchAndCount-4                230.1      249.6      235.5      239.4    0.96
 BenchmarkInsertSteady-4                 396.0      438.5      387.5      442.1    1.01
@@ -386,11 +386,11 @@ BenchmarkCheckAndTouchParallel-4         67.5       79.0       66.1       73.8  
 
 [exited with code 0]
 
-verify/ab.sh e0a1e21 e0a1e21+verify/experiments/spillmin4.patch 'InsertSaturated|InsertNearFull' 5
+verify/ab.sh 9314d89 9314d89+verify/experiments/spillmin4.patch 'InsertSaturated|InsertNearFull' 5
 BenchmarkInsertNearFull-4              3508.0     3791.0     3487.0     4174.0    1.10
 BenchmarkInsertSaturated-4             1448.0     1659.0     1018.0     1208.0    0.73
 
-verify/ab.sh e0a1e21 e0a1e21+verify/experiments/no-alt-prefetch.patch 'InsertSaturated|InsertNearFull|InsertSteady' 5
+verify/ab.sh 9314d89 9314d89+verify/experiments/no-alt-prefetch.patch 'InsertSaturated|InsertNearFull|InsertSteady' 5
 BenchmarkInsertSteady-4                 413.8      442.3      411.0      428.2    0.97
 BenchmarkInsertNearFull-4              3939.0     4141.0     3999.0     4507.0    1.09
 BenchmarkInsertSaturated-4             1624.0     1753.0     1715.0     1930.0    1.10

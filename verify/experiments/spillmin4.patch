@@ -1,0 +1,13 @@
+diff --git a/filter.go b/filter.go
+index 0d62010..2040e33 100644
+--- a/filter.go
++++ b/filter.go
+@@ -239,7 +239,7 @@ func New(cfg Config) (*Filter, error) {
+ 		f.skShape = defaultShape
+ 	}
+ 	if cfg.SpillMin == 0 {
+-		cfg.SpillMin = 1
++		cfg.SpillMin = 4
+ 	}
+ 	f.spillMin = uint64(max(cfg.SpillMin, 1))
+ 	f.ct, f.pad = cfg.ConstantTime > 0 || cfg.ConstantTime == AutoPad || forceCT, cfg.ConstantTime

@@ -80,6 +80,10 @@ timing() {
 	TF_TIMING=1 go test -count=1 -run '^TestTimingLeak$' -v . | grep -E 'ConstantTime' | sed -E 's/^ *[a-z_]+\.go:[0-9]+: //'
 }
 
+ct_pads() {
+	TF_CTEXP=1 go test -count=1 -run '^(TestCTPads|TestCTParallel)$' -v . | grep -vE '^(=== |--- |PASS|ok |FAIL)' | sed -E 's/^ *[a-z_]+\.go:[0-9]+: //'
+}
+
 speed() {
 	for i in 1 2 3; do go run ./cmd/tfbench 2>/dev/null | tail -1; done
 }
@@ -102,6 +106,7 @@ check experiments verify/expected/experiments.txt verify/experiments.sh
 if [ "${1:-}" = --speed ]; then
 	check speed - speed
 	check timing - timing
+	check ct-pads - ct_pads
 fi
 if [ $failed = 0 ]; then say "ALL PASS"; else say "SOME CHECKS FAILED"; fi
 exit $failed

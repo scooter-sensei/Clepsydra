@@ -1,0 +1,12 @@
+diff --git a/filter.go b/filter.go
+index 0d62010..8f0dfa5 100644
+--- a/filter.go
++++ b/filter.go
+@@ -928,7 +928,6 @@ func (f *Filter) claim(h, fp, w1, now, sat uint64) int {
+ 		// back to cheap eviction instead of searching in vain.
+ 		p := f.pressure.Load()
+ 		budget := 8 + int(uint64(relocBudget-8)*(pressureOne-uint64(p))>>pressureShift)
+-		f.warmAlts(lines)
+ 		for depth := 0; depth <= relocDepth; depth++ {
+ 			for li, line := range lines {
+ 				base := int(line * wordsPerLine)

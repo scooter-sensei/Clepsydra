@@ -348,3 +348,64 @@ BenchmarkVelocityCountHot-4              57.7       59.5       56.1       56.4  
 BenchmarkHugeHit-4                      250.2      279.2      280.6      285.0    1.02
 BenchmarkCheckAndTouchParallel-4         62.3       75.8       47.4       71.8    0.95
 ```
+
+### Ghost table, Count pad, alternate-line prefetch (S35)
+
+```
+verify/ab.sh 0651be5 49df095 'CheckAndTouchHit$|CheckAndTouchHitHot|TouchAndCount$|VelocityCount$|VelocityCountHot|InsertSteady|InsertSaturated|InsertNearFull|ContainsAbsent$|CheckAndTouchParallel|HugeHit$|HugeAbsent$' 6
+benchmark (ns/op)                       A min   A median      B min   B median     B/A
+BenchmarkTouchAndCount-4                210.0      235.6      229.7      241.2    1.02
+BenchmarkInsertSteady-4                 400.9      441.6      429.2      445.6    1.01
+BenchmarkHugeAbsent-4                   165.1      177.5      159.6      193.8    1.09
+BenchmarkCheckAndTouchHit-4             180.4      199.8      190.3      201.4    1.01
+BenchmarkContainsAbsent-4               107.7      116.4      103.5      119.4    1.03
+BenchmarkInsertNearFull-4              3541.0     3881.0     3383.0     3881.0    1.00
+BenchmarkVelocityCount-4                178.0      193.2      178.4      194.8    1.01
+BenchmarkInsertSaturated-4             1095.0     1266.0      941.8     1067.5    0.84
+BenchmarkCheckAndTouchHitHot-4           39.5       40.3       39.8       42.8    1.06
+BenchmarkVelocityCountHot-4              58.1       62.5       58.0       63.6    1.02
+BenchmarkHugeHit-4                      285.5      315.4      298.1      321.1    1.02
+BenchmarkCheckAndTouchParallel-4         62.7       72.4       63.7       74.4    1.03
+```
+
+```
+verify/ab.sh 0651be5 e0a1e21 (same benchmarks, 6 rounds; SpillMin 1)
+benchmark (ns/op)                       A min   A median      B min   B median     B/A
+BenchmarkTouchAndCount-4                230.1      249.6      235.5      239.4    0.96
+BenchmarkInsertSteady-4                 396.0      438.5      387.5      442.1    1.01
+BenchmarkHugeAbsent-4                   140.2      164.4      150.6      172.3    1.05
+BenchmarkCheckAndTouchHit-4             198.0      204.3      187.2      201.7    0.99
+BenchmarkContainsAbsent-4               103.7      113.9       99.0      110.9    0.97
+BenchmarkInsertNearFull-4              3817.0     4227.0     3408.0     3924.0    0.93
+BenchmarkVelocityCount-4                178.6      187.6      185.2      195.8    1.04
+BenchmarkInsertSaturated-4             1117.0     1355.5     1627.0     1755.5    1.30
+BenchmarkCheckAndTouchHitHot-4           37.8       42.1       39.1       40.8    0.97
+BenchmarkVelocityCountHot-4              57.2       60.8       55.4       60.0    0.99
+BenchmarkHugeHit-4                      274.7      329.8      292.4      314.7    0.95
+BenchmarkCheckAndTouchParallel-4         67.5       79.0       66.1       73.8    0.93
+
+[exited with code 0]
+
+verify/ab.sh e0a1e21 e0a1e21+verify/experiments/spillmin4.patch 'InsertSaturated|InsertNearFull' 5
+BenchmarkInsertNearFull-4              3508.0     3791.0     3487.0     4174.0    1.10
+BenchmarkInsertSaturated-4             1448.0     1659.0     1018.0     1208.0    0.73
+
+verify/ab.sh e0a1e21 e0a1e21+verify/experiments/no-alt-prefetch.patch 'InsertSaturated|InsertNearFull|InsertSteady' 5
+BenchmarkInsertSteady-4                 413.8      442.3      411.0      428.2    0.97
+BenchmarkInsertNearFull-4              3939.0     4141.0     3999.0     4507.0    1.09
+BenchmarkInsertSaturated-4             1624.0     1753.0     1715.0     1930.0    1.10
+```
+
+### ConstantTime pads (S33, S34)
+
+```
+TF_CTEXP=1 go test -run 'TestCTPads|TestCTParallel' -v
+off              | Count D 0.254 (62.7%) p50   222/  246,   346 ns/op | Touch D 0.705 (85.3%) p50   648/  300,   702 ns/op
+fixed 1us        | Count D 0.012 (50.6%) p50  1093/ 1094,  1208 ns/op pad 1000ns | Touch D 0.172 (58.6%) p50  1102/ 1098,  1309 ns/op pad 1000ns
+fixed 3us        | Count D 0.005 (50.3%) p50  3126/ 3126,  3385 ns/op pad 3000ns | Touch D 0.012 (50.6%) p50  3094/ 3094,  3310 ns/op pad 3000ns
+3us, Count auto  | Count D 0.011 (50.5%) p50   933/  935,  1052 ns/op pad  793ns | Touch D 0.026 (51.3%) p50  3103/ 3102,  3383 ns/op pad 3000ns
+AutoPad          | Count D 0.012 (50.6%) p50  1294/ 1290,  1467 ns/op pad 1410ns | Touch D 0.010 (50.5%) p50  2990/ 2987,  3192 ns/op pad 3040ns
+p50 is unseen/seen; ns/op is the mean wall time per call on one goroutine
+fixed 3us         1.06 M ops/s; probe p50 unseen    3.1 us seen    3.1 us; KS D 0.060 (53.0%); Count pad 3000 ns
+3us, auto Count   2.19 M ops/s; probe p50 unseen    1.6 us seen    1.6 us; KS D 0.015 (50.7%); Count pad 1041 ns
+```

@@ -357,3 +357,12 @@ Mean MAE is the same within 0.001, and the 60 s error is **0.038 vs 0.024**. The
 ## Note on HEAD itself
 
 `TestTouchRacingRelocationKeepsCounts` is slightly flaky at HEAD on this shared host. It failed in 5 of 30 standalone runs in one batch and 2 of 30 in another, losing 2 to 21 counts, and once 1116. Backlog item 16 says 0 of 20. Take this into account when a patch's verify log shows this test failing.
+
+## Later rounds (patches against their own commits, not run by experiments.sh)
+
+| Patch | Applies to | What it does | Where it is measured |
+|---|---|---|---|
+| pad-modes-and-sip13 | a55178e and later | sleep, adaptive and yield ConstantTime pads; SipHash-1-3 | `results/security-cost-2026-10-09.md`, claims S30, S31 |
+| ct-shadow-and-prefetch-toggle | e0a1e21 and later | shadow work in ConstantTime (each path also runs the other's, read-only), `TestCTProfile` (pad sweep), `TF_NOPF=1` to skip the alternate-line prefetch | `results/overflow-ct-2026-10-09.md`, claim S33 |
+| no-alt-prefetch | e0a1e21 and later | removes the alternate-line prefetch from `claim` (speed A/B) | claim S35 |
+| spillmin4 | e0a1e21 only | SpillMin default 4 instead of 1; it is commit 49df095 | claim S35 |

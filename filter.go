@@ -115,8 +115,10 @@ type Config struct {
 	Overflow int
 	// SpillMin: a dropped history with fewer events than this in the horizon
 	// is shed (Shed counts it) instead of going to the overflow table, so a
-	// flood of cheap keys can't fill it. A key can then lose up to
-	// SpillMin-1 events per eviction. Default (0): 1, spill every history.
+	// flood of cheap keys doesn't fill it, and inserts into a full table
+	// stay cheap. A key can then lose up to SpillMin-1 events per eviction.
+	// Default (0): 4. 1 or less: keep every history (dedup of one-event keys
+	// then survives floods; inserts into a full table cost ~30% more).
 	SpillMin int
 	// ConstantTime, if > 0 or AutoPad, hides from response times whether a
 	// key was seen. Every operation does the same lookups whatever the key's
@@ -239,7 +241,7 @@ func New(cfg Config) (*Filter, error) {
 		f.skShape = defaultShape
 	}
 	if cfg.SpillMin == 0 {
-		cfg.SpillMin = 1
+		cfg.SpillMin = 4
 	}
 	f.spillMin = uint64(max(cfg.SpillMin, 1))
 	f.ct, f.pad = cfg.ConstantTime > 0 || cfg.ConstantTime == AutoPad || forceCT, cfg.ConstantTime

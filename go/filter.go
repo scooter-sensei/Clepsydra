@@ -97,7 +97,7 @@ type Config struct {
 	// evicted from a full table is kept there, and its freshness and counts
 	// come back if it returns, so flooding the table doesn't reset an
 	// offender's history. When the stash must drop a key it keeps the one
-	// with more events. Default (0): one entry per 64 slots. Negative: none.
+	// with more events. Default (0): one entry per 8 slots. Negative: none.
 	Stash int
 	// Overflow sizes the overflow table in units of 16 B. A history the stash
 	// has to drop is kept there as a 21-bit entry (fingerprint, event count,

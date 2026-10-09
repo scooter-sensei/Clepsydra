@@ -7,7 +7,8 @@ Status: research prototype. The Go implementation is the reference; Python, C++ 
 ## Layout
 
 ```
-docs/       language-neutral: algorithm and layout (DESIGN), threat model (SECURITY), prior art (RESEARCH)
+docs/       language-neutral: algorithm and layout (DESIGN), threat model (SECURITY), prior art (RESEARCH), test tiers (TESTING)
+spec/       conformance vectors every implementation must reproduce
 go/         Go reference implementation
   *.go        library and tests
   cmd/        tfbench: accuracy and speed scorecard
@@ -15,13 +16,13 @@ go/         Go reference implementation
   verify/     every claim with its check; isolated.sh re-runs them offline
 ```
 
-Each port goes in its own top-level folder (`python/`, `cpp/`, `java/`) with its own build. A port follows `docs/DESIGN.md` and must match the Go version's results on the same inputs. The bit layout, the keyed hash (SipHash-2-4 under `Config.Key`) and the seeded workloads in `go/internal/workload` make those results reproducible.
+Each port goes in its own top-level folder (`python/`, `cpp/`, `java/`) with its own build. A port follows `docs/DESIGN.md` and must reproduce `spec/vectors/` exactly and provide the same five test tiers (`docs/TESTING.md`).
 
 ## Go
 
 ```
 cd go
-go test ./...
+./test.sh smoke         # also: sanity, regression, perf, stress, all
 ./bench.sh "label"      # scorecard row in results/history.md
-verify/run.sh           # deterministic claim checks
+verify/run.sh           # every claim check (verify/claims.md)
 ```

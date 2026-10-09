@@ -3,7 +3,7 @@
 #
 #   verify/ab.sh <A> <B> <bench-regex> [rounds]
 #
-# A and B are git revisions, optionally with patches: HEAD,
+# A and B are git revisions (. is the working tree), optionally with patches: HEAD,
 # HEAD+verify/experiments/branchless-find.patch, 4103013. Each version's test
 # binary is built once; the binaries then run alternately (A, B, A, B, ...)
 # `rounds` times (default 8), so drift and noisy neighbours hit both sides.
@@ -19,7 +19,11 @@ trap 'rm -rf "$tmp"' EXIT
 
 build() { # build <spec> <name>
 	local rev=${1%%+*} d="$tmp/$2"
-	export_tree "$rev" "$d"
+	if [ "$rev" = . ]; then # the working tree, uncommitted changes included
+		mkdir -p "$d" && git ls-files -co --exclude-standard -z . | xargs -0 tar -c | tar -x -C "$d"
+	else
+		export_tree "$rev" "$d"
+	fi
 	local root=$PWD p patches
 	IFS=+ read -ra patches <<<"${1#"$rev"}"
 	for p in "${patches[@]}"; do

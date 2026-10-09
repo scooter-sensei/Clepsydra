@@ -284,7 +284,7 @@ BenchmarkCheckAndTouchParallel-4         23.8       24.6       24.4       26.0  
 This host was ~2x slower than for S27 on the same day's runs; compare ratios. B is the commit that adds `overflow.go` (code identical to the A/B build).
 
 ```
-verify/ab.sh 64a4b30 <sketch commit> 'CheckAndTouchHit$|CheckAndTouchHitHot|TouchAndCount$|VelocityCount$|VelocityCountHot|InsertSteady|InsertSaturated|InsertNearFull|ContainsAbsent$|CheckAndTouchParallel|HugeHit$|HugeAbsent$' 6
+verify/ab.sh 64a4b30 55c82ed 'CheckAndTouchHit$|CheckAndTouchHitHot|TouchAndCount$|VelocityCount$|VelocityCountHot|InsertSteady|InsertSaturated|InsertNearFull|ContainsAbsent$|CheckAndTouchParallel|HugeHit$|HugeAbsent$' 6
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkTouchAndCount-4                183.6      220.3      222.8      225.1    1.02
 BenchmarkInsertSteady-4                 337.1      368.0      381.9      404.7    1.10
@@ -303,7 +303,7 @@ BenchmarkCheckAndTouchParallel-4         71.0       78.7       53.6       68.0  
 Every filter in ConstantTime mode, no pad (`TF_CT=1`; A ignores it):
 
 ```
-TF_CT=1 verify/ab.sh 64a4b30 <sketch commit> 'CheckAndTouchHit$|CheckAndTouchHitHot|VelocityCountHot|TouchAndCount$|InsertSteady|InsertSaturated|ContainsAbsent$|HugeHit$|HugeAbsent$' 3
+TF_CT=1 verify/ab.sh 64a4b30 55c82ed 'CheckAndTouchHit$|CheckAndTouchHitHot|VelocityCountHot|TouchAndCount$|InsertSteady|InsertSaturated|ContainsAbsent$|HugeHit$|HugeAbsent$' 3
 benchmark (ns/op)                       A min   A median      B min   B median     B/A
 BenchmarkTouchAndCount-4                200.1      213.0      595.1      616.1    2.89
 BenchmarkInsertSteady-4                 278.8      326.8      911.2      972.1    2.97

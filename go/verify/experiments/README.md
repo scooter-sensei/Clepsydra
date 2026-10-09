@@ -366,3 +366,4 @@ Mean MAE is the same within 0.001, and the 60 s error is **0.038 vs 0.024**. The
 | ct-shadow-and-prefetch-toggle | 9314d89 and later | shadow work in ConstantTime (each path also runs the other's, read-only), `TestCTProfile` (pad sweep), `TF_NOPF=1` to skip the alternate-line prefetch | `results/overflow-ct-2026-10-09.md`, claim S33 |
 | no-alt-prefetch | 9314d89 and later | removes the alternate-line prefetch from `claim` (speed A/B) | claim S35 |
 | spillmin4 | 9314d89 only | SpillMin default 4 instead of 1; it is commit ae0b5ad | claim S35 |
+| sum-floors | 3b5a427 | ghost floors add the counts that leave instead of keeping the largest (declined) | `results/backlog.md` (Decided), claim A12 |

@@ -1,0 +1,38 @@
+diff --git a/ghost.go b/ghost.go
+index 878060b..5422f6a 100644
+--- a/ghost.go
++++ b/ghost.go
+@@ -14,9 +14,9 @@ import (
+ // key, so a flood adds no noise: only a fingerprint collision (about live
+ // entries / 16384 per read) or a bucket's floor can raise a key that never
+ // spilled. When a bucket has no room the lightest history in it (newcomer
+-// included) leaves, and the bucket's floor keeps the largest count that
+-// left: every key of the bucket adds the floor to Upper, so Upper never
+-// reads below the truth. Reads take one cache line (the sketch takes four).
++// included) leaves, and its count is added to the bucket's floor (up to
++// 31): every key of the bucket adds the floor to Upper, so Upper never
++// reads below the truth, even for a key that left several histories there. Reads take one cache line (the sketch takes four).
+ //
+ // Time is kept per entry as the slice (Horizon/2) of the history's newest
+ // event, mod 4. epoch is the newest slice an add has seen; before an add
+@@ -176,8 +176,9 @@ outer:
+ 	}
+ }
+ 
+-// raiseFloor lifts the bucket's floor to at least n events, live until
+-// slice sl's events expire.
++// raiseFloor adds n events to the bucket's floor (saturating), live until
++// slice sl's events expire. The floor sums what left, not its maximum: one
++// key can leave a history, return and leave another.
+ func (g *ghost) raiseFloor(base int, n, sl, ep, now uint64) {
+ 	w := &g.words[base]
+ 	for {
+@@ -187,7 +188,7 @@ func (g *ghost) raiseFloor(base int, n, sl, ep, now uint64) {
+ 		if e != 0 && g.live(g.real(e, ep), g.horizon, now) {
+ 			c, fsl = ghCnt(e), max(sl, g.real(e, ep))
+ 		}
+-		ne := ghEntry(0, max(c, n), fsl)
++		ne := ghEntry(0, min(ghCntMax, c+n), fsl)
+ 		if ne == e || atomic.CompareAndSwapUint64(w, old, old&^ghEntryMask|ne) {
+ 			return
+ 		}

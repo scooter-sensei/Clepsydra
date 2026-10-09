@@ -16,7 +16,10 @@ import (
 // spilled. When a bucket has no room the lightest history in it (newcomer
 // included) leaves, and the bucket's floor keeps the largest count that
 // left: every key of the bucket adds the floor to Upper, so Upper never
-// reads below the truth. Reads take one cache line (the sketch takes four).
+// reads below the truth for a key with at most one history in the floor.
+// A key floored more than once can read low by all but its largest floored
+// history; summing floors instead closes that, but light floods then push
+// every floor to 31 and deny every new key (backlog, 2026-10-09). Reads take one cache line (the sketch takes four).
 //
 // Time is kept per entry as the slice (Horizon/2) of the history's newest
 // event, mod 4. epoch is the newest slice an add has seen; before an add

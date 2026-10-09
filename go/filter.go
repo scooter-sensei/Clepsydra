@@ -102,7 +102,8 @@ type Config struct {
 	// Overflow sizes the overflow table in units of 16 B. A history the stash
 	// has to drop is kept there as a 21-bit entry (fingerprint, event count,
 	// time slice), so no flood can erase it within the horizon: Upper never
-	// reads below a key's true count. A key's answer adds its own entry
+	// reads below a key's true count, except for a key that left more than
+	// one history in a full bucket's floor (docs/SECURITY.md). A key's answer adds its own entry
 	// (Degraded then set), so other keys' histories add nothing unless their
 	// fingerprint matches (about 0.1% of keys while the table is full). When
 	// a bucket overflows, its lightest history leaves and the bucket's floor
@@ -1336,11 +1337,14 @@ func (f *Filter) stashPut(id, w0, w1, now uint64) {
 	var out stashEntry // the history that leaves the stash, if any
 	if least > 0 {
 		if least > f.mass(w1, w0&tsMask, now) {
-			mu.Unlock()
 			f.spill(id, w0, w1, now)
+			mu.Unlock()
 			return
 		}
 		out = set[way]
+	}
+	if out.id != 0 {
+		f.spill(out.id, out.w0, out.w1, now)
 	}
 	set[way] = stashEntry{id, w0, w1}
 	for until := (w0 & tsMask) + f.horizon; ; {
@@ -1350,9 +1354,6 @@ func (f *Filter) stashPut(id, w0, w1, now uint64) {
 		}
 	}
 	mu.Unlock()
-	if out.id != 0 {
-		f.spill(out.id, out.w0, out.w1, now)
-	}
 }
 
 // stashGet returns the live stash entry for id; take also removes it.

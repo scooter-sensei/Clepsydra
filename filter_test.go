@@ -321,8 +321,10 @@ func TestSprayCannotEvictRepeatOffender(t *testing.T) {
 	}
 	now += 30_000
 	for i, h := range offenders {
-		if c := f.VelocityCountAt(h, f.Ticks(time.Minute), now); c != 20 {
-			t.Fatalf("offender %d: count %d after spray, want 20", i, c)
+		// The spray's spilled histories share the ghost table, so a
+		// fingerprint collision can add a few events, but only flagged.
+		if r := f.CountAt(h, f.Ticks(time.Minute), now); r.Count < 20 || r.Count > 20 && !r.Degraded {
+			t.Fatalf("offender %d: count %d (degraded %v) after spray, want 20", i, r.Count, r.Degraded)
 		}
 	}
 	t.Logf("evictions during spray: %d", f.Evictions())

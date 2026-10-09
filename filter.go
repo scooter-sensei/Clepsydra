@@ -99,31 +99,36 @@ type Config struct {
 	// offender's history. When the stash must drop a key it keeps the one
 	// with more events. Default (0): one entry per 64 slots. Negative: none.
 	Stash int
-	// Overflow is the width of the overflow sketch (counters per row; 4 rows
-	// x 4 time slices of Horizon/2 x 1 B, so 16 B per unit of width). A
-	// history the stash has to drop is added there, so no flood can erase it
-	// within the horizon: Upper never reads below a key's true count. Count
-	// adds the key's sketch estimate only where it stands out from other
-	// keys' noise, and then sets Degraded. The noise grows with the events
-	// dropped per unit of width. The sketch is allocated on the first drop,
-	// so a filter that never overflows its stash doesn't pay for it. Default
-	// (0): one per 4 slots, 4 B per slot once allocated. Negative: none;
-	// dropped histories are then lost and every unseen key reads Degraded
-	// for a horizon after a drop.
+	// Overflow sizes the overflow table in units of 16 B. A history the stash
+	// has to drop is kept there as a 21-bit entry (fingerprint, event count,
+	// time slice), so no flood can erase it within the horizon: Upper never
+	// reads below a key's true count. A key's answer adds its own entry
+	// (Degraded then set), so other keys' histories add nothing unless their
+	// fingerprint matches (about 0.1% of keys while the table is full). When
+	// a bucket overflows, its lightest history leaves and the bucket's floor
+	// rises to that count, which every key of the bucket then adds to
+	// Upper. The table is allocated on the first drop, so a filter that never
+	// overflows its stash doesn't pay for it. Default (0): one unit per 4
+	// slots, 4 B per slot once allocated, room for 1.5 histories per slot.
+	// Negative: none; dropped histories are then lost and every unseen key
+	// reads Degraded for a horizon after a drop.
 	Overflow int
 	// SpillMin: a dropped history with fewer events than this in the horizon
-	// is shed (Shed counts it) instead of going to the overflow sketch, so a
-	// flood of cheap keys adds no noise there. A key can then lose up to
-	// SpillMin-1 events per eviction. Default (0): 4. 1 or less: spill all.
+	// is shed (Shed counts it) instead of going to the overflow table, so a
+	// flood of cheap keys can't fill it. A key can then lose up to
+	// SpillMin-1 events per eviction. Default (0): 1, spill every history.
 	SpillMin int
-	// ConstantTime, if > 0, hides from response times whether a key was
-	// seen. Every operation does the same lookups whatever the key's state
-	// (both candidate lines, the stash set and every sketch row, under the
-	// key's lock stripe) and returns no sooner than ConstantTime after it
-	// started, spinning if it finished early. Pick it above the slowest
-	// inserts you see (a few µs on a table larger than the cache): only
-	// calls that run past it still leak. SECURITY.md has the measurement.
-	// Each call then costs at least this much CPU.
+	// ConstantTime, if > 0 or AutoPad, hides from response times whether a
+	// key was seen. Every operation does the same lookups whatever the key's
+	// state (both candidate lines, the stash set and the overflow table,
+	// under the key's lock stripe) and returns no sooner than a pad after it
+	// started, spinning if it finished early. Touch's pad is ConstantTime:
+	// pick it above the slowest inserts you see (a few µs on a table larger
+	// than the cache); only calls that run past it still leak. Count's
+	// paths differ far less, so its pad is a running estimate of its own
+	// 99.5th-percentile latency, capped at ConstantTime. With AutoPad,
+	// Touch's pad is estimated the same way. SECURITY.md has the
+	// measurements. Each call costs at least its pad in CPU.
 	ConstantTime time.Duration
 }
 
@@ -166,9 +171,14 @@ type Filter struct {
 	folded     atomic.Uint64
 	_          [24]byte
 	stashMu    [stashStripes]paddedMutex
-	sk         atomic.Pointer[sketch] // nil until the first spill
+	sk         atomic.Pointer[sketch] // count-min overflow (cms), nil until the first spill
+	gh         atomic.Pointer[ghost]  // ghost overflow, nil until the first spill
+	cms        bool                   // overflow to the count-min sketch, not the ghost table (experiments)
+	shadow     bool                   // ConstantTime: each path also runs the other's work, read-only
+	auto       bool                   // ConstantTime == AutoPad
+	padQ       [2]quantilePad         // AutoPad: Touch's and Count's
 	skMu       sync.Mutex
-	skW        uint64 // sketch width; 0: no overflow sketch
+	skW        uint64 // overflow size in 16 B units; 0: no overflow
 	skShape    sketchShape
 	spillMin   uint64 // histories lighter than this aren't spilled (Shed)
 	shed       atomic.Uint64
@@ -229,10 +239,14 @@ func New(cfg Config) (*Filter, error) {
 		f.skShape = defaultShape
 	}
 	if cfg.SpillMin == 0 {
-		cfg.SpillMin = 4
+		cfg.SpillMin = 1
 	}
 	f.spillMin = uint64(max(cfg.SpillMin, 1))
-	f.ct, f.pad = cfg.ConstantTime > 0 || forceCT, cfg.ConstantTime
+	f.ct, f.pad = cfg.ConstantTime > 0 || cfg.ConstantTime == AutoPad || forceCT, cfg.ConstantTime
+	f.auto = cfg.ConstantTime == AutoPad
+	for i := range f.padQ {
+		f.padQ[i].q.Store(int64(autoStart) * 1000)
+	}
 	f.unitInv = ^uint64(0)/f.unit + 1
 	f.words = alignedWords(int(lines * wordsPerLine))
 	if f.clock == nil {
@@ -321,9 +335,9 @@ type Result struct {
 	// stash.
 	Restored bool
 	// Degraded: the key's history had been pushed out of the stash, and
-	// this answer comes from the overflow sketch: Seen, Count and Upper
-	// cover the key's real events but may include other keys'. (Without a
-	// sketch: the key was not found and the filter lost some history within
+	// this answer comes from the overflow table: Seen, Count and Upper
+	// cover the key's real events but may include another key's (a
+	// fingerprint match). (Without an overflow table: the key was not found and the filter lost some history within
 	// the last Horizon, so "not seen" may be a key whose history was lost.)
 	Degraded bool
 }
@@ -409,10 +423,10 @@ func (f *Filter) countCT(h, window, now uint64) Result {
 	} else {
 		r.Degraded = f.lostRecently(now)
 	}
-	if f.sk.Load() != nil {
+	if f.sk.Load() != nil || f.gh.Load() != nil {
 		f.addSketch(&r, h, window, now)
 	}
-	f.waitOut(t0)
+	f.waitOutOp(t0, opCount, h)
 	return r
 }
 
@@ -474,21 +488,31 @@ func (f *Filter) slotWords(i int, fp, tg uint64) (w0, w1 uint64, ok bool) {
 	return w0, w1, w0>>48 == fp && w1>>tagShift == tg
 }
 
-// sketchLive: the overflow sketch may hold a count at now. ConstantTime
+// sketchLive: the overflow table may hold a count at now. ConstantTime
 // reads it whatever it holds.
 func (f *Filter) sketchLive(now uint64) bool {
+	if !f.cms {
+		g := f.gh.Load()
+		return g != nil && (f.ct || now <= g.until.Load())
+	}
 	sk := f.sk.Load()
 	return sk != nil && (f.ct || now <= sk.until.Load())
 }
 
-// addSketch adds h's events in the overflow sketch to r, the answer from
-// the table or stash. The sketch holds only histories the stash dropped, and
-// a key that comes back starts a fresh slot, so the two never count the same
-// event. Upper takes the sketch's bound (every counter is at least the key's
-// own events), Count only the part that clears the noise, and Degraded is
-// set when there is such a part: the key likely has a dropped history.
+// addSketch adds h's events in the overflow table to r, the answer from
+// the table or stash. The overflow holds only histories the stash dropped,
+// and a key that comes back starts a fresh slot, so the two never count the
+// same event. Upper takes the overflow's bound, Count the key's own entry
+// (the count-min sketch: the part that clears the noise), and Degraded is
+// set when there is one: the key likely has a dropped history.
 func (f *Filter) addSketch(r *Result, h, window, now uint64) {
-	s, ok := f.sk.Load().estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now, f.ct)
+	var s Result
+	var ok bool
+	if !f.cms {
+		s, ok = f.gh.Load().estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now)
+	} else {
+		s, ok = f.sk.Load().estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now, f.ct)
+	}
 	if !ok {
 		return
 	}
@@ -511,7 +535,7 @@ func (f *Filter) recall(h, fp, tg, now uint64, take bool) (w0, w1 uint64, src in
 	return 0, 0, 0
 }
 
-// lostRecently: without a sketch, some history was lost within a horizon.
+// lostRecently: without an overflow table, some history was lost within a horizon.
 func (f *Filter) lostRecently(now uint64) bool {
 	la := f.lostAt.Load()
 	return la != 0 && age(now, la) <= f.horizon
@@ -580,16 +604,16 @@ func (f *Filter) Evictions() uint64 { return f.evictions.Load() }
 func (f *Filter) Relocations() uint64 { return f.relocations.Load() }
 
 // Lost counts live histories dropped because the stash was full and there
-// is no overflow sketch: the evictions an attacker could use to reset a
-// key's count. With the sketch (the default) it stays 0.
+// is no overflow table: the evictions an attacker could use to reset a
+// key's count. With the overflow table (the default) it stays 0.
 func (f *Filter) Lost() uint64 { return f.lost.Load() }
 
-// Folded counts histories the stash pushed into the overflow sketch. Their
+// Folded counts histories the stash pushed into the overflow table. Their
 // keys' answers are approximate (Degraded) until they age out.
 func (f *Filter) Folded() uint64 { return f.folded.Load() }
 
 // Shed counts dropped histories lighter than Config.SpillMin, discarded
-// instead of spilled to the overflow sketch.
+// instead of spilled to the overflow table.
 func (f *Filter) Shed() uint64 { return f.shed.Load() }
 
 // Restored counts returning keys whose history came back from the stash.
@@ -654,6 +678,56 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) Result {
 	}
 }
 
+// AutoPad as Config.ConstantTime pads each operation to a running estimate
+// of its own 99.5th-percentile latency instead of a fixed duration.
+const AutoPad time.Duration = -1
+
+const (
+	opTouch = iota
+	opCount
+	// The estimate (in ps) moves up autoUp when a sampled call ran past it
+	// and down autoDown otherwise, so it settles where 0.5% of calls run
+	// past it (autoDown/(autoUp+autoDown)). One slow call (a GC pause)
+	// moves it 100 ns.
+	autoUp    = 99_500
+	autoDown  = 500
+	autoStart = 4 * time.Microsecond
+	autoMax   = 50 * time.Microsecond
+)
+
+type quantilePad struct {
+	q atomic.Int64 // ps
+	_ [56]byte
+}
+
+// waitOutOp spins until op's pad has passed since t0. Touch waits out
+// ConstantTime. Count, whose paths differ far less (no insert search),
+// waits out a running estimate of its own 99.5th-percentile latency, at
+// most ConstantTime; with AutoPad, Touch does too. A sample of calls (1 in
+// 4, by key) moves the estimate.
+func (f *Filter) waitOutOp(t0 time.Time, op int, h uint64) {
+	if op == opTouch && !f.auto {
+		f.waitOut(t0)
+		return
+	}
+	qp := &f.padQ[op].q
+	pad := time.Duration(qp.Load() / 1000)
+	if h>>8&3 == 0 {
+		if time.Since(t0) > pad {
+			if pad < autoMax {
+				qp.Add(autoUp)
+			}
+		} else if pad > 0 {
+			qp.Add(-autoDown)
+		}
+	}
+	if !f.auto {
+		pad = min(pad, f.pad)
+	}
+	for time.Since(t0) < pad {
+	}
+}
+
 // waitOut spins until the ConstantTime pad has passed since t0.
 func (f *Filter) waitOut(t0 time.Time) {
 	for time.Since(t0) < f.pad {
@@ -690,7 +764,7 @@ func (f *Filter) hit(i int, fp, tg, window, now uint64, wantCount bool) (Result,
 }
 
 // touchCT is touch in ConstantTime mode: under the key's stripe, the same
-// lookups whatever the key's state (both lines, stash, sketch), then the
+// lookups whatever the key's state (both lines, stash, overflow), then the
 // hit or the insert.
 func (f *Filter) touchCT(h, window, now uint64, wantCount bool) Result {
 	t0 := time.Now()
@@ -708,10 +782,10 @@ func (f *Filter) touchCT(h, window, now uint64, wantCount bool) Result {
 			break
 		}
 	}
-	if f.sk.Load() != nil {
+	if f.sk.Load() != nil || f.gh.Load() != nil {
 		f.addSketch(&r, h, window, now)
 	}
-	f.waitOut(t0)
+	f.waitOutOp(t0, opTouch, h)
 	return r
 }
 
@@ -854,6 +928,7 @@ func (f *Filter) claim(h, fp, w1, now, sat uint64) int {
 		// back to cheap eviction instead of searching in vain.
 		p := f.pressure.Load()
 		budget := 8 + int(uint64(relocBudget-8)*(pressureOne-uint64(p))>>pressureShift)
+		f.warmAlts(lines)
 		for depth := 0; depth <= relocDepth; depth++ {
 			for li, line := range lines {
 				base := int(line * wordsPerLine)
@@ -897,6 +972,22 @@ func (f *Filter) claim(h, fp, w1, now, sat uint64) int {
 		f.stashPut(f.slotID(lines[vli], victimW0, victimW1), victimW0, victimW1, now)
 		return victim
 	}
+}
+
+// warmAlts loads one word of the alternate line of every entry in lines
+// without using it: the misses are in flight together, and the search that
+// follows finds the lines on their way or cached.
+func (f *Filter) warmAlts(lines [2]uint64) {
+	var sink uint64
+	for _, line := range lines {
+		base := int(line * wordsPerLine)
+		for s := 0; s < wordsPerLine; s += 2 {
+			if w0 := atomic.LoadUint64(&f.words[base+s]); w0 != 0 {
+				sink += atomic.LoadUint64(&f.words[f.alt(line, w0>>48)*wordsPerLine])
+			}
+		}
+	}
+	runtime.KeepAlive(sink)
 }
 
 // install hands slot i (word index), if it still holds w0/w1, to the entry

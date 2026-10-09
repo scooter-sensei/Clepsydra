@@ -7,9 +7,10 @@ import (
 	"testing"
 )
 
-// TestSketchShapes compares overflow-sketch geometries under floods (set
-// TF_EXP=1). Each config is a counter width, row count, slices per horizon
-// and columns per slot; floods are heavy (keys sent k+1 times, so they evict
+// TestSketchShapes compares overflow-sketch geometries, and the ghost table
+// in the same bytes, under floods (set TF_EXP=1). Each sketch config is a
+// counter width, row count, slices per horizon and columns per slot ("ghost
+// /4": a ghost table of the bytes of a sketch of one column per 4 slots); floods are heavy (keys sent k+1 times, so they evict
 // the offenders) or light (one event per key, the cheapest flood).
 func TestSketchShapes(t *testing.T) {
 	if os.Getenv("TF_EXP") == "" {
@@ -21,26 +22,30 @@ func TestSketchShapes(t *testing.T) {
 		name string
 		sh   sketchShape
 		div  int // columns = slots / div
+		gh   bool
 	}
 	cfgs := []cfg{
-		{"16b r4 s4 /8 (55c82ed)", sketchShape{4, 16, 4}, 8},
-		{"16b r4 s4 /16", sketchShape{4, 16, 4}, 16},
-		{"16b r4 s4 /4", sketchShape{4, 16, 4}, 4},
-		{"8b  r4 s4 /8", sketchShape{4, 8, 4}, 8},
-		{"8b  r4 s4 /4", sketchShape{4, 8, 4}, 4},
-		{"8b  r4 s4 /2", sketchShape{4, 8, 4}, 2},
-		{"16b r3 s4 /8", sketchShape{3, 16, 4}, 8},
-		{"8b  r3 s4 /4", sketchShape{3, 8, 4}, 4},
-		{"16b r4 s2 /8", sketchShape{4, 16, 2}, 8},
-		{"8b  r4 s2 /4", sketchShape{4, 8, 2}, 4},
-		{"8b  r4 s2 /2", sketchShape{4, 8, 2}, 2},
+		{"16b r4 s4 /8 (55c82ed)", sketchShape{4, 16, 4}, 8, false},
+		{"16b r4 s4 /16", sketchShape{4, 16, 4}, 16, false},
+		{"16b r4 s4 /4", sketchShape{4, 16, 4}, 4, false},
+		{"8b  r4 s4 /8", sketchShape{4, 8, 4}, 8, false},
+		{"8b  r4 s4 /4", sketchShape{4, 8, 4}, 4, false},
+		{"8b  r4 s4 /2", sketchShape{4, 8, 4}, 2, false},
+		{"16b r3 s4 /8", sketchShape{3, 16, 4}, 8, false},
+		{"8b  r3 s4 /4", sketchShape{3, 8, 4}, 4, false},
+		{"16b r4 s2 /8", sketchShape{4, 16, 2}, 8, false},
+		{"8b  r4 s2 /4", sketchShape{4, 8, 2}, 4, false},
+		{"8b  r4 s2 /2", sketchShape{4, 8, 2}, 2, false},
+		{"ghost /8", sketchShape{4, 8, 2}, 8, true},
+		{"ghost /4", sketchShape{4, 8, 2}, 4, true},
+		{"ghost /2", sketchShape{4, 8, 2}, 2, true},
 	}
 	floods := []struct {
 		name   string
 		mult   int
 		weight int
 	}{
-		{"heavy 1x", 1, k + 1}, {"heavy 2x", 2, k + 1}, {"heavy 4x", 4, k + 1},
+		{"heavy 1x", 1, k + 1}, {"heavy 2x", 2, k + 1}, {"heavy 3x", 3, k + 1}, {"heavy 4x", 4, k + 1},
 		{"light 16x", 16, 1}, {"light 64x", 64, 1},
 	}
 	for _, c := range cfgs {
@@ -51,6 +56,7 @@ func TestSketchShapes(t *testing.T) {
 			f.skW = uint64(max(64, f.Slots()/c.div))
 			f.skShape = c.sh
 			f.spillMin = 1 // shapes alone; TestSpillThreshold varies this
+			f.cms = !c.gh
 			bpk = float64(c.sh.bytes(f.skW)) / 4096
 			rng := rand.New(rand.NewPCG(11, uint64(fl.mult*100+fl.weight)))
 			for range f.Slots() * 85 / 100 {
@@ -103,7 +109,7 @@ func TestSketchShapes(t *testing.T) {
 		}
 		t.Logf("%-24s %5.1f B/key%s", c.name, bpk, line)
 	}
-	t.Logf("columns per flood (heavy 1x, 2x, 4x, light 16x, 64x): offenders with Count >= 90%% of truth (of %d) | new keys Degraded | new keys turned away by a strict limit of %d", offenders, k)
+	t.Logf("columns per flood (heavy 1x, 2x, 3x, 4x, light 16x, 64x): offenders with Count >= 90%% of truth (of %d) | new keys Degraded | new keys turned away by a strict limit of %d", offenders, k)
 }
 
 // TestSpillThreshold: histories lighter than spillMin events are shed
@@ -126,7 +132,8 @@ func TestSpillThreshold(t *testing.T) {
 		name string
 		sh   sketchShape
 		div  int
-	}{{"16b r4 s4 /8", sketchShape{4, 16, 4}, 8}, {"8b r4 s2 /4", sketchShape{4, 8, 2}, 4}} {
+		gh   bool
+	}{{"16b r4 s4 /8", sketchShape{4, 16, 4}, 8, false}, {"8b r4 s2 /4", sketchShape{4, 8, 2}, 4, false}, {"ghost /4", sketchShape{4, 8, 2}, 4, true}} {
 		for _, min := range []uint64{1, 2, 4, 8} {
 			line := ""
 			for _, fl := range floods {
@@ -134,6 +141,7 @@ func TestSpillThreshold(t *testing.T) {
 				f.skW = uint64(max(64, f.Slots()/sh.div))
 				f.skShape = sh.sh
 				f.spillMin = min
+				f.cms = !sh.gh
 				rng := rand.New(rand.NewPCG(11, uint64(fl.mult*100+fl.weight)))
 				for range f.Slots() * 85 / 100 {
 					*now++

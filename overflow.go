@@ -8,7 +8,9 @@ import (
 	"sync/atomic"
 )
 
-// Overflow sketch: where a history goes when the stash has to drop it. It is
+// Count-min overflow sketch: where a history went when the stash had to drop
+// it, before the ghost table (ghost.go) replaced it as the default (it is
+// kept for the experiments that compare the two, Filter.cms). It is
 // a count-min sketch over (key identity, time slice): every dropped event is
 // added to one counter per row. Collisions only add other keys' events, so
 // the smallest of a key's counters is never below its true count (Upper),
@@ -236,7 +238,7 @@ func (s *sketch) estimate(id, window, now uint64, full bool) (r Result, ok bool)
 }
 
 // spill sends a history the stash is dropping (identity id, slot words w0,
-// w1) to the overflow sketch, or, without one, records it as lost.
+// w1) to the overflow table, or, without one, records it as lost.
 func (f *Filter) spill(id, w0, w1, now uint64) {
 	last := w0 & tsMask
 	if age(now, last) > f.horizon {
@@ -248,6 +250,11 @@ func (f *Filter) spill(id, w0, w1, now uint64) {
 	}
 	if f.spillMin > 1 && f.mass(w1, last, now) < f.spillMin {
 		f.shed.Add(1)
+		return
+	}
+	if !f.cms {
+		f.folded.Add(1)
+		f.ghostTable().add(id, f.mass(w1, last, now), last, w0&satBit != 0 && hot(w1), now)
 		return
 	}
 	sk := f.overflow()
@@ -285,4 +292,20 @@ func (f *Filter) overflow() *sketch {
 	sk := newSketch(f.skW, f.horizon, f.skShape)
 	f.sk.Store(sk)
 	return sk
+}
+
+// ghostTable returns the ghost overflow table, allocating it on the first
+// spill, with the bytes the sketch would take.
+func (f *Filter) ghostTable() *ghost {
+	if g := f.gh.Load(); g != nil {
+		return g
+	}
+	f.skMu.Lock()
+	defer f.skMu.Unlock()
+	if g := f.gh.Load(); g != nil {
+		return g
+	}
+	g := newGhost(f.skShape.bytes(f.skW), f.horizon)
+	f.gh.Store(g)
+	return g
 }

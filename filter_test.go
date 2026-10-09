@@ -2,11 +2,14 @@ package temporalfilter
 
 import (
 	"math/rand/v2"
+	"os"
 	"sync"
 	"testing"
 	"time"
 	"unsafe"
 )
+
+func init() { forceCT = os.Getenv("TF_CT") != "" }
 
 func newTest(t testing.TB, capacity int, horizon time.Duration) *Filter {
 	t.Helper()

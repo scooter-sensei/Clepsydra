@@ -67,8 +67,12 @@ register_experiment() {
 }
 
 attacks() {
-	go test -count=1 -run '^(TestAttackForgedIdentity|TestAttackStripeFlood|TestAttackEvictionReset|TestAttackHeavyHitter|TestUpperBoundRandom)$' -v . |
+	go test -count=1 -run '^(TestAttackForgedIdentity|TestAttackStripeFlood|TestAttackEvictionReset|TestAttackFloodCollateral|TestAttackHeavyHitter|TestUpperBoundRandom)$' -v . |
 		grep -vE '^(=== |--- |PASS|ok |FAIL)' | sed -E 's/^ *[a-z_]+\.go:[0-9]+: //'
+}
+
+timing() {
+	TF_TIMING=1 go test -count=1 -run '^TestTimingLeak$' -v . | grep -E 'ConstantTime' | sed -E 's/^ *[a-z_]+\.go:[0-9]+: //'
 }
 
 speed() {
@@ -79,6 +83,7 @@ env_info | tee "$OUT/env.txt" | sed 's/^/      /' | tee -a "$SUM" >/dev/null
 check vet - go vet ./...
 check tests - go test -count=1 ./...
 check race - go test -race -short -count=1 ./...
+check constant-time - env TF_CT=1 go test -count=1 .
 check exact verify/expected/exact.txt go run ./cmd/tfbench -exact
 check placement verify/expected/placement.txt placement
 check register-experiment verify/expected/register-experiment.txt register_experiment
@@ -90,6 +95,7 @@ check harness verify/expected/harness.txt verify/replay.sh harness
 check experiments verify/expected/experiments.txt verify/experiments.sh
 if [ "${1:-}" = --speed ]; then
 	check speed - speed
+	check timing - timing
 fi
 if [ $failed = 0 ]; then say "ALL PASS"; else say "SOME CHECKS FAILED"; fi
 exit $failed

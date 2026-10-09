@@ -18,12 +18,13 @@ word1: tag(12) | epoch(4) | 7 velocity buckets (48)  age-graded counter
 - **Identity** = 16-bit `fp` + 12-bit `tag` = 28 bits, both in the same line (one tag value is reserved for slots changing hands). The primary line uses hash bits 0..35, disjoint from the identity bits.
 - **Displaced bit**: set when an entry lives in its alternate line, flipped whenever it moves. Lookups match it, so a key is only compared with entries homed at its own primary line: 3.40 entries per absent-key lookup instead of 6.80 at 85% load [D11]. That halves the expected false-positive rate (1.27e-8 vs 2.53e-8); measured 18 vs 32 false positives in 1e9 probes [R3].
 - **Saturated bit**: set when an event overflows its velocity bucket (spills to an older one or is dropped), cleared once no bucket holds 31 or more. See *Trust flags*.
-- **Sizing**: `Config.Load` (default 0.85) is the slot occupancy at `Capacity`: 18.8 B per key [D6], plus 0.44 B for the eviction stash.
+- **Sizing**: `Config.Load` (default 0.85) is the slot occupancy at `Capacity`: 18.8 B per key [D6], plus 0.44 B for the eviction stash and 7.1 B for the overflow sketch.
 - **Placement**: primary line first, then the alternate line `alt(l) = (x(fp) − l) mod lines`, which is its own inverse, so stored entries can move without their key. At 85% load, 18.9% of keys sit in their alternate line [D11].
   - If both lines are full, a **bounded cuckoo search** (iterative deepening, depth 3, so paths of up to 4 moves, budget 500 lines) moves an entry to its alternate line.
   - The search budget shrinks while recent searches fail (an EWMA), so an overfull table degrades to cheap eviction.
   - Eviction takes the **lowest-velocity** slot (oldest on ties), so a spray of fresh keys can't flush a repeat offender [D4, E1].
   - The evicted entry goes to the **stash**: 4-way sets, one entry per 64 slots by default (`Config.Stash`), keyed by the entry's full identity. A first touch that misses the table looks there while it may hold a live entry, and takes the history back. A full set keeps the entries with more events. The victim is stashed under its own claim stripe, so its next first touch finds it in the table or in the stash, never in between [A6].
+  - A history the stash drops goes to the **overflow sketch** (`overflow.go`): a count-min sketch, 4 rows × one counter per 8 slots (`Config.Overflow`), with 6 ring slices of Horizon/4 and 16-bit counters. Each dropped bucket's events are added at the bucket's newest tick, so no window sees them late. A key's answer adds the sketch's: `Upper` the row minimum (never below the truth), `Count` the count-mean-min estimate (each row less its expected noise, median) where it clears 3 standard deviations of the noise, computed from the slice's sum of squared add sizes since histories arrive in lumps. A returning key starts a fresh slot, so table and sketch never count the same event, and sketch answers can't make a key look heavier for eviction [A7].
 - **Velocity register** (`register.go`): 7 buckets that are 1, 1, 1–2, 2–4, 4–8, 8 and 8 units wide, where a unit is `Horizon/24`. Resolution is fine near now and coarse further back.
   - Bucket boundaries only coarsen as time passes, so advancing any distance is one re-bucketing pass with no per-tick work and no sweep.
   - Counter widths grow with bucket width (5,5,6,7,8,8,9 bits). A full bucket **spills** into older ones.
@@ -55,7 +56,9 @@ word1: tag(12) | epoch(4) | 7 velocity buckets (48)  age-graded counter
 - **`Upper`** counts the bucket the window's edge cuts as wholly inside, so it is never below the true count unless `Saturated` [A4, A5].
 - **`Saturated`**: the slot's saturated bit is set and a bucket the window reaches holds at least 31 events. Why that is exact: an overflowing bucket holds at least 31 and still covers the overflowing event's time, and bucket counts only grow until they age out. `Count` and `Upper` are then floors.
 - **`Restored`**: the key came back from the stash.
-- **`Degraded`**: the key wasn't found, and the filter dropped some evicted key's history within the last horizon (`Lost()` counts them).
+- **`Degraded`**: part of the count comes from the overflow sketch: the key likely had a history the stash dropped (`Folded()` counts them), and the count may include other keys' events. It fires only above the sketch's noise; in a large flood a dropped history shows in `Upper` alone [A7]. With the sketch off, the old table-wide meaning: the key wasn't found and some history was lost within the last horizon (`Lost()`).
+
+**`ConstantTime`** (off by default) makes every call do the same lookups whatever the key's state (both lines, the stash set, every sketch row, under the key's stripe) and pads it to a fixed duration, so its time doesn't say whether the key was seen [S28].
 
 ## Why it avoids the classic problems
 
@@ -84,4 +87,4 @@ word1: tag(12) | epoch(4) | 7 velocity buckets (48)  age-graded counter
 - Per-key counts undercount above ~12 events/s sustained, and bursts beyond the newest bucket's 31 events read low in short windows [D7]. Wider low buckets would raise this at the cost of identity or timestamp bits.
 - First touches of a key take a striped lock (256 stripes) so racing writers can't create two slots [R2]. Hits stay lock-free.
 - **Counts under concurrency** [R2, D14]. A slot changes hands with word1 set to a reserved "busy" tag before word0 changes, and a touch re-reads word0 after word1 before its CAS, so a touch never counts into another key's register unless the two share all 28 identity bits. A move abandoned because a touch reached the source first adds the copy's counts back to the entry.
-- Strict callers can certify limits only up to 31 events per unit (`Saturated`); a flood of about slots × (k+1) events per horizon still erases a k-event history, then reads `Degraded`; timing reveals seen vs unseen. See SECURITY.md.
+- Strict callers can certify limits only up to 31 events per unit (`Saturated`). A flood no longer erases histories, but from about 4x the table's slots the overflow sketch's noise hides dropped histories from `Count` and covers every key's `Upper`. Without `ConstantTime`, timing reveals seen vs unseen. See SECURITY.md.

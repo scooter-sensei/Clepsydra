@@ -58,12 +58,16 @@ func unmix64(y uint64) uint64 {
 	return y ^ y>>30 ^ y>>60
 }
 
-func attackFilter(t testing.TB, capacity, stash int) (*Filter, *uint64) {
+func attackFilter(t testing.TB, capacity, stash int, opts ...func(*Config)) (*Filter, *uint64) {
 	t.Helper()
 	now := new(uint64)
 	*now = 1
-	f, err := New(Config{Capacity: capacity, Horizon: time.Minute, Resolution: time.Millisecond,
-		Clock: func() uint64 { return *now }, Stash: stash})
+	cfg := Config{Capacity: capacity, Horizon: time.Minute, Resolution: time.Millisecond,
+		Clock: func() uint64 { return *now }, Stash: stash}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	f, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,8 +126,8 @@ func TestAttackStripeFlood(t *testing.T) {
 
 // evictionSetup fills a table to its design load with one-touch keys and
 // adds an offender with k events.
-func evictionSetup(t *testing.T, stash, k int) (f *Filter, now *uint64, rng *rand.Rand, off uint64) {
-	f, now = attackFilter(t, 4096, stash)
+func evictionSetup(t *testing.T, stash, k int, opts ...func(*Config)) (f *Filter, now *uint64, rng *rand.Rand, off uint64) {
+	f, now = attackFilter(t, 4096, stash, opts...)
 	rng = rand.New(rand.NewPCG(7, uint64(stash+1)))
 	for range f.Slots() * 85 / 100 {
 		*now++
@@ -154,24 +158,29 @@ func sprayUntilEvicted(f *Filter, now *uint64, off uint64, k int, next func() ui
 	return events
 }
 
+// noSketch turns the overflow sketch off.
+func noSketch(c *Config) { c.Overflow = -1 }
+
 // TestAttackEvictionReset: an offender with k events gets evicted so that it
 // comes back as a first-time key. With the unkeyed hash the attacker builds
 // keys on the offender's two lines (same primary line and fingerprint,
 // other tags): a few hundred events. Keyed, the spray lands at random and
 // needs about a table's worth of keys, each outranking the offender. The
-// stash then brings the offender back with its history; only a flood that
-// also overruns the stash with heavier keys loses it, and then the offender
-// reads Degraded, never silently new.
+// stash then brings the offender back with its history. A flood that also
+// overruns the stash with heavier keys pushes the history into the overflow
+// sketch: Upper still covers it, and Count does when the history stands out
+// from the flood's noise (then Degraded). Without the sketch the history is
+// lost, and every new key reads Degraded.
 func TestAttackEvictionReset(t *testing.T) {
 	const k = 20
 	window := uint64(60_000)
 	report := func(name string, f *Filter, events int, r Result) {
-		t.Logf("%-24s attacker events %7d; offender returns: count %2d (true %d) seen %-5v restored %-5v degraded %-5v; evictions %d lost %d",
-			name, events, r.Count, k+1, r.Seen, r.Restored, r.Degraded, f.Evictions(), f.Lost())
+		t.Logf("%-30s attacker events %7d; offender returns: count %2d upper %3d (true %d) seen %-5v restored %-5v degraded %-5v; evictions %d folded %d lost %d",
+			name, events, r.Count, r.Upper, k+1, r.Seen, r.Restored, r.Degraded, f.Evictions(), f.Folded(), f.Lost())
 	}
 	var targeted, sprayed int
 	for _, stash := range []int{-1, 0} {
-		f, now, _, off := evictionSetup(t, stash, k)
+		f, now, _, off := evictionSetup(t, stash, k, noSketch)
 		tagN := uint64(0)
 		events := sprayUntilEvicted(f, now, off, k, func() uint64 { // forge: flip tag bits only
 			tagN++
@@ -188,19 +197,106 @@ func TestAttackEvictionReset(t *testing.T) {
 			t.Errorf("stash: offender not restored after a targeted eviction: %+v", r)
 		}
 	}
-	for _, stash := range []int{-1, 0} {
-		f, now, rng, off := evictionSetup(t, stash, k)
+	modes := []struct {
+		name  string
+		stash int
+		opts  []func(*Config)
+	}{
+		{"keyed spray, no stash/sketch", -1, []func(*Config){noSketch}},
+		{"keyed spray, stash only", 0, []func(*Config){noSketch}},
+		{"keyed spray, stash + sketch", 0, nil},
+	}
+	for _, m := range modes {
+		f, now, rng, off := evictionSetup(t, m.stash, k, m.opts...)
 		events := sprayUntilEvicted(f, now, off, k, rng.Uint64)
 		*now++
 		r := f.TouchAt(off, window, *now)
-		report(fmt.Sprintf("keyed spray, stash %v", stash >= 0), f, events, r)
-		sprayed = events
-		if !r.Restored && !r.Degraded {
-			t.Errorf("history lost silently: %+v", r)
+		report(m.name, f, events, r)
+		sprayed = max(sprayed, events)
+		if !r.Restored && !r.Degraded && r.Upper < k+1 {
+			t.Errorf("%s: history lost silently: %+v", m.name, r)
+		}
+		if m.opts == nil && (f.Lost() != 0 || r.Upper < k+1) {
+			t.Errorf("%s: lost %d, Upper %d < %d", m.name, f.Lost(), r.Upper, k+1)
 		}
 	}
 	t.Logf("keyed hashing raises the cost of evicting a %d-event key from %d to %d attacker events (%.0fx; table %d slots)",
 		k, targeted, sprayed, float64(sprayed)/float64(targeted), 4096*100/85)
+}
+
+// TestAttackFloodCollateral: offenders with k events each, then a flood of
+// keys sent k+1 times each (heavier than the offenders, so they evict them)
+// at 1x to 16x the table's slots. Afterwards: how the offenders read (Upper
+// never below the truth; Count's shortfall), and how keys never sent read
+// (Degraded, Seen, Upper). Without the sketch every new key reads Degraded
+// once any history is lost.
+func TestAttackFloodCollateral(t *testing.T) {
+	const k, offenders, probes = 20, 200, 20_000
+	window := uint64(60_000)
+	for _, sk := range []bool{false, true} {
+		for _, mult := range []int{1, 4, 16} {
+			var opts []func(*Config)
+			if !sk {
+				opts = append(opts, noSketch)
+			}
+			f, now := attackFilter(t, 4096, 0, opts...)
+			rng := rand.New(rand.NewPCG(11, uint64(mult)))
+			for range f.Slots() * 85 / 100 {
+				*now++
+				f.TouchAt(rng.Uint64(), 0, *now)
+			}
+			offs := make([]uint64, offenders)
+			for i := range offs {
+				offs[i] = rng.Uint64()
+				for range k {
+					f.TouchAt(offs[i], 0, *now)
+				}
+				*now++
+			}
+			for range f.Slots() * mult {
+				h := rng.Uint64()
+				for range k + 1 {
+					f.TouchAt(h, 0, *now)
+				}
+				*now++
+			}
+			*now++
+			low, below, shortfall := 0, 0, 0
+			for _, h := range offs {
+				r := f.CountAt(h, window, *now)
+				if r.Upper < k {
+					below++
+				}
+				if r.Count < k {
+					low++
+					shortfall += k - r.Count
+				}
+			}
+			deg, seen, upper, strict := 0, 0, 0, 0
+			for range probes {
+				r := f.CountAt(rng.Uint64(), window, *now)
+				if r.Degraded {
+					deg++
+				}
+				if r.Degraded || r.Upper > k {
+					strict++ // a strict limit of k turns it away
+				}
+				if r.Seen {
+					seen++
+				}
+				upper += r.Upper
+			}
+			t.Logf("sketch %-5v flood %2dx slots (%7d events): offenders Upper<true %d/%d, Count low %3d/%d (mean shortfall %4.1f); new keys Degraded %5.1f%% Seen %5.2f%% mean Upper %6.1f, denied by a strict limit of %d: %5.1f%%; folded %d lost %d",
+				sk, mult, f.Slots()*mult*(k+1), below, offenders, low, offenders, float64(shortfall)/float64(max(low, 1)),
+				100*float64(deg)/probes, 100*float64(seen)/probes, float64(upper)/probes, k, 100*float64(strict)/probes, f.Folded(), f.Lost())
+			if sk && (below > 0 || f.Lost() > 0) {
+				t.Errorf("sketch: %d offenders read Upper below the truth, %d lost", below, f.Lost())
+			}
+			if sk && deg*100 > probes {
+				t.Errorf("sketch: %d of %d new keys read Degraded", deg, probes)
+			}
+		}
+	}
 }
 
 // TestAttackHeavyHitter: a key sending faster than the register holds reads

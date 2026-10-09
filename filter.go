@@ -99,6 +99,25 @@ type Config struct {
 	// offender's history. When the stash must drop a key it keeps the one
 	// with more events. Default (0): one entry per 64 slots. Negative: none.
 	Stash int
+	// Overflow is the width of the overflow sketch (counters per row; 4 rows
+	// x 6 time slices x 2 B, so 48 B per unit of width). A history the stash
+	// has to drop is added there, so no flood can erase it within the
+	// horizon: Upper never reads below a key's true count. Count adds the
+	// key's sketch estimate only where it stands out from other keys' noise,
+	// and then sets Degraded. The noise grows with the events dropped per
+	// unit of width. Default (0): one per 8 slots, 6 B per slot. Negative:
+	// none; dropped histories are then lost and every unseen key reads
+	// Degraded for a horizon after a drop.
+	Overflow int
+	// ConstantTime, if > 0, hides from response times whether a key was
+	// seen. Every operation does the same lookups whatever the key's state
+	// (both candidate lines, the stash set and every sketch row, under the
+	// key's lock stripe) and returns no sooner than ConstantTime after it
+	// started, spinning if it finished early. Pick it above the slowest
+	// inserts you see (a few µs on a table larger than the cache): only
+	// calls that run past it still leak. SECURITY.md has the measurement.
+	// Each call then costs at least this much CPU.
+	ConstantTime time.Duration
 }
 
 // Filter is safe for concurrent use. Hits never lock; first touches of a key
@@ -137,9 +156,16 @@ type Filter struct {
 	lostAt     atomic.Uint64 // tick of the latest dropped history, 0 if none
 	lost       atomic.Uint64
 	restored   atomic.Uint64
-	_          [32]byte
+	folded     atomic.Uint64
+	_          [24]byte
 	stashMu    [stashStripes]paddedMutex
+	sk         *sketch       // nil: no overflow sketch
+	ct         bool          // Config.ConstantTime > 0
+	pad        time.Duration // Config.ConstantTime
 }
+
+// forceCT turns ConstantTime on in every filter (tests: TF_CT=1).
+var forceCT bool
 
 type paddedMutex struct {
 	sync.Mutex
@@ -177,12 +203,19 @@ func New(cfg Config) (*Filter, error) {
 		f.sip, f.keyed = newSipKey(cfg.Key), true
 	}
 	if cfg.Stash == 0 {
-		cfg.Stash = int(max(1, lines*slotsPerLine/64))
+		cfg.Stash = int(max(1, lines*slotsPerLine/8))
 	}
 	if cfg.Stash > 0 {
 		f.stashN = uint64(cfg.Stash+stashWays-1) / stashWays
 		f.stash = make([]stashEntry, f.stashN*stashWays)
 	}
+	if cfg.Overflow == 0 {
+		cfg.Overflow = int(max(64, lines*slotsPerLine/8))
+	}
+	if cfg.Overflow > 0 {
+		f.sk = newSketch(uint64(cfg.Overflow), horizon)
+	}
+	f.ct, f.pad = cfg.ConstantTime > 0 || forceCT, cfg.ConstantTime
 	f.unitInv = ^uint64(0)/f.unit + 1
 	f.words = alignedWords(int(lines * wordsPerLine))
 	if f.clock == nil {
@@ -270,9 +303,11 @@ type Result struct {
 	// Restored: the key had been evicted; its history came back from the
 	// stash.
 	Restored bool
-	// Degraded: the key was not found, and within the last Horizon the
-	// filter dropped some evicted key's history (its stash was full), so
-	// "not seen" may be a key whose history was lost.
+	// Degraded: the key's history had been pushed out of the stash, and
+	// this answer comes from the overflow sketch: Seen, Count and Upper
+	// cover the key's real events but may include other keys'. (Without a
+	// sketch: the key was not found and the filter lost some history within
+	// the last Horizon, so "not seen" may be a key whose history was lost.)
 	Degraded bool
 }
 
@@ -329,37 +364,139 @@ func (f *Filter) VelocityCountAt(h, window, now uint64) int {
 
 // CountAt is Count on a pre-hashed key, in ticks.
 func (f *Filter) CountAt(h, window, now uint64) Result {
-	w0, w1, ok := f.read(h, now)
-	if !ok || age(now, w0&tsMask) > f.horizon {
-		return Result{}
+	if f.ct {
+		return f.countCT(h, window, now)
 	}
-	r := f.estimate(w1, w0&tsMask, now, window, w0&satBit != 0)
-	r.Seen = r.Count > 0
+	w0, w1, src := f.read(h, now)
+	var r Result
+	if src != 0 && age(now, w0&tsMask) <= f.horizon {
+		r = f.estimate(w1, w0&tsMask, now, window, w0&satBit != 0)
+		r.Seen = r.Count > 0
+	} else {
+		r.Degraded = f.lostRecently(now)
+	}
+	if f.sketchLive(now) {
+		f.addSketch(&r, h, window, now)
+	}
+	return r
+}
+
+// countCT is CountAt in ConstantTime mode.
+func (f *Filter) countCT(h, window, now uint64) Result {
+	t0 := time.Now()
+	w0, w1, src := f.read(h, now)
+	var r Result
+	if src != 0 && age(now, w0&tsMask) <= f.horizon {
+		r = f.estimate(w1, w0&tsMask, now, window, w0&satBit != 0)
+		r.Seen = r.Count > 0
+	} else {
+		r.Degraded = f.lostRecently(now)
+	}
+	if f.sk != nil {
+		f.addSketch(&r, h, window, now)
+	}
+	f.waitOut(t0)
 	return r
 }
 
 // ContainsAt reports whether h was touched within window, without touching it.
 func (f *Filter) ContainsAt(h, window, now uint64) bool {
-	w0, _, ok := f.read(h, now)
-	return ok && age(now, w0&tsMask) <= min(window, f.horizon)
+	if f.ct {
+		return f.CountAt(h, window, now).Seen
+	}
+	w0, _, src := f.read(h, now)
+	if src != 0 && age(now, w0&tsMask) <= min(window, f.horizon) {
+		return true
+	}
+	if !f.sketchLive(now) {
+		return false
+	}
+	var r Result
+	f.addSketch(&r, h, window, now)
+	return r.Seen
 }
 
+// Where a key's history was found.
+const (
+	srcTable = iota + 1
+	srcStash
+)
+
 // read returns h's slot words from the table or, if it was evicted, the
-// stash.
-func (f *Filter) read(h, now uint64) (w0, w1 uint64, ok bool) {
+// stash, and where they came from (0: neither).
+func (f *Filter) read(h, now uint64) (w0, w1 uint64, src int) {
 	fp, tg := fingerprint(h), tag(h)
-	if i := f.locate(h, fp, tg); i >= 0 {
-		w0 = atomic.LoadUint64(&f.words[i])
-		w1 = atomic.LoadUint64(&f.words[i+1])
-		if w0>>48 == fp && w1>>tagShift == tg {
-			return w0, w1, true
+	if !f.ct {
+		if w0, w1, ok := f.slotWords(f.locate(h, fp, tg), fp, tg); ok {
+			return w0, w1, srcTable
 		}
+		if now > f.stashUntil.Load() {
+			return 0, 0, 0
+		}
+	}
+	// Under the key's stripe: an eviction moves the key to the stash while
+	// holding it, so the key is found in one of the two.
+	mu := &f.claimMu[h>>(64-claimStripeBits)]
+	mu.Lock()
+	defer mu.Unlock()
+	w0, w1, ok := f.slotWords(f.locateBoth(h, fp, tg), fp, tg)
+	s0, s1, src := f.recall(h, fp, tg, now, false)
+	if ok {
+		return w0, w1, srcTable
+	}
+	return s0, s1, src
+}
+
+// slotWords loads slot i's words if it still holds fp/tg.
+func (f *Filter) slotWords(i int, fp, tg uint64) (w0, w1 uint64, ok bool) {
+	if i < 0 {
 		return 0, 0, false
 	}
-	if now <= f.stashUntil.Load() {
-		return f.stashGet(f.stashID(h, fp, tg), now, false)
+	w0 = atomic.LoadUint64(&f.words[i])
+	w1 = atomic.LoadUint64(&f.words[i+1])
+	return w0, w1, w0>>48 == fp && w1>>tagShift == tg
+}
+
+// sketchLive: the overflow sketch may hold a count at now. ConstantTime
+// reads it whatever it holds.
+func (f *Filter) sketchLive(now uint64) bool {
+	return f.sk != nil && (f.ct || now <= f.sk.until.Load())
+}
+
+// addSketch adds h's events in the overflow sketch to r, the answer from
+// the table or stash. The sketch holds only histories the stash dropped, and
+// a key that comes back starts a fresh slot, so the two never count the same
+// event. Upper takes the sketch's bound (every counter is at least the key's
+// own events), Count only the part that clears the noise, and Degraded is
+// set when there is such a part: the key likely has a dropped history.
+func (f *Filter) addSketch(r *Result, h, window, now uint64) {
+	s, ok := f.sk.estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now, f.ct)
+	if !ok {
+		return
 	}
-	return 0, 0, false
+	r.Count += s.Count
+	r.Upper += s.Upper
+	r.Saturated = r.Saturated || s.Saturated
+	r.Seen = r.Seen || s.Seen
+	r.Degraded = r.Degraded || s.Count > 0
+}
+
+// recall finds h's evicted history in the stash (removed from it if take).
+// The caller holds h's claim stripe.
+func (f *Filter) recall(h, fp, tg, now uint64, take bool) (w0, w1 uint64, src int) {
+	if !f.ct && now > f.stashUntil.Load() {
+		return 0, 0, 0
+	}
+	if w0, w1, ok := f.stashGet(f.stashID(h, fp, tg), now, take); ok {
+		return w0, w1, srcStash
+	}
+	return 0, 0, 0
+}
+
+// lostRecently: without a sketch, some history was lost within a horizon.
+func (f *Filter) lostRecently(now uint64) bool {
+	la := f.lostAt.Load()
+	return la != 0 && age(now, la) <= f.horizon
 }
 
 // CheckAndTouchBatch is CheckAndTouchAt over many pre-hashed keys. It first
@@ -424,10 +561,14 @@ func (f *Filter) Evictions() uint64 { return f.evictions.Load() }
 // Relocations counts entries moved to their alternate line to make room.
 func (f *Filter) Relocations() uint64 { return f.relocations.Load() }
 
-// Lost counts evicted live keys whose history was dropped because the stash
-// was full (or disabled): the evictions an attacker could use to reset a
-// key's count.
+// Lost counts live histories dropped because the stash was full and there
+// is no overflow sketch: the evictions an attacker could use to reset a
+// key's count. With the sketch (the default) it stays 0.
 func (f *Filter) Lost() uint64 { return f.lost.Load() }
+
+// Folded counts histories the stash pushed into the overflow sketch. Their
+// keys' answers are approximate (Degraded) until they age out.
+func (f *Filter) Folded() uint64 { return f.folded.Load() }
 
 // Restored counts returning keys whose history came back from the stash.
 func (f *Filter) Restored() uint64 { return f.restored.Load() }
@@ -435,6 +576,9 @@ func (f *Filter) Restored() uint64 { return f.restored.Load() }
 func (f *Filter) touch(h, window, now uint64, wantCount bool) Result {
 	if h&decayEvery == 0 {
 		f.decayStep(now, 1)
+	}
+	if f.ct {
+		return f.touchCT(h, window, now, wantCount)
 	}
 	fp, tg := fingerprint(h), tag(h)
 	for {
@@ -446,10 +590,14 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) Result {
 			mu := &f.claimMu[h>>(64-claimStripeBits)]
 			mu.Lock()
 			if i = f.locate(h, fp, tg); i < 0 {
-				r := f.miss(h, fp, tg, window, now, wantCount)
+				s0, s1, src := f.recall(h, fp, tg, now, true)
+				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src)
 				mu.Unlock()
 				if r.Count < 0 {
 					continue
+				}
+				if f.sketchLive(now) {
+					f.addSketch(&r, h, window, now)
 				}
 				return r
 			}
@@ -472,49 +620,119 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) Result {
 		if over != sat {
 			sat = f.markSat(i, w0>>48, over)
 		}
-		seen := !stale && age(now, last) <= window
-		if !wantCount {
-			return Result{Seen: seen}
+		var r Result
+		if wantCount {
+			r = f.estimate(w1, max(now, last), now, window, sat)
 		}
-		r := f.estimate(w1, max(now, last), now, window, sat)
-		r.Seen = seen
+		r.Seen = !stale && age(now, last) <= window
+		if f.sketchLive(now) {
+			f.addSketch(&r, h, window, now)
+		}
 		return r
 	}
+}
+
+// waitOut spins until the ConstantTime pad has passed since t0.
+func (f *Filter) waitOut(t0 time.Time) {
+	for time.Since(t0) < f.pad {
+	}
+}
+
+// hit counts a touch in slot i, which held the key when it was found. ok is
+// false if the slot changed hands meanwhile and the caller must look again.
+func (f *Filter) hit(i int, fp, tg, window, now uint64, wantCount bool) (Result, bool) {
+	w0 := atomic.LoadUint64(&f.words[i])
+	if w0>>48 != fp {
+		return Result{}, false // slot was reclaimed between find and load
+	}
+	last := w0 & tsMask
+	stale := age(now, last) > f.horizon
+	if now > last && !atomic.CompareAndSwapUint64(&f.words[i], w0, w0&^tsMask|now) {
+		return Result{}, false
+	}
+	w1, over, ok := f.bump(i, w0>>47, tg, last, now, stale)
+	if !ok {
+		return Result{}, false // the slot was handed to another key after our CAS
+	}
+	sat := w0&satBit != 0
+	if over != sat {
+		sat = f.markSat(i, w0>>48, over)
+	}
+	seen := !stale && age(now, last) <= window
+	if !wantCount {
+		return Result{Seen: seen}, true
+	}
+	r := f.estimate(w1, max(now, last), now, window, sat)
+	r.Seen = seen
+	return r, true
+}
+
+// touchCT is touch in ConstantTime mode: under the key's stripe, the same
+// lookups whatever the key's state (both lines, stash, sketch), then the
+// hit or the insert.
+func (f *Filter) touchCT(h, window, now uint64, wantCount bool) Result {
+	t0 := time.Now()
+	fp, tg := fingerprint(h), tag(h)
+	mu := &f.claimMu[h>>(64-claimStripeBits)]
+	var r Result
+	for {
+		// The stripe is released between attempts: a claim that fails on
+		// another stripe's TryLock must not hold its own while it retries.
+		mu.Lock()
+		var ok bool
+		r, ok = f.touchCTOnce(h, fp, tg, window, now, wantCount)
+		mu.Unlock()
+		if ok {
+			break
+		}
+	}
+	if f.sk != nil {
+		f.addSketch(&r, h, window, now)
+	}
+	f.waitOut(t0)
+	return r
+}
+
+func (f *Filter) touchCTOnce(h, fp, tg, window, now uint64, wantCount bool) (Result, bool) {
+	i := f.locateBoth(h, fp, tg)
+	s0, s1, src := f.recall(h, fp, tg, now, true)
+	if i >= 0 {
+		if src == srcStash { // a stale copy: the table's entry is newer
+			f.stashPut(f.stashID(h, fp, tg), s0, s1, now)
+		}
+		return f.hit(i, fp, tg, window, now, wantCount)
+	}
+	r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src)
+	return r, r.Count >= 0
 }
 
 // miss installs h, absent from the table, with this touch counted: a fresh
 // register, or its evicted history from the stash. Count < 0 means it lost a
 // race for a slot and the caller should look again. The caller holds h's
 // claim stripe, so no other first touch of h runs meanwhile.
-func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool) Result {
+func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint64, src int) Result {
 	var r Result
 	w1, _ := f.nextReg(0, tg, now, now, true) // first event, published with the key
 	last, sat := now, uint64(0)
-	var s0, s1 uint64
-	stashed := false
-	if now <= f.stashUntil.Load() {
-		if s0, s1, stashed = f.stashGet(f.stashID(h, fp, tg), now, true); stashed {
-			last = s0 & tsMask
-			var over bool
-			w1, over = f.nextReg(s1, tg, last, now, false)
-			if over || s0&satBit != 0 && hot(w1) {
-				sat = satBit
-			}
-			r.Seen, r.Restored = age(now, last) <= window, true
+	if src != 0 && age(now, s0&tsMask) <= f.horizon {
+		last = s0 & tsMask
+		var over bool
+		w1, over = f.nextReg(s1, tg, last, now, false)
+		if over || s0&satBit != 0 && hot(w1) {
+			sat = satBit
 		}
-	}
-	if !stashed {
-		if la := f.lostAt.Load(); la != 0 && age(now, la) <= f.horizon {
-			r.Degraded = true
-		}
+		r.Seen = age(now, last) <= window
+		r.Restored = true
+	} else if f.lostRecently(now) {
+		r.Degraded = true
 	}
 	if f.claim(h, fp, w1, now, sat) < 0 {
-		if stashed { // put it back for the retry
+		if src == srcStash { // put it back for the retry
 			f.stashPut(f.stashID(h, fp, tg), s0, s1, now)
 		}
 		return Result{Count: -1}
 	}
-	if stashed {
+	if src == srcStash {
 		f.restored.Add(1)
 	}
 	if !wantCount {
@@ -556,6 +774,17 @@ func (f *Filter) locate(h, fp, tg uint64) int {
 		return i
 	}
 	return f.find(f.alt(p, fp), fp<<1|1, tg)
+}
+
+// locateBoth is locate reading both lines every time (ConstantTime).
+func (f *Filter) locateBoth(h, fp, tg uint64) int {
+	p := f.primary(h)
+	i := f.find(p, fp<<1, tg)
+	j := f.find(f.alt(p, fp), fp<<1|1, tg)
+	if i >= 0 {
+		return i
+	}
+	return j
 }
 
 // find returns the word index of the slot in line whose fingerprint and
@@ -643,9 +872,7 @@ func (f *Filter) claim(h, fp, w1, now, sat uint64) int {
 			return -1
 		}
 		f.evictions.Add(1)
-		if !f.stashPut(f.slotID(lines[vli], victimW0, victimW1), victimW0, victimW1, now) {
-			f.dropped(now)
-		}
+		f.stashPut(f.slotID(lines[vli], victimW0, victimW1), victimW0, victimW1, now)
 		return victim
 	}
 }
@@ -961,14 +1188,14 @@ func (f *Filter) stashSet(id uint64) ([]stashEntry, *paddedMutex) {
 // or expired way, or else in place of the way with the fewest events in the
 // horizon if that has fewer than it. Whichever history is dropped, Lost
 // counts it. Reports whether the entry was kept.
-func (f *Filter) stashPut(id, w0, w1, now uint64) bool {
+func (f *Filter) stashPut(id, w0, w1, now uint64) {
 	if f.stashN == 0 {
-		return false
+		f.spill(id, w0, w1, now)
+		return
 	}
 	w0 &^= dispBit
 	set, mu := f.stashSet(id)
 	mu.Lock()
-	defer mu.Unlock()
 	way, least := -1, uint64(1<<64-1)
 	for i := range set {
 		e := &set[i]
@@ -977,7 +1204,8 @@ func (f *Filter) stashPut(id, w0, w1, now uint64) bool {
 			// evicted, restored and evicted again meanwhile) must not
 			// overwrite the newer one.
 			if e.w0&tsMask > w0&tsMask || e.w0&tsMask == w0&tsMask && f.mass(e.w1, e.w0&tsMask, now) >= f.mass(w1, w0&tsMask, now) {
-				return true
+				mu.Unlock()
+				return
 			}
 			way, least = i, 0
 			break
@@ -990,11 +1218,14 @@ func (f *Filter) stashPut(id, w0, w1, now uint64) bool {
 			way, least = i, m
 		}
 	}
+	var out stashEntry // the history that leaves the stash, if any
 	if least > 0 {
 		if least > f.mass(w1, w0&tsMask, now) {
-			return false
+			mu.Unlock()
+			f.spill(id, w0, w1, now)
+			return
 		}
-		f.dropped(now) // that way's history goes
+		out = set[way]
 	}
 	set[way] = stashEntry{id, w0, w1}
 	for until := (w0 & tsMask) + f.horizon; ; {
@@ -1003,7 +1234,10 @@ func (f *Filter) stashPut(id, w0, w1, now uint64) bool {
 			break
 		}
 	}
-	return true
+	mu.Unlock()
+	if out.id != 0 {
+		f.spill(out.id, out.w0, out.w1, now)
+	}
 }
 
 // stashGet returns the live stash entry for id; take also removes it.

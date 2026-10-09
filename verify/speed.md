@@ -278,3 +278,54 @@ BenchmarkCheckAndTouchHitHot-4           36.5       37.3       36.7       39.4  
 BenchmarkVelocityCountHot-4              49.0       50.6       54.5       56.8    1.12
 BenchmarkCheckAndTouchParallel-4         23.8       24.6       24.4       26.0    1.06
 ```
+
+### Overflow sketch and ConstantTime (S29)
+
+This host was ~2x slower than for S27 on the same day's runs; compare ratios. B is the commit that adds `overflow.go` (code identical to the A/B build).
+
+```
+verify/ab.sh 64a4b30 <sketch commit> 'CheckAndTouchHit$|CheckAndTouchHitHot|TouchAndCount$|VelocityCount$|VelocityCountHot|InsertSteady|InsertSaturated|InsertNearFull|ContainsAbsent$|CheckAndTouchParallel|HugeHit$|HugeAbsent$' 6
+benchmark (ns/op)                       A min   A median      B min   B median     B/A
+BenchmarkTouchAndCount-4                183.6      220.3      222.8      225.1    1.02
+BenchmarkInsertSteady-4                 337.1      368.0      381.9      404.7    1.10
+BenchmarkHugeAbsent-4                   139.4      147.5      154.2      172.8    1.17
+BenchmarkCheckAndTouchHit-4             166.9      183.2      165.8      187.3    1.02
+BenchmarkContainsAbsent-4                80.0       93.1       83.1       95.0    1.02
+BenchmarkInsertNearFull-4              2936.0     3328.0     3091.0     3569.0    1.07
+BenchmarkVelocityCount-4                124.3      163.7      165.5      181.8    1.11
+BenchmarkInsertSaturated-4              872.0      960.0     1377.0     1582.5    1.65
+BenchmarkCheckAndTouchHitHot-4           34.7       35.4       37.8       38.8    1.09
+BenchmarkVelocityCountHot-4              52.0       54.7       55.5       58.0    1.06
+BenchmarkHugeHit-4                      257.1      273.6      262.4      298.2    1.09
+BenchmarkCheckAndTouchParallel-4         71.0       78.7       53.6       68.0    0.86
+```
+
+Every filter in ConstantTime mode, no pad (`TF_CT=1`; A ignores it):
+
+```
+TF_CT=1 verify/ab.sh 64a4b30 <sketch commit> 'CheckAndTouchHit$|CheckAndTouchHitHot|VelocityCountHot|TouchAndCount$|InsertSteady|InsertSaturated|ContainsAbsent$|HugeHit$|HugeAbsent$' 3
+benchmark (ns/op)                       A min   A median      B min   B median     B/A
+BenchmarkTouchAndCount-4                200.1      213.0      595.1      616.1    2.89
+BenchmarkInsertSteady-4                 278.8      326.8      911.2      972.1    2.97
+BenchmarkHugeAbsent-4                   135.8      136.9      490.3      535.3    3.91
+BenchmarkCheckAndTouchHit-4             126.8      164.5      526.3      551.1    3.35
+BenchmarkContainsAbsent-4                87.8       91.0      517.1      544.3    5.98
+BenchmarkInsertSaturated-4              821.7      859.1     1162.0     1254.0    1.46
+BenchmarkCheckAndTouchHitHot-4           35.5       36.8      226.9      228.1    6.19
+BenchmarkVelocityCountHot-4              51.1       54.4      230.8      238.6    4.39
+BenchmarkHugeHit-4                      254.4      256.6      503.6      544.0    2.12
+```
+
+### Timing leak (S28)
+
+```
+TF_TIMING=1 go test -count=1 -run TestTimingLeak -v .   (two runs)
+ConstantTime 0s    Count: unseen p50/p99/p99.9  211/  592/  897 ns, seen  235/  578/  775 ns; KS D = 0.272 (best single-timing guess right 63.6%)
+ConstantTime 0s    Touch: unseen p50/p99/p99.9  394/ 2163/ 6338 ns, seen  213/  566/  710 ns; KS D = 0.702 (best single-timing guess right 85.1%)
+ConstantTime 3µs   Count: unseen p50/p99/p99.9 3094/ 3224/31869 ns, seen 3094/ 3254/30730 ns; KS D = 0.015 (best single-timing guess right 50.7%)
+ConstantTime 3µs   Touch: unseen p50/p99/p99.9 3093/ 4505/33771 ns, seen 3093/ 3354/29926 ns; KS D = 0.018 (best single-timing guess right 50.9%)
+ConstantTime 0s    Count: unseen p50/p99/p99.9  175/  524/  719 ns, seen  171/  515/  661 ns; KS D = 0.137 (best single-timing guess right 56.9%)
+ConstantTime 0s    Touch: unseen p50/p99/p99.9  368/ 2081/22982 ns, seen  240/  557/  696 ns; KS D = 0.788 (best single-timing guess right 89.4%)
+ConstantTime 3µs   Count: unseen p50/p99/p99.9 3093/ 3233/32281 ns, seen 3093/ 3233/30668 ns; KS D = 0.011 (best single-timing guess right 50.6%)
+ConstantTime 3µs   Touch: unseen p50/p99/p99.9 3093/ 4083/32863 ns, seen 3093/ 3355/33078 ns; KS D = 0.015 (best single-timing guess right 50.8%)
+```

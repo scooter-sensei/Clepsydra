@@ -51,6 +51,7 @@ fixes() {
 			local d="$WORK/fix-$name-$rev"
 			tree "$rev" "$d"
 			for f in $files; do cp "$f" "$d/"; done
+			fix_imports "$d"
 			if ! (cd "$d" && go test -c -o fix.test . >"$d/build.log" 2>&1); then
 				res+=("build-failed")
 				continue
@@ -160,7 +161,7 @@ harness() {
 		local d="$WORK/harness-$c"
 		tree "$c" "$d"
 		rm -rf "$d/cmd/tfbench" "$d/internal" && mkdir -p "$d/cmd"
-		cp -r "$h/cmd/tfbench" "$d/cmd/" && cp -r "$h/internal" "$d/"
+		cp -r "$h/cmd/tfbench" "$d/cmd/" && cp -r "$h/internal" "$d/" && fix_imports "$d"
 		printf 'harness %s %s\n' "$c" "$(git log -1 --format=%s "$c" | cut -c1-70)"
 		(cd "$d" && go run -tags accuracyonly ./cmd/tfbench -exact 2>&1) | sed 's/^/    /'
 	done

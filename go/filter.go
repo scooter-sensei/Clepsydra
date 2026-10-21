@@ -467,11 +467,18 @@ const (
 func (f *Filter) read(h, now uint64) (w0, w1 uint64, src int) {
 	fp, tg := fingerprint(h), tag(h)
 	if !f.ct {
-		if w0, w1, ok := f.slotWords(f.locate(h, fp, tg), fp, tg); ok {
+		// lookupStable's first pass, inline: one scan whether the key is
+		// found or not.
+		m := &f.moves[h>>(64-claimStripeBits)]
+		b, d := m.begun.Load(), m.done.Load()
+		i := f.locate(h, fp, tg)
+		if w0, w1, ok := f.slotWords(i, fp, tg); ok {
 			return w0, w1, srcTable
 		}
-		if i, w0, w1 := f.lookupStable(h, fp, tg, false); i >= 0 {
-			return w0, w1, srcTable
+		if i >= 0 || b != d || m.begun.Load() != b {
+			if i, w0, w1 := f.lookupStable(h, fp, tg, false); i >= 0 {
+				return w0, w1, srcTable
+			}
 		}
 		if now > f.stashUntil.Load() {
 			return 0, 0, 0

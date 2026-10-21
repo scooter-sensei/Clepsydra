@@ -97,22 +97,27 @@ type Config struct {
 	// evicted from a full table is kept there, and its freshness and counts
 	// come back if it returns, so flooding the table doesn't reset an
 	// offender's history. When the stash must drop a key it keeps the one
-	// with more events. Default (0): one entry per 8 slots. Negative: none.
+	// with more events; the other goes to the overflow table. It is
+	// allocated on the first eviction. Default (0): one entry per 16 slots
+	// (1.5 B per slot). Negative: none.
 	Stash int
 	// Overflow sizes the overflow table in units of 16 B. A history the stash
 	// has to drop is kept there as a 21-bit entry (fingerprint, event count,
-	// time slice), so no flood can erase it within the horizon: Upper never
-	// reads below a key's true count, except for a key that left more than
-	// one history in a full bucket's floor (docs/SECURITY.md). A key's answer adds its own entry
-	// (Degraded then set), so other keys' histories add nothing unless their
-	// fingerprint matches (about 0.1% of keys while the table is full). When
-	// a bucket overflows, its lightest history leaves and the bucket's floor
-	// rises to that count, which every key of the bucket then adds to
-	// Upper. The table is allocated on the first drop, so a filter that never
-	// overflows its stash doesn't pay for it. Default (0): one unit per 4
-	// slots, 4 B per slot once allocated, room for 1.5 histories per slot.
-	// Negative: none; dropped histories are then lost and every unseen key
-	// reads Degraded for a horizon after a drop.
+	// time slice) in the less loaded of two buckets, so no flood can erase
+	// it within the horizon: Upper never reads below a key's true count,
+	// except for a key that left more than one history in a full bucket's
+	// floor (docs/SECURITY.md). A key's answer adds its own entries (Degraded
+	// then set), so other keys' histories add nothing unless their
+	// fingerprint matches (about 0.3% of keys while the table is full). When
+	// both buckets are full, the lightest history leaves and one of the
+	// bucket's three floors (picked by fingerprint) rises to its count, which
+	// the keys sharing that floor then add to Upper; Floored counts these.
+	// The table is allocated on the first drop, so a filter that never
+	// overflows its stash doesn't pay for it. Default (0): 5 units per 9
+	// slots, 8.9 B per slot once allocated, room for 3.2 histories per slot:
+	// a heavy flood of 4x the table's slots raises no floor. Negative: none;
+	// dropped histories are then lost and every unseen key reads Degraded
+	// for a horizon after a drop.
 	Overflow int
 	// SpillMin: a dropped history with fewer events than this in the horizon
 	// is shed (Shed counts it) instead of going to the overflow table, so a

@@ -392,3 +392,32 @@ func TestCoarseClock(t *testing.T) {
 	f.Close()
 	f.Close() // idempotent
 }
+
+// TestMemoryOnFirstUse: a filter that never evicts holds only its table;
+// the stash comes with the first eviction, the overflow table with the
+// first history the stash drops.
+func TestMemoryOnFirstUse(t *testing.T) {
+	f := newTest(t, 4096, time.Minute)
+	table := 16 * f.Slots()
+	for i := range uint64(f.Slots() * 85 / 100) {
+		f.TouchAt(mix64(i), 0, 1)
+	}
+	if f.Evictions() != 0 || f.Bytes() != table {
+		t.Fatalf("at 85%% load: %d evictions, %d bytes, want 0 and the table's %d", f.Evictions(), f.Bytes(), table)
+	}
+	stash := int(f.stashN) * stashWays * int(unsafe.Sizeof(stashEntry{}))
+	for i := uint64(1 << 40); f.Evictions() == 0; i++ {
+		f.TouchAt(mix64(i), 0, 1)
+	}
+	if f.Bytes() != table+stash {
+		t.Fatalf("after the first eviction: %d bytes, want table %d + stash %d", f.Bytes(), table, stash)
+	}
+	for i := uint64(1 << 41); f.Folded() == 0; i++ {
+		for range 4 { // SpillMin: lighter histories are shed, not kept
+			f.TouchAt(mix64(i), 0, 1)
+		}
+	}
+	if g := f.gh.Load(); g == nil || f.Bytes() != table+stash+8*len(g.words) {
+		t.Fatalf("after the first fold: %d bytes, want the overflow table's too", f.Bytes())
+	}
+}

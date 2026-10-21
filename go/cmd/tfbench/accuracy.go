@@ -215,7 +215,7 @@ const (
 
 func bytesPerKey() float64 {
 	probe, _ := tf.New(tf.Config{Capacity: capacity, Horizon: horizon})
-	return float64(probe.Slots()*16) / capacity
+	return float64(probe.Bytes()) / capacity // the table: stash, overflow and hot entries come on first use
 }
 
 // printExact prints every deterministic scorecard metric as the raw counts
@@ -255,7 +255,7 @@ func printExact() {
 		}
 	}
 	probe, _ := tf.New(tf.Config{Capacity: capacity, Horizon: horizon})
-	fmt.Printf("memory capacity=%d slots=%d bytes=%d  => %.1f B/key\n", capacity, probe.Slots(), probe.Slots()*16, bytesPerKey())
+	fmt.Printf("memory capacity=%d slots=%d bytes=%d  => %.1f B/key\n", capacity, probe.Slots(), probe.Bytes(), bytesPerKey())
 }
 
 // relocations is f.Relocations(), or 0 on commits that predate it.

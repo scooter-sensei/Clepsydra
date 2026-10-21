@@ -175,9 +175,9 @@ type Filter struct {
 	moves [1 << claimStripeBits]moveCount
 
 	sip    sipKey
-	keyed  bool // Config.Key set: hash with sip
-	stash  []stashEntry
-	stashN uint64 // sets of stashWays entries
+	keyed  bool                         // Config.Key set: hash with sip
+	stash  atomic.Pointer[[]stashEntry] // nil until the first eviction
+	stashN uint64                       // sets of stashWays entries
 	_      [64]byte
 	// stashUntil is a tick before which the stash may hold a live entry;
 	// past it, misses skip the stash.
@@ -268,7 +268,6 @@ func New(cfg Config) (*Filter, error) {
 	}
 	if cfg.Stash > 0 {
 		f.stashN = uint64(cfg.Stash+stashWays-1) / stashWays
-		f.stash = make([]stashEntry, f.stashN*stashWays)
 	}
 	if cfg.Overflow == 0 {
 		cfg.Overflow = int(max(64, lines*slotsPerLine*5/9))
@@ -1397,6 +1396,25 @@ func (f *Filter) Occupancy(now uint64) int {
 // Slots returns the table's slot count.
 func (f *Filter) Slots() int { return len(f.words) / 2 }
 
+// Bytes is the memory the filter holds now: its table, and the stash,
+// overflow table and hot entries once allocated (each on first use).
+func (f *Filter) Bytes() int {
+	n := 8 * len(f.words)
+	if s := f.stash.Load(); s != nil {
+		n += len(*s) * int(unsafe.Sizeof(stashEntry{}))
+	}
+	if g := f.gh.Load(); g != nil {
+		n += 8 * len(g.words)
+	}
+	if sk := f.sk.Load(); sk != nil {
+		n += 4 * len(sk.cells)
+	}
+	if t := f.hot.Load(); t != nil {
+		n += len(t.e) * int(unsafe.Sizeof(hotEntry{}))
+	}
+	return n
+}
+
 // primary is h's home line. It uses hash bits 0..35, disjoint from the
 // fingerprint (48..63) and tag (36..47), so keys sharing a line share no
 // identity bits. Multiply-shift lets the table be any size.
@@ -1476,9 +1494,29 @@ func (f *Filter) slotID(line, w0, w1 uint64) uint64 {
 	return line<<28 | fp<<tagBits | w1>>tagShift
 }
 
+// stashSet is id's set (none before the stash is allocated) and its lock.
 func (f *Filter) stashSet(id uint64) ([]stashEntry, *paddedMutex) {
 	i, _ := bits.Mul64(mix64(id), f.stashN)
-	return f.stash[i*stashWays : (i+1)*stashWays : (i+1)*stashWays], &f.stashMu[i%stashStripes]
+	mu := &f.stashMu[i%stashStripes]
+	p := f.stash.Load()
+	if p == nil {
+		return nil, mu
+	}
+	return (*p)[i*stashWays : (i+1)*stashWays : (i+1)*stashWays], mu
+}
+
+// stashTable allocates the stash on the first eviction, so a filter that
+// never evicts doesn't pay for it.
+func (f *Filter) stashTable() {
+	if f.stash.Load() != nil {
+		return
+	}
+	f.skMu.Lock()
+	defer f.skMu.Unlock()
+	if f.stash.Load() == nil {
+		s := make([]stashEntry, f.stashN*stashWays)
+		f.stash.Store(&s)
+	}
 }
 
 // stashPut keeps an evicted entry in its set: in its own old place, a free
@@ -1491,6 +1529,7 @@ func (f *Filter) stashPut(id, w0, w1, now uint64) {
 		return
 	}
 	w0 &^= dispBit
+	f.stashTable()
 	set, mu := f.stashSet(id)
 	mu.Lock()
 	way, least := -1, uint64(1<<64-1)

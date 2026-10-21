@@ -112,13 +112,7 @@ func TestFloodSizing(t *testing.T) {
 					}
 				}
 			}
-			bytes := 16*f.Slots() + 24*len(f.stash)
-			if g := f.gh.Load(); g != nil {
-				bytes += 8 * len(g.words)
-			}
-			if h := f.hot.Load(); h != nil {
-				bytes += 64 * len(h.e)
-			}
+			bytes := f.Bytes()
 			pct := func(n int) float64 { return 100 * float64(n) / probes }
 			t.Logf("%-27s flood %2dx x %2d: offenders Upper<true %d, Count>=90%% %3d/%d | new keys Degraded %5.2f%%, turned away (test) %6.2f%% (recipe) %6.2f%% = match %5.2f%% + floor %5.2f%% | floored %6d folded %6d | %5.1f B/key",
 				c.name, fl.mult, fl.weight, below, rec, offenders, pct(deg), pct(test), pct(recipe), pct(byMatch), pct(byFloor), f.Floored(), f.Folded(), float64(bytes)/4096)

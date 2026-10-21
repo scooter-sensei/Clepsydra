@@ -1,0 +1,366 @@
+diff --git a/filter.go b/filter.go
+index 25b0054..2324741 100644
+--- a/filter.go
++++ b/filter.go
+@@ -1249,6 +1249,10 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
+ 		if testHookVictim != nil {
+ 			testHookVictim()
+ 		}
++		if traceOn {
++			tr(trEvictStart, f.slotID(lines[vli], victimW0, victimW1), uint64(victim), regSum(victimW1), stripe, now)
++		}
++
+ 		// The victim's history goes to the stash under the victim's own claim
+ 		// stripe (its hash's top bits are its fp's), so a first touch of the
+ 		// victim, which takes that stripe, finds it either still here or
+@@ -1313,6 +1317,10 @@ func (f *Filter) install(i int, w0, w1, mine0, mine1 uint64) bool {
+ 		return false
+ 	}
+ 	atomic.StoreUint64(&f.words[i+1], mine1)
++	if traceOn {
++		line := uint64(i / wordsPerLine)
++		tr(trInstall, f.slotID(line, w0, w1), uint64(i), regSum(w1), f.slotID(line, mine0, mine1), w0&tsMask)
++	}
+ 	return true
+ }
+ 
+@@ -1400,6 +1408,9 @@ func (f *Filter) abandon(i, d int, w0, w1, moved, line, a uint64) {
+ 	for {
+ 		c1 = atomic.LoadUint64(&f.words[d+1])
+ 		if c1>>tagShift != tg {
++			if traceOn {
++				tr(trAbandon, f.slotID(line, w0, w1), 0, 9, uint64(i), uint64(d))
++			}
+ 			return // the copy was evicted
+ 		}
+ 		if atomic.CompareAndSwapUint64(&f.words[d+1], c1, busy) {
+@@ -1452,16 +1463,26 @@ func (f *Filter) abandon(i, d int, w0, w1, moved, line, a uint64) {
+ 	}
+ 	fp := w0 >> 48
+ 	if f.fold(i, fp, tg, n, e, last) {
++		if traceOn {
++			tr(trAbandon, f.slotID(line, w0, w1), n, 1, uint64(i), uint64(d))
++		}
+ 		return
+ 	}
+ 	for _, l := range [2]uint64{line, a} { // the entry moved meanwhile
+ 		b := int(l * wordsPerLine)
+ 		for s := 0; s < wordsPerLine; s += 2 {
+ 			if f.fold(b+s, fp, tg, n, e, last) {
++				if traceOn {
++					tr(trAbandon, f.slotID(line, w0, w1), n, 2, uint64(i), uint64(d))
++				}
+ 				return
+ 			}
+ 		}
+ 	}
++	if traceOn {
++		tr(trAbandon, f.slotID(line, w0, w1), n, 0, uint64(i), uint64(d))
++	}
++
+ }
+ 
+ // fold counts n events at unit e (the latest at last) into the entry at word
+@@ -1552,6 +1573,9 @@ func (f *Filter) sweepLine(line, now uint64) {
+ 		}
+ 		if atomic.CompareAndSwapUint64(&f.words[base+s], w0, 0) {
+ 			atomic.CompareAndSwapUint64(&f.words[base+s+1], w1, 0)
++			if traceOn {
++				tr(trSweep, f.slotID(line, w0, w1), uint64(base+s), regSum(w1), w0&tsMask, now)
++			}
+ 		}
+ 	}
+ }
+@@ -1734,13 +1758,22 @@ func (f *Filter) stashPutAs(id, w0, w1, now uint64, wait bool) {
+ 			// evicted, restored and evicted again meanwhile) must not
+ 			// overwrite the newer one.
+ 			if e.w0&tsMask > w0&tsMask || e.w0&tsMask == w0&tsMask && f.mass(e.id, e.w1, e.w0&tsMask, now) >= f.mass(id, w1, w0&tsMask, now) {
++				if traceOn {
++					tr(trStashPut, id, regSum(w1), 1, regSum(e.w1), now)
++				}
+ 				mu.Unlock()
+ 				return
+ 			}
++			if traceOn {
++				tr(trStashPut, id, regSum(w1), 2, regSum(e.w1), now)
++			}
+ 			way, least = i, 0
+ 			break
+ 		}
+ 		if e.id == 0 || age(now, e.w0&tsMask) > f.horizon {
++			if traceOn {
++				tr(trStashPut, id, regSum(w1), 3, e.id, now)
++			}
+ 			way, least = i, 0
+ 			break
+ 		}
+@@ -1751,11 +1784,17 @@ func (f *Filter) stashPutAs(id, w0, w1, now uint64, wait bool) {
+ 	var out stashEntry // the history that leaves the stash, if any
+ 	if least > 0 {
+ 		if least > f.mass(id, w1, w0&tsMask, now) {
++			if traceOn {
++				tr(trStashPut, id, regSum(w1), 5, 0, now)
++			}
+ 			f.spill(id, w0, w1, now)
+ 			mu.Unlock()
+ 			return
+ 		}
+ 		out = set[way]
++		if traceOn {
++			tr(trStashPut, id, regSum(w1), 4, out.id, now)
++		}
+ 	}
+ 	if out.id != 0 {
+ 		f.spill(out.id, out.w0&^deferMark, out.w1, now)
+@@ -1832,6 +1871,9 @@ func (f *Filter) stashGet(id, now uint64, take bool) (w0, w1 uint64, ok bool) {
+ 		w0, w1 = e.w0, e.w1
+ 		if take {
+ 			f.stashWrite(e, stashEntry{})
++			if traceOn {
++				tr(trStashTake, id, regSum(w1), w0&tsMask, now, 0)
++			}
+ 		}
+ 		return w0, w1, true
+ 	}
+diff --git a/ghost.go b/ghost.go
+index b2d0770..d6f2391 100644
+--- a/ghost.go
++++ b/ghost.go
+@@ -140,6 +140,9 @@ func (g *ghost) floorOf(base int, fp, ep, now uint64) uint64 {
+ // add records a dropped history: n events, the newest at tick last.
+ func (g *ghost) add(id, n, last uint64, sat bool, now uint64) {
+ 	if n == 0 || age(now, last) > g.horizon {
++		if traceOn {
++			tr(trGhost, id, n, 1, 0, now)
++		}
+ 		return
+ 	}
+ 	// The epoch must reach the history's own slice, even when the caller's
+@@ -171,6 +174,9 @@ outer:
+ 		// and be overwritten.
+ 		ep := g.epoch.Load()
+ 		if sl+3 < ep { // older than the live slices (a caller far behind the others)
++			if traceOn {
++				tr(trGhost, id, n, 2, uint64(bases[0]), now)
++			}
+ 			return
+ 		}
+ 		// One pass over both buckets: a matching entry to merge into, else
+@@ -196,6 +202,9 @@ outer:
+ 					esl := max(g.real(e, ep), sl)
+ 					ne := ghEntry(fp, min(ghCntMax, ghCnt(e)+n), esl)
+ 					if g.epoch.Load() == ep && atomic.CompareAndSwapUint64(w, old, old&^(ghEntryMask<<sh)|ne<<sh) {
++						if traceOn {
++							tr(trGhost, id, n, 3, uint64(bases[0]), now)
++						}
+ 						return
+ 					}
+ 					continue outer
+@@ -219,6 +228,9 @@ outer:
+ 				continue // taken meanwhile
+ 			}
+ 			if g.epoch.Load() == ep && atomic.CompareAndSwapUint64(w, old, old&^(ghEntryMask<<sh)|ghEntry(fp, n, sl)<<sh) {
++				if traceOn {
++					tr(trGhost, id, n, 4, uint64(bases[0]), now)
++				}
+ 				return
+ 			}
+ 			continue
+@@ -237,6 +249,9 @@ outer:
+ 				fb = 1
+ 			}
+ 			g.raiseFloor(bases[fb], fp, n, sl, now)
++			if traceOn {
++				tr(trGhost, id, n, 5, uint64(bases[0]), now)
++			}
+ 			return
+ 		}
+ 		w, sh := g.at(bases[vb], victim)
+@@ -247,6 +262,9 @@ outer:
+ 		}
+ 		g.raiseFloor(bases[vb], ghFP(e), vc, g.real(e, ep), now)
+ 		if g.epoch.Load() == ep && atomic.CompareAndSwapUint64(w, old, old&^(ghEntryMask<<sh)|ghEntry(fp, n, sl)<<sh) {
++			if traceOn {
++				tr(trGhost, id, n, 6, uint64(bases[0]), now)
++			}
+ 			return
+ 		}
+ 	}
+diff --git a/overflow.go b/overflow.go
+index 8df6fc1..8c804b6 100644
+--- a/overflow.go
++++ b/overflow.go
+@@ -242,6 +242,9 @@ func (s *sketch) estimate(id, window, now uint64, full bool) (r Result, ok bool)
+ func (f *Filter) spill(id, w0, w1, now uint64) {
+ 	last := w0 & tsMask
+ 	if age(now, last) > f.horizon {
++		if traceOn {
++			tr(trSpill, id, regSum(w1), last, 1, now)
++		}
+ 		return
+ 	}
+ 	if f.skW == 0 {
+@@ -253,6 +256,9 @@ func (f *Filter) spill(id, w0, w1, now uint64) {
+ 		return // its hot entry was taken back with a copy (abandon); the table holds its events
+ 	}
+ 	m := f.mass(id, w1, last, now)
++	if traceOn {
++		tr(trSpill, id, m, last, 5, now)
++	}
+ 	if f.spillMin > 1 && m < f.spillMin {
+ 		f.shed.Add(1)
+ 		return
+diff --git a/register.go b/register.go
+index e39a8ae..a8314cb 100644
+--- a/register.go
++++ b/register.go
+@@ -196,6 +196,9 @@ func (f *Filter) bump(i int, fpd, tg, last, now uint64, reset bool) (w1 uint64,
+ 			}
+ 			reset = true // the entry aged out with the key's history: start afresh
+ 		}
++		if traceOn && reset && old&regMask != 0 {
++			tr(trReset, f.slotID(uint64(i/wordsPerLine), w0, old), uint64(i), regSum(old), last, now)
++		}
+ 		nw, over := f.nextReg(old, tg, last, now, reset)
+ 		if over {
+ 			if pw, ok := f.promote(i, w0, old, tg, last, now); ok {
+diff --git a/soak_test.go b/soak_test.go
+index bc9ccbb..a20c030 100644
+--- a/soak_test.go
++++ b/soak_test.go
+@@ -110,7 +110,7 @@ func TestStressSoak(t *testing.T) {
+ 					} else if r.Upper < exact {
+ 						if low.Add(1) == 1 {
+ 							again := f.CountAt(h, w, now)
+-							firstLow.Store(fmt.Sprintf("got %+v; asked again: %+v; window %d ms: exact %d (now %d, events %v); %s", r, again, w, exact, now, logs[h], f.whereIs(h, now)))
++							firstLow.Store(fmt.Sprintf("got %+v; asked again: %+v; window %d ms: exact %d (now %d, events %v); %s", r, again, w, exact, now, logs[h], f.whereIs(h, now)+traceDump(f.stashID(h, fingerprint(h), tag(h)))))
+ 						}
+ 					}
+ 				default:
+diff --git a/trace.go b/trace.go
+new file mode 100644
+index 0000000..b7f7adf
+--- /dev/null
++++ b/trace.go
+@@ -0,0 +1,27 @@
++package temporalfilter
++
++// Event kinds of the debugging trace (trace_on.go, build tag tftrace).
++const (
++	trInstall = iota + 1
++	trSweep
++	trStashPut
++	trStashTake
++	trSpill
++	trAbandon
++	trReset
++	trGhost
++	trRelocated
++	trEvictStart
++)
++
++// regSum is the events a register holds (1<<32 for a hot entry's pointer).
++func regSum(w1 uint64) uint64 {
++	if isHot(w1) {
++		return 1 << 32
++	}
++	n := uint64(0)
++	for _, c := range unpack(w1 & regMask) {
++		n += c
++	}
++	return n
++}
+diff --git a/trace_off.go b/trace_off.go
+new file mode 100644
+index 0000000..74b33b7
+--- /dev/null
++++ b/trace_off.go
+@@ -0,0 +1,11 @@
++//go:build !tftrace
++
++package temporalfilter
++
++// Without the tftrace build tag the event trace compiles away.
++
++const traceOn = false
++
++func tr(kind, id, a, b, c, d uint64) {}
++
++func traceDump(id uint64) string { return "" }
+diff --git a/trace_on.go b/trace_on.go
+new file mode 100644
+index 0000000..7496359
+--- /dev/null
++++ b/trace_on.go
+@@ -0,0 +1,71 @@
++//go:build tftrace
++
++package temporalfilter
++
++import (
++	"fmt"
++	"slices"
++	"strings"
++	"sync/atomic"
++)
++
++// Event trace for debugging (go test -tags tftrace): every operation that
++// moves a key's history between the table, the stash and the overflow
++// table is recorded in a ring, and traceDump lists one identity's records.
++// Records are written without synchronization: a torn record can show up
++// garbled, which is fine for a debugging aid; never build this with -race.
++
++const traceOn = true
++
++type traceRec struct{ seq, kind, id, a, b, c, d uint64 }
++
++const traceBits = 23
++
++var (
++	traceRing [1 << traceBits]traceRec
++	traceSeq  atomic.Uint64
++	traceStop atomic.Bool
++)
++
++func tr(kind, id, a, b, c, d uint64) {
++	if traceStop.Load() {
++		return
++	}
++	n := traceSeq.Add(1)
++	traceRing[n&(1<<traceBits-1)] = traceRec{n, kind, id, a, b, c, d}
++}
++
++var traceNames = map[uint64]string{
++	trInstall:    "install   slot=%d old-events=%d new-id=%x old-last=%d",
++	trSweep:      "sweep     slot=%d events=%d last=%d now=%d",
++	trStashPut:   "stash-put events=%d outcome=%d other=%x now=%d",
++	trStashTake:  "stash-take events=%d last=%d now=%d %d",
++	trSpill:      "spill     n=%d last=%d outcome=%d now=%d",
++	trAbandon:    "abandon   extra=%d folded=%d src=%d copy=%d",
++	trReset:      "reset     slot=%d events=%d last=%d now=%d",
++	trGhost:      "ghost-add n=%d outcome=%d bucket=%d now=%d",
++	trRelocated:  "moved     from=%d to=%d events=%d now=%d",
++	trEvictStart: "evict     slot=%d events=%d by=%x now=%d",
++}
++
++// traceDump stops the trace and lists the records naming id, oldest first.
++func traceDump(id uint64) string {
++	traceStop.Store(true)
++	var recs []traceRec
++	for _, r := range traceRing {
++		if r.seq != 0 && (r.id == id || r.kind == trInstall && r.c == id || r.kind == trStashPut && r.c == id) {
++			recs = append(recs, r)
++		}
++	}
++	slices.SortFunc(recs, func(a, b traceRec) int { return int(a.seq) - int(b.seq) })
++	var sb strings.Builder
++	fmt.Fprintf(&sb, "\ntrace of %x (%d records, ring seq %d):\n", id, len(recs), traceSeq.Load())
++	for _, r := range recs {
++		who := "self"
++		if r.id != id {
++			who = fmt.Sprintf("by %x", r.id)
++		}
++		fmt.Fprintf(&sb, "  #%d %s "+traceNames[r.kind]+"\n", r.seq, who, r.a, r.b, r.c, r.d)
++	}
++	return sb.String()
++}

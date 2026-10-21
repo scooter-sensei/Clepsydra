@@ -35,6 +35,11 @@ runmany() {
 fixes() {
 	local n=${1:-20}
 	# name | commit with the bug | commit with the fix | test files copied from HEAD | test regex | runs | env
+	# (verify/testdata/ghost_test.go is the ghost test as of 2890196: HEAD's
+	# calls the later two-bucket newGhost.) The split and handshake fixes of
+	# 5524228 and a02fe9b are proven by deterministic tests on hooks those
+	# commits added (TestEvictionDuringMoveKeepsHistory,
+	# TestEvictionRacingMoveStart), so they can't run on the code before.
 	# Duplicate slots: the striped lock (593bd1b) removed most; the install
 	# order in f31512c removed the rare rest (a race with relocation), so
 	# both cases end at f31512c. Lost counts under relocation: f31512c's
@@ -73,6 +78,9 @@ fixes() {
 	lost-counts-same-tag-handover|4a037a5|d7fb2b5|abandon_test.go|^TestAbandonedMoveKeepsCounts$|200|PAR=1
 	negative-ticks|99c054a|a01e3dc|regress_test.go|^TestRegressNegativeTicks$|3
 	empty-batch-panic|2921fd4|d1db914|regress_test.go|^TestRegressEmptyBatch$|3
+	torn-lookup|6c051d0|6af5480|read_race_test.go|^TestReadDuringRelocationFindsKey$|10
+	ghost-stale-epoch|6af5480|642c3ef|verify/testdata/ghost_test.go|^TestGhostEpochRace$|10
+	ghost-ahead-of-clock|a02fe9b|2890196|verify/testdata/ghost_test.go|^TestGhostAddAheadOfClock$|3
 	LIST
 }
 
@@ -152,10 +160,12 @@ harness() {
 	# Today's accuracy harness against each library version.
 	local h="$WORK/harness-src"
 	tree HEAD "$h"
-	# Commits that only moved the library (into go/) are skipped.
+	# The library is every non-test .go file of the module's top directory
+	# (filter.go and register.go first; ghost.go, hot.go, overflow.go and
+	# sip.go later). Commits that only moved it (into go/) are skipped.
 	local c prev="" lib
-	for c in $(git rev-list --reverse HEAD -- ':/filter.go' ':/register.go' ':/go/filter.go' ':/go/register.go' | cut -c1-7); do
-		lib=$(git -C "$TOP" ls-tree "$c" filter.go register.go go/filter.go go/register.go | awk '{print $3}')
+	for c in $(git rev-list --reverse HEAD -- ':(top,glob)*.go' ':(top,glob)go/*.go' ':(top,exclude,glob)**/*_test.go' | cut -c1-7); do
+		lib=$(git -C "$TOP" ls-tree -r "$c" | awk '$4 ~ /^(go\/)?[^\/]*\.go$/ && $4 !~ /_test\.go$/ {print $3}')
 		[ "$lib" = "$prev" ] && continue
 		prev=$lib
 		local d="$WORK/harness-$c"

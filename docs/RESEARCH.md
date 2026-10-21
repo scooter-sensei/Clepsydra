@@ -73,7 +73,7 @@ It loses: with 3–4 exponentials you can't make a sharp box, so the mean error 
 
 ### 3.4 Proposed, not built
 
-- **Reclaimer as a correctness guarantee, which frees bits.** If every line is provably visited once per horizon, timestamps can be truncated to 32 bits (ms) without wraparound aliasing. That frees 15 bits per slot (the timestamp is now 47 bits), enough for a wider fingerprint. (Corrected: an earlier version said this allowed 6 slots per line; 6 slots need ≤ 85 bits each, and a slot would still need about 113.) Caveat: the guarantee needs a ticker when traffic is idle, because the inline 1/64 pacing alone isn't enough.
+- **Reclaimer as a correctness guarantee, which frees bits.** If every line is provably visited once per horizon, timestamps can be truncated to 32 bits (ms) without wraparound aliasing. That frees 14 bits per slot (the timestamp is now 46 bits), enough for a wider fingerprint. (Corrected: an earlier version said this allowed 6 slots per line; 6 slots need ≤ 85 bits each, and a slot would still need about 113.) Caveat: the guarantee needs a ticker when traffic is idle, because the inline 1/64 pacing alone isn't enough.
 - **`TimeToCount(key, n)`.** The inverse query: "how long did the last n events take?" It detects bursts without choosing a window. It is a cumulative scan over the register in the same line.
 - **Hot-key touch elision.** Skip the word0 CAS when `now − last < δ`, and use Dice-style probabilistic increments past a threshold. This cuts cache-line ping-pong for heavy hitters (the attackers). It is prior-art technique, just a new application.
 - **Mergeable shards.** Merge two filters with max(ts) plus aligned register sums, for multi-node aggregation. This is standard mergeable-summary theory, not new.

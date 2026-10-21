@@ -25,7 +25,10 @@ func TestConcurrentFirstInsertNoDuplicates(t *testing.T) {
 	}
 	close(start)
 	wg.Wait()
-	occ := f.Occupancy(1000) + int(f.deferred.Load()) // ConstantTime: keys waiting in the stash for a slot
+	occ := f.Occupancy(1000)
+	if w, ok := any(f).(interface{ Waiting() int }); ok { // verify/replay.sh runs this file on commits without it
+		occ += w.Waiting() // ConstantTime: keys waiting in the stash for a slot
+	}
 	total := 0
 	for k := range keys {
 		total += f.VelocityCountAt(mix64(uint64(k)), f.Ticks(time.Minute), 1000)

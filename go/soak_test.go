@@ -187,15 +187,21 @@ func (f *Filter) whereIs(h, now uint64) string {
 	return s
 }
 
-// floorLive: h's overflow bucket has a floor live within window, so h may
-// have histories there that its answer can't attribute to it.
+// floorLive: one of h's overflow buckets has a floor live within window
+// that covers h's fingerprint, so h may have histories there that its
+// answer can't attribute to it.
 func (f *Filter) floorLive(h, window, now uint64) bool {
 	g := f.gh.Load()
 	if g == nil {
 		return false
 	}
 	ep := g.epoch.Load()
-	base, _ := g.slot(f.stashID(h, fingerprint(h), tag(h)))
-	e := atomic.LoadUint64(&g.words[base]) & ghEntryMask
-	return ep != 0 && e != 0 && g.live(g.real(e, ep), min(window, g.horizon), now)
+	bases, nb, fp := g.slot(f.stashID(h, fingerprint(h), tag(h)))
+	for _, base := range bases[:nb] {
+		e := atomic.LoadUint64(&g.words[base]) >> g.floorShift(fp) & ghSubMask
+		if ep != 0 && e != 0 && g.live(g.real(e, ep), min(window, g.horizon), now) {
+			return true
+		}
+	}
+	return false
 }

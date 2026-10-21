@@ -52,6 +52,7 @@ regression() {
 	check attacks verify/expected/attacks.txt attacks
 	check rates verify/expected/rates.txt rates
 	check sketch-experiments verify/expected/sketch-experiments.txt sketch_experiments
+	check flood-sizing verify/expected/flood-sizing.txt flood_sizing
 	if [ "${1:-}" = --full ]; then
 		check fixes - verify/replay.sh fixes
 		check history - verify/replay.sh history

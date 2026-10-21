@@ -310,7 +310,19 @@ func (f *Filter) ghostTable() *ghost {
 	if g := f.gh.Load(); g != nil {
 		return g
 	}
-	g := newGhost(f.skShape.bytes(f.skW), f.horizon)
+	g := newGhost(f.skShape.bytes(f.skW), f.horizon, f.ghChoices, f.ghSub)
 	f.gh.Store(g)
 	return g
+}
+
+// Floored counts histories the overflow table had no room for: each left
+// to a floor of its bucket, which then raises Upper for every key sharing
+// that floor, so from the first one strict limits turn such keys away. It
+// stays 0 below the table's capacity (a heavy flood of 4x the table's slots
+// at the defaults). Alert on it.
+func (f *Filter) Floored() uint64 {
+	if g := f.gh.Load(); g != nil {
+		return g.floored.Load()
+	}
+	return 0
 }

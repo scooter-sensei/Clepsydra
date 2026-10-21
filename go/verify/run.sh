@@ -27,6 +27,7 @@ check register-experiment verify/expected/register-experiment.txt register_exper
 check attacks verify/expected/attacks.txt attacks
 check rates verify/expected/rates.txt rates
 check sketch-experiments verify/expected/sketch-experiments.txt sketch_experiments
+check flood-sizing verify/expected/flood-sizing.txt flood_sizing
 check fixes - verify/replay.sh fixes
 check stress - verify/replay.sh stress 300
 check history - verify/replay.sh history

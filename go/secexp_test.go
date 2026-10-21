@@ -52,9 +52,9 @@ func TestSketchShapes(t *testing.T) {
 		line := ""
 		var bpk float64
 		for _, fl := range floods {
-			f, now := attackFilter(t, 4096, 0)
+			f, now := attackFilter(t, 4096, histStash)
 			f.skW = uint64(max(64, f.Slots()/c.div))
-			f.skShape = c.sh
+			f.skShape, f.ghChoices, f.ghSub = c.sh, 1, 1
 			f.spillMin = 1 // shapes alone; TestSpillThreshold varies this
 			f.cms = !c.gh
 			bpk = float64(c.sh.bytes(f.skW)) / 4096
@@ -112,6 +112,11 @@ func TestSketchShapes(t *testing.T) {
 	t.Logf("columns per flood (heavy 1x, 2x, 3x, 4x, light 16x, 64x): offenders with Count >= 90%% of truth (of %d) | new keys Degraded | new keys turned away by a strict limit of %d", offenders, k)
 }
 
+// histStash is the stash these experiments ran with (slots/8 at 4,096 keys,
+// the default until 2026-10-21); with the ghost table's one bucket per
+// history and one floor, it keeps their recorded results reproducible.
+const histStash = 4820 / 8
+
 // TestSpillThreshold: histories lighter than spillMin events are shed
 // instead of spilled, so cheap one-event floods add no sketch noise
 // (TF_EXP=1).
@@ -137,9 +142,9 @@ func TestSpillThreshold(t *testing.T) {
 		for _, min := range []uint64{1, 2, 4, 8} {
 			line := ""
 			for _, fl := range floods {
-				f, now := attackFilter(t, 4096, 0)
+				f, now := attackFilter(t, 4096, histStash)
 				f.skW = uint64(max(64, f.Slots()/sh.div))
-				f.skShape = sh.sh
+				f.skShape, f.ghChoices, f.ghSub = sh.sh, 1, 1
 				f.spillMin = min
 				f.cms = !sh.gh
 				rng := rand.New(rand.NewPCG(11, uint64(fl.mult*100+fl.weight)))

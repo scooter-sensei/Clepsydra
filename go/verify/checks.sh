@@ -62,6 +62,10 @@ rates() {
 	go test -count=1 -run '^TestSustainedRate$' -v . | grep -vE '^(=== |--- |PASS|ok |FAIL)' | sed -E 's/^ *[a-z_]+\.go:[0-9]+: //'
 }
 
+flood_sizing() {
+	TF_EXP=1 go test -count=1 -run '^TestFloodSizing$' -v . | grep -vE '^(=== |--- |PASS|ok |FAIL)' | sed -E 's/^ *[a-z_]+\.go:[0-9]+: //'
+}
+
 sketch_experiments() {
 	TF_EXP=1 go test -count=1 -run '^(TestSketchShapes|TestSpillThreshold)$' -v . |
 		grep -vE '^(=== |--- |PASS|ok |FAIL)' | sed -E 's/^ *[a-z_]+\.go:[0-9]+: //'

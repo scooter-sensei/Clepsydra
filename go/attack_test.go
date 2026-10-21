@@ -234,7 +234,7 @@ func TestAttackEvictionReset(t *testing.T) {
 func TestAttackFloodCollateral(t *testing.T) {
 	const k, offenders, probes = 20, 200, 20_000
 	window := uint64(60_000)
-	floods := []struct{ mult, weight int }{{1, k + 1}, {2, k + 1}, {4, k + 1}, {16, k + 1}, {16, 1}}
+	floods := []struct{ mult, weight int }{{1, k + 1}, {2, k + 1}, {3, k + 1}, {4, k + 1}, {8, k + 1}, {16, k + 1}, {16, 1}}
 	for _, sk := range []bool{false, true} {
 		for _, fl := range floods {
 			mult := fl.mult

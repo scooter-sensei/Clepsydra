@@ -28,7 +28,7 @@ func TestGhostEpochRace(t *testing.T) {
 	const horizon, n, workers, per = 10_000, 5, 8, 4000
 	var lost atomic.Int64
 	for round := range rounds {
-		g := newGhost(4*64, horizon)
+		g := newGhost(4*64, horizon, 1+round%2, 1+round%3) // one and two candidate buckets, one to three floors
 		var clock atomic.Uint64
 		clock.Store(horizon)
 		var wg sync.WaitGroup
@@ -75,7 +75,7 @@ func TestGhostEpochRace(t *testing.T) {
 // adds took its place as free and the next epoch swept it.
 func TestGhostAddAheadOfClock(t *testing.T) {
 	const horizon = 10_000 // slices of 5,000 ticks
-	g := newGhost(4*64, horizon)
+	g := newGhost(4*64, horizon, 2, 3)
 	g.add(1, 5, 80_008, false, 79_989) // last touch 80,008; the evictor's clock reads 79,989
 	for _, now := range []uint64{79_989, 80_008, 80_037} {
 		if r, _ := g.estimate(1, horizon, now); r.Count != 5 {

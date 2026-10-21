@@ -191,6 +191,8 @@ type Filter struct {
 	sk         atomic.Pointer[sketch] // count-min overflow (cms), nil until the first spill
 	gh         atomic.Pointer[ghost]  // ghost overflow, nil until the first spill
 	cms        bool                   // overflow to the count-min sketch, not the ghost table (experiments)
+	ghChoices  int                    // candidate buckets per dropped history in the ghost table (2; experiments: 1)
+	ghSub      int                    // floors per ghost bucket, picked by fingerprint (3; experiments: 1)
 	shadow     bool                   // ConstantTime: each path also runs the other's work, read-only
 	auto       bool                   // ConstantTime == AutoPad
 	padQ       [2]quantilePad         // AutoPad: Touch's and Count's
@@ -262,18 +264,18 @@ func New(cfg Config) (*Filter, error) {
 		f.sip, f.keyed = newSipKey(cfg.Key), true
 	}
 	if cfg.Stash == 0 {
-		cfg.Stash = int(max(1, lines*slotsPerLine/8))
+		cfg.Stash = int(max(1, lines*slotsPerLine/16))
 	}
 	if cfg.Stash > 0 {
 		f.stashN = uint64(cfg.Stash+stashWays-1) / stashWays
 		f.stash = make([]stashEntry, f.stashN*stashWays)
 	}
 	if cfg.Overflow == 0 {
-		cfg.Overflow = int(max(64, lines*slotsPerLine/4))
+		cfg.Overflow = int(max(64, lines*slotsPerLine*5/9))
 	}
 	if cfg.Overflow > 0 {
 		f.skW = uint64(cfg.Overflow)
-		f.skShape = defaultShape
+		f.skShape, f.ghChoices, f.ghSub = defaultShape, 2, 3
 	}
 	if cfg.SpillMin == 0 {
 		cfg.SpillMin = 4

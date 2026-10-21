@@ -72,8 +72,10 @@ type ghost struct {
 // newGhost sizes the table to bytes (rounded down to whole buckets).
 func newGhost(bytes, horizon uint64, choices, sub int) *ghost {
 	nb := max(1, bytes/(ghWords*8))
+	w := alignedWords(int(nb * ghWords))
+	prefault(w)
 	return &ghost{
-		words:    alignedWords(int(nb * ghWords)),
+		words:    w,
 		nb:       nb,
 		choices:  max(1, min(choices, 2)),
 		sub:      max(1, min(sub, ghSubMax)),

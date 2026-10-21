@@ -25,7 +25,7 @@ func TestConcurrentFirstInsertNoDuplicates(t *testing.T) {
 	}
 	close(start)
 	wg.Wait()
-	occ := f.Occupancy(1000)
+	occ := f.Occupancy(1000) + int(f.deferred.Load()) // ConstantTime: keys waiting in the stash for a slot
 	total := 0
 	for k := range keys {
 		total += f.VelocityCountAt(mix64(uint64(k)), f.Ticks(time.Minute), 1000)

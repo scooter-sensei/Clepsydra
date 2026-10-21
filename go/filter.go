@@ -138,13 +138,17 @@ type Config struct {
 	// key was seen. Every operation does the same lookups whatever the key's
 	// state (both candidate lines, the stash set and the overflow table,
 	// under the key's lock stripe) and returns no sooner than a pad after it
-	// started, spinning if it finished early. Touch's pad is ConstantTime:
-	// pick it above the slowest inserts you see (a few µs on a table larger
-	// than the cache); only calls that run past it still leak. Count's
-	// paths differ far less, so its pad is a running estimate of its own
-	// 99.5th-percentile latency, capped at ConstantTime. With AutoPad,
-	// Touch's pad is estimated the same way. docs/SECURITY.md has the
-	// measurements. Each call costs at least its pad in CPU.
+	// started. A first touch that finds both lines full doesn't search: the
+	// key waits in the stash, where every call looks anyway, and calls place
+	// waiting keys (search, or evict as usual) before their own work, in the
+	// part of the pad their own work's estimate leaves, so how much they do
+	// depends on the stash, not on the caller's key. Touch's pad is
+	// ConstantTime; Count's, and with AutoPad Touch's too, is a running
+	// estimate of its own work's 99.5th percentile, capped at ConstantTime.
+	// If keys wait faster than pads place them (more than one per 16 stash
+	// entries), every call places one set past its pad. Waited and Waiting
+	// report it. docs/SECURITY.md has the measurements. Each call costs at
+	// least its pad in CPU.
 	ConstantTime time.Duration
 }
 
@@ -180,9 +184,9 @@ type Filter struct {
 	moves [1 << claimStripeBits]moveCount
 
 	sip    sipKey
-	keyed  bool                         // Config.Key set: hash with sip
-	stash  atomic.Pointer[[]stashEntry] // nil until the first eviction
-	stashN uint64                       // sets of stashWays entries
+	keyed  bool                       // Config.Key set: hash with sip
+	stash  atomic.Pointer[stashTable] // nil until the first eviction
+	stashN uint64                     // sets of stashWays entries
 	_      [64]byte
 	// stashUntil is a tick before which the stash may hold a live entry;
 	// past it, misses skip the stash.
@@ -207,6 +211,10 @@ type Filter struct {
 	spillMin   uint64 // histories lighter than this aren't spilled (Shed)
 	shed       atomic.Uint64
 	ct         bool                     // Config.ConstantTime > 0
+	deferred   atomic.Int64             // ConstantTime: stash entries that wait for a slot (deferMark)
+	waited     atomic.Uint64            // ConstantTime: inserts that waited in the stash
+	placeAt    atomic.Uint64            // ConstantTime: next stash set to place from
+	placeNs    atomic.Int64             // ConstantTime: running mean of a placement step, ns
 	pad        time.Duration            // Config.ConstantTime
 	hot        atomic.Pointer[hotTable] // nil until the first promotion
 	hotN       int                      // hot entries; 0: none
@@ -318,6 +326,15 @@ func New(cfg Config) (*Filter, error) {
 		}
 	}
 	return f, nil
+}
+
+// prefault writes a word of every page of w, so a table allocated while
+// the filter is in use takes its page faults now rather than one by one in
+// later calls (a ConstantTime call's timing would show them).
+func prefault(w []uint64) {
+	for i := 0; i < len(w); i += 4096 / 8 {
+		w[i] = 0
+	}
 }
 
 func alignedWords(n int) []uint64 {
@@ -482,7 +499,8 @@ func (f *Filter) estimateAt(h, w1, last, now, window uint64, sat bool) Result {
 
 // countCT is CountAt in ConstantTime mode.
 func (f *Filter) countCT(h, window, now uint64) Result {
-	t0 := time.Now()
+	t0, pad := f.ctBegin(opCount, now)
+	s := time.Now()
 	w0, w1, src := f.read(h, now)
 	var r Result
 	if src != 0 && age(now, w0&tsMask) <= f.horizon {
@@ -494,7 +512,7 @@ func (f *Filter) countCT(h, window, now uint64) Result {
 	if f.sk.Load() != nil || f.gh.Load() != nil {
 		f.addSketch(&r, h, window, now)
 	}
-	f.waitOutOp(t0, opCount, h)
+	f.ctEnd(opCount, h, t0, s, pad)
 	return r
 }
 
@@ -722,6 +740,15 @@ func (f *Filter) Folded() uint64 { return f.folded.Load() }
 // instead of spilled to the overflow table.
 func (f *Filter) Shed() uint64 { return f.shed.Load() }
 
+// Waited counts ConstantTime first touches that found both lines full and
+// waited in the stash for later calls' pads to place them.
+func (f *Filter) Waited() uint64 { return f.waited.Load() }
+
+// Waiting is the number of keys waiting in the stash for a slot now. If it
+// stays high, pads are too short for the insert rate, and calls also place
+// keys past their pads (see place).
+func (f *Filter) Waiting() int { return int(f.deferred.Load()) }
+
 // Restored counts returning keys whose history came back from the stash.
 func (f *Filter) Restored() uint64 { return f.restored.Load() }
 
@@ -785,14 +812,14 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) Result {
 }
 
 // AutoPad as Config.ConstantTime pads each operation to a running estimate
-// of its own 99.5th-percentile latency instead of a fixed duration.
+// of its own work's 99.5th-percentile latency instead of a fixed duration.
 const AutoPad time.Duration = -1
 
 const (
 	opTouch = iota
 	opCount
-	// The estimate (in ps) moves up autoUp when a sampled call ran past it
-	// and down autoDown otherwise, so it settles where 0.5% of calls run
+	// The estimate (in ps) moves up autoUp when a sampled call's own work
+	// ran past it and down autoDown otherwise, so it settles where 0.5% of calls run
 	// past it (autoDown/(autoUp+autoDown)). One slow call (a GC pause)
 	// moves it 100 ns.
 	autoUp    = 99_500
@@ -806,37 +833,146 @@ type quantilePad struct {
 	_ [56]byte
 }
 
-// waitOutOp spins until op's pad has passed since t0. Touch waits out
-// ConstantTime. Count, whose paths differ far less (no insert search),
-// waits out a running estimate of its own 99.5th-percentile latency, at
-// most ConstantTime; with AutoPad, Touch does too. A sample of calls (1 in
-// 4, by key) moves the estimate.
-func (f *Filter) waitOutOp(t0 time.Time, op int, h uint64) {
-	if op == opTouch && !f.auto {
-		f.waitOut(t0)
-		return
+// ctBegin starts a ConstantTime call of kind op and returns its start and
+// pad. Touch's pad is ConstantTime; Count's, whose paths differ far less
+// (no insert), is a running estimate of its own work's 99.5th percentile,
+// at most ConstantTime; with AutoPad both are. Before the call's own work,
+// so that how much it does can't depend on the caller's key, it spends what
+// the pad leaves beyond that estimate placing keys that wait in the stash.
+func (f *Filter) ctBegin(op int, now uint64) (t0 time.Time, pad time.Duration) {
+	t0 = time.Now()
+	own := time.Duration(f.padQ[op].q.Load() / 1000)
+	switch {
+	case op == opTouch && !f.auto:
+		pad = f.pad
+	case f.auto:
+		pad = own
+	default:
+		pad = min(own, f.pad)
 	}
-	qp := &f.padQ[op].q
-	pad := time.Duration(qp.Load() / 1000)
+	f.place(t0, pad-own, now)
+	return t0, pad
+}
+
+// ctEnd moves op's own-work estimate with the work done since s (a sample
+// of calls, 1 in 4 by key, moves it) and spins until the pad has passed
+// since t0.
+func (f *Filter) ctEnd(op int, h uint64, t0, s time.Time, pad time.Duration) {
 	if h>>8&3 == 0 {
-		if time.Since(t0) > pad {
-			if pad < autoMax {
+		qp := &f.padQ[op].q
+		if est := time.Duration(qp.Load() / 1000); time.Since(s) > est {
+			if est < autoMax {
 				qp.Add(autoUp)
 			}
-		} else if pad > 0 {
+		} else if est > 0 {
 			qp.Add(-autoDown)
 		}
-	}
-	if !f.auto {
-		pad = min(pad, f.pad)
 	}
 	for time.Since(t0) < pad {
 	}
 }
 
-// waitOut spins until the ConstantTime pad has passed since t0.
-func (f *Filter) waitOut(t0 time.Time) {
-	for time.Since(t0) < f.pad {
+// place spends up to budget since t0 on keys that wait in the stash for a
+// slot (an insert that found its two lines full defers the cuckoo search to
+// here, so no call's own work includes one). A step takes the next stash
+// set with a waiting key and inserts its waiting keys as a first touch
+// outside ConstantTime would: free slot, cuckoo path, or eviction of the
+// slot with the fewest events into the stash. A step starts only if the
+// rest of the budget covers a step's running mean cost. If more than one
+// key per 16 stash entries waits (pads too short for the insert rate),
+// every call places one set regardless: calls then run longer for every key
+// alike, which says the table is under insert pressure, not which keys were
+// seen, and the stash's sets stay far from full (a waiting key whose set is
+// full is inserted at once, which takes time).
+func (f *Filter) place(t0 time.Time, budget time.Duration, now uint64) {
+	p := f.stash.Load()
+	if p == nil {
+		return
+	}
+	forced := f.deferred.Load() > int64(len(p.e)/16)
+	for f.deferred.Load() > 0 {
+		est := time.Duration(f.placeNs.Load())
+		if est == 0 {
+			est = time.Microsecond
+		}
+		if !forced && budget-time.Since(t0) < est {
+			f.placeNs.Store(int64(est - est/64)) // a step that ran long once mustn't stop placing for good
+			return
+		}
+		forced = false
+		s := time.Now()
+		if !f.placeNext(now) {
+			return
+		}
+		f.placeNs.Store(int64(est + (time.Since(s)-est)/8))
+	}
+}
+
+// placeNext places the waiting keys of the next set (after the last one
+// visited) whose wait bit is set; false if no bit is set.
+func (f *Filter) placeNext(now uint64) bool {
+	p := f.stash.Load()
+	if p == nil {
+		return false
+	}
+	nw := uint64(len(p.wait))
+	start := f.placeAt.Load()
+	for k := range nw + 1 {
+		wi := (start/64 + k) % nw
+		b := p.wait[wi].Load()
+		if k == 0 {
+			b &^= 1<<(start%64) - 1 // bits before the cursor wait for the wrap-around
+		}
+		if b == 0 {
+			continue
+		}
+		set := wi*64 + uint64(bits.TrailingZeros64(b))
+		f.placeAt.Store(set + 1)
+		f.placeSet(set, now)
+		return true
+	}
+	return false
+}
+
+// placeSet moves set i's waiting keys into the table. A key whose stripe is
+// busy, or that loses a race for its slot, is left for a later step.
+func (f *Filter) placeSet(i, now uint64) {
+	p := f.stash.Load()
+	set, mu := p.e[i*stashWays:(i+1)*stashWays], &f.stashMu[i%stashStripes]
+	var ids [stashWays]uint64
+	n := 0
+	mu.Lock()
+	for k := range set {
+		if e := &set[k]; e.id != 0 && e.w0&deferMark != 0 {
+			if age(now, e.w0&tsMask) > f.horizon {
+				f.stashWrite(e, stashEntry{}) // expired while it waited
+				continue
+			}
+			ids[n], n = e.id, n+1
+		}
+	}
+	if n == 0 {
+		p.wait[i/64].And(^(1 << (i % 64)))
+	}
+	mu.Unlock()
+	for _, id := range ids[:n] {
+		fp, tg := id>>tagBits&(1<<16-1), id&(1<<tagBits-1)
+		stripe := fp >> (16 - claimStripeBits)
+		cm := &f.claimMu[stripe]
+		if !cm.TryLock() {
+			continue
+		}
+		if w0, w1, ok := f.stashGet(id, now, true); ok {
+			pl := id >> 28
+			al := f.alt(pl, fp)
+			switch {
+			case f.find(pl, fp<<1, tg) >= 0 || f.find(al, fp<<1|1, tg) >= 0:
+				f.stashPut(id, w0, w1, now) // the table holds the key: no longer waiting
+			case f.claimAt([2]uint64{pl, al}, [2]uint64{w0 &^ dispBit, w0 | dispBit}, w1, now, stripe, claimFull) < 0:
+				f.stashPutAs(id, w0, w1, now, w0&deferMark != 0)
+			}
+		}
+		cm.Unlock()
 	}
 }
 
@@ -873,7 +1009,8 @@ func (f *Filter) hit(h uint64, i int, fp, tg, window, now uint64, wantCount bool
 // lookups whatever the key's state (both lines, stash, overflow), then the
 // hit or the insert.
 func (f *Filter) touchCT(h, window, now uint64, wantCount bool) Result {
-	t0 := time.Now()
+	t0, pad := f.ctBegin(opTouch, now)
+	s := time.Now()
 	fp, tg := fingerprint(h), tag(h)
 	mu := &f.claimMu[h>>(64-claimStripeBits)]
 	var r Result
@@ -891,7 +1028,7 @@ func (f *Filter) touchCT(h, window, now uint64, wantCount bool) Result {
 	if f.sk.Load() != nil || f.gh.Load() != nil {
 		f.addSketch(&r, h, window, now)
 	}
-	f.waitOutOp(t0, opTouch, h)
+	f.ctEnd(opTouch, h, t0, s, pad)
 	return r
 }
 
@@ -933,7 +1070,18 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 	} else if f.lostRecently(now) {
 		r.Degraded = true
 	}
-	if f.claim(h, fp, w1, now, sat) < 0 {
+	ci := f.claim(h, fp, w1, now, sat)
+	if ci == claimWait { // ConstantTime, no free slot: wait in the stash, placed during pads (place)
+		if f.stashWait(f.stashID(h, fp, tg), fp<<48|sat|now, w1, now) {
+			f.waited.Add(1)
+			src, r.Restored = 0, false
+		} else { // its stash set is full: search (and evict) now rather than drop a history
+			ci = f.claimAt([2]uint64{f.primary(h), f.alt(f.primary(h), fp)},
+				[2]uint64{fp<<48 | sat | now, fp<<48 | dispBit | sat | now}, w1, now, h>>(64-claimStripeBits), claimFull)
+		}
+	}
+	switch ci {
+	case -1:
 		if src == srcStash { // put it back for the retry
 			f.stashPut(f.stashID(h, fp, tg), s0, s1, now)
 		}
@@ -1020,10 +1168,29 @@ func (f *Filter) find(line, fpd, tg uint64) int {
 // register, published together with its word0. Returns word0 index, or -1
 // if it lost a race for a slot and the caller should look the key up again
 // (a racing writer may have completed it). The caller holds the key's claim
-// stripe.
+// stripe. In ConstantTime it searches and evicts nothing: with no free slot
+// it returns claimWait, and the key waits in the stash (miss).
 func (f *Filter) claim(h, fp, w1, now, sat uint64) int {
-	lines := [2]uint64{f.primary(h), f.alt(f.primary(h), fp)}
-	mine := [2]uint64{fp<<48 | sat | now, fp<<48 | dispBit | sat | now}
+	mode := claimFull
+	if f.ct {
+		mode = claimDefer
+	}
+	return f.claimAt([2]uint64{f.primary(h), f.alt(f.primary(h), fp)},
+		[2]uint64{fp<<48 | sat | now, fp<<48 | dispBit | sat | now}, w1, now, h>>(64-claimStripeBits), mode)
+}
+
+// claimAt modes: free slot, path or eviction (claimFull); free slot only,
+// else claimWait (claimDefer).
+const (
+	claimFull = iota
+	claimDefer
+
+	claimWait = -2
+)
+
+// claimAt is claim for an entry with lines and words mine (primary,
+// alternate), on claim stripe stripe, which the caller holds.
+func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int) int {
 	for {
 		for li, line := range lines {
 			base := int(line * wordsPerLine)
@@ -1036,6 +1203,9 @@ func (f *Filter) claim(h, fp, w1, now, sat uint64) int {
 					return -1
 				}
 			}
+		}
+		if mode == claimDefer {
+			return claimWait
 		}
 		// Iterative deepening: all short paths before any long one. The deep
 		// budget shrinks as recent searches fail, so an overfull table falls
@@ -1084,7 +1254,7 @@ func (f *Filter) claim(h, fp, w1, now, sat uint64) int {
 		// victim, which takes that stripe, finds it either still here or
 		// already stashed. TryLock: the caller holds its own stripe.
 		vs := victimW0 >> (64 - claimStripeBits)
-		if vs != h>>(64-claimStripeBits) {
+		if vs != stripe {
 			mu := &f.claimMu[vs]
 			if !mu.TryLock() {
 				return -1
@@ -1406,7 +1576,7 @@ func (f *Filter) Slots() int { return len(f.words) / 2 }
 func (f *Filter) Bytes() int {
 	n := 8 * len(f.words)
 	if s := f.stash.Load(); s != nil {
-		n += len(*s) * int(unsafe.Sizeof(stashEntry{}))
+		n += len(s.e)*int(unsafe.Sizeof(stashEntry{})) + 8*len(s.wait)
 	}
 	if g := f.gh.Load(); g != nil {
 		n += 8 * len(g.words)
@@ -1507,20 +1677,29 @@ func (f *Filter) stashSet(id uint64) ([]stashEntry, *paddedMutex) {
 	if p == nil {
 		return nil, mu
 	}
-	return (*p)[i*stashWays : (i+1)*stashWays : (i+1)*stashWays], mu
+	return p.e[i*stashWays : (i+1)*stashWays : (i+1)*stashWays], mu
 }
 
-// stashTable allocates the stash on the first eviction, so a filter that
+// stashTable: the stash's sets of stashWays entries, and a bit per set
+// that holds a key waiting for a slot (ConstantTime), set and cleared under
+// the set's lock.
+type stashTable struct {
+	e    []stashEntry
+	wait []atomic.Uint64
+}
+
+// allocStash allocates the stash on the first eviction, so a filter that
 // never evicts doesn't pay for it.
-func (f *Filter) stashTable() {
+func (f *Filter) allocStash() {
 	if f.stash.Load() != nil {
 		return
 	}
 	f.skMu.Lock()
 	defer f.skMu.Unlock()
 	if f.stash.Load() == nil {
-		s := make([]stashEntry, f.stashN*stashWays)
-		f.stash.Store(&s)
+		e := make([]stashEntry, f.stashN*stashWays)
+		prefault(unsafe.Slice((*uint64)(unsafe.Pointer(&e[0])), len(e)*3))
+		f.stash.Store(&stashTable{e: e, wait: make([]atomic.Uint64, (f.stashN+63)/64)})
 	}
 }
 
@@ -1528,13 +1707,23 @@ func (f *Filter) stashTable() {
 // or expired way, or else in place of the way with the fewest events in the
 // horizon if that has fewer than it. Whichever history is dropped, Lost
 // counts it. Reports whether the entry was kept.
-func (f *Filter) stashPut(id, w0, w1, now uint64) {
+func (f *Filter) stashPut(id, w0, w1, now uint64) { f.stashPutAs(id, w0, w1, now, false) }
+
+// deferMark, the displaced bit of a stash entry's word0 (otherwise clear),
+// marks a key that waits for a slot (ConstantTime) rather than one evicted.
+const deferMark = dispBit
+
+// stashPutAs is stashPut; wait marks the entry as waiting for a slot.
+func (f *Filter) stashPutAs(id, w0, w1, now uint64, wait bool) {
 	if f.stashN == 0 {
 		f.spill(id, w0, w1, now)
 		return
 	}
 	w0 &^= dispBit
-	f.stashTable()
+	if wait {
+		w0 |= deferMark
+	}
+	f.allocStash()
 	set, mu := f.stashSet(id)
 	mu.Lock()
 	way, least := -1, uint64(1<<64-1)
@@ -1569,9 +1758,9 @@ func (f *Filter) stashPut(id, w0, w1, now uint64) {
 		out = set[way]
 	}
 	if out.id != 0 {
-		f.spill(out.id, out.w0, out.w1, now)
+		f.spill(out.id, out.w0&^deferMark, out.w1, now)
 	}
-	set[way] = stashEntry{id, w0, w1}
+	f.stashWrite(&set[way], stashEntry{id, w0, w1})
 	for until := (w0 & tsMask) + f.horizon; ; {
 		u := f.stashUntil.Load()
 		if u >= until || f.stashUntil.CompareAndSwap(u, until) {
@@ -1579,6 +1768,49 @@ func (f *Filter) stashPut(id, w0, w1, now uint64) {
 		}
 	}
 	mu.Unlock()
+}
+
+// stashWait puts a key that waits for a slot (ConstantTime) in a free or
+// expired way of its stash set, or in its own old place, and reports
+// whether it did: a full set drops nothing for it.
+func (f *Filter) stashWait(id, w0, w1, now uint64) bool {
+	if f.stashN == 0 {
+		return false
+	}
+	f.allocStash()
+	set, mu := f.stashSet(id)
+	mu.Lock()
+	defer mu.Unlock()
+	for i := range set {
+		if e := &set[i]; e.id == 0 || e.id == id || age(now, e.w0&tsMask) > f.horizon {
+			f.stashWrite(e, stashEntry{id, w0&^dispBit | deferMark, w1})
+			for until := (w0 & tsMask) + f.horizon; ; {
+				u := f.stashUntil.Load()
+				if u >= until || f.stashUntil.CompareAndSwap(u, until) {
+					break
+				}
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// stashWrite replaces stash entry e (its set's lock held), keeping the count
+// of entries that wait for a slot.
+func (f *Filter) stashWrite(e *stashEntry, ne stashEntry) {
+	if e.id != 0 && e.w0&deferMark != 0 {
+		f.deferred.Add(-1)
+	}
+	if ne.id != 0 && ne.w0&deferMark != 0 {
+		f.deferred.Add(1)
+		p := f.stash.Load()
+		set := uint64((uintptr(unsafe.Pointer(e)) - uintptr(unsafe.Pointer(&p.e[0]))) / unsafe.Sizeof(stashEntry{}) / stashWays)
+		if w := &p.wait[set/64]; w.Load()&(1<<(set%64)) == 0 {
+			w.Or(1 << (set % 64))
+		}
+	}
+	*e = ne
 }
 
 // stashGet returns the live stash entry for id; take also removes it.
@@ -1599,7 +1831,7 @@ func (f *Filter) stashGet(id, now uint64, take bool) (w0, w1 uint64, ok bool) {
 		}
 		w0, w1 = e.w0, e.w1
 		if take {
-			*e = stashEntry{}
+			f.stashWrite(e, stashEntry{})
 		}
 		return w0, w1, true
 	}

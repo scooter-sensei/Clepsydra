@@ -172,6 +172,9 @@ func noSketch(c *Config) { c.Overflow = -1 }
 // from the flood's noise (then Degraded). Without the sketch the history is
 // lost, and every new key reads Degraded.
 func TestAttackEvictionReset(t *testing.T) {
+	if forceCT {
+		t.Skip("ConstantTime evicts only when a waiting key's stash set is full")
+	}
 	const k = 20
 	window := uint64(60_000)
 	report := func(name string, f *Filter, events int, r Result) {

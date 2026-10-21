@@ -296,6 +296,9 @@ func TestConformance(t *testing.T) {
 			if err := json.Unmarshal(b, &want); err != nil {
 				t.Fatal(err)
 			}
+			if forceCT && want.End.Evictions > 0 {
+				t.Skip("ConstantTime defers inserts that find no free slot, so which keys are evicted differs")
+			}
 			got, err := runVectors(t, vecScenario{name: want.Name, desc: want.Description, cfg: want.Config, hashes: len(want.Hashes) > 0}, want.Ops)
 			if err != nil {
 				t.Fatal(err)

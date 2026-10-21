@@ -70,6 +70,7 @@ func (f *Filter) hotTable() *hotTable {
 		return t
 	}
 	w := alignedWords((f.hotN + 1) * int(unsafe.Sizeof(hotEntry{})/8))
+	prefault(w)
 	t := &hotTable{e: unsafe.Slice((*hotEntry)(unsafe.Pointer(&w[0])), f.hotN+1), next: 1}
 	t.full.Store(satNone)
 	f.hot.Store(t)

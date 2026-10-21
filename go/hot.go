@@ -37,9 +37,19 @@ type hotEntry struct {
 	id    atomic.Uint64 // owner's identity; 0: free
 	epoch atomic.Int64  // unit of bucket 0
 	sat   atomic.Int64  // newest unit whose events may be missing (counts are floors there); satNone
-	c     [nBuckets]atomic.Uint32
-	_     [4]byte
+	c0    atomic.Uint64 // bucket 0's count (hotCount) | hotClosed | generation (hotGen and up)
+	c     [nBuckets - 1]atomic.Uint32
 }
+
+// Bucket 0's word: a touch in the entry's own unit adds to the count with
+// one CAS while hotClosed is clear (add). A writer closes it on taking the
+// entry and reopens it with the next generation on leaving, so a CAS that
+// read the word before a change of owner or unit fails.
+const (
+	hotCount  = 1<<32 - 1
+	hotClosed = 1 << 32
+	hotGen    = 1 << 33
+)
 
 // isHot reports whether word1 points at a hot entry instead of holding a
 // register.
@@ -81,6 +91,7 @@ func (e *hotEntry) lock() uint64 {
 	for spins := 0; ; spins++ {
 		v := e.ver.Load()
 		if v&1 == 0 && e.ver.CompareAndSwap(v, v+1) {
+			e.c0.Or(hotClosed)
 			return v + 1
 		}
 		if spins&63 == 63 {
@@ -89,7 +100,10 @@ func (e *hotEntry) lock() uint64 {
 	}
 }
 
-func (e *hotEntry) unlock(ver uint64) { e.ver.Store(ver + 1) }
+func (e *hotEntry) unlock(ver uint64) {
+	e.c0.Store(e.c0.Load()&^hotClosed + hotGen)
+	e.ver.Store(ver + 1)
+}
 
 // view is a register's state, narrow or hot: bucket counts at unit e and,
 // for a hot entry, the newest unit whose events may be missing.
@@ -104,8 +118,9 @@ type view struct {
 // version around the call.
 func (e *hotEntry) load() (v view) {
 	v.e, v.sat, v.hot = e.epoch.Load(), e.sat.Load(), true
-	for j := range v.c {
-		v.c[j] = uint64(e.c[j].Load())
+	v.c[0] = e.c0.Load() & hotCount
+	for j := 1; j < nBuckets; j++ {
+		v.c[j] = uint64(e.c[j-1].Load())
 	}
 	return v
 }
@@ -117,7 +132,11 @@ func (e *hotEntry) store(v *view) {
 		if c > math.MaxUint32 {
 			v.c[j], v.sat = math.MaxUint32, max(v.sat, v.e)
 		}
-		e.c[j].Store(uint32(v.c[j]))
+		if j == 0 {
+			e.c0.Store(e.c0.Load()&^hotCount | v.c[0])
+		} else {
+			e.c[j-1].Store(uint32(v.c[j]))
+		}
 	}
 	e.epoch.Store(v.e)
 	e.sat.Store(v.sat)
@@ -147,14 +166,23 @@ func (t *hotTable) read(idx, id uint64) (view, bool) {
 // the slot as a register and frees the entry (demote).
 func (t *hotTable) add(idx, id, n uint64, u int64, slot *uint64, old uint64) bool {
 	e := &t.e[idx]
+	for { // the usual case, a touch in the entry's own unit: one CAS
+		c := e.c0.Load()
+		if c&hotClosed != 0 || e.id.Load() != id || e.epoch.Load() != u || c&hotCount+n > hotCount {
+			break
+		}
+		if e.c0.CompareAndSwap(c, c+n) {
+			return true
+		}
+	}
 	ver := e.lock()
 	if e.id.Load() != id {
 		e.unlock(ver)
 		return false
 	}
 	if u == e.epoch.Load() {
-		if c := uint64(e.c[0].Load()) + n; c <= math.MaxUint32 {
-			e.c[0].Store(uint32(c))
+		if c := e.c0.Load()&hotCount + n; c <= hotCount {
+			e.c0.Store(e.c0.Load()&^hotCount | c)
 			e.unlock(ver)
 			return true
 		}

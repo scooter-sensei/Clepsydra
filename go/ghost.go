@@ -102,10 +102,6 @@ func (g *ghost) add(id, n, last uint64, sat bool, now uint64) {
 	if ns := now / g.sliceLen; g.epoch.Load() < ns+1 {
 		g.advance(ns)
 	}
-	ep := g.epoch.Load()
-	if sl+3 < ep { // older than the live slices (can't happen for a live history)
-		return
-	}
 	if sat || n >= ghCntMax {
 		n, sat = ghCntMax, true
 		g.sat.Store(true)
@@ -121,6 +117,14 @@ func (g *ghost) add(id, n, last uint64, sat bool, now uint64) {
 	base, fp := g.slot(id)
 outer:
 	for {
+		// Entries' 2-bit slices are decoded against ep, so a write is
+		// committed only if ep is still the epoch: an entry another add
+		// wrote after moving the epoch on would read four slices old,
+		// dead, and be overwritten.
+		ep := g.epoch.Load()
+		if sl+3 < ep { // older than the live slices (a caller far behind the others)
+			return
+		}
 		// One pass: a matching entry to merge into, else a free or dead
 		// one, else the lightest live one.
 		free, victim := -1, -1
@@ -138,7 +142,7 @@ outer:
 			if ghFP(e) == fp {
 				esl := max(g.real(e, ep), sl)
 				ne := ghEntry(fp, min(ghCntMax, ghCnt(e)+n), esl)
-				if atomic.CompareAndSwapUint64(w, old, old&^(ghEntryMask<<sh)|ne<<sh) {
+				if g.epoch.Load() == ep && atomic.CompareAndSwapUint64(w, old, old&^(ghEntryMask<<sh)|ne<<sh) {
 					return
 				}
 				continue outer
@@ -154,7 +158,7 @@ outer:
 			if e != 0 && g.live(g.real(e, ep), g.horizon, now) {
 				continue // taken meanwhile
 			}
-			if atomic.CompareAndSwapUint64(w, old, old&^(ghEntryMask<<sh)|ghEntry(fp, n, sl)<<sh) {
+			if g.epoch.Load() == ep && atomic.CompareAndSwapUint64(w, old, old&^(ghEntryMask<<sh)|ghEntry(fp, n, sl)<<sh) {
 				return
 			}
 			continue
@@ -162,8 +166,11 @@ outer:
 		// Full: the lightest history leaves (the newcomer if it is the
 		// lightest) and the floor rises to cover it. The floor goes up
 		// first, so no reader sees the history in neither place.
+		if g.epoch.Load() != ep {
+			continue
+		}
 		if n <= vc {
-			g.raiseFloor(base, n, sl, ep, now)
+			g.raiseFloor(base, n, sl, now)
 			return
 		}
 		w, sh := g.at(base, victim)
@@ -172,8 +179,8 @@ outer:
 		if ghCnt(e) != vc || ghFP(e) == fp {
 			continue
 		}
-		g.raiseFloor(base, vc, g.real(e, ep), ep, now)
-		if atomic.CompareAndSwapUint64(w, old, old&^(ghEntryMask<<sh)|ghEntry(fp, n, sl)<<sh) {
+		g.raiseFloor(base, vc, g.real(e, ep), now)
+		if g.epoch.Load() == ep && atomic.CompareAndSwapUint64(w, old, old&^(ghEntryMask<<sh)|ghEntry(fp, n, sl)<<sh) {
 			return
 		}
 	}
@@ -181,9 +188,10 @@ outer:
 
 // raiseFloor lifts the bucket's floor to at least n events, live until
 // slice sl's events expire.
-func (g *ghost) raiseFloor(base int, n, sl, ep, now uint64) {
+func (g *ghost) raiseFloor(base int, n, sl, now uint64) {
 	w := &g.words[base]
 	for {
+		ep := g.epoch.Load() // as in add: a floor written after the epoch moved must not read as dead
 		old := atomic.LoadUint64(w)
 		e := old & ghEntryMask
 		c, fsl := uint64(0), sl
@@ -191,7 +199,7 @@ func (g *ghost) raiseFloor(base int, n, sl, ep, now uint64) {
 			c, fsl = ghCnt(e), max(sl, g.real(e, ep))
 		}
 		ne := ghEntry(0, max(c, n), fsl)
-		if ne == e || atomic.CompareAndSwapUint64(w, old, old&^ghEntryMask|ne) {
+		if ne == e || g.epoch.Load() == ep && atomic.CompareAndSwapUint64(w, old, old&^ghEntryMask|ne) {
 			return
 		}
 	}

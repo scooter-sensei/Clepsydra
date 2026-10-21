@@ -98,8 +98,12 @@ func (g *ghost) add(id, n, last uint64, sat bool, now uint64) {
 	if n == 0 || age(now, last) > g.horizon {
 		return
 	}
+	// The epoch must reach the history's own slice, even when the caller's
+	// clock is behind its newest event (an evictor with an older clock):
+	// an entry from a slice past the epoch would decode four slices old,
+	// dead to reads and free to the next add.
 	sl := last / g.sliceLen
-	if ns := now / g.sliceLen; g.epoch.Load() < ns+1 {
+	if ns := max(now, last) / g.sliceLen; g.epoch.Load() < ns+1 {
 		g.advance(ns)
 	}
 	if sat || n >= ghCntMax {

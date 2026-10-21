@@ -67,3 +67,23 @@ func TestGhostEpochRace(t *testing.T) {
 		t.Fatalf("%d reads found a live history below its count", lost.Load())
 	}
 }
+
+// TestGhostAddAheadOfClock: an evictor whose clock is behind the evicted
+// key's last touch spills a history whose newest event lies in a slice past
+// the one its own clock is in. The entry's 2-bit slice must still decode
+// to that slice: before, it decoded four slices old, so reads skipped it,
+// adds took its place as free and the next epoch swept it.
+func TestGhostAddAheadOfClock(t *testing.T) {
+	const horizon = 10_000 // slices of 5,000 ticks
+	g := newGhost(4*64, horizon)
+	g.add(1, 5, 80_008, false, 79_989) // last touch 80,008; the evictor's clock reads 79,989
+	for _, now := range []uint64{79_989, 80_008, 80_037} {
+		if r, _ := g.estimate(1, horizon, now); r.Count != 5 {
+			t.Fatalf("at %d the history reads %+v, want 5 events", now, r)
+		}
+	}
+	g.add(2, 5, 85_000, false, 85_000) // a later slice: the epoch moves on, dead entries are swept
+	if r, _ := g.estimate(1, horizon, 85_000); r.Count != 5 {
+		t.Fatalf("after the next epoch the history reads %+v, want 5 events", r)
+	}
+}

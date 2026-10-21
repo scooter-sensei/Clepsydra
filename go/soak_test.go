@@ -110,7 +110,7 @@ func TestStressSoak(t *testing.T) {
 					} else if r.Upper < exact {
 						if low.Add(1) == 1 {
 							again := f.CountAt(h, w, now)
-							firstLow.Store(fmt.Sprintf("window %d ms: exact %d (events %v, now %d), got %+v; asked again: %+v", w, exact, logs[h], now, r, again))
+							firstLow.Store(fmt.Sprintf("got %+v; asked again: %+v; window %d ms: exact %d (now %d, events %v); %s", r, again, w, exact, now, logs[h], f.whereIs(h, now)))
 						}
 					}
 				default:
@@ -152,6 +152,39 @@ func TestStressSoak(t *testing.T) {
 	if occ := f.Occupancy(clock.Load()); occ > f.Slots() {
 		t.Errorf("occupancy %d > %d slots", occ, f.Slots())
 	}
+}
+
+// whereIs describes where h's history is: its slots (with the register's or
+// hot entry's counts), its stash entry, its overflow entries and floor.
+func (f *Filter) whereIs(h, now uint64) string {
+	fp, tg := fingerprint(h), tag(h)
+	id := f.stashID(h, fp, tg)
+	p := f.primary(h)
+	s := ""
+	for li, l := range []uint64{p, f.alt(p, fp)} {
+		base := int(l * wordsPerLine)
+		for k := 0; k < wordsPerLine; k += 2 {
+			w0, w1 := atomic.LoadUint64(&f.words[base+k]), atomic.LoadUint64(&f.words[base+k+1])
+			if w0>>48 == fp && w1>>tagShift == tg {
+				v, ok := f.viewOf(id, w1, w0&tsMask)
+				s += fmt.Sprintf("slot line%d/%d disp%v last %d hot %v ok %v epoch %d counts %v; ", li, k/2, w0&dispBit != 0, w0&tsMask, isHot(w1), ok, v.e, v.c)
+			}
+		}
+	}
+	if f.stashN > 0 {
+		set, _ := f.stashSet(id)
+		for _, e := range set {
+			if e.id == id {
+				v, ok := f.viewOf(id, e.w1, e.w0&tsMask)
+				s += fmt.Sprintf("stash last %d hot %v ok %v epoch %d counts %v; ", e.w0&tsMask, isHot(e.w1), ok, v.e, v.c)
+			}
+		}
+	}
+	if g := f.gh.Load(); g != nil {
+		r, _ := g.estimate(id, f.horizon, now)
+		s += fmt.Sprintf("ghost %+v", r)
+	}
+	return s
 }
 
 // floorLive: h's overflow bucket has a floor live within window, so h may

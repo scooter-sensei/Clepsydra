@@ -167,9 +167,11 @@ type Filter struct {
 	pressure    atomic.Uint32 // EWMA of relocation-search failure, 0..pressureOne
 	_           [60]byte
 	claimMu     [1 << claimStripeBits]paddedMutex // serializes first touches per key
-	// moves counts, per claim stripe, hand-overs that take an entry away
-	// from a slot a lookup may have just scanned: a relocation's last step
-	// and an eviction (see lookupStable).
+	// moves counts, per claim stripe, moves of a key's entry under way: a
+	// relocation from its copy's appearance to the hand-off, an eviction
+	// from taking the slot to stashing the history. A lookup's miss is
+	// trusted only if none overlapped it (lookupStable), and an evictor
+	// leaves a key with one under way alone (claim).
 	moves [1 << claimStripeBits]moveCount
 
 	sip    sipKey
@@ -204,6 +206,10 @@ type Filter struct {
 	promoted   atomic.Uint64
 	hotRefused atomic.Uint64
 }
+
+// testHookCopied, if set, runs between a relocation's copy and its
+// hand-off (tests).
+var testHookCopied func()
 
 // forceCT turns ConstantTime on in every filter (tests: TF_CT=1).
 var forceCT bool
@@ -1025,7 +1031,7 @@ func (f *Filter) claim(h, fp, w1, now, sat uint64) int {
 			for li, line := range lines {
 				base := int(line * wordsPerLine)
 				for s := 0; s < wordsPerLine; s += 2 {
-					if f.relocate(base+s, line, mine[li], w1, now, depth, &budget) {
+					if f.relocate(base+s, line, mine[li], w1, now, depth, &budget, nil) {
 						f.pressure.Store(p - p>>3) // EWMA toward "searches succeed"
 						return base + s
 					}
@@ -1040,11 +1046,19 @@ func (f *Filter) claim(h, fp, w1, now, sat uint64) int {
 				w0 := atomic.LoadUint64(&f.words[base+s])
 				ts := w0 & tsMask
 				vw1 := atomic.LoadUint64(&f.words[base+s+1])
+				// Read after the slot: a copy is visible only once its move is
+				// counted, so a key whose move is under way is left alone.
+				if mv := &f.moves[w0>>(64-claimStripeBits)]; mv.begun.Load() != mv.done.Load() {
+					continue
+				}
 				score := min(f.mass(f.slotID(line, w0, vw1), vw1, ts, now), 1<<16-1)<<48 | ts
 				if score < victimScore {
 					victim, vli, victimScore, victimW0, victimW1 = base+s, li, score, w0, vw1
 				}
 			}
+		}
+		if victim < 0 {
+			return -1 // every candidate is mid-move: look again
 		}
 		// The victim's history goes to the stash under the victim's own claim
 		// stripe (its hash's top bits are its fp's), so a first touch of the
@@ -1110,7 +1124,13 @@ func (f *Filter) install(i int, w0, w1, mine0, mine1 uint64) bool {
 // relocates one of its entries, up to depth more steps (a bounded cuckoo
 // path). Copy-then-replace keeps every moved key findable throughout; if the
 // source changes mid-move (a touch updated it) the move is abandoned.
-func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budget *int) bool {
+//
+// The move counts in its key's stripe (f.moves) from the moment the copy
+// appears to the end of the hand-off: a lookup that misses meanwhile looks
+// again, and an evictor leaves both copy and source alone (evicting either
+// would split the key's history between the table and the stash). parent is
+// the move whose copy (mine0) this one installs, nil for a new key.
+func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budget *int, parent *moveCount) bool {
 	w0 := atomic.LoadUint64(&f.words[i])
 	if w0 == 0 {
 		return false
@@ -1122,14 +1142,19 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
 	w1 := atomic.LoadUint64(&f.words[i+1])
 	a := f.alt(line, w0>>48)
 	base := int(a * wordsPerLine)
-	moved := w0 ^ dispBit         // displaced iff it wasn't
-	replace := func(d int) bool { // the copy is at d; now take the source
-		m := &f.moves[w0>>(64-claimStripeBits)] // the entry's key's stripe (its hash's top bits are its fp's)
-		m.begun.Add(1)
+	moved := w0 ^ dispBit                   // displaced iff it wasn't
+	m := &f.moves[w0>>(64-claimStripeBits)] // the entry's key's stripe (its hash's top bits are its fp's)
+	replace := func(d int) bool {           // the copy is at d; now take the source
 		defer m.done.Add(1)
+		if parent != nil {
+			parent.begun.Add(1) // the parent's copy appears with this install
+		}
 		if f.install(i, w0, w1, mine0, mine1) {
 			f.relocations.Add(1)
 			return true
+		}
+		if parent != nil {
+			parent.done.Add(1) // ...or doesn't
 		}
 		f.abandon(i, d, w0, w1, moved, line, a) // a touch reached the source first
 		return false
@@ -1139,13 +1164,18 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
 		if d0 != 0 && age(now, d0&tsMask) <= f.horizon {
 			continue
 		}
+		m.begun.Add(1)
 		if f.install(base+s, d0, atomic.LoadUint64(&f.words[base+s+1]), moved, w1) {
+			if testHookCopied != nil {
+				testHookCopied()
+			}
 			return replace(base + s)
 		}
+		m.done.Add(1)
 	}
 	if depth > 0 {
 		for s := 0; s < wordsPerLine; s += 2 {
-			if f.relocate(base+s, a, moved, w1, now, depth-1, budget) {
+			if f.relocate(base+s, a, moved, w1, now, depth-1, budget, m) {
 				return replace(base + s)
 			}
 		}

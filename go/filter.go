@@ -159,6 +159,10 @@ type Filter struct {
 	pressure    atomic.Uint32 // EWMA of relocation-search failure, 0..pressureOne
 	_           [60]byte
 	claimMu     [1 << claimStripeBits]paddedMutex // serializes first touches per key
+	// moves counts, per claim stripe, hand-overs that take an entry away
+	// from a slot a lookup may have just scanned: a relocation's last step
+	// and an eviction (see lookupStable).
+	moves [1 << claimStripeBits]moveCount
 
 	sip    sipKey
 	keyed  bool // Config.Key set: hash with sip
@@ -196,6 +200,8 @@ type paddedMutex struct {
 	sync.Mutex
 	_ [56]byte
 }
+
+type moveCount struct{ begun, done atomic.Uint64 }
 
 // New allocates a Filter sized for cfg.Load slot occupancy at cfg.Capacity.
 func New(cfg Config) (*Filter, error) {
@@ -464,6 +470,9 @@ func (f *Filter) read(h, now uint64) (w0, w1 uint64, src int) {
 		if w0, w1, ok := f.slotWords(f.locate(h, fp, tg), fp, tg); ok {
 			return w0, w1, srcTable
 		}
+		if i, w0, w1 := f.lookupStable(h, fp, tg, false); i >= 0 {
+			return w0, w1, srcTable
+		}
 		if now > f.stashUntil.Load() {
 			return 0, 0, 0
 		}
@@ -473,12 +482,40 @@ func (f *Filter) read(h, now uint64) (w0, w1 uint64, src int) {
 	mu := &f.claimMu[h>>(64-claimStripeBits)]
 	mu.Lock()
 	defer mu.Unlock()
-	w0, w1, ok := f.slotWords(f.locateBoth(h, fp, tg), fp, tg)
+	i, w0, w1 := f.lookupStable(h, fp, tg, true)
 	s0, s1, src := f.recall(h, fp, tg, now, false)
-	if ok {
+	if i >= 0 {
 		return w0, w1, srcTable
 	}
 	return s0, s1, src
+}
+
+// lookupStable returns the index and words of h's slot, or -1 if h has
+// none, reading both lines if both (ConstantTime). A lookup scans one line
+// and then the other, so an entry that a relocation moves into the line
+// already scanned and out of the other in between is missed by both scans;
+// an eviction likewise takes a key out of the table before its history
+// reaches the stash. A miss is trusted only if no such move of a key on h's
+// claim stripe began or ended around the scan. Moves never wait on a
+// lookup, so the retry loop ends.
+func (f *Filter) lookupStable(h, fp, tg uint64, both bool) (i int, w0, w1 uint64) {
+	m := &f.moves[h>>(64-claimStripeBits)]
+	for {
+		b, d := m.begun.Load(), m.done.Load()
+		if both {
+			i = f.locateBoth(h, fp, tg)
+		} else {
+			i = f.locate(h, fp, tg)
+		}
+		if i >= 0 {
+			if w0, w1, ok := f.slotWords(i, fp, tg); ok {
+				return i, w0, w1
+			}
+		} else if b == d && m.begun.Load() == b {
+			return -1, 0, 0
+		}
+		runtime.Gosched()
+	}
 }
 
 // slotWords loads slot i's words if it still holds fp/tg.
@@ -638,7 +675,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) Result {
 			// lock covers only this path; hits never take it.
 			mu := &f.claimMu[h>>(64-claimStripeBits)]
 			mu.Lock()
-			if i = f.locate(h, fp, tg); i < 0 {
+			if i, _, _ = f.lookupStable(h, fp, tg, false); i < 0 {
 				s0, s1, src := f.recall(h, fp, tg, now, true)
 				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src)
 				mu.Unlock()
@@ -793,7 +830,7 @@ func (f *Filter) touchCT(h, window, now uint64, wantCount bool) Result {
 }
 
 func (f *Filter) touchCTOnce(h, fp, tg, window, now uint64, wantCount bool) (Result, bool) {
-	i := f.locateBoth(h, fp, tg)
+	i, _, _ := f.lookupStable(h, fp, tg, true)
 	s0, s1, src := f.recall(h, fp, tg, now, true)
 	if i >= 0 {
 		if src == srcStash { // a stale copy: the table's entry is newer
@@ -961,13 +998,19 @@ func (f *Filter) claim(h, fp, w1, now, sat uint64) int {
 		// stripe (its hash's top bits are its fp's), so a first touch of the
 		// victim, which takes that stripe, finds it either still here or
 		// already stashed. TryLock: the caller holds its own stripe.
-		if vs := victimW0 >> (64 - claimStripeBits); vs != h>>(64-claimStripeBits) {
+		vs := victimW0 >> (64 - claimStripeBits)
+		if vs != h>>(64-claimStripeBits) {
 			mu := &f.claimMu[vs]
 			if !mu.TryLock() {
 				return -1
 			}
 			defer mu.Unlock()
 		}
+		// Between the install and the stash a lock-free lookup finds the
+		// victim in neither; the move count tells it to look again.
+		m := &f.moves[vs]
+		m.begun.Add(1)
+		defer m.done.Add(1)
 		if !f.install(victim, victimW0, victimW1, mine[vli], w1) {
 			return -1
 		}
@@ -1029,6 +1072,9 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
 	base := int(a * wordsPerLine)
 	moved := w0 ^ dispBit         // displaced iff it wasn't
 	replace := func(d int) bool { // the copy is at d; now take the source
+		m := &f.moves[w0>>(64-claimStripeBits)] // the entry's key's stripe (its hash's top bits are its fp's)
+		m.begun.Add(1)
+		defer m.done.Add(1)
 		if f.install(i, w0, w1, mine0, mine1) {
 			f.relocations.Add(1)
 			return true

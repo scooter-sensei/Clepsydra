@@ -50,6 +50,7 @@ regression() {
 	check placement verify/expected/placement.txt placement
 	check register-experiment verify/expected/register-experiment.txt register_experiment
 	check attacks verify/expected/attacks.txt attacks
+	check rates verify/expected/rates.txt rates
 	check sketch-experiments verify/expected/sketch-experiments.txt sketch_experiments
 	if [ "${1:-}" = --full ]; then
 		check fixes - verify/replay.sh fixes

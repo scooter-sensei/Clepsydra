@@ -144,8 +144,8 @@ func TestStressSoak(t *testing.T) {
 	time.Sleep(d)
 	close(stop)
 	wg.Wait()
-	t.Logf("%d workers, %v: %d ops, %d counts checked (%d Saturated, %d low behind a live bucket floor); evictions %d, restored %d, lost %d",
-		workers, d, ops.Load(), queries.Load(), sat.Load(), floored.Load(), f.Evictions(), f.Restored(), f.Lost())
+	t.Logf("%d workers, %v: %d ops, %d counts checked (%d Saturated, %d low behind a live bucket floor); evictions %d, restored %d, lost %d, promoted %d, hot refused %d",
+		workers, d, ops.Load(), queries.Load(), sat.Load(), floored.Load(), f.Evictions(), f.Restored(), f.Lost(), f.Promoted(), f.HotRefused())
 	if n := low.Load(); n > 0 {
 		t.Errorf("%d unflagged answers with Upper below the true count; first: %v", n, firstLow.Load())
 	}

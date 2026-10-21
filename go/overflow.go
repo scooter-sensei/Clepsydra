@@ -248,23 +248,28 @@ func (f *Filter) spill(id, w0, w1, now uint64) {
 		f.dropped(now)
 		return
 	}
-	if f.spillMin > 1 && f.mass(w1, last, now) < f.spillMin {
+	v, ok := f.viewOf(id, w1, last)
+	if !ok {
+		return // its hot entry was taken back with a copy (abandon); the table holds its events
+	}
+	m := f.mass(id, w1, last, now)
+	if f.spillMin > 1 && m < f.spillMin {
 		f.shed.Add(1)
 		return
 	}
+	sat := w0&satBit != 0 && hot(w1) || v.hot && v.sat != satNone
 	if !f.cms {
 		f.folded.Add(1)
-		f.ghostTable().add(id, f.mass(w1, last, now), last, w0&satBit != 0 && hot(w1), now)
+		f.ghostTable().add(id, m, last, sat, now)
 		return
 	}
 	sk := f.overflow()
 	f.folded.Add(1)
-	sat := w0&satBit != 0 && hot(w1)
-	e := regEpoch(w1, f.unitOf(last))
+	e := v.e
 	top := uint64(e+1) * f.unit
 	for j := range nBuckets {
 		lo := bucketStart(e, j)
-		c := w1 >> bucketShift[j] & (1<<bucketBits[j] - 1)
+		c := v.c[j]
 		if c > 0 && top > 0 {
 			// The bucket's newest tick (lastTouch for the newest): placing
 			// its events as late as possible only widens the windows that

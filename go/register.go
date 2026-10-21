@@ -160,6 +160,9 @@ func (f *Filter) nextReg(old, tg, last, now uint64, reset bool) (w1 uint64, over
 // that many, and its count only grows until it ages out of the register, so
 // while a slot's saturated bit is set some bucket is hot.
 func hot(w1 uint64) bool {
+	if isHot(w1) {
+		return false // a hot entry has no saturation of its own (its sat unit says what is missing)
+	}
 	for j := range nBuckets {
 		if w1>>bucketShift[j]&(1<<bucketBits[j]-1) >= satPerUnit {
 			return true
@@ -174,14 +177,31 @@ func hot(w1 uint64) bool {
 // been handed to another key since the caller found it. word0 is checked
 // after word1 is read: a hand-over makes word1 busy before it changes word0,
 // so an old value that passes both checks still belongs to the caller's key
-// (a newcomer with the same tag can't be mistaken for it).
+// (a newcomer with the same tag can't be mistaken for it). A key whose
+// register would overflow is promoted to a hot entry instead (hot.go); a
+// promoted key's events go to its entry and word1 stays as it is.
 func (f *Filter) bump(i int, fpd, tg, last, now uint64, reset bool) (w1 uint64, overflow, ok bool) {
 	for {
 		old := atomic.LoadUint64(&f.words[i+1])
-		if old>>tagShift != tg || atomic.LoadUint64(&f.words[i])>>47 != fpd {
+		w0 := atomic.LoadUint64(&f.words[i])
+		if old>>tagShift != tg || w0>>47 != fpd {
 			return 0, false, false
 		}
+		if isHot(old) && !reset {
+			if f.hotAdd(old, f.slotID(uint64(i/wordsPerLine), w0, old), now, &f.words[i+1]) {
+				return old, false, true
+			}
+			if atomic.LoadUint64(&f.words[i+1]) != old {
+				continue // the entry was taken back with the slot: look again
+			}
+			reset = true // the entry aged out with the key's history: start afresh
+		}
 		nw, over := f.nextReg(old, tg, last, now, reset)
+		if over {
+			if pw, ok := f.promote(i, w0, old, tg, last, now); ok {
+				return pw, false, true
+			}
+		}
 		if nw == old || atomic.CompareAndSwapUint64(&f.words[i+1], old, nw) {
 			return nw, over, true
 		}
@@ -189,22 +209,26 @@ func (f *Filter) bump(i int, fpd, tg, last, now uint64, reset bool) (w1 uint64, 
 	}
 }
 
-// mass is the register's event count in buckets that still reach inside
-// the horizon (for eviction scoring).
-func (f *Filter) mass(w1, last, now uint64) uint64 {
+// mass is the event count of the key with identity id (register or hot
+// entry in w1, lastTouch last) in buckets that still reach inside the
+// horizon (for eviction scoring).
+func (f *Filter) mass(id, w1, last, now uint64) uint64 {
 	if age(now, last) > f.horizon {
 		return 0
 	}
-	e := regEpoch(w1, f.unitOf(last))
+	v, ok := f.viewOf(id, w1, last)
+	if !ok {
+		return 0
+	}
 	oldest := int64(now-min(now, f.horizon)) / int64(f.unit) // unit of now-H, rounded down
 	var n uint64
-	top := e + 1
+	top := v.e + 1
 	for j := range nBuckets {
 		if top <= oldest {
 			break
 		}
-		n += w1 >> bucketShift[j] & (1<<bucketBits[j] - 1)
-		top = bucketStart(e, j)
+		n += v.c[j]
+		top = bucketStart(v.e, j)
 	}
 	return n
 }
@@ -221,13 +245,21 @@ func (f *Filter) mass(w1, last, now uint64) uint64 {
 // sat is the slot's saturated bit: some event overflowed its bucket within
 // the register's span. The bucket it overflowed from still covers its time
 // and is hot (see hot), so if no bucket the window reaches is hot, no event
-// in the window was moved or dropped and Upper bounds the true count.
-func (f *Filter) estimate(w1, last, now, window uint64, sat bool) Result {
+// in the window was moved or dropped and Upper bounds the true count. A hot
+// entry (w1 points to one; id is the key's identity) never overflows; it is
+// Saturated only for windows reaching back to the unit it was promoted in,
+// if the register it came from had overflowed. ok is false if w1 points to
+// an entry that is no longer the key's (an abandoned move took it back).
+func (f *Filter) estimate(id, w1, last, now, window uint64, sat bool) (r Result, ok bool) {
 	window = min(window, f.horizon)
 	if age(now, last) > window {
-		return Result{}
+		return Result{}, true
 	}
-	e := regEpoch(w1, f.unitOf(last))
+	v, ok := f.viewOf(id, w1, last)
+	if !ok {
+		return Result{}, false
+	}
+	e := v.e
 	unit := float64(f.unit)
 	from := float64(now) - float64(window)
 	top := float64(e+1) * unit
@@ -235,7 +267,7 @@ func (f *Filter) estimate(w1, last, now, window uint64, sat bool) Result {
 	est, upper, hit := 0.0, uint64(0), false
 	for j := range nBuckets {
 		lo := float64(bucketStart(e, j)) * unit
-		c := w1 >> bucketShift[j] & (1<<bucketBits[j] - 1)
+		c := v.c[j]
 		hi := top
 		top = lo
 		if c == 0 {
@@ -260,7 +292,11 @@ func (f *Filter) estimate(w1, last, now, window uint64, sat bool) Result {
 		break
 	}
 	n := max(1, int(est+0.5))
-	return Result{Count: n, Upper: max(n, int(upper)), Saturated: sat && hit}
+	r = Result{Count: n, Upper: max(n, int(upper)), Saturated: sat && hit}
+	if v.hot {
+		r.Saturated = v.sat != satNone && from < float64(v.sat+1)*unit
+	}
+	return r, true
 }
 
 // satPerUnit is the newest bucket's capacity: a unit with more events

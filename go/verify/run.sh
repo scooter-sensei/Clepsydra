@@ -25,6 +25,7 @@ check exact verify/expected/exact.txt go run ./cmd/tfbench -exact
 check placement verify/expected/placement.txt placement
 check register-experiment verify/expected/register-experiment.txt register_experiment
 check attacks verify/expected/attacks.txt attacks
+check rates verify/expected/rates.txt rates
 check sketch-experiments verify/expected/sketch-experiments.txt sketch_experiments
 check fixes - verify/replay.sh fixes
 check stress - verify/replay.sh stress 300

@@ -121,6 +121,14 @@ type Config struct {
 	// Default (0): 4. 1 or less: keep every history (dedup of one-event keys
 	// then survives floods; inserts into a full table cost ~30% more).
 	SpillMin int
+	// Hot is the number of hot entries (64 B each). A key that sends more
+	// than its register holds in one Horizon/24 unit (31 events: 12.4/s at a
+	// 60 s horizon) moves its register to one, with 32-bit counters, so its
+	// counts stay exact (Saturated is not set) at any realistic rate. The
+	// table is allocated on the first promotion. With every entry in use, a
+	// key saturates as without them, and HotRefused counts it. Default (0):
+	// one entry per 128 slots, at least 16. Negative: none.
+	Hot int
 	// ConstantTime, if > 0 or AutoPad, hides from response times whether a
 	// key was seen. Every operation does the same lookups whatever the key's
 	// state (both candidate lines, the stash set and the overflow table,
@@ -189,8 +197,12 @@ type Filter struct {
 	skShape    sketchShape
 	spillMin   uint64 // histories lighter than this aren't spilled (Shed)
 	shed       atomic.Uint64
-	ct         bool          // Config.ConstantTime > 0
-	pad        time.Duration // Config.ConstantTime
+	ct         bool                     // Config.ConstantTime > 0
+	pad        time.Duration            // Config.ConstantTime
+	hot        atomic.Pointer[hotTable] // nil until the first promotion
+	hotN       int                      // hot entries; 0: none
+	promoted   atomic.Uint64
+	hotRefused atomic.Uint64
 }
 
 // forceCT turns ConstantTime on in every filter (tests: TF_CT=1).
@@ -251,6 +263,10 @@ func New(cfg Config) (*Filter, error) {
 		cfg.SpillMin = 4
 	}
 	f.spillMin = uint64(max(cfg.SpillMin, 1))
+	if cfg.Hot == 0 {
+		cfg.Hot = int(max(16, lines*slotsPerLine/128))
+	}
+	f.hotN = min(max(cfg.Hot, 0), hotIdxMask)
 	f.ct, f.pad = cfg.ConstantTime > 0 || cfg.ConstantTime == AutoPad || forceCT, cfg.ConstantTime
 	f.auto = cfg.ConstantTime == AutoPad
 	for i := range f.padQ {
@@ -410,7 +426,7 @@ func (f *Filter) CountAt(h, window, now uint64) Result {
 	w0, w1, src := f.read(h, now)
 	var r Result
 	if src != 0 && age(now, w0&tsMask) <= f.horizon {
-		r = f.estimate(w1, w0&tsMask, now, window, w0&satBit != 0)
+		r = f.estimateAt(h, w1, w0&tsMask, now, window, w0&satBit != 0)
 		r.Seen = r.Count > 0
 	} else {
 		r.Degraded = f.lostRecently(now)
@@ -421,13 +437,34 @@ func (f *Filter) CountAt(h, window, now uint64) Result {
 	return r
 }
 
+// estimateAt is estimate for key h, whose register (or hot entry) is in w1
+// and whose lastTouch is last. If w1 points to an entry that an abandoned
+// move took back meanwhile, the key's slot is looked up again, without its
+// stripe (the caller may hold it). If it can't be found, the answer fails
+// closed.
+func (f *Filter) estimateAt(h, w1, last, now, window uint64, sat bool) Result {
+	fp, tg := fingerprint(h), tag(h)
+	id := f.stashID(h, fp, tg)
+	for range 8 {
+		if r, ok := f.estimate(id, w1, last, now, window, sat); ok {
+			return r
+		}
+		i, w0, nw1 := f.lookupStable(h, fp, tg, false)
+		if i < 0 {
+			break
+		}
+		w1, last, sat = nw1, max(last, w0&tsMask), w0&satBit != 0
+	}
+	return Result{Count: 1, Upper: 1, Saturated: true}
+}
+
 // countCT is CountAt in ConstantTime mode.
 func (f *Filter) countCT(h, window, now uint64) Result {
 	t0 := time.Now()
 	w0, w1, src := f.read(h, now)
 	var r Result
 	if src != 0 && age(now, w0&tsMask) <= f.horizon {
-		r = f.estimate(w1, w0&tsMask, now, window, w0&satBit != 0)
+		r = f.estimateAt(h, w1, w0&tsMask, now, window, w0&satBit != 0)
 		r.Seen = r.Count > 0
 	} else {
 		r.Degraded = f.lostRecently(now)
@@ -715,7 +752,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) Result {
 		}
 		var r Result
 		if wantCount {
-			r = f.estimate(w1, max(now, last), now, window, sat)
+			r = f.estimateAt(h, w1, max(now, last), now, window, sat)
 		}
 		r.Seen = !stale && age(now, last) <= window
 		if f.sketchLive(now) {
@@ -783,7 +820,7 @@ func (f *Filter) waitOut(t0 time.Time) {
 
 // hit counts a touch in slot i, which held the key when it was found. ok is
 // false if the slot changed hands meanwhile and the caller must look again.
-func (f *Filter) hit(i int, fp, tg, window, now uint64, wantCount bool) (Result, bool) {
+func (f *Filter) hit(h uint64, i int, fp, tg, window, now uint64, wantCount bool) (Result, bool) {
 	w0 := atomic.LoadUint64(&f.words[i])
 	if w0>>48 != fp {
 		return Result{}, false // slot was reclaimed between find and load
@@ -805,7 +842,7 @@ func (f *Filter) hit(i int, fp, tg, window, now uint64, wantCount bool) (Result,
 	if !wantCount {
 		return Result{Seen: seen}, true
 	}
-	r := f.estimate(w1, max(now, last), now, window, sat)
+	r := f.estimateAt(h, w1, max(now, last), now, window, sat)
 	r.Seen = seen
 	return r, true
 }
@@ -843,7 +880,7 @@ func (f *Filter) touchCTOnce(h, fp, tg, window, now uint64, wantCount bool) (Res
 		if src == srcStash { // a stale copy: the table's entry is newer
 			f.stashPut(f.stashID(h, fp, tg), s0, s1, now)
 		}
-		return f.hit(i, fp, tg, window, now, wantCount)
+		return f.hit(h, i, fp, tg, window, now, wantCount)
 	}
 	r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src)
 	return r, r.Count >= 0
@@ -857,12 +894,17 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 	var r Result
 	w1, _ := f.nextReg(0, tg, now, now, true) // first event, published with the key
 	last, sat := now, uint64(0)
+	hotRestore := false
 	if src != 0 && age(now, s0&tsMask) <= f.horizon {
 		last = s0 & tsMask
-		var over bool
-		w1, over = f.nextReg(s1, tg, last, now, false)
-		if over || s0&satBit != 0 && hot(w1) {
-			sat = satBit
+		if isHot(s1) { // it keeps its hot entry; the touch is counted once it is installed
+			w1, hotRestore = s1, true
+		} else {
+			var over bool
+			w1, over = f.nextReg(s1, tg, last, now, false)
+			if over || s0&satBit != 0 && hot(w1) {
+				sat = satBit
+			}
 		}
 		r.Seen = age(now, last) <= window
 		r.Restored = true
@@ -875,13 +917,16 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 		}
 		return Result{Count: -1}
 	}
+	if hotRestore && !f.hotAdd(w1, f.stashID(h, fp, tg), now, nil) {
+		return Result{Count: 1, Upper: 1, Saturated: true, Seen: r.Seen, Restored: true} // can't happen while its history is live
+	}
 	if src == srcStash {
 		f.restored.Add(1)
 	}
 	if !wantCount {
 		return r
 	}
-	e := f.estimate(w1, max(now, last), now, window, sat != 0)
+	e := f.estimateAt(h, w1, max(now, last), now, window, sat != 0)
 	e.Seen, e.Restored, e.Degraded = r.Seen, r.Restored, r.Degraded
 	return e
 }
@@ -995,7 +1040,7 @@ func (f *Filter) claim(h, fp, w1, now, sat uint64) int {
 				w0 := atomic.LoadUint64(&f.words[base+s])
 				ts := w0 & tsMask
 				vw1 := atomic.LoadUint64(&f.words[base+s+1])
-				score := f.mass(vw1, ts, now)<<48 | ts
+				score := min(f.mass(f.slotID(line, w0, vw1), vw1, ts, now), 1<<16-1)<<48 | ts
 				if score < victimScore {
 					victim, vli, victimScore, victimW0, victimW1 = base+s, li, score, w0, vw1
 				}
@@ -1142,12 +1187,29 @@ func (f *Filter) abandon(i, d int, w0, w1, moved, line, a uint64) {
 	}
 	// The copy's events beyond w1 all happened during the move, at the
 	// copy's own epoch: add them there, newest bucket first.
-	e := regEpoch(c1, f.unitOf(last))
-	base := unpack(w1 & regMask)
-	base.advance(regEpoch(w1, f.unitOf(w0&tsMask)), e)
+	var e int64
 	n := uint64(0)
-	for k, c := range unpack(c1 & regMask) {
-		n += c - min(c, base[k])
+	if isHot(c1) { // a touch promoted the copy: take its entry back
+		v, ok := f.hotClose(hotIdx(c1), f.slotID(line, w0, w1))
+		if !ok {
+			return
+		}
+		e = v.e
+		var base [nBuckets]uint64
+		for k, c := range unpack(w1 & regMask) {
+			base[k] = c
+		}
+		advanceWide(&base, regEpoch(w1, f.unitOf(w0&tsMask)), e)
+		for k, c := range v.c {
+			n += c - min(c, base[k])
+		}
+	} else {
+		e = regEpoch(c1, f.unitOf(last))
+		base := unpack(w1 & regMask)
+		base.advance(regEpoch(w1, f.unitOf(w0&tsMask)), e)
+		for k, c := range unpack(c1 & regMask) {
+			n += c - min(c, base[k])
+		}
 	}
 	if n == 0 {
 		return
@@ -1185,6 +1247,10 @@ func (f *Filter) fold(j int, fp, tg, n uint64, e int64, last uint64) bool {
 		s1 := atomic.LoadUint64(&f.words[j+1])
 		if s1>>tagShift != tg {
 			return false
+		}
+		if isHot(s1) {
+			t := f.hot.Load()
+			return t != nil && t.add(hotIdx(s1), f.slotID(uint64(j/wordsPerLine), atomic.LoadUint64(&f.words[j]), s1), n, e, nil, 0)
 		}
 		es := regEpoch(s1, f.unitOf(atomic.LoadUint64(&f.words[j])&tsMask))
 		var x register
@@ -1372,7 +1438,7 @@ func (f *Filter) stashPut(id, w0, w1, now uint64) {
 			// An evictor holding an older snapshot of the same key (it was
 			// evicted, restored and evicted again meanwhile) must not
 			// overwrite the newer one.
-			if e.w0&tsMask > w0&tsMask || e.w0&tsMask == w0&tsMask && f.mass(e.w1, e.w0&tsMask, now) >= f.mass(w1, w0&tsMask, now) {
+			if e.w0&tsMask > w0&tsMask || e.w0&tsMask == w0&tsMask && f.mass(e.id, e.w1, e.w0&tsMask, now) >= f.mass(id, w1, w0&tsMask, now) {
 				mu.Unlock()
 				return
 			}
@@ -1383,13 +1449,13 @@ func (f *Filter) stashPut(id, w0, w1, now uint64) {
 			way, least = i, 0
 			break
 		}
-		if m := f.mass(e.w1, e.w0&tsMask, now); m < least {
+		if m := f.mass(e.id, e.w1, e.w0&tsMask, now); m < least {
 			way, least = i, m
 		}
 	}
 	var out stashEntry // the history that leaves the stash, if any
 	if least > 0 {
-		if least > f.mass(w1, w0&tsMask, now) {
+		if least > f.mass(id, w1, w0&tsMask, now) {
 			f.spill(id, w0, w1, now)
 			mu.Unlock()
 			return

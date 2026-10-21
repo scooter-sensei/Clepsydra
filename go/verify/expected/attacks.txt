@@ -18,21 +18,21 @@ sketch true  flood 16x slots x 21 (1619520 events): offenders Upper<true 0/200, 
 sketch true  flood 16x slots x  1 (  77120 events): offenders Upper<true 0/200, Count low   0/200 (mean shortfall  0.0); new keys Degraded   0.0% Seen  0.00% mean Upper    0.0, denied by a strict limit of 20:   0.0%; folded 0 shed 75993 lost 0
 burst false    1 ev/s:    78 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 0
 burst false    5 ev/s:   342 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 2
-burst false   12 ev/s:   832 queries,  93.0% Saturated; unflagged: Upper < exact 0, Count >10% low 2
-burst false   13 ev/s:   865 queries,  95.8% Saturated; unflagged: Upper < exact 0, Count >10% low 3
-burst false   20 ev/s:  1367 queries,  98.7% Saturated; unflagged: Upper < exact 0, Count >10% low 0
-burst false   31 ev/s:  1946 queries,  99.2% Saturated; unflagged: Upper < exact 0, Count >10% low 0
-burst false   50 ev/s:  3468 queries,  99.7% Saturated; unflagged: Upper < exact 0, Count >10% low 0
-burst false  100 ev/s:  6973 queries,  99.8% Saturated; unflagged: Upper < exact 0, Count >10% low 0
-burst false  500 ev/s: 33432 queries, 100.0% Saturated; unflagged: Upper < exact 0, Count >10% low 0
+burst false   12 ev/s:   832 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 4
+burst false   13 ev/s:   865 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 4
+burst false   20 ev/s:  1367 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 4
+burst false   31 ev/s:  1946 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 3
+burst false   50 ev/s:  3468 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 3
+burst false  100 ev/s:  6973 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 2
+burst false  500 ev/s: 33432 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 0
 burst true     1 ev/s:    57 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 2
-burst true     5 ev/s:   180 queries,  87.8% Saturated; unflagged: Upper < exact 0, Count >10% low 3
-burst true    12 ev/s:   401 queries,  97.8% Saturated; unflagged: Upper < exact 0, Count >10% low 1
-burst true    13 ev/s:   445 queries,  98.4% Saturated; unflagged: Upper < exact 0, Count >10% low 3
-burst true    20 ev/s:   708 queries,  98.3% Saturated; unflagged: Upper < exact 0, Count >10% low 2
-burst true    31 ev/s:  1060 queries,  99.2% Saturated; unflagged: Upper < exact 0, Count >10% low 0
-burst true    50 ev/s:  1804 queries,  99.8% Saturated; unflagged: Upper < exact 0, Count >10% low 1
-burst true   100 ev/s:  3423 queries,  99.9% Saturated; unflagged: Upper < exact 0, Count >10% low 0
-burst true   500 ev/s: 16938 queries,  99.9% Saturated; unflagged: Upper < exact 0, Count >10% low 0
-heavy hitter: 74319 queries, 73606 Saturated, 0 unflagged with Upper < exact, 19 unflagged with Count >10% low
-upper bound: 187219 queries, 136124 Saturated, 0 unflagged with Upper < exact; unflagged Upper exceeds exact by 18.3% of events
+burst true     5 ev/s:   180 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 14
+burst true    12 ev/s:   401 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 26
+burst true    13 ev/s:   445 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 22
+burst true    20 ev/s:   708 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 23
+burst true    31 ev/s:  1060 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 45
+burst true    50 ev/s:  1804 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 48
+burst true   100 ev/s:  3423 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 54
+burst true   500 ev/s: 16938 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 61
+heavy hitter: 74319 queries, 0 Saturated, 0 unflagged with Upper < exact, 317 unflagged with Count >10% low
+upper bound: 187219 queries, 0 Saturated, 0 unflagged with Upper < exact; unflagged Upper exceeds exact by 17.3% of events

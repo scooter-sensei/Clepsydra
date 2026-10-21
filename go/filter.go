@@ -1070,14 +1070,19 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 	} else if f.lostRecently(now) {
 		r.Degraded = true
 	}
-	ci := f.claim(h, fp, w1, now, sat)
+	// A recalled history keeps its last touch even when this caller's clock is
+	// behind it (the register counted this touch in that unit too): stamped
+	// with the older clock, a later window starting between the two would
+	// miss the history's newest event.
+	stamp := max(now, last)
+	ci := f.claim(h, fp, w1, now, stamp, sat)
 	if ci == claimWait { // ConstantTime, no free slot: wait in the stash, placed during pads (place)
-		if f.stashWait(f.stashID(h, fp, tg), fp<<48|sat|now, w1, now) {
+		if f.stashWait(f.stashID(h, fp, tg), fp<<48|sat|stamp, w1, now) {
 			f.waited.Add(1)
 			src, r.Restored = 0, false
 		} else { // its stash set is full: search (and evict) now rather than drop a history
 			ci = f.claimAt([2]uint64{f.primary(h), f.alt(f.primary(h), fp)},
-				[2]uint64{fp<<48 | sat | now, fp<<48 | dispBit | sat | now}, w1, now, h>>(64-claimStripeBits), claimFull)
+				[2]uint64{fp<<48 | sat | stamp, fp<<48 | dispBit | sat | stamp}, w1, now, h>>(64-claimStripeBits), claimFull)
 		}
 	}
 	switch ci {
@@ -1096,7 +1101,7 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 	if !wantCount {
 		return r
 	}
-	e := f.estimateAt(h, w1, max(now, last), now, window, sat != 0)
+	e := f.estimateAt(h, w1, stamp, now, window, sat != 0)
 	e.Seen, e.Restored, e.Degraded = r.Seen, r.Restored, r.Degraded
 	return e
 }
@@ -1169,14 +1174,15 @@ func (f *Filter) find(line, fpd, tg uint64) int {
 // if it lost a race for a slot and the caller should look the key up again
 // (a racing writer may have completed it). The caller holds the key's claim
 // stripe. In ConstantTime it searches and evicts nothing: with no free slot
-// it returns claimWait, and the key waits in the stash (miss).
-func (f *Filter) claim(h, fp, w1, now, sat uint64) int {
+// it returns claimWait, and the key waits in the stash (miss). The entry's
+// last touch is stamp; now is the caller's clock (expiry, eviction scores).
+func (f *Filter) claim(h, fp, w1, now, stamp, sat uint64) int {
 	mode := claimFull
 	if f.ct {
 		mode = claimDefer
 	}
 	return f.claimAt([2]uint64{f.primary(h), f.alt(f.primary(h), fp)},
-		[2]uint64{fp<<48 | sat | now, fp<<48 | dispBit | sat | now}, w1, now, h>>(64-claimStripeBits), mode)
+		[2]uint64{fp<<48 | sat | stamp, fp<<48 | dispBit | sat | stamp}, w1, now, h>>(64-claimStripeBits), mode)
 }
 
 // claimAt modes: free slot, path or eviction (claimFull); free slot only,

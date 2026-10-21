@@ -215,7 +215,7 @@ const (
 
 func bytesPerKey() float64 {
 	probe, _ := tf.New(tf.Config{Capacity: capacity, Horizon: horizon})
-	return float64(probe.Bytes()) / capacity // the table: stash, overflow and hot entries come on first use
+	return float64(heldBytes(probe)) / capacity // the table: stash, overflow and hot entries come on first use
 }
 
 // printExact prints every deterministic scorecard metric as the raw counts
@@ -255,7 +255,16 @@ func printExact() {
 		}
 	}
 	probe, _ := tf.New(tf.Config{Capacity: capacity, Horizon: horizon})
-	fmt.Printf("memory capacity=%d slots=%d bytes=%d  => %.1f B/key\n", capacity, probe.Slots(), probe.Bytes(), bytesPerKey())
+	fmt.Printf("memory capacity=%d slots=%d bytes=%d  => %.1f B/key\n", capacity, probe.Slots(), heldBytes(probe), bytesPerKey())
+}
+
+// heldBytes is f.Bytes(), or the table's 16 B per slot on commits that
+// predate it (verify/replay.sh runs this harness on every library version).
+func heldBytes(f interface{ Slots() int }) int {
+	if b, ok := f.(interface{ Bytes() int }); ok {
+		return b.Bytes()
+	}
+	return 16 * f.Slots()
 }
 
 // relocations is f.Relocations(), or 0 on commits that predate it.

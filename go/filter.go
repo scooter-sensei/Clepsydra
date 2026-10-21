@@ -207,9 +207,10 @@ type Filter struct {
 	hotRefused atomic.Uint64
 }
 
-// testHookCopied, if set, runs between a relocation's copy and its
-// hand-off (tests).
-var testHookCopied func()
+// Test hooks, if set: testHookCopied runs between a relocation's copy and
+// its hand-off, testHookVictim between an eviction's choice of victim and
+// its install.
+var testHookCopied, testHookVictim func()
 
 // forceCT turns ConstantTime on in every filter (tests: TF_CT=1).
 var forceCT bool
@@ -219,7 +220,16 @@ type paddedMutex struct {
 	_ [56]byte
 }
 
-type moveCount struct{ begun, done atomic.Uint64 }
+// moveCount: moves of a stripe's keys begun and done, and evictions of
+// them under way. A relocation counts its move, then checks for an
+// eviction; an eviction counts itself, then checks for a move. With both
+// counts sequentially consistent at least one of two that overlap sees the
+// other and backs off, so no eviction takes the source or the copy of an
+// entry being moved.
+type moveCount struct {
+	begun, done atomic.Uint64
+	evicting    atomic.Int64
+}
 
 // New allocates a Filter sized for cfg.Load slot occupancy at cfg.Capacity.
 func New(cfg Config) (*Filter, error) {
@@ -1060,6 +1070,9 @@ func (f *Filter) claim(h, fp, w1, now, sat uint64) int {
 		if victim < 0 {
 			return -1 // every candidate is mid-move: look again
 		}
+		if testHookVictim != nil {
+			testHookVictim()
+		}
 		// The victim's history goes to the stash under the victim's own claim
 		// stripe (its hash's top bits are its fp's), so a first touch of the
 		// victim, which takes that stripe, finds it either still here or
@@ -1072,9 +1085,17 @@ func (f *Filter) claim(h, fp, w1, now, sat uint64) int {
 			}
 			defer mu.Unlock()
 		}
+		// A move of the victim's stripe that began after the scan may have
+		// copied the victim, and its hand-off would then fail and retire a
+		// copy that has counted touches: back off (see moveCount).
+		m := &f.moves[vs]
+		m.evicting.Add(1)
+		defer m.evicting.Add(-1)
+		if m.begun.Load() != m.done.Load() {
+			return -1
+		}
 		// Between the install and the stash a lock-free lookup finds the
 		// victim in neither; the move count tells it to look again.
-		m := &f.moves[vs]
 		m.begun.Add(1)
 		defer m.done.Add(1)
 		if !f.install(victim, victimW0, victimW1, mine[vli], w1) {
@@ -1148,6 +1169,11 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
 		defer m.done.Add(1)
 		if parent != nil {
 			parent.begun.Add(1) // the parent's copy appears with this install
+			if parent.evicting.Load() != 0 {
+				parent.done.Add(1)
+				f.abandon(i, d, w0, w1, moved, line, a)
+				return false
+			}
 		}
 		if f.install(i, w0, w1, mine0, mine1) {
 			f.relocations.Add(1)
@@ -1165,6 +1191,10 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
 			continue
 		}
 		m.begun.Add(1)
+		if m.evicting.Load() != 0 { // an eviction of this stripe is under way: it may take the source
+			m.done.Add(1)
+			return false
+		}
 		if f.install(base+s, d0, atomic.LoadUint64(&f.words[base+s+1]), moved, w1) {
 			if testHookCopied != nil {
 				testHookCopied()

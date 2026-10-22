@@ -250,7 +250,7 @@ func (f *Filter) spill(id, w0, w1, now uint64) {
 	}
 	v, ok := f.viewOf(id, w1, last)
 	if !ok {
-		return // its hot entry was taken back with a copy (abandon); the table holds its events
+		return // its hot entry is no longer its own: nothing of it is left to spill
 	}
 	m := f.mass(id, w1, last, now)
 	if f.spillMin > 1 && m < f.spillMin {

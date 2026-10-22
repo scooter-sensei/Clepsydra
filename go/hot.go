@@ -21,10 +21,10 @@ import (
 // The table is allocated on the first promotion (Config.Hot entries). An
 // entry belongs to the identity (stashID) it records and is given up when
 // its newest event is past the horizon (then no live slot or stash entry
-// can refer to it), or when an abandoned relocation retires the copy that
-// held it (abandon). With every entry in use a key isn't promoted: it
-// saturates as without hot entries, and HotRefused counts it. Writers lock
-// an entry (its version is odd while held); readers read it as a seqlock.
+// can refer to it), or when its key's rate falls (demote). With every entry
+// in use a key isn't promoted: it saturates as without hot entries, and
+// HotRefused counts it. Writers lock an entry (its version is odd while
+// held); readers read it as a seqlock.
 
 const (
 	hotIdxShift = bucketBits0 // the index sits above bucket 0's empty bits

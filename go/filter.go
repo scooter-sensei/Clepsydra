@@ -45,7 +45,9 @@ const (
 	tagBits   = 12
 	tagShift  = 64 - tagBits
 	epochMask = 0xf
-	// busy is word1 while a slot is being handed over (install, abandon).
+	// busy is word1 while a slot is being handed over (install), while a
+	// touch moves its register and last touch together (realign), and in a
+	// relocation's copy until the hand-off (relocate).
 	// No key has its tag, so no lookup or touch can match the slot until
 	// the new occupant's word1 replaces it.
 	tagBusy = 1<<tagBits - 1
@@ -191,10 +193,11 @@ type Filter struct {
 	_           [60]byte
 	claimMu     [1 << claimStripeBits]paddedMutex // serializes first touches per key
 	// moves counts, per claim stripe, moves of a key's entry under way: a
-	// relocation from its copy's appearance to the hand-off, an eviction
-	// from taking the slot to stashing the history. A lookup's miss is
-	// trusted only if none overlapped it (lookupStable), and an evictor
-	// leaves a key with one under way alone (claim).
+	// relocation from before its hidden copy goes in to the copy's
+	// publication or clearing, an eviction from taking the slot to stashing
+	// the history. A lookup's miss is trusted only if none overlapped it
+	// (lookupStable), and an evictor leaves a key with one under way alone
+	// (claim).
 	moves [1 << claimStripeBits]moveCount
 
 	sip    sipKey
@@ -246,8 +249,11 @@ type Filter struct {
 // its hand-off, testHookVictim between an eviction's choice of victim and
 // its install, testHookTaken after a touch takes a waiting key out of the
 // wait room, testHookStamped after a touch moves its slot's last touch to a
-// later unit, before the register follows (realign, word1 busy).
+// later unit, before the register follows (realign, word1 busy);
+// testHookPicked after a relocation reads the entry at word index i, before
+// it copies it.
 var testHookCopied, testHookVictim, testHookTaken, testHookStamped func()
+var testHookPicked func(i int)
 
 // forceCT turns ConstantTime on in every filter (tests: TF_CT=1).
 var forceCT bool
@@ -264,8 +270,9 @@ type paddedMutex struct {
 // them under way. A relocation counts its move, then checks for an
 // eviction; an eviction counts itself, then checks for a move. With both
 // counts sequentially consistent at least one of two that overlap sees the
-// other and backs off, so no eviction takes the source or the copy of an
-// entry being moved.
+// other and backs off, so no eviction takes the source of an entry being
+// moved, which would fail the move's hand-off: the move's work would be
+// lost, not the key's history (relocate).
 type moveCount struct {
 	begun, done atomic.Uint64
 	evicting    atomic.Int64
@@ -504,10 +511,10 @@ func (f *Filter) CountAt(h, window, now uint64) Result {
 }
 
 // estimateAt is estimate for key h, whose register (or hot entry) is in w1
-// and whose lastTouch is last. If w1 points to an entry that an abandoned
-// move took back meanwhile, the key's slot is looked up again, without its
-// stripe (the caller may hold it). If it can't be found, the answer fails
-// closed.
+// and whose lastTouch is last. If w1 points to an entry the key gave up
+// meanwhile (a touch demoted it), the key's slot is looked up again,
+// without its stripe (the caller may hold it). If it can't be found, the
+// answer fails closed.
 func (f *Filter) estimateAt(h, w1, last, now, window uint64, sat bool) Result {
 	fp, tg := fingerprint(h), tag(h)
 	id := f.stashID(h, fp, tg)
@@ -1649,7 +1656,7 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
 				w0 := atomic.LoadUint64(&f.words[base+s])
 				ts := w0 & tsMask
 				vw1 := atomic.LoadUint64(&f.words[base+s+1])
-				// Read after the slot: a copy is visible only once its move is
+				// Read after the slot: a copy goes in only once its move is
 				// counted, so a key whose move is under way is left alone.
 				if mv := &f.moves[w0>>(64-claimStripeBits)]; mv.begun.Load() != mv.done.Load() {
 					continue
@@ -1679,8 +1686,8 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
 			defer mu.Unlock()
 		}
 		// A move of the victim's stripe that began after the scan may have
-		// copied the victim, and its hand-off would then fail and retire a
-		// copy that has counted touches: back off (see moveCount).
+		// copied the victim, and its hand-off would then fail: back off (see
+		// moveCount).
 		m := &f.moves[vs]
 		m.evicting.Add(1)
 		defer m.evicting.Add(-1)
@@ -1755,15 +1762,25 @@ func (f *Filter) install(i int, w0, w1, mine0, mine1 uint64) bool {
 // relocate moves the entry at word index i (in line) to its alternate line
 // and installs mine0/mine1 in its place. If that line is full it first
 // relocates one of its entries, up to depth more steps (a bounded cuckoo
-// path). Copy-then-replace keeps every moved key findable throughout; if the
-// source changes mid-move (a touch updated it) the move is abandoned.
+// path).
 //
-// The move counts in its key's stripe (f.moves) from the moment the copy
-// appears to the end of the hand-off: a lookup that misses meanwhile looks
-// again, and an evictor leaves both copy and source alone (evicting either
-// would split the key's history between the table and the stash). parent is
-// the move whose copy (mine0) this one installs, nil for a new key, which
-// put installs.
+// The copy is installed hidden (word1 busy): no lookup finds it and no
+// touch counts in it. The hand-off takes the source only if its words are
+// still those copied (install's CASes), and only then is the copy's word1
+// published, so a key is never live in two slots. Before, the copy was
+// visible from its install: a touch that had found the source a moment
+// before counted there while reads found the copy (they scan its line
+// first), and a copy of words read before the key was evicted came back as
+// a second history whose touches the failed hand-off then dropped (claims
+// A23). If the source changed (a touch reached it, or the key was evicted)
+// the move is abandoned and the copy, which counted nothing, cleared.
+//
+// The move counts in its key's stripe (f.moves) from before the copy is
+// installed to its publication or clearing: a lookup that misses meanwhile
+// (between the hand-off and the publication the key is in no slot a lookup
+// matches) looks again, and an evictor leaves the source alone. parent is
+// the move whose copy (mine0; mine1 is busy, the parent publishes it) this
+// one installs, nil for a new key, which put installs.
 func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budget *int, parent *moveCount, put putFunc) bool {
 	w0 := atomic.LoadUint64(&f.words[i])
 	if w0 == 0 {
@@ -1777,28 +1794,32 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
 	if w1>>tagShift == tagBusy || atomic.LoadUint64(&f.words[i]) != w0 {
 		return false // being installed or realigned, or touched since: a copy would pair stale words
 	}
+	if testHookPicked != nil {
+		testHookPicked(i)
+	}
 	a := f.alt(line, w0>>48)
 	base := int(a * wordsPerLine)
 	moved := w0 ^ dispBit                   // displaced iff it wasn't
 	m := &f.moves[w0>>(64-claimStripeBits)] // the entry's key's stripe (its hash's top bits are its fp's)
-	replace := func(d int) bool {           // the copy is at d; now take the source
+	replace := func(d int) bool {           // the hidden copy is at d; now take the source
 		defer m.done.Add(1)
 		if parent != nil {
-			parent.begun.Add(1) // the parent's copy appears with this install
+			parent.begun.Add(1) // the parent's copy goes in (hidden) with this install
 			if parent.evicting.Load() != 0 {
 				parent.done.Add(1)
-				f.abandon(i, d, w0, w1, moved, line, a)
+				f.abandon(d)
 				return false
 			}
 		}
 		if f.putNew(put, i, w0, w1, mine0, mine1) { // deeper levels pass no put: install
+			atomic.StoreUint64(&f.words[d+1], w1) // the source held w0/w1 until the hand-off: publish
 			f.relocations.Add(1)
 			return true
 		}
 		if parent != nil {
 			parent.done.Add(1) // ...or doesn't
 		}
-		f.abandon(i, d, w0, w1, moved, line, a) // a touch reached the source first
+		f.abandon(d) // a touch reached the source first, or the key was evicted
 		return false
 	}
 	for s := 0; s < wordsPerLine; s += 2 {
@@ -1811,7 +1832,7 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
 			m.done.Add(1)
 			return false
 		}
-		if f.install(base+s, d0, atomic.LoadUint64(&f.words[base+s+1]), moved, w1) {
+		if f.install(base+s, d0, atomic.LoadUint64(&f.words[base+s+1]), moved, busy) {
 			if testHookCopied != nil {
 				testHookCopied()
 			}
@@ -1822,7 +1843,7 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
 	if depth > 0 {
 		f.warmLine(a) // the next lines of a's entries together, not one miss at a time
 		for s := 0; s < wordsPerLine; s += 2 {
-			if f.relocate(base+s, a, moved, w1, now, depth-1, budget, m, nil) {
+			if f.relocate(base+s, a, moved, busy, now, depth-1, budget, m, nil) {
 				return replace(base + s)
 			}
 		}
@@ -1830,130 +1851,12 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
 	return false
 }
 
-// abandon undoes a move whose source changed before it could be taken. The
-// copy at d may have counted touches of its own meanwhile, so it is retired
-// word1 first (a touch still holding it then backs off and looks again,
-// instead of counting into a dead slot) and whatever it counted beyond w1 is
-// added back to the entry, which stays in line or a.
-func (f *Filter) abandon(i, d int, w0, w1, moved, line, a uint64) {
-	tg := w1 >> tagShift
-	var c1 uint64
-	for {
-		c1 = atomic.LoadUint64(&f.words[d+1])
-		if c1>>tagShift != tg {
-			return // the copy was evicted
-		}
-		if atomic.CompareAndSwapUint64(&f.words[d+1], c1, busy) {
-			break
-		}
-	}
-	last := w0 & tsMask
-	for {
-		c0 := atomic.LoadUint64(&f.words[d])
-		if c0>>47 != moved>>47 {
-			break // swept
-		}
-		last = max(last, c0&tsMask)
-		if atomic.CompareAndSwapUint64(&f.words[d], c0, 0) {
-			break
-		}
-	}
+// abandon clears the hidden copy at word index d of a move whose source
+// changed before the hand-off, word0 first (a slot is never a fingerprint
+// with an empty register). Nobody else writes a busy word1.
+func (f *Filter) abandon(d int) {
+	atomic.StoreUint64(&f.words[d], 0)
 	atomic.StoreUint64(&f.words[d+1], 0)
-	if c1 == w1 {
-		return
-	}
-	// The copy's events beyond w1 all happened during the move, at the
-	// copy's own epoch: add them there, newest bucket first.
-	var e int64
-	n := uint64(0)
-	if isHot(c1) { // a touch promoted the copy: take its entry back
-		v, ok := f.hotClose(hotIdx(c1), f.slotID(line, w0, w1))
-		if !ok {
-			return
-		}
-		e = v.e
-		var base [nBuckets]uint64
-		for k, c := range unpack(w1 & regMask) {
-			base[k] = c
-		}
-		advanceWide(&base, regEpoch(w1, f.unitOf(w0&tsMask)), e)
-		for k, c := range v.c {
-			n += c - min(c, base[k])
-		}
-	} else {
-		e = regEpoch(c1, f.unitOf(last))
-		base := unpack(w1 & regMask)
-		base.advance(regEpoch(w1, f.unitOf(w0&tsMask)), e)
-		for k, c := range unpack(c1 & regMask) {
-			n += c - min(c, base[k])
-		}
-	}
-	if n == 0 {
-		return
-	}
-	fp := w0 >> 48
-	if f.fold(i, fp, tg, n, e, last) {
-		return
-	}
-	for _, l := range [2]uint64{line, a} { // the entry moved meanwhile
-		b := int(l * wordsPerLine)
-		for s := 0; s < wordsPerLine; s += 2 {
-			if f.fold(b+s, fp, tg, n, e, last) {
-				return
-			}
-		}
-	}
-}
-
-// fold counts n events at unit e (the latest at last) into the entry at word
-// index j, if it still holds key fp/tg. A register and its last touch move
-// together under word1 busy, as in realign; a busy word1 (a realign or an
-// install) is waited out. A hot entry keeps its own unit: last touch first,
-// then the entry.
-func (f *Filter) fold(j int, fp, tg, n uint64, e int64, last uint64) bool {
-	for {
-		s1 := atomic.LoadUint64(&f.words[j+1])
-		if s1>>tagShift == tagBusy {
-			runtime.Gosched()
-			continue
-		}
-		if s1>>tagShift != tg {
-			return false
-		}
-		s0 := atomic.LoadUint64(&f.words[j])
-		if s0>>48 != fp {
-			return false
-		}
-		if isHot(s1) {
-			if s0&tsMask < last && !atomic.CompareAndSwapUint64(&f.words[j], s0, s0&^tsMask|last) {
-				continue
-			}
-			t := f.hot.Load()
-			return t != nil && t.add(hotIdx(s1), f.slotID(uint64(j/wordsPerLine), s0, s1), n, e, nil, 0)
-		}
-		if !atomic.CompareAndSwapUint64(&f.words[j+1], s1, busy) {
-			continue
-		}
-		ts := max(s0&tsMask, last)
-		if ts != s0&tsMask && !atomic.CompareAndSwapUint64(&f.words[j], s0, s0&^tsMask|ts) {
-			atomic.StoreUint64(&f.words[j+1], s1)
-			continue
-		}
-		es := regEpoch(s1, f.unitOf(s0&tsMask))
-		var x register
-		x[0] = n
-		r, to := unpack(s1&regMask), max(es, e, f.unitOf(ts))
-		over := r.advance(es, to)
-		x.advance(e, to)
-		for k, c := range x {
-			over = r.add(k, c) || over
-		}
-		atomic.StoreUint64(&f.words[j+1], tg<<tagShift|uint64(to)&epochMask<<48|r.pack())
-		if over {
-			f.markSat(j, fp, true)
-		}
-		return true
-	}
 }
 
 // ContinuousDecay reclaims expired slots at a rate set by the clock: one full

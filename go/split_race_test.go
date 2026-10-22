@@ -67,14 +67,16 @@ func moveTable(t *testing.T) (f *Filter, x uint64, key func(primary, alt uint64)
 
 // TestEvictionDuringMoveKeepsHistory drives one interleaving in moveTable.
 // A relocation copies X from A to its primary line P; before the move
-// hands off, X is touched (the touch finds the copy, which lookups reach
-// first), another key's first touch evicts the lightest entry of its two
-// lines, and X is touched again. If that evictor took the copy, the second
-// touch found the source, the hand-off failed, and X's history was split:
-// the copy's events went to the stash, the source's stayed in the table,
-// and neither saw the other again. If it took the source, the hand-off
-// failed and abandoned the copy, whose events then had no entry to go back
-// to. X must end with all its events.
+// hands off, X is touched, another key's first touch evicts the lightest
+// entry of its two lines, and X is touched again. While copies were
+// visible from their install (until claims A23), the first touch counted
+// in the copy, which lookups reach first. If that evictor took the copy,
+// the second touch found the source, the hand-off failed, and X's history
+// was split: the copy's events went to the stash, the source's stayed in
+// the table, and neither saw the other again. If it took the source, the
+// hand-off failed and abandoned the copy, whose events then had no entry
+// to go back to. Now the copy is hidden until the hand-off: both touches
+// count in the source. X must end with all its events.
 func TestEvictionDuringMoveKeepsHistory(t *testing.T) {
 	if forceCT || forceBG {
 		t.Skip("ConstantTime and Background inserts don't search on the call path")
@@ -97,9 +99,9 @@ func evictDuringMove(t *testing.T, source bool) {
 			return
 		}
 		fired = true
-		touch(x, 1, t2) // counts in the copy
+		touch(x, 1, t2) // counts in the source (in the copy while copies were visible)
 		touch(y, 1, t2) // evicts X's copy or source, unless its move is left alone
-		touch(x, 1, t2) // the copy if it is still there, else the source
+		touch(x, 1, t2)
 	}
 	defer func() { testHookCopied = nil }()
 	touch(k, 1, t2)
@@ -113,9 +115,9 @@ func evictDuringMove(t *testing.T, source bool) {
 
 // TestEvictionRacingMoveStart: an insert picks X's source as its eviction
 // victim before any move of X has begun; a relocation then copies X to its
-// primary line and a touch counts in the copy; then the evictor takes the
-// source. The hand-off fails and the copy, with the touch, is retired. X
-// must end with both its events.
+// primary line and X is touched (in the copy while copies were visible,
+// claims A23; now in the source); then the evictor goes on, and backs off
+// from a key whose move is under way. X must end with both its events.
 func TestEvictionRacingMoveStart(t *testing.T) {
 	if forceCT || forceBG {
 		t.Skip("ConstantTime and Background inserts don't search or evict on the call path")
@@ -139,8 +141,8 @@ func TestEvictionRacingMoveStart(t *testing.T) {
 	fired := false
 	testHookCopied = func() {
 		testHookCopied, fired = nil, true
-		touch(x, 1, t2) // counts in the copy
-		close(resume)   // the evictor goes on
+		touch(x, 1, t2)
+		close(resume) // the evictor goes on
 		<-doneE
 	}
 	touch(k, 1, t2) // relocates X to P
@@ -161,4 +163,59 @@ func countLine(f *Filter, l, now uint64) int {
 		}
 	}
 	return n
+}
+
+// TestMoveAfterEvictionKeepsTouches drives one interleaving in moveTable. A
+// relocation reads X in A (to copy it to P); before it copies, another key's
+// first touch evicts X, the lightest entry of A and Q, to the stash. The
+// relocation then copies X's old words to P and hands off, which fails (X's
+// source holds the evictor's key). While copies were visible from their
+// install (until claims A23), X's next touch counted in that copy, and the
+// failed hand-off cleared it with the event: X read 1 of 2. Now the touch
+// waits out the move and finds X in the stash. X must end with every
+// event: the one in the stash and the touch.
+func TestMoveAfterEvictionKeepsTouches(t *testing.T) {
+	if forceCT || forceBG {
+		t.Skip("ConstantTime and Background inserts don't search or evict on the call path")
+	}
+	f, x, key, touch := moveTable(t)
+	tE := 1 + f.horizon     // the evictor still sees P's oldest entry live: its search finds no room
+	t2 := 1 + f.horizon + 1 // the relocation sees it expired: room for X's copy
+	src := f.find(mvA, fingerprint(x)<<1|1, tag(x))
+	k, y := key(mvA, mvB), key(mvA, mvQ)
+	picked, copied := false, false
+	done := make(chan struct{})
+	testHookPicked = func(i int) {
+		if i != src || picked {
+			return
+		}
+		picked = true
+		touch(y, 1, tE) // evicts X: no move of X has begun
+	}
+	testHookCopied = func() {
+		if !picked || copied {
+			return
+		}
+		copied = true
+		go func() {
+			touch(x, 1, t2)
+			close(done)
+		}()
+		select { // the touch runs whole, or waits for the move
+		case <-done:
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	defer func() { testHookPicked, testHookCopied = nil, nil }()
+	touch(k, 1, t2) // relocates X to P
+	if !picked || !copied {
+		t.Fatalf("k's insert did not relocate X after reading it (picked %v, copied %v)", picked, copied)
+	}
+	<-done
+	if f.Evictions() == 0 {
+		t.Fatal("y's insert evicted nothing")
+	}
+	if r := f.CountAt(x, f.horizon, t2); r.Count != 2 {
+		t.Fatalf("X reads %+v, want 2 events (relocations %d, evictions %d)", r, f.Relocations(), f.Evictions())
+	}
 }

@@ -9,9 +9,11 @@ import (
 )
 
 // Few hot keys, eight workers and a fill to 99% slot load, repeated: two
-// touches of one key often overlap a move of it, so moves get abandoned
-// (a touch reached the source first) while the copy has counted touches of
-// its own. Those touches must be added back, not dropped with the copy.
+// touches of one key often overlap a move of it, so moves get abandoned (a
+// touch reached the source first). While copies were visible from their
+// install (until claims A23) the copy had often counted touches of its
+// own, which had to be added back, not dropped with it; now a copy is
+// hidden until the hand-off, and no touch may be lost either way.
 //
 // It also catches a rarer race: a touch that checked its slot's fingerprint
 // counting into the next occupant's register, when the slot is handed over

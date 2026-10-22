@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Model checks of the slot protocol (verify/tla/*.tla) with TLC.
 #
-#   verify/tla.sh [model...]   WaitRoom, RegisterEpoch (default: both): the
-#                              protocol as committed at a few sizes, then
-#                              each guard undone (each must break an
-#                              invariant)
+#   verify/tla.sh [model...]   WaitRoom, RegisterEpoch, Relocate (default:
+#                              all): the protocol as committed at a few
+#                              sizes, then each guard undone (each must
+#                              break an invariant)
 #
 # Needs java (11 or later) and tla2tools.jar (TLA+ tools 1.7.4, from
 # github.com/tlaplus/tlaplus/releases), at $TLA2TOOLS or
@@ -80,12 +80,38 @@ registerepoch() {
 	done
 }
 
+# Relocate (claims A23): a relocation's copy, hidden until its hand-off,
+# against the key's touches, a read and an eviction.
+relocate() {
+	local inv="ReadNotLow TouchNotLow OneHome Conserved" e cf r v
+	local k='Touches = 1' rd='Reads = 1' ev='Evict = TRUE' first='CopyFirst = TRUE'
+	for e in FALSE TRUE; do
+		for cf in TRUE FALSE; do
+			run ok Relocate "hidden, evict $e, copy first $cf" "$inv" "$k" "$rd" "Evict = $e" "CopyFirst = $cf" 'Variant = "hidden"'
+		done
+	done
+	if [ "${TLA_BIG:-}" = 1 ]; then
+		run ok Relocate "hidden, 2 touches, evict, copy first" "$inv" 'Touches = 2' "$rd" "$ev" "$first" 'Variant = "hidden"'
+	fi
+	for r in NotMoved NotAbandoned NotEvicted; do
+		run violation Relocate "hidden, reachable: $r" "$r" "$k" "$rd" "$ev" "$first" 'Variant = "hidden"'
+	done
+	run violation Relocate "visible (before A23): a read" "ReadNotLow" "$k" "$rd" 'Evict = FALSE' "$first" 'Variant = "visible"'
+	run violation Relocate "visible: a touch" "TouchNotLow" 'Touches = 2' 'Reads = 0' 'Evict = FALSE' "$first" 'Variant = "visible"'
+	run violation Relocate "visible: an event lost" "Conserved" 'Touches = 2' 'Reads = 0' "$ev" "$first" 'Variant = "visible"'
+	for v in noMoveCount noHandoffCheck; do
+		run violation Relocate "$v" "$inv" "$k" "$rd" "$ev" "$first" "Variant = \"$v\""
+	done
+	run ok Relocate "hiddenNoEvictCheck" "$inv" "$k" "$rd" "$ev" "$first" 'Variant = "hiddenNoEvictCheck"'
+}
+
 models=("$@")
-[ ${#models[@]} -gt 0 ] || models=(WaitRoom RegisterEpoch)
+[ ${#models[@]} -gt 0 ] || models=(WaitRoom RegisterEpoch Relocate)
 for m in "${models[@]}"; do
 	case $m in
 	WaitRoom) waitroom ;;
 	RegisterEpoch) registerepoch ;;
+	Relocate) relocate ;;
 	*) echo "unknown model $m"; bad=1 ;;
 	esac
 done

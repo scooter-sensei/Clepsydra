@@ -204,7 +204,7 @@ func (f *Filter) bump(i int, fpd, tg, now uint64, nu int64, last uint64, lu int6
 				return old, ref, false, true
 			}
 			if atomic.LoadUint64(&f.words[i+1]) != old {
-				continue // the entry was taken back with the slot: look again
+				continue // word1 changed (a demotion, or the slot changed hands): look again
 			}
 			reset = true // the entry aged out with the key's history: start afresh
 		}
@@ -271,7 +271,7 @@ func (f *Filter) mass(id, w1, last, now uint64) uint64 {
 // entry (w1 points to one; id is the key's identity) never overflows; it is
 // Saturated only for windows reaching back to the unit it was promoted in,
 // if the register it came from had overflowed. ok is false if w1 points to
-// an entry that is no longer the key's (an abandoned move took it back).
+// an entry that is no longer the key's (a touch demoted it meanwhile).
 func (f *Filter) estimate(id, w1, last, now, window uint64, sat bool) (r Result, ok bool) {
 	window = min(window, f.horizon)
 	if age(now, last) > window {

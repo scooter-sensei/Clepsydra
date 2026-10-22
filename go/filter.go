@@ -1465,7 +1465,7 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 	w1, _ := f.nextReg(0, tg, now, now, true) // first event, published with the key
 	last, sat := now, uint64(0)
 	hotRestore := false
-	if src != 0 && age(now, s0&tsMask) <= f.horizon {
+	if src != 0 && age(now, s0&tsMask) <= f.horizon && !f.hotGone(f.stashID(h, fp, tg), s1) {
 		last = s0 & tsMask
 		if isHot(s1) { // it keeps its hot entry; the touch is counted once it is installed
 			w1, hotRestore = s1, true
@@ -1513,7 +1513,10 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 		return Result{Count: -1}
 	}
 	if hotRestore && !f.hotAdd(w1, f.stashID(h, fp, tg), now, nil) {
-		return Result{Count: 1, Upper: 1, Saturated: true, Seen: r.Seen, Restored: r.Restored} // can't happen while its history is live
+		// The entry was reclaimed since hotGone: look again. The key's slot
+		// (or wait) now points to another key's entry; the next look finds
+		// that and counts this touch afresh (bump's reset, or hotGone).
+		return Result{Count: -1}
 	}
 	if src == srcStash && r.Restored {
 		f.restored.Add(1)

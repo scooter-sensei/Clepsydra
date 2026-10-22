@@ -408,6 +408,21 @@ func (f *Filter) viewOf(id, w1, last uint64) (v view, ok bool) {
 	return v, true
 }
 
+// hotGone: w1 points to a hot entry that is no longer the key id's. An entry
+// is reclaimed once its newest event is past the horizon at the reclaiming
+// call's clock, which can be ahead of another caller's by more: a history
+// out of the table (stash, wait room) whose entry went that way is gone,
+// though its last touch is within a horizon of a lagging caller's clock.
+// Restored as is, the touch restoring it went nowhere, and the slot pointed
+// at another key's entry (claims A25).
+func (f *Filter) hotGone(id, w1 uint64) bool {
+	if !isHot(w1) {
+		return false
+	}
+	_, ok := f.viewOf(id, w1, 0)
+	return !ok
+}
+
 // hotAdd counts one event at now into the entry word1 points to. slot, if
 // not nil, is the word1 (holding w1) the touch found the key by: the entry
 // may then be handed back to it as a register (demote).

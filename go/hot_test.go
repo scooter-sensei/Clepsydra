@@ -172,3 +172,153 @@ func TestHotTableExhaustion(t *testing.T) {
 		}
 	}
 }
+
+// TestRestoreAfterHotEntryReclaimed: a hot key K is evicted to the stash,
+// its stash entry pointing at its hot entry. A promotion at a clock more
+// than a horizon past K's newest event reclaims the entry for another key.
+// K's next touch, at a clock behind that one but within a horizon of K's
+// last touch, restores K's history: the entry is no longer K's. That touch
+// must still be counted (it went nowhere, its slot left pointing at the
+// other key's entry, and K's next touch started afresh: Upper 1 for 2).
+func TestRestoreAfterHotEntryReclaimed(t *testing.T) {
+	if forceCT || forceBG {
+		t.Skip("ConstantTime and Background inserts don't install on the call path")
+	}
+	f, err := New(Config{Capacity: 1000, Horizon: time.Minute, Resolution: time.Millisecond, Hot: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const t0 = 60_000
+	k, l := mix64(1), mix64(2)
+	for range 32 { // past the register's 31 events in a unit: promoted
+		f.TouchAt(k, 0, t0)
+	}
+	if f.Promoted() != 1 {
+		t.Fatalf("K not promoted (%d)", f.Promoted())
+	}
+	// Evict K as claimAt does: its words to the stash, its slot to another key (here: freed).
+	fp, tg := fingerprint(k), tag(k)
+	i := f.locate(k, fp, tg)
+	w0, w1 := f.words[i], f.words[i+1]
+	if !isHot(w1) {
+		t.Fatal("K's slot holds no hot entry")
+	}
+	f.stashPut(f.stashID(k, fp, tg), w0, w1, t0)
+	f.words[i], f.words[i+1] = 0, 0
+	tL := t0 + f.horizon + 3*f.unit // K's entry is past the horizon here
+	for range 32 {
+		f.TouchAt(l, 0, tL)
+	}
+	if f.Promoted() != 2 {
+		t.Fatalf("L not promoted (%d): K's entry not reclaimed", f.Promoted())
+	}
+	tK := t0 + f.horizon - 1 // K's clock: behind L's, within a horizon of K's last touch
+	f.TouchAt(k, 0, tK)
+	f.TouchAt(k, 0, tK)
+	if r := f.CountAt(k, f.horizon, tK); r.Upper < 2 && !r.Saturated {
+		t.Fatalf("K reads %+v after two touches, want Upper >= 2", r)
+	}
+}
+
+// hotReclaimSetup: a filter with one hot entry; K promoted at t0 and
+// evicted as claimAt does (words to the stash, slot freed); both of K's
+// lines then full of entries live until t0 + horizon. reclaim promotes
+// another key at a clock more than a horizon past K's newest event, which
+// takes K's entry. tK is a clock behind that one, within a horizon of K's
+// last touch.
+func hotReclaimSetup(t *testing.T, bg bool) (f *Filter, k, tK uint64, reclaim func()) {
+	t.Helper()
+	f, err := New(Config{Capacity: 1000, Horizon: time.Minute, Resolution: time.Millisecond, Hot: 1,
+		Clock: func() uint64 { return 1 }, Background: bg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.bgManual = bg
+	const t0 = 60_000
+	k = mix64(1)
+	for range 32 { // past the register's 31 events in a unit: promoted
+		f.TouchAt(k, 0, t0)
+	}
+	fp, tg := fingerprint(k), tag(k)
+	i := f.locate(k, fp, tg)
+	if f.Promoted() != 1 || i < 0 || !isHot(f.words[i+1]) {
+		t.Fatalf("K not promoted (%d) or not in the table", f.Promoted())
+	}
+	f.stashPut(f.stashID(k, fp, tg), f.words[i], f.words[i+1], t0)
+	f.words[i], f.words[i+1] = 0, 0
+	p := f.primary(k)
+	for _, line := range [2]uint64{p, f.alt(p, fp)} {
+		for j := uint64(1 << 40); countLine(f, line, t0) < 4; j++ {
+			if h := mix64(j); f.primary(h) == line {
+				f.TouchAt(h, 0, t0)
+			}
+		}
+	}
+	l, tL := mix64(2), t0+f.horizon+3*f.unit
+	reclaim = func() {
+		for range 32 {
+			f.TouchAt(l, 0, tL)
+		}
+		if f.Promoted() != 2 {
+			t.Errorf("L not promoted (%d): K's entry not reclaimed", f.Promoted())
+		}
+	}
+	return f, k, t0 + f.horizon - 1, reclaim
+}
+
+// TestHotEntryReclaimedDuringRestore: as TestRestoreAfterHotEntryReclaimed,
+// but the entry is reclaimed while K's restoring touch is in its claim
+// (relocating an entry of K's full lines to make room), after the check
+// that its entry is still K's. K's touch must still be counted.
+func TestHotEntryReclaimedDuringRestore(t *testing.T) {
+	if forceCT || forceBG {
+		t.Skip("ConstantTime and Background inserts don't search on the call path")
+	}
+	f, k, tK, reclaim := hotReclaimSetup(t, false)
+	fired := false
+	hook := func() {
+		if !fired {
+			fired = true
+			reclaim()
+		}
+	}
+	testHookCopied, testHookVictim = hook, hook
+	defer func() { testHookCopied, testHookVictim = nil, nil }()
+	f.TouchAt(k, 0, tK)
+	if !fired {
+		t.Fatal("K's restore neither relocated nor evicted")
+	}
+	f.TouchAt(k, 0, tK)
+	if r := f.CountAt(k, f.horizon, tK); r.Upper < 2 && !r.Saturated {
+		t.Fatalf("K reads %+v after two touches, want Upper >= 2", r)
+	}
+}
+
+// TestHotEntryReclaimedBeforeWait: with Background, K's restoring touch
+// finds its lines full and waits in the wait room, after its entry was
+// reclaimed. It must wait with this touch counted, not the dead entry
+// (with which every retry would take K out of the room and wait again).
+func TestHotEntryReclaimedBeforeWait(t *testing.T) {
+	if forceCT {
+		t.Skip("Background has no effect with ConstantTime")
+	}
+	f, k, tK, reclaim := hotReclaimSetup(t, true)
+	reclaim()
+	done := make(chan struct{})
+	go func() {
+		f.TouchAt(k, 0, tK)
+		f.TouchAt(k, 0, tK)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("K's touches did not return")
+	}
+	if f.Waiting() != 1 {
+		t.Errorf("%d keys waiting, want K", f.Waiting())
+	}
+	if r := f.CountAt(k, f.horizon, tK); r.Upper < 2 && !r.Saturated {
+		t.Fatalf("K reads %+v after two touches, want Upper >= 2", r)
+	}
+}

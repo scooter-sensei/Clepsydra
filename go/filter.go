@@ -1079,7 +1079,7 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 			}
 		}
 		r.Seen = age(now, last) <= window
-		r.Restored = true
+		r.Restored = s0&deferMark == 0 // a key that waited for a slot was never evicted
 	} else if f.lostRecently(now) {
 		r.Degraded = true
 	}
@@ -1106,9 +1106,9 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 		return Result{Count: -1}
 	}
 	if hotRestore && !f.hotAdd(w1, f.stashID(h, fp, tg), now, nil) {
-		return Result{Count: 1, Upper: 1, Saturated: true, Seen: r.Seen, Restored: true} // can't happen while its history is live
+		return Result{Count: 1, Upper: 1, Saturated: true, Seen: r.Seen, Restored: r.Restored} // can't happen while its history is live
 	}
-	if src == srcStash {
+	if src == srcStash && r.Restored {
 		f.restored.Add(1)
 	}
 	if !wantCount {

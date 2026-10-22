@@ -39,6 +39,39 @@ func (f *Filter) whereKey(h uint64) (table, stash int) {
 	return table, stash
 }
 
+// TestCTWaitingKeyNotRestored: a key that waited for a slot and is touched
+// again once one is free was never evicted: its answer isn't Restored, and
+// Restored() doesn't count it. The table is filled at tick 1; the key waits
+// at half a horizon, and its next touch comes when the fill has expired.
+func TestCTWaitingKeyNotRestored(t *testing.T) {
+	f, err := New(Config{Capacity: 256, Horizon: time.Minute, Resolution: time.Millisecond,
+		ConstantTime: time.Microsecond, Stash: 256})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range uint64(f.Slots() * 85 / 100) {
+		f.TouchAt(mix64(i), 0, 1)
+	}
+	var key uint64
+	for i := uint64(1 << 40); key == 0; i++ {
+		w := f.Waited()
+		f.TouchAt(mix64(i), 0, 30_000)
+		if f.Waited() != w {
+			key = mix64(i)
+		}
+	}
+	if tb, st := f.whereKey(key); tb != 0 || st != 1 {
+		t.Fatalf("key not waiting: %d table and %d stash entries", tb, st)
+	}
+	r := f.TouchAt(key, 60_000, 60_002)
+	if tb, _ := f.whereKey(key); tb != 1 {
+		t.Fatalf("key not placed by its touch: %d table entries", tb)
+	}
+	if r.Count != 2 || !r.Seen || r.Restored || f.Restored() != 0 {
+		t.Fatalf("touch of a key that waited: %+v, Restored() %d; want count 2, seen, not restored", r, f.Restored())
+	}
+}
+
 // TestCTWaitingKeysKeepCounts: in ConstantTime an insert that finds its two
 // lines full waits in the stash instead of searching, and the pads of later
 // calls place it (by path or eviction, as a plain insert would). Filled to

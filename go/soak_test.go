@@ -27,10 +27,14 @@ func TestStressSoak(t *testing.T) {
 		t.Skip("set TF_STRESS=<duration> to run")
 	}
 	const capacity = 4096
+	workers := max(4, 2*runtime.GOMAXPROCS(0))
 	var clock atomic.Uint64
 	clock.Store(1)
+	// Hot entries for every heavy key (8 per worker) and some of the pool, so
+	// heavy answers are checked rather than Saturated (refused promotions
+	// are the fuzzer's few-hot-entries cases and the attack tests').
 	f, err := New(Config{Capacity: capacity, Horizon: 10 * time.Second, Resolution: time.Millisecond,
-		Clock: clock.Load, SpillMin: 1})
+		Clock: clock.Load, SpillMin: 1, Hot: 10 * workers})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +56,6 @@ func TestStressSoak(t *testing.T) {
 			time.Sleep(20 * time.Microsecond)
 		}
 	}()
-	workers := max(4, 2*runtime.GOMAXPROCS(0))
 	var ops, queries, sat, low, floored atomic.Int64
 	var firstLow atomic.Value
 	for g := range workers {

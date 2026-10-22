@@ -49,7 +49,7 @@ word1: tag(12) | epoch(4) | 7 velocity buckets (48)  age-graded counter, or the 
 | Op | What it does | Memory |
 |---|---|---|
 | `CheckAndTouch(key, W) bool` | CAS `lastTouch` to now, returns `now − lastTouch ≤ W`, counts the event | 1 line on a primary hit |
-| `CheckAndTouchBatch(hs, W, now, out)` | Same for many keys; issues every key's line load first so cache misses overlap | see speed table |
+| `CheckAndTouchBatch(hs, W, now, out)` | Same for many keys, in order, 32 at a time: prefetches every key's primary line so the misses overlap, looks each key up there, prefetches the alternate lines of the keys it didn't find, then touches each key starting from the slot it found | see speed table |
 | `VelocityCount(key, W) int` | Reads the buckets as laid out at the register's own epoch (no re-bucketing), sums those inside W and interpolates the one W's edge cuts, assuming uniform density; in the newest bucket the event at lastTouch counts whole and only the others are spread | 1 line |
 | `TouchAndCount(key, W)` | Both in one pass | 1 line |
 | `TouchAndCountBatch`, `VelocityCountBatch` | Batched like CheckAndTouchBatch | see speed table |

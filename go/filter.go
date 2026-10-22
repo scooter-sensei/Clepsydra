@@ -434,11 +434,11 @@ type Result struct {
 // Touch records an occurrence of key now and returns the full Result for
 // window: TouchAndCount plus the trust flags.
 func (f *Filter) Touch(key string, window time.Duration) Result {
-	return f.touch(f.Hash(key), f.Ticks(window), f.clock(), true)
+	return f.touch(f.Hash(key), f.Ticks(window), f.clock(), true, -1)
 }
 
 // TouchAt is Touch on a pre-hashed key, in ticks.
-func (f *Filter) TouchAt(h, window, now uint64) Result { return f.touch(h, window, now, true) }
+func (f *Filter) TouchAt(h, window, now uint64) Result { return f.touch(h, window, now, true, -1) }
 
 // Count is VelocityCount with the trust flags of Touch. It does not record an
 // occurrence.
@@ -449,7 +449,7 @@ func (f *Filter) Count(key string, window time.Duration) Result {
 // CheckAndTouch reports whether key was seen within window, then records an
 // occurrence now.
 func (f *Filter) CheckAndTouch(key string, window time.Duration) bool {
-	return f.touch(f.Hash(key), f.Ticks(window), f.clock(), false).Seen
+	return f.touch(f.Hash(key), f.Ticks(window), f.clock(), false, -1).Seen
 }
 
 // VelocityCount estimates how many times key was touched within window.
@@ -461,19 +461,19 @@ func (f *Filter) VelocityCount(key string, window time.Duration) int {
 // TouchAndCount records an occurrence and returns (seen within window before
 // this touch, estimated count within window including this touch).
 func (f *Filter) TouchAndCount(key string, window time.Duration) (bool, int) {
-	r := f.touch(f.Hash(key), f.Ticks(window), f.clock(), true)
+	r := f.touch(f.Hash(key), f.Ticks(window), f.clock(), true, -1)
 	return r.Seen, r.Count
 }
 
 // CheckAndTouchAt is CheckAndTouch on a pre-hashed key with caller-supplied
 // window and clock, both in ticks.
 func (f *Filter) CheckAndTouchAt(h, window, now uint64) bool {
-	return f.touch(h, window, now, false).Seen
+	return f.touch(h, window, now, false, -1).Seen
 }
 
 // TouchAndCountAt is TouchAndCount on a pre-hashed key, in ticks.
 func (f *Filter) TouchAndCountAt(h, window, now uint64) (bool, int) {
-	r := f.touch(h, window, now, true)
+	r := f.touch(h, window, now, true, -1)
 	return r.Seen, r.Count
 }
 
@@ -779,60 +779,78 @@ func (f *Filter) lostRecently(now uint64) bool {
 	return la != 0 && age(now, la) <= f.horizon
 }
 
-// CheckAndTouchBatch is CheckAndTouchAt over many pre-hashed keys. It first
-// issues one independent load per key's primary line so the CPU overlaps the
-// cache misses (memory-level parallelism), then runs each operation against
-// lines that are already in flight or cached. out must be at least len(hs).
+// CheckAndTouchBatch is CheckAndTouchAt over many pre-hashed keys, in the
+// order of hs, a chunk at a time with the chunk's cache misses overlapped
+// (see warm). out must be at least len(hs).
 func (f *Filter) CheckAndTouchBatch(hs []uint64, window, now uint64, out []bool) {
 	out = out[:len(hs)]
+	var at [batchChunk]int
 	for lo := 0; lo < len(hs); lo += batchChunk {
 		hi := min(lo+batchChunk, len(hs))
-		f.warm(hs[lo:hi])
+		f.warm(hs[lo:hi], &at)
 		for i := lo; i < hi; i++ {
-			out[i] = f.touch(hs[i], window, now, false).Seen
+			out[i] = f.touch(hs[i], window, now, false, at[i-lo]).Seen
 		}
 	}
 }
 
 // TouchAndCountBatch is TouchAndCountAt over many pre-hashed keys, with the
-// overlapped loads of CheckAndTouchBatch. seen and counts must be at least
+// overlapped misses of CheckAndTouchBatch. seen and counts must be at least
 // len(hs).
 func (f *Filter) TouchAndCountBatch(hs []uint64, window, now uint64, seen []bool, counts []int) {
 	seen, counts = seen[:len(hs)], counts[:len(hs)]
+	var at [batchChunk]int
 	for lo := 0; lo < len(hs); lo += batchChunk {
 		hi := min(lo+batchChunk, len(hs))
-		f.warm(hs[lo:hi])
+		f.warm(hs[lo:hi], &at)
 		for i := lo; i < hi; i++ {
-			r := f.touch(hs[i], window, now, true)
+			r := f.touch(hs[i], window, now, true, at[i-lo])
 			seen[i], counts[i] = r.Seen, r.Count
 		}
 	}
 }
 
 // VelocityCountBatch is VelocityCountAt over many pre-hashed keys, with the
-// overlapped loads of CheckAndTouchBatch. counts must be at least len(hs).
+// overlapped misses of CheckAndTouchBatch. counts must be at least len(hs).
 func (f *Filter) VelocityCountBatch(hs []uint64, window, now uint64, counts []int) {
 	counts = counts[:len(hs)]
+	var at [batchChunk]int
 	for lo := 0; lo < len(hs); lo += batchChunk {
 		hi := min(lo+batchChunk, len(hs))
-		f.warm(hs[lo:hi])
+		f.warm(hs[lo:hi], &at)
 		for i := lo; i < hi; i++ {
 			counts[i] = f.VelocityCountAt(hs[i], window, now)
 		}
 	}
 }
 
-// batchChunk is ~ a core's outstanding-miss capacity, with headroom.
-const batchChunk = 64
+// batchChunk is how many keys warm overlaps (S48: 32 beat 64 on tables
+// near the last-level cache's size and matched it past them).
+const batchChunk = 32
 
-// warm loads each key's primary line without using the result, so the misses
-// for a whole chunk are in flight at once.
-func (f *Filter) warm(hs []uint64) {
-	var sink uint64
-	for _, h := range hs {
-		sink += atomic.LoadUint64(&f.words[f.primary(h)*wordsPerLine])
+// warm overlaps the cache misses of a chunk's keys (memory-level
+// parallelism). It prefetches every key's primary line, looks for each key
+// there (at[k]: its slot, or -1), then prefetches the alternate lines of the
+// keys it didn't find there, so each key's operation, in order, finds its
+// lines cached or on their way, and a touch starts from its slot. Prefetch
+// instructions, unlike loads, don't hold up retirement, and the touches'
+// locked CASes don't wait for them. S48: 1.2x the loads it replaces at 90%
+// load on tables past the last-level cache; 0.9x on a table that fits it.
+func (f *Filter) warm(hs []uint64, at *[batchChunk]int) {
+	var lines [batchChunk]uint64
+	w := unsafe.Pointer(&f.words[0])
+	for k, h := range hs {
+		lines[k] = f.primary(h)
 	}
-	runtime.KeepAlive(sink)
+	prefetchLines(w, &lines[0], len(hs))
+	m := 0
+	for k, h := range hs {
+		p, fp := lines[k], fingerprint(h)
+		if at[k] = f.find(p, fp<<1, tag(h)); at[k] < 0 {
+			lines[m], m = f.alt(p, fp), m+1 // m <= k: the entries before k's are used
+		}
+	}
+	prefetchLines(w, &lines[0], m)
 }
 
 // Evictions counts live keys displaced because both candidate lines were full.
@@ -868,7 +886,9 @@ func (f *Filter) Waiting() int { return int(f.deferred.Load()) }
 // Restored counts returning keys whose history came back from the stash.
 func (f *Filter) Restored() uint64 { return f.restored.Load() }
 
-func (f *Filter) touch(h, window, now uint64, wantCount bool) Result {
+// touch is TouchAt. i0, if not -1, is a slot where a lookup just found h
+// (warm): its first look starts there if the slot still holds h.
+func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 	if h&decayEvery == 0 {
 		f.decayStep(now, 1)
 	}
@@ -876,8 +896,16 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) Result {
 		return f.touchCT(h, window, now, wantCount)
 	}
 	fp, tg := fingerprint(h), tag(h)
-	for {
-		i := f.locate(h, fp, tg)
+	for first := true; ; first = false {
+		i := -1
+		if first {
+			if _, _, ok := f.slotWords(i0, fp, tg); ok {
+				i = i0
+			}
+		}
+		if i < 0 {
+			i = f.locate(h, fp, tg)
+		}
 		if i < 0 {
 			// Miss: serialize first touches of the same key so two racers
 			// can't each claim a slot (which would split its count). The

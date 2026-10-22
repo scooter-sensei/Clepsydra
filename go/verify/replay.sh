@@ -36,7 +36,9 @@ fixes() {
 	local n=${1:-20}
 	# name | commit with the bug | commit with the fix | test files copied from HEAD | test regex | runs | env
 	# (verify/testdata/ghost_test.go is the ghost test as of 2890196: HEAD's
-	# calls the later two-bucket newGhost.) The split and handshake fixes of
+	# calls the later two-bucket newGhost. verify/testdata/restore_test.go is
+	# the restore test as of e9ceb3b: HEAD's reads forceBG, which c849b7e
+	# added.) The split and handshake fixes of
 	# 5524228 and a02fe9b are proven by deterministic tests on hooks those
 	# commits added (TestEvictionDuringMoveKeepsHistory,
 	# TestEvictionRacingMoveStart), so they can't run on the code before.
@@ -81,7 +83,7 @@ fixes() {
 	torn-lookup|6c051d0|6af5480|read_race_test.go|^TestReadDuringRelocationFindsKey$|10
 	ghost-stale-epoch|6af5480|642c3ef|verify/testdata/ghost_test.go|^TestGhostEpochRace$|10
 	ghost-ahead-of-clock|a02fe9b|2890196|verify/testdata/ghost_test.go|^TestGhostAddAheadOfClock$|3
-	restore-behind-clock|ee76cab|e9ceb3b|restore_test.go|^TestRestoreBehindLastTouch$|3
+	restore-behind-clock|ee76cab|e9ceb3b|verify/testdata/restore_test.go|^TestRestoreBehindLastTouch$|3
 	LIST
 }
 

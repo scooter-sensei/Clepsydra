@@ -216,6 +216,7 @@ func TestContinuousDecayReclaims(t *testing.T) {
 	if f.Occupancy(clock) == 0 {
 		t.Fatal("nothing inserted")
 	}
+	settle(f) // with Background, keys placed after the last pass would stay
 	// Advance the clock in small steps, as a live system would; each step
 	// sweeps only the lines its elapsed ticks pay for.
 	maxStep := 0

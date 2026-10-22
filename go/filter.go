@@ -1306,13 +1306,19 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
 // without using it: the misses are in flight together, and the search that
 // follows finds the lines on their way or cached.
 func (f *Filter) warmAlts(lines [2]uint64) {
+	f.warmLine(lines[0])
+	f.warmLine(lines[1])
+}
+
+// warmLine loads one word of the alternate line of each entry in line.
+// Four misses at once is about what this host keeps in flight (claims S42);
+// a whole level of the search at once (32) is not.
+func (f *Filter) warmLine(line uint64) {
 	var sink uint64
-	for _, line := range lines {
-		base := int(line * wordsPerLine)
-		for s := 0; s < wordsPerLine; s += 2 {
-			if w0 := atomic.LoadUint64(&f.words[base+s]); w0 != 0 {
-				sink += atomic.LoadUint64(&f.words[f.alt(line, w0>>48)*wordsPerLine])
-			}
+	base := int(line * wordsPerLine)
+	for s := 0; s < wordsPerLine; s += 2 {
+		if w0 := atomic.LoadUint64(&f.words[base+s]); w0 != 0 {
+			sink += atomic.LoadUint64(&f.words[f.alt(line, w0>>48)*wordsPerLine])
 		}
 	}
 	runtime.KeepAlive(sink)
@@ -1399,6 +1405,7 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
 		m.done.Add(1)
 	}
 	if depth > 0 {
+		f.warmLine(a) // the next lines of a's entries together, not one miss at a time
 		for s := 0; s < wordsPerLine; s += 2 {
 			if f.relocate(base+s, a, moved, w1, now, depth-1, budget, m) {
 				return replace(base + s)

@@ -1,0 +1,114 @@
+diff --git a/filter.go b/filter.go
+index 0b02fc0..f805be1
+--- a/filter.go
++++ b/filter.go
+@@ -24,9 +24,11 @@ import (
+ 	"math"
+ 	"math/bits"
+ 	"math/rand/v2"
++	"os"
+ 	"runtime"
+ 	"sync"
+ 	"sync/atomic"
++	"syscall"
+ 	"time"
+ 	"unsafe"
+ )
+@@ -342,12 +344,26 @@ func prefault(w []uint64) {
+ }
+ 
+ func alignedWords(n int) []uint64 {
++	if thp && n*8 >= 8<<20 { // experiment: 2 MiB-aligned and advised huge
++		const huge = 2 << 20
++		buf := make([]uint64, n+huge/8)
++		off := int((huge-uintptr(unsafe.Pointer(&buf[0]))%huge)%huge) / 8
++		w := buf[off : off+n : off+n]
++		b := unsafe.Slice((*byte)(unsafe.Pointer(&w[0])), n*8)
++		if err := syscall.Madvise(b, 14 /* MADV_HUGEPAGE */); err != nil {
++			panic(err)
++		}
++		return w
++	}
+ 	buf := make([]uint64, n+wordsPerLine)
+ 	const align = wordsPerLine * 8 // bytes per bucket
+ 	off := int((align-uintptr(unsafe.Pointer(&buf[0]))%align)%align) / 8
+ 	return buf[off : off+n : off+n]
+ }
+ 
++// thp (experiment, TF_THP=1): tables of 8 MiB or more on advised huge pages.
++var thp = os.Getenv("TF_THP") == "1"
++
+ // Close stops the CoarseClock goroutine, if any. The filter stays usable;
+ // its clock just stops advancing.
+ func (f *Filter) Close() {
+@@ -1233,6 +1249,9 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
+ 		budget := 8 + int(uint64(relocBudget-8)*(pressureOne-uint64(p))>>pressureShift)
+ 		f.warmAlts(lines)
+ 		for depth := 0; depth <= relocDepth; depth++ {
++			if depth == 1 && pf2 { // experiment: the next level's lines together
++				f.warmAlts2(lines)
++			}
+ 			for li, line := range lines {
+ 				base := int(line * wordsPerLine)
+ 				for s := 0; s < wordsPerLine; s += 2 {
+@@ -1324,6 +1343,32 @@ func (f *Filter) warmLine(line uint64) {
+ 	runtime.KeepAlive(sink)
+ }
+ 
++// warmAlts2 (experiment) loads the alternate line of every entry in the
++// alternate lines of lines' entries: the second level of the cuckoo search.
++func (f *Filter) warmAlts2(lines [2]uint64) {
++	var sink uint64
++	for _, line := range lines {
++		base := int(line * wordsPerLine)
++		for s := 0; s < wordsPerLine; s += 2 {
++			w0 := atomic.LoadUint64(&f.words[base+s])
++			if w0 == 0 {
++				continue
++			}
++			a := f.alt(line, w0>>48)
++			ab := int(a * wordsPerLine)
++			for t := 0; t < wordsPerLine; t += 2 {
++				if x := atomic.LoadUint64(&f.words[ab+t]); x != 0 {
++					sink += atomic.LoadUint64(&f.words[f.alt(a, x>>48)*wordsPerLine])
++				}
++			}
++		}
++	}
++	runtime.KeepAlive(sink)
++}
++
++// pf2 (experiment, TF_PF2=1) turns warmAlts2 on.
++var pf2 = os.Getenv("TF_PF2") != ""
++
+ // install hands slot i (word index), if it still holds w0/w1, to the entry
+ // mine0/mine1. word1 goes busy first: a reader of the old occupant then
+ // misses rather than matching a half-written slot, and a late writer to the
+diff --git a/inserttail_test.go b/inserttail_test.go
+index 3ff7a29..3572316
+--- a/inserttail_test.go
++++ b/inserttail_test.go
+@@ -5,6 +5,7 @@ import (
+ 	"math/rand/v2"
+ 	"os"
+ 	"slices"
++	"strings"
+ 	"testing"
+ 	"time"
+ )
+@@ -39,6 +40,15 @@ func TestInsertTail(t *testing.T) {
+ 				f.TouchAt(f.HashUint64(rng.Uint64()), 0, now)
+ 			}
+ 			now += 1000
++			if tb == 0 { // experiment: is the table on huge pages?
++				if b, err := os.ReadFile("/proc/self/smaps_rollup"); err == nil {
++					for _, l := range strings.Split(string(b), "\n") {
++						if strings.HasPrefix(l, "AnonHugePages") {
++							t.Logf("load %.2f: %s (table %d MiB)", load, strings.Join(strings.Fields(l), " "), f.Bytes()>>20)
++						}
++					}
++				}
++			}
+ 			hs := make([]uint64, probes)
+ 			for i := range hs {
+ 				hs[i] = f.HashUint64(rng.Uint64())

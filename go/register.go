@@ -128,9 +128,13 @@ func regEpoch(w1 uint64, ref int64) int64 {
 // overflow reports that an event spilled out of its bucket or was dropped
 // (the slot's saturated bit must then be set).
 func (f *Filter) nextReg(old, tg, last, now uint64, reset bool) (w1 uint64, overflow bool) {
-	nowU := f.unitOf(now)
+	return f.nextRegU(old, tg, f.unitOf(last), f.unitOf(now), reset)
+}
+
+// nextRegU is nextReg with last's and now's units.
+func (f *Filter) nextRegU(old, tg uint64, lastU, nowU int64, reset bool) (w1 uint64, overflow bool) {
 	if !reset && old>>tagShift == tg && old>>48&epochMask == uint64(nowU)&epochMask &&
-		regEpoch(old, f.unitOf(last)) == nowU {
+		regEpoch(old, lastU) == nowU {
 		// Fast path, same unit: increment the first bucket with room in
 		// place (spilling as add does). Buckets are contiguous from bit 0,
 		// so the lowest zero bit of the register lies in that bucket.
@@ -145,7 +149,7 @@ func (f *Filter) nextReg(old, tg, last, now uint64, reset bool) (w1 uint64, over
 	e := nowU
 	if !reset && old>>tagShift == tg {
 		r = unpack(old & regMask)
-		e = regEpoch(old, f.unitOf(last))
+		e = regEpoch(old, lastU)
 		if nowU > e {
 			overflow = r.advance(e, nowU)
 			e = nowU
@@ -180,30 +184,46 @@ func hot(w1 uint64) bool {
 // (a newcomer with the same tag can't be mistaken for it). A key whose
 // register would overflow is promoted to a hot entry instead (hot.go); a
 // promoted key's events go to its entry and word1 stays as it is.
-func (f *Filter) bump(i int, fpd, tg, last, now uint64, reset bool) (w1 uint64, overflow, ok bool) {
+//
+// The register's epoch is read against word0's last touch as loaded here,
+// after word1 (ref, returned), not the caller's: a realign since the
+// caller's read moved both, and a pair loaded across one fails the CAS.
+// now's unit is at most ref's (a later unit goes through realign). nu is
+// now's unit, last and lu the caller's last touch and its unit: ref is
+// usually one of the two.
+func (f *Filter) bump(i int, fpd, tg, now uint64, nu int64, last uint64, lu int64, reset bool) (w1, ref uint64, overflow, ok bool) {
 	for {
 		old := atomic.LoadUint64(&f.words[i+1])
 		w0 := atomic.LoadUint64(&f.words[i])
 		if old>>tagShift != tg || w0>>47 != fpd {
-			return 0, false, false
+			return 0, 0, false, false
 		}
+		ref = w0 & tsMask
 		if isHot(old) && !reset {
 			if f.hotAdd(old, f.slotID(uint64(i/wordsPerLine), w0, old), now, &f.words[i+1]) {
-				return old, false, true
+				return old, ref, false, true
 			}
 			if atomic.LoadUint64(&f.words[i+1]) != old {
 				continue // the entry was taken back with the slot: look again
 			}
 			reset = true // the entry aged out with the key's history: start afresh
 		}
-		nw, over := f.nextReg(old, tg, last, now, reset)
+		refU := lu
+		switch ref {
+		case last:
+		case now: // the caller's own CAS
+			refU = nu
+		default:
+			refU = f.unitOf(ref)
+		}
+		nw, over := f.nextRegU(old, tg, refU, nu, reset)
 		if over {
-			if pw, ok := f.promote(i, w0, old, tg, last, now); ok {
-				return pw, false, true
+			if pw, ok := f.promote(i, w0, old, tg, ref, now); ok {
+				return pw, ref, false, true
 			}
 		}
 		if nw == old || atomic.CompareAndSwapUint64(&f.words[i+1], old, nw) {
-			return nw, over, true
+			return nw, ref, over, true
 		}
 		reset = false // a concurrent touch already reset it; merge
 	}

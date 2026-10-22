@@ -245,8 +245,9 @@ type Filter struct {
 // Test hooks, if set: testHookCopied runs between a relocation's copy and
 // its hand-off, testHookVictim between an eviction's choice of victim and
 // its install, testHookTaken after a touch takes a waiting key out of the
-// wait room.
-var testHookCopied, testHookVictim, testHookTaken func()
+// wait room, testHookStamped after a touch moves its slot's last touch to a
+// later unit, before the register follows (realign, word1 busy).
+var testHookCopied, testHookVictim, testHookTaken, testHookStamped func()
 
 // forceCT turns ConstantTime on in every filter (tests: TF_CT=1).
 var forceCT bool
@@ -647,14 +648,22 @@ func (f *Filter) lookupStable(h, fp, tg uint64, both bool) (i int, w0, w1 uint64
 	}
 }
 
-// slotWords loads slot i's words if it still holds fp/tg.
+// slotWords loads slot i's words if it still holds fp/tg. word0 is read
+// again after word1: a realign between the two loads would pair the old
+// last touch with the new register, whose epoch is read against it.
 func (f *Filter) slotWords(i int, fp, tg uint64) (w0, w1 uint64, ok bool) {
 	if i < 0 {
 		return 0, 0, false
 	}
 	w0 = atomic.LoadUint64(&f.words[i])
 	w1 = atomic.LoadUint64(&f.words[i+1])
-	return w0, w1, w0>>48 == fp && w1>>tagShift == tg
+	if w0>>48 != fp || w1>>tagShift != tg {
+		return w0, w1, false
+	}
+	if a := atomic.LoadUint64(&f.words[i]); a != w0 && f.unitOf(a&tsMask) != f.unitOf(w0&tsMask) {
+		return w0, w1, false
+	}
+	return w0, w1, true
 }
 
 // sketchLive: the overflow table may hold a count at now. ConstantTime
@@ -970,12 +979,26 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 		}
 		last := w0 & tsMask
 		stale := age(now, last) > f.horizon
-		if now > last && !atomic.CompareAndSwapUint64(&f.words[i], w0, w0&^tsMask|now) {
-			continue
+		var w1, ref uint64
+		var over, ok bool
+		nu, lu := f.unitOf(now), f.unitOf(last)
+		if old, far, wait := f.farAhead(i, nu, lu); wait {
+			runtime.Gosched()
+			continue // another touch is realigning the slot (see hit)
+		} else if far {
+			w1, over, ok = f.realign(h, i, w0, old, tg, now)
+			ref = now
+		} else {
+			if now > last && !atomic.CompareAndSwapUint64(&f.words[i], w0, w0&^tsMask|now) {
+				continue
+			}
+			if nu > lu && testHookStamped != nil {
+				testHookStamped()
+			}
+			w1, ref, over, ok = f.bump(i, w0>>47, tg, now, nu, last, lu, stale)
 		}
-		w1, over, ok := f.bump(i, w0>>47, tg, last, now, stale)
 		if !ok {
-			continue // the slot was handed to another key after our CAS; look again
+			continue // the slot was handed to another key, or moved on, meanwhile; look again
 		}
 		sat := w0&satBit != 0
 		if over != sat {
@@ -983,7 +1006,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 		}
 		var r Result
 		if wantCount {
-			r = f.estimateAt(h, w1, max(now, last), now, window, sat)
+			r = f.estimateAt(h, w1, max(now, ref), now, window, sat)
 		}
 		r.Seen = !stale && age(now, last) <= window
 		if f.sketchLive(now) {
@@ -1276,6 +1299,20 @@ func (f *Filter) bgPlace() {
 
 // hit counts a touch in slot i, which held the key when it was found. ok is
 // false if the slot changed hands meanwhile and the caller must look again.
+//
+// A register keeps 4 bits of its unit and is read against the slot's last
+// touch (word0), so word0 must never run 8 units or more ahead of it where
+// a touch or a read can see the pair. A touch that moves word0 first and
+// the register after keeps that only for a jump of under 8 units from the
+// register's own unit: it then moves word0 lock-free and counts with bump,
+// which reads the register against word0 as it is then. A touch 8 or more
+// units past the register's unit (a key idle a third of the horizon, or
+// past it) moves word0 and the register together under word1 busy
+// (realign). Before realign, such a touch moved word0 first: a second touch
+// of the key between its two writes read the old register as the new
+// unit's, and the first then aged that touch's event by the gap, or, past
+// the horizon, reset it away (claims A21). A hot entry keeps its own full
+// unit: its key's touches all count lock-free.
 func (f *Filter) hit(h uint64, i int, fp, tg, window, now uint64, wantCount bool) (Result, bool) {
 	w0 := atomic.LoadUint64(&f.words[i])
 	if w0>>48 != fp {
@@ -1283,12 +1320,25 @@ func (f *Filter) hit(h uint64, i int, fp, tg, window, now uint64, wantCount bool
 	}
 	last := w0 & tsMask
 	stale := age(now, last) > f.horizon
-	if now > last && !atomic.CompareAndSwapUint64(&f.words[i], w0, w0&^tsMask|now) {
+	var w1, ref uint64
+	var over, ok bool
+	nu, lu := f.unitOf(now), f.unitOf(last)
+	if old, far, wait := f.farAhead(i, nu, lu); wait {
 		return Result{}, false
+	} else if far {
+		w1, over, ok = f.realign(h, i, w0, old, tg, now)
+		ref = now
+	} else {
+		if now > last && !atomic.CompareAndSwapUint64(&f.words[i], w0, w0&^tsMask|now) {
+			return Result{}, false
+		}
+		if nu > lu && testHookStamped != nil {
+			testHookStamped()
+		}
+		w1, ref, over, ok = f.bump(i, w0>>47, tg, now, nu, last, lu, stale)
 	}
-	w1, over, ok := f.bump(i, w0>>47, tg, last, now, stale)
 	if !ok {
-		return Result{}, false // the slot was handed to another key after our CAS
+		return Result{}, false // the slot was handed to another key, or moved on, meanwhile
 	}
 	sat := w0&satBit != 0
 	if over != sat {
@@ -1298,9 +1348,59 @@ func (f *Filter) hit(h uint64, i int, fp, tg, window, now uint64, wantCount bool
 	if !wantCount {
 		return Result{Seen: seen}, true
 	}
-	r := f.estimateAt(h, w1, max(now, last), now, window, sat)
+	r := f.estimateAt(h, w1, max(now, ref), now, window, sat)
 	r.Seen = seen
 	return r, true
+}
+
+// farAhead: a touch in unit nu would move slot i's last touch (in unit lu)
+// 8 or more units past its register's unit (old: the register read, or a
+// hot entry's word1, which counts lock-free whatever the gap). wait: word1
+// is busy, so its unit can't be read; a touch that moved word0 on now could
+// leave it 8 units past the register the holder publishes.
+func (f *Filter) farAhead(i int, nu, lu int64) (old uint64, far, wait bool) {
+	if nu <= lu {
+		return 0, false, false
+	}
+	old = atomic.LoadUint64(&f.words[i+1])
+	if old>>tagShift == tagBusy {
+		return old, false, true
+	}
+	return old, !isHot(old) && nu-regEpoch(old, lu) > epochMask/2, false
+}
+
+// realign is hit's count of a touch at now 8 or more units past the unit of
+// slot i's register (old, read against word0 w0): word1 goes busy, word0
+// moves to now, then the register, advanced to now's unit with the touch
+// counted, is published in word1. While word1 is busy, a lookup that
+// misses the slot looks again: the hold counts as a move of the key's
+// stripe. ok is false if the slot changed meanwhile.
+func (f *Filter) realign(h uint64, i int, w0, old, tg, now uint64) (w1 uint64, over, ok bool) {
+	if old>>tagShift != tg || isHot(old) {
+		return 0, false, false
+	}
+	m := &f.moves[h>>(64-claimStripeBits)]
+	m.begun.Add(1)
+	defer m.done.Add(1)
+	if !atomic.CompareAndSwapUint64(&f.words[i+1], old, busy) {
+		return 0, false, false
+	}
+	if !atomic.CompareAndSwapUint64(&f.words[i], w0, w0&^tsMask|now) {
+		atomic.StoreUint64(&f.words[i+1], old)
+		return 0, false, false
+	}
+	if testHookStamped != nil {
+		testHookStamped()
+	}
+	last := w0 & tsMask
+	w1, over = f.nextReg(old, tg, last, now, age(now, last) > f.horizon)
+	if over {
+		if pw, ok := f.promoteHeld(i, w0, old, tg, last, now); ok {
+			w1, over = pw, false
+		}
+	}
+	atomic.StoreUint64(&f.words[i+1], w1)
+	return w1, over, true
 }
 
 // touchCT is touch in ConstantTime mode: under the key's stripe, the same
@@ -1429,8 +1529,8 @@ func (f *Filter) markSat(i int, fp uint64, on bool) bool {
 		if w0&satBit != 0 == on {
 			return on
 		}
-		if !on && hot(atomic.LoadUint64(&f.words[i+1])) {
-			return true
+		if w1 := atomic.LoadUint64(&f.words[i+1]); !on && (w1>>tagShift == tagBusy || hot(w1)) {
+			return true // a busy word1 (realign) may come back with a hot bucket
 		}
 		if atomic.CompareAndSwapUint64(&f.words[i], w0, w0^satBit) {
 			return on
@@ -1674,6 +1774,9 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
 	}
 	*budget--
 	w1 := atomic.LoadUint64(&f.words[i+1])
+	if w1>>tagShift == tagBusy || atomic.LoadUint64(&f.words[i]) != w0 {
+		return false // being installed or realigned, or touched since: a copy would pair stale words
+	}
 	a := f.alt(line, w0>>48)
 	base := int(a * wordsPerLine)
 	moved := w0 ^ dispBit                   // displaced iff it wasn't
@@ -1803,44 +1906,53 @@ func (f *Filter) abandon(i, d int, w0, w1, moved, line, a uint64) {
 }
 
 // fold counts n events at unit e (the latest at last) into the entry at word
-// index j, if it still holds key fp/tg.
+// index j, if it still holds key fp/tg. A register and its last touch move
+// together under word1 busy, as in realign; a busy word1 (a realign or an
+// install) is waited out. A hot entry keeps its own unit: last touch first,
+// then the entry.
 func (f *Filter) fold(j int, fp, tg, n uint64, e int64, last uint64) bool {
-	if atomic.LoadUint64(&f.words[j+1])>>tagShift != tg {
-		return false
-	}
-	for { // lastTouch first: the register's epoch is resolved against it
+	for {
+		s1 := atomic.LoadUint64(&f.words[j+1])
+		if s1>>tagShift == tagBusy {
+			runtime.Gosched()
+			continue
+		}
+		if s1>>tagShift != tg {
+			return false
+		}
 		s0 := atomic.LoadUint64(&f.words[j])
 		if s0>>48 != fp {
 			return false
 		}
-		if s0&tsMask >= last || atomic.CompareAndSwapUint64(&f.words[j], s0, s0&^tsMask|last) {
-			break
-		}
-	}
-	for {
-		s1 := atomic.LoadUint64(&f.words[j+1])
-		if s1>>tagShift != tg {
-			return false
-		}
 		if isHot(s1) {
+			if s0&tsMask < last && !atomic.CompareAndSwapUint64(&f.words[j], s0, s0&^tsMask|last) {
+				continue
+			}
 			t := f.hot.Load()
-			return t != nil && t.add(hotIdx(s1), f.slotID(uint64(j/wordsPerLine), atomic.LoadUint64(&f.words[j]), s1), n, e, nil, 0)
+			return t != nil && t.add(hotIdx(s1), f.slotID(uint64(j/wordsPerLine), s0, s1), n, e, nil, 0)
 		}
-		es := regEpoch(s1, f.unitOf(atomic.LoadUint64(&f.words[j])&tsMask))
+		if !atomic.CompareAndSwapUint64(&f.words[j+1], s1, busy) {
+			continue
+		}
+		ts := max(s0&tsMask, last)
+		if ts != s0&tsMask && !atomic.CompareAndSwapUint64(&f.words[j], s0, s0&^tsMask|ts) {
+			atomic.StoreUint64(&f.words[j+1], s1)
+			continue
+		}
+		es := regEpoch(s1, f.unitOf(s0&tsMask))
 		var x register
 		x[0] = n
-		r, to := unpack(s1&regMask), max(es, e)
+		r, to := unpack(s1&regMask), max(es, e, f.unitOf(ts))
 		over := r.advance(es, to)
 		x.advance(e, to)
 		for k, c := range x {
 			over = r.add(k, c) || over
 		}
-		if atomic.CompareAndSwapUint64(&f.words[j+1], s1, tg<<tagShift|uint64(to)&epochMask<<48|r.pack()) {
-			if over {
-				f.markSat(j, fp, true)
-			}
-			return true
+		atomic.StoreUint64(&f.words[j+1], tg<<tagShift|uint64(to)&epochMask<<48|r.pack())
+		if over {
+			f.markSat(j, fp, true)
 		}
+		return true
 	}
 }
 

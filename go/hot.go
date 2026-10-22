@@ -336,14 +336,40 @@ func (f *Filter) hotClose(idx, id uint64) (v view, ok bool) {
 // slot's new word1, or ok false if no entry is free or word1 changed
 // meanwhile.
 func (f *Filter) promote(i int, w0, old, tg, last, now uint64) (w1 uint64, ok bool) {
-	if f.hotN == 0 {
+	w1, idx, id := f.hotEntryFor(i, w0, old, tg, last, now)
+	if w1 == 0 {
 		return 0, false
+	}
+	if !atomic.CompareAndSwapUint64(&f.words[i+1], old, w1) {
+		f.hotClose(idx, id) // never published
+		return 0, false
+	}
+	f.promoted.Add(1)
+	return w1, true
+}
+
+// promoteHeld is promote for a touch that holds slot i's word1 busy
+// (realign), which publishes w1 itself.
+func (f *Filter) promoteHeld(i int, w0, old, tg, last, now uint64) (w1 uint64, ok bool) {
+	if w1, _, _ = f.hotEntryFor(i, w0, old, tg, last, now); w1 == 0 {
+		return 0, false
+	}
+	f.promoted.Add(1)
+	return w1, true
+}
+
+// hotEntryFor takes a free hot entry for the key in slot i (word0 w0, its
+// register old, last touched at last) holding old's counts and one event at
+// now: word1 pointing to it (0 if none is free), its index and identity.
+func (f *Filter) hotEntryFor(i int, w0, old, tg, last, now uint64) (w1, idx, id uint64) {
+	if f.hotN == 0 {
+		return 0, 0, 0
 	}
 	if t := f.hot.Load(); t != nil && t.full.Load() == f.unitOf(now) {
 		f.hotRefused.Add(1) // every entry was in use a moment ago: don't search again this unit
-		return 0, false
+		return 0, 0, 0
 	}
-	id := f.slotID(uint64(i/wordsPerLine), w0, old)
+	id = f.slotID(uint64(i/wordsPerLine), w0, old)
 	v := view{e: regEpoch(old, f.unitOf(last)), sat: satNone, hot: true}
 	r := unpack(old & regMask)
 	for j := range r {
@@ -357,17 +383,10 @@ func (f *Filter) promote(i int, w0, old, tg, last, now uint64) (w1 uint64, ok bo
 		v.e = u
 	}
 	v.c[0]++
-	idx := f.hotAlloc(id, &v, now)
-	if idx == 0 {
-		return 0, false
+	if idx = f.hotAlloc(id, &v, now); idx == 0 {
+		return 0, 0, 0
 	}
-	w1 = tg<<tagShift | idx<<hotIdxShift
-	if !atomic.CompareAndSwapUint64(&f.words[i+1], old, w1) {
-		f.hotClose(idx, id) // never published
-		return 0, false
-	}
-	f.promoted.Add(1)
-	return w1, true
+	return tg<<tagShift | idx<<hotIdxShift, idx, id
 }
 
 // viewOf returns the register state that word1 holds or points to, for the

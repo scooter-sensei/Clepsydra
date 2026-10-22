@@ -91,3 +91,32 @@ func TestTouchStaleSlot(t *testing.T) {
 		t.Fatalf("b: %+v, want count 1", r)
 	}
 }
+
+// In ConstantTime a batch's warm does the same work whatever the table
+// holds (it runs outside the calls' pads): it hands every touch no slot,
+// present key or not. Outside ConstantTime it hands each present key the
+// slot its primary line holds it in.
+func TestWarmConstantTime(t *testing.T) {
+	for _, ct := range []bool{false, true} {
+		f := newTest(t, 1000, time.Minute)
+		f.ct = ct
+		hs := make([]uint64, batchChunk)
+		for i := range hs {
+			hs[i] = mix64(uint64(i))
+			if i%2 == 0 {
+				f.TouchAt(hs[i], 0, 1000)
+			}
+		}
+		var at [batchChunk]int
+		f.warm(hs, &at)
+		for i, h := range hs {
+			want := -1
+			if !ct && i%2 == 0 {
+				want = f.find(f.primary(h), fingerprint(h)<<1, tag(h))
+			}
+			if at[i] != want {
+				t.Fatalf("ConstantTime %v key %d: warm handed slot %d, want %d", ct, i, at[i], want)
+			}
+		}
+	}
+}

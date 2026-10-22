@@ -836,9 +836,21 @@ const batchChunk = 32
 // instructions, unlike loads, don't hold up retirement, and the touches'
 // locked CASes don't wait for them. S48: 1.2x the loads it replaces at 90%
 // load on tables past the last-level cache; 0.9x on a table that fits it.
+//
+// In ConstantTime it looks nothing up and prefetches both lines of every
+// key: its work, outside the calls' pads, doesn't depend on what the table
+// holds (touchCT reads both lines anyway).
 func (f *Filter) warm(hs []uint64, at *[batchChunk]int) {
-	var lines [batchChunk]uint64
+	var lines [2 * batchChunk]uint64
 	w := unsafe.Pointer(&f.words[0])
+	if f.ct {
+		for k, h := range hs {
+			p := f.primary(h)
+			lines[2*k], lines[2*k+1], at[k] = p, f.alt(p, fingerprint(h)), -1
+		}
+		prefetchLines(w, &lines[0], 2*len(hs))
+		return
+	}
 	for k, h := range hs {
 		lines[k] = f.primary(h)
 	}

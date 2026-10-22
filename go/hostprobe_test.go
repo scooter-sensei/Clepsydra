@@ -15,8 +15,36 @@ import (
 
 // Host probes (TF_EXP=1): what a timing claim on this host rests on. Every
 // latency and leak figure in verify/claims.md is measured on one host;
-// these two say how that host behaves, so figures from another can be read
+// these say how that host behaves, so figures from another can be read
 // against its own (claims S42, S43).
+
+// TestHostFloor: how often a busy loop of a given length, timed one call at
+// a time as TestInsertTail times inserts, takes over 1, 2 and 5 µs: the
+// host's share of any operation's tail at that length (claims S45). A
+// p99.9 target can't be shown for operations whose loop already misses it.
+func TestHostFloor(t *testing.T) {
+	if os.Getenv("TF_EXP") == "" {
+		t.Skip("set TF_EXP=1")
+	}
+	const n = 400_000
+	for _, d := range []time.Duration{0, 250 * time.Nanosecond, 500 * time.Nanosecond, time.Microsecond} {
+		x := make([]float64, n)
+		for i := range x {
+			t0 := time.Now()
+			for time.Since(t0) < d {
+			}
+			x[i] = float64(time.Since(t0).Nanoseconds())
+		}
+		slices.Sort(x)
+		over := func(ns float64) float64 {
+			i, _ := slices.BinarySearch(x, ns)
+			return 100 * float64(len(x)-i) / float64(len(x))
+		}
+		q := func(p float64) float64 { return x[int(p*float64(len(x)-1))] }
+		t.Logf("spin %4d ns: p50/p99/p99.9 %5.0f/%5.0f/%6.0f ns; over 1/2/5 µs: %.3f%% %.3f%% %.3f%%",
+			d.Nanoseconds(), q(.5), q(.99), q(.999), over(1000), over(2000), over(5000))
+	}
+}
 
 // TestHostGaps: how often this host takes the CPU
 // away from a running goroutine, and for how long. A loop reads the clock

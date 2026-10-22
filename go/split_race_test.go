@@ -76,8 +76,8 @@ func moveTable(t *testing.T) (f *Filter, x uint64, key func(primary, alt uint64)
 // failed and abandoned the copy, whose events then had no entry to go back
 // to. X must end with all its events.
 func TestEvictionDuringMoveKeepsHistory(t *testing.T) {
-	if forceCT {
-		t.Skip("ConstantTime inserts don't search on the call path")
+	if forceCT || forceBG {
+		t.Skip("ConstantTime and Background inserts don't search on the call path")
 	}
 	t.Run("copy", func(t *testing.T) { evictDuringMove(t, false) })
 	t.Run("source", func(t *testing.T) { evictDuringMove(t, true) })
@@ -117,8 +117,8 @@ func evictDuringMove(t *testing.T, source bool) {
 // source. The hand-off fails and the copy, with the touch, is retired. X
 // must end with both its events.
 func TestEvictionRacingMoveStart(t *testing.T) {
-	if forceCT {
-		t.Skip("ConstantTime inserts don't search or evict on the call path")
+	if forceCT || forceBG {
+		t.Skip("ConstantTime and Background inserts don't search or evict on the call path")
 	}
 	f, x, key, touch := moveTable(t)
 	tE := 1 + f.horizon     // the evictor still sees P's oldest entry live: its search finds no room

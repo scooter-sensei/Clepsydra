@@ -1,0 +1,74 @@
+diff --git a/filter.go b/filter.go
+index 9e4c1fb..2fdbb3f 100644
+--- a/filter.go
++++ b/filter.go
+@@ -239,7 +239,6 @@ type Filter struct {
+ 	_          [64]byte
+ 	room       atomic.Pointer[stashTable] // Background: keys waiting for a slot, nil until the first waits
+ 	roomN      uint64                     // sets of the wait room
+-	roomMu     [stashStripes]paddedMutex
+ }
+ 
+ // Test hooks, if set: testHookCopied runs between a relocation's copy and
+@@ -1072,7 +1071,7 @@ func (f *Filter) placeNext(p *stashTable, now uint64) bool {
+ // whose stripe is busy, or that loses a race for its slot, is left for a
+ // later step.
+ func (f *Filter) placeSet(p *stashTable, i, now uint64) {
+-	set, mu := p.e[i*stashWays:(i+1)*stashWays], &p.mu[i%stashStripes]
++	set, mu := p.e[i*stashWays:(i+1)*stashWays], &p.mu[i%uint64(len(p.mu))]
+ 	var ids [stashWays]uint64
+ 	n := 0
+ 	mu.Lock()
+@@ -1113,7 +1112,7 @@ func (f *Filter) placeSet(p *stashTable, i, now uint64) {
+ // placeRoomSet places the waiting keys of the wait room's set i
+ // (Background).
+ func (f *Filter) placeRoomSet(p *stashTable, i uint64) {
+-	set, mu := p.e[i*stashWays:(i+1)*stashWays], &p.mu[i%stashStripes]
++	set, mu := p.e[i*stashWays:(i+1)*stashWays], &p.mu[i%uint64(len(p.mu))]
+ 	var waiting [stashWays]stashEntry
+ 	n := 0
+ 	mu.Lock()
+@@ -1963,12 +1962,12 @@ func (f *Filter) stashSet(id uint64) ([]stashEntry, *paddedMutex) {
+ type stashTable struct {
+ 	e    []stashEntry
+ 	wait []atomic.Uint64
+-	n    uint64                     // sets
+-	mu   *[stashStripes]paddedMutex // the filter's, which exist before the table
+-	at   atomic.Uint64              // the next set to place waiting keys from
++	n    uint64        // sets
++	mu   []paddedMutex // striped by set; the stash's are the filter's, which exist before it
++	at   atomic.Uint64 // the next set to place waiting keys from
+ }
+ 
+-func newStashTable(sets uint64, mu *[stashStripes]paddedMutex) *stashTable {
++func newStashTable(sets uint64, mu []paddedMutex) *stashTable {
+ 	e := make([]stashEntry, sets*stashWays)
+ 	prefault(unsafe.Slice((*uint64)(unsafe.Pointer(&e[0])), len(e)*3))
+ 	return &stashTable{e: e, wait: make([]atomic.Uint64, (sets+63)/64), n: sets, mu: mu}
+@@ -1977,7 +1976,7 @@ func newStashTable(sets uint64, mu *[stashStripes]paddedMutex) *stashTable {
+ // set returns id's set and its lock.
+ func (p *stashTable) set(id uint64) ([]stashEntry, *paddedMutex) {
+ 	i, _ := bits.Mul64(mix64(id), p.n)
+-	return p.e[i*stashWays : (i+1)*stashWays : (i+1)*stashWays], &p.mu[i%stashStripes]
++	return p.e[i*stashWays : (i+1)*stashWays : (i+1)*stashWays], &p.mu[i%uint64(len(p.mu))]
+ }
+ 
+ // waiting: id's set may hold a key waiting for a slot (its bit is set from
+@@ -1996,7 +1995,7 @@ func (f *Filter) allocStash() {
+ 	f.skMu.Lock()
+ 	defer f.skMu.Unlock()
+ 	if f.stash.Load() == nil {
+-		f.stash.Store(newStashTable(f.stashN, &f.stashMu))
++		f.stash.Store(newStashTable(f.stashN, f.stashMu[:]))
+ 	}
+ }
+ 
+@@ -2018,7 +2017,7 @@ func (f *Filter) waitTable() *stashTable {
+ 	f.skMu.Lock()
+ 	defer f.skMu.Unlock()
+ 	if f.room.Load() == nil {
+-		f.room.Store(newStashTable(f.roomN, &f.roomMu))
++		f.room.Store(newStashTable(f.roomN, make([]paddedMutex, min(f.roomN, 4096)))) // experiment: a lock per set
+ 	}
+ 	return f.room.Load()
+ }

@@ -1,0 +1,14 @@
+diff --git a/filter.go b/filter.go
+index 9e4c1fb..a774e74 100644
+--- a/filter.go
++++ b/filter.go
+@@ -752,9 +752,6 @@ func (f *Filter) roomGet(p *stashTable, id, now uint64, take bool) (w0, w1 uint6
+ 				break
+ 			}
+ 			if age(now, e.w0&tsMask) > f.horizon {
+-				if take { // a fresh insert follows: the placer mustn't install this one too
+-					f.stashWrite(p, e, stashEntry{})
+-				}
+ 				break
+ 			}
+ 			w0, w1 = e.w0, e.w1

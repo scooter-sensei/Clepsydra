@@ -21,8 +21,8 @@ func TestRestoreBehindLastTouch(t *testing.T) {
 			name = "ConstantTime waiting"
 		}
 		t.Run(name, func(t *testing.T) {
-			if forceCT && !ct {
-				t.Skip("ConstantTime (TF_CT=1) evicts no key here: inserts wait")
+			if (forceCT || forceBG) && !ct {
+				t.Skip("ConstantTime (TF_CT=1) and Background (TF_BG=1) evict no key here: inserts wait")
 			}
 			// A 64-entry stash: one waiting key doesn't force placement
 			// (more than one per 16 entries does), so it stays waiting.

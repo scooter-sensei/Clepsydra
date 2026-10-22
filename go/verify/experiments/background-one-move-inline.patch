@@ -1,0 +1,48 @@
+diff --git a/filter.go b/filter.go
+index 9e4c1fb..294d80e 100644
+--- a/filter.go
++++ b/filter.go
+@@ -1424,8 +1424,11 @@ func (f *Filter) find(line, fpd, tg uint64) int {
+ // (expiry, eviction scores).
+ func (f *Filter) claim(h, fp, w1, now, stamp, sat uint64) int {
+ 	mode := claimFull
+-	if f.ct || f.bg {
++	switch {
++	case f.ct:
+ 		mode = claimDefer
++	case f.bg:
++		mode = claimOneMove // experiment: one move inline, longer paths wait
+ 	}
+ 	return f.claimAt([2]uint64{f.primary(h), f.alt(f.primary(h), fp)},
+ 		[2]uint64{fp<<48 | sat | stamp, fp<<48 | dispBit | sat | stamp}, w1, now, h>>(64-claimStripeBits), mode, nil)
+@@ -1436,6 +1439,7 @@ func (f *Filter) claim(h, fp, w1, now, stamp, sat uint64) int {
+ const (
+ 	claimFull = iota
+ 	claimDefer
++	claimOneMove
+ 
+ 	claimWait = -2
+ )
+@@ -1466,7 +1470,11 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
+ 		p := f.pressure.Load()
+ 		budget := 8 + int(uint64(relocBudget-8)*(pressureOne-uint64(p))>>pressureShift)
+ 		f.warmAlts(lines)
+-		for depth := 0; depth <= relocDepth; depth++ {
++		maxDepth := relocDepth
++		if mode == claimOneMove {
++			maxDepth = 0
++		}
++		for depth := 0; depth <= maxDepth; depth++ {
+ 			for li, line := range lines {
+ 				base := int(line * wordsPerLine)
+ 				for s := 0; s < wordsPerLine; s += 2 {
+@@ -1477,6 +1485,9 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
+ 				}
+ 			}
+ 		}
++		if mode == claimOneMove {
++			return claimWait // not a full search: leaves the EWMA alone
++		}
+ 		f.pressure.Store(p - p>>3 + pressureOne>>3) // EWMA toward "searches fail"
+ 		victim, vli, victimScore, victimW0, victimW1 := -1, 0, uint64(1<<64-1), uint64(0), uint64(0)
+ 		for li, line := range lines {

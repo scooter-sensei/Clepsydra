@@ -90,10 +90,10 @@ func TestFuzzUpper(t *testing.T) {
 
 // fuzzResult tallies one case (or several).
 type fuzzResult struct {
-	ops, checks, sat, floored, lostLow                      uint64
-	ct, noStash, noOverflow, smallOverflow, noHot, smallHot uint64 // cases by configuration
-	evictions, folded, promoted, waited                     uint64
-	fail                                                    string
+	ops, checks, sat, floored, lostLow                          uint64
+	ct, bg, noStash, noOverflow, smallOverflow, noHot, smallHot uint64 // cases by configuration
+	evictions, folded, promoted, waited                         uint64
+	fail                                                        string
 }
 
 func (r *fuzzResult) add(o fuzzResult) {
@@ -103,6 +103,7 @@ func (r *fuzzResult) add(o fuzzResult) {
 	r.floored += o.floored
 	r.lostLow += o.lostLow
 	r.ct += o.ct
+	r.bg += o.bg
 	r.noStash += o.noStash
 	r.noOverflow += o.noOverflow
 	r.smallOverflow += o.smallOverflow
@@ -116,9 +117,9 @@ func (r *fuzzResult) add(o fuzzResult) {
 
 func (r *fuzzResult) summary() string {
 	return fmt.Sprintf("%d ops, %d answers checked (%d Saturated, %d low behind a live floor, %d low after a loss with the overflow off); "+
-		"cases with ConstantTime %d, no stash %d, no overflow %d, small overflow %d, no hot entries %d, few hot entries %d; "+
+		"cases with ConstantTime %d, Background %d, no stash %d, no overflow %d, small overflow %d, no hot entries %d, few hot entries %d; "+
 		"evictions %d, folded %d, promoted %d, waited %d",
-		r.ops, r.checks, r.sat, r.floored, r.lostLow, r.ct, r.noStash, r.noOverflow, r.smallOverflow, r.noHot, r.smallHot,
+		r.ops, r.checks, r.sat, r.floored, r.lostLow, r.ct, r.bg, r.noStash, r.noOverflow, r.smallOverflow, r.noHot, r.smallHot,
 		r.evictions, r.folded, r.promoted, r.waited)
 }
 
@@ -205,6 +206,15 @@ func fuzzCase(seed uint64) (res fuzzResult) {
 	if rng.IntN(5) == 0 {
 		f.ct, res.ct = true, 1 // functional ConstantTime (no pad), as TF_CT=1 runs it
 	}
+	// Background cases come from their own stream, so every other case is
+	// drawn as before. The placer runs at seeded points instead of in a
+	// goroutine, so a case still replays exactly.
+	bgRng := rand.New(rand.NewPCG(seed, 0xb6))
+	placeEvery := 0
+	if bgRng.IntN(4) == 0 && !f.ct {
+		f.bg, f.bgManual, res.bg = true, true, 1
+		placeEvery = []int{1, 4, 32, 512}[bgRng.IntN(4)]
+	}
 	defer func() {
 		res.evictions, res.folded, res.promoted, res.waited = f.Evictions(), f.Folded(), f.Promoted(), f.Waited()
 	}()
@@ -228,7 +238,7 @@ func fuzzCase(seed uint64) (res fuzzResult) {
 	out := make([]bool, 16)
 	cnt := make([]int, 16)
 	desc := func() string {
-		return fmt.Sprintf("config %+v ct %v horizon %d ticks unit %d lag <= %d ops/horizon %.0f", cfg, f.ct, H, unit, maxLag, perH)
+		return fmt.Sprintf("config %+v ct %v bg %v place 1/%d horizon %d ticks unit %d lag <= %d ops/horizon %.0f", cfg, f.ct, f.bg, placeEvery, H, unit, maxLag, perH)
 	}
 	check := func(op string, h, window, now uint64, r Result) bool {
 		res.checks++
@@ -345,6 +355,9 @@ func fuzzCase(seed uint64) (res fuzzResult) {
 			if traceKey != 0 {
 				trace("decay", traceKey, now, "")
 			}
+		}
+		if placeEvery > 0 && bgRng.IntN(placeEvery) == 0 {
+			f.placeNext(f.room.Load(), 0)
 		}
 		if traceKey != 0 { // report the operation after which the traced key's slot or stash entry is gone
 			w := f.whereIs(traceKey, T)

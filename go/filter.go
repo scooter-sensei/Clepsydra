@@ -154,6 +154,16 @@ type Config struct {
 	// report it. docs/SECURITY.md has the measurements. Each call costs at
 	// least its pad in CPU.
 	ConstantTime time.Duration
+	// Background, if set, keeps cuckoo searches off the call path: a first
+	// touch that finds both its lines full waits in the wait room (24 B per
+	// 128 slots, allocated on the first wait), where its touches and counts
+	// find it, and a goroutine places it (path search, or eviction as
+	// usual). The goroutine runs while keys wait and exits soon after; it
+	// never reads Clock. A lookup that misses the table reads one bit of its
+	// wait-room set. If more than one key per 16 wait-room entries waits, the
+	// placer isn't keeping up and first touches search inline again. No
+	// effect with ConstantTime, whose pads place waiting keys.
+	Background bool
 }
 
 // Filter is safe for concurrent use. Hits never lock; first touches of a key
@@ -215,15 +225,21 @@ type Filter struct {
 	spillMin   uint64 // histories lighter than this aren't spilled (Shed)
 	shed       atomic.Uint64
 	ct         bool                     // Config.ConstantTime > 0
-	deferred   atomic.Int64             // ConstantTime: stash entries that wait for a slot (deferMark)
-	waited     atomic.Uint64            // ConstantTime: inserts that waited in the stash
-	placeAt    atomic.Uint64            // ConstantTime: next stash set to place from
+	deferred   atomic.Int64             // keys waiting for a slot (deferMark): in the stash (ConstantTime) or the wait room (Background)
+	waited     atomic.Uint64            // inserts that waited for a slot
 	placeNs    atomic.Int64             // ConstantTime: running mean of a placement step, ns
 	pad        time.Duration            // Config.ConstantTime
 	hot        atomic.Pointer[hotTable] // nil until the first promotion
 	hotN       int                      // hot entries; 0: none
 	promoted   atomic.Uint64
 	hotRefused atomic.Uint64
+	bg         bool        // Config.Background
+	placing    atomic.Bool // Background: the placer goroutine is running
+	bgManual   bool        // tests: Background without the goroutine (the test places)
+	_          [64]byte
+	room       atomic.Pointer[stashTable] // Background: keys waiting for a slot, nil until the first waits
+	roomN      uint64                     // sets of the wait room
+	roomMu     [stashStripes]paddedMutex
 }
 
 // Test hooks, if set: testHookCopied runs between a relocation's copy and
@@ -233,6 +249,9 @@ var testHookCopied, testHookVictim func()
 
 // forceCT turns ConstantTime on in every filter (tests: TF_CT=1).
 var forceCT bool
+
+// forceBG turns Background on in every filter (tests: TF_BG=1).
+var forceBG bool
 
 type paddedMutex struct {
 	sync.Mutex
@@ -286,6 +305,7 @@ func New(cfg Config) (*Filter, error) {
 	if cfg.Stash > 0 {
 		f.stashN = uint64(cfg.Stash+stashWays-1) / stashWays
 	}
+	f.roomN = max(16, lines*slotsPerLine/(128*stashWays)) // Background: one entry per 128 slots
 	if cfg.Overflow == 0 {
 		cfg.Overflow = int(max(64, lines*slotsPerLine*5/9))
 	}
@@ -303,6 +323,7 @@ func New(cfg Config) (*Filter, error) {
 	f.hotN = min(max(cfg.Hot, 0), hotIdxMask)
 	f.ct, f.pad = cfg.ConstantTime > 0 || cfg.ConstantTime == AutoPad || forceCT, cfg.ConstantTime
 	f.auto = cfg.ConstantTime == AutoPad
+	f.bg = (cfg.Background || forceBG) && !f.ct
 	for i := range f.padQ {
 		f.padQ[i].q.Store(int64(autoStart) * 1000)
 	}
@@ -541,6 +562,7 @@ func (f *Filter) ContainsAt(h, window, now uint64) bool {
 const (
 	srcTable = iota + 1
 	srcStash
+	srcRetry // a waiting key was being committed to the table: look there again
 )
 
 // read returns h's slot words from the table or, if it was evicted, the
@@ -548,21 +570,28 @@ const (
 func (f *Filter) read(h, now uint64) (w0, w1 uint64, src int) {
 	fp, tg := fingerprint(h), tag(h)
 	if !f.ct {
-		// lookupStable's first pass, inline: one scan whether the key is
-		// found or not.
+		// lookupStable, inline: one scan whether the key is found or not.
+		// The stash gate is read between the scan and the stability check:
+		// a waiting key that leaves the wait room for the table counts as a
+		// move of its stripe (placeRoomKey), so if no move began by the
+		// check, the key was still waiting when the gate was read.
 		m := &f.moves[h>>(64-claimStripeBits)]
-		b, d := m.begun.Load(), m.done.Load()
-		i := f.locate(h, fp, tg)
-		if w0, w1, ok := f.slotWords(i, fp, tg); ok {
-			return w0, w1, srcTable
-		}
-		if i >= 0 || b != d || m.begun.Load() != b {
-			if i, w0, w1 := f.lookupStable(h, fp, tg, false); i >= 0 {
+		for try := 0; ; try++ {
+			b, d := m.begun.Load(), m.done.Load()
+			i := f.locate(h, fp, tg)
+			if w0, w1, ok := f.slotWords(i, fp, tg); ok {
 				return w0, w1, srcTable
 			}
-		}
-		if now > f.stashUntil.Load() {
-			return 0, 0, 0
+			may := f.stashMay(h, fp, tg, now)
+			if i < 0 && b == d && m.begun.Load() == b {
+				if !may {
+					return 0, 0, 0
+				}
+				break
+			}
+			if try > 0 {
+				runtime.Gosched()
+			}
 		}
 	}
 	// Under the key's stripe: an eviction moves the key to the stash while
@@ -570,12 +599,22 @@ func (f *Filter) read(h, now uint64) (w0, w1 uint64, src int) {
 	mu := &f.claimMu[h>>(64-claimStripeBits)]
 	mu.Lock()
 	defer mu.Unlock()
-	i, w0, w1 := f.lookupStable(h, fp, tg, true)
-	s0, s1, src := f.recall(h, fp, tg, now, false)
-	if i >= 0 {
-		return w0, w1, srcTable
+	m := &f.moves[h>>(64-claimStripeBits)]
+	for {
+		b, d := m.begun.Load(), m.done.Load()
+		i, w0, w1 := f.lookupStable(h, fp, tg, true)
+		s0, s1, src := f.recall(h, fp, tg, now, false)
+		if src == srcRetry {
+			continue
+		}
+		if i >= 0 {
+			return w0, w1, srcTable
+		}
+		if src == 0 && !f.settled(m, b, d) {
+			continue
+		}
+		return s0, s1, src
 	}
-	return s0, s1, src
 }
 
 // lookupStable returns the index and words of h's slot, or -1 if h has
@@ -651,16 +690,87 @@ func (f *Filter) addSketch(r *Result, h, window, now uint64) {
 	r.Degraded = r.Degraded || s.Count > 0
 }
 
-// recall finds h's evicted history in the stash (removed from it if take).
-// The caller holds h's claim stripe.
+// recall finds h's evicted history in the stash, or (Background) h waiting
+// in the wait room, removed if take. The caller holds h's claim stripe.
 func (f *Filter) recall(h, fp, tg, now uint64, take bool) (w0, w1 uint64, src int) {
-	if !f.ct && now > f.stashUntil.Load() {
-		return 0, 0, 0
+	id := f.stashID(h, fp, tg)
+	if !f.ct {
+		if p := f.room.Load(); p != nil && p.waiting(id) {
+			w0, w1, ok, retry := f.roomGet(p, id, now, take)
+			if retry {
+				return 0, 0, srcRetry
+			}
+			if ok {
+				return w0, w1, srcStash
+			}
+		}
+		if now > f.stashUntil.Load() {
+			return 0, 0, 0
+		}
 	}
-	if w0, w1, ok := f.stashGet(f.stashID(h, fp, tg), now, take); ok {
+	if w0, w1, ok := f.stashGet(id, now, take); ok {
 		return w0, w1, srcStash
 	}
 	return 0, 0, 0
+}
+
+// stashMay: h's history may be outside the table at now: an evicted entry
+// live in the stash, or (Background) h waiting in the wait room, whose set's
+// bit is set while it waits.
+func (f *Filter) stashMay(h, fp, tg, now uint64) bool {
+	if now <= f.stashUntil.Load() {
+		return true
+	}
+	p := f.room.Load()
+	return p != nil && p.waiting(f.stashID(h, fp, tg))
+}
+
+// settled: no move of the stripe whose counts are m overlapped a lookup that
+// read them as b and d before its table scan and its recall. A waiting key
+// the placer commits to the table between the two (placeRoomKey, without
+// the key's stripe) counts as such a move, so a key found in neither is
+// absent only if settled. Without a wait room no key moves that way.
+func (f *Filter) settled(m *moveCount, b, d uint64) bool {
+	return f.room.Load() == nil || b == d && m.begun.Load() == b
+}
+
+// roomGet is tableGet in the wait room (Background), where an entry being
+// committed to the table (w1 busy, placeRoomKey) is waited out; retry then
+// tells the caller to look in the table again if the entry went there.
+func (f *Filter) roomGet(p *stashTable, id, now uint64, take bool) (w0, w1 uint64, ok, retry bool) {
+	set, mu := p.set(id)
+	for {
+		busyNow := false
+		mu.Lock()
+		for i := range set {
+			e := &set[i]
+			if e.id != id {
+				continue
+			}
+			if e.w1>>tagShift == tagBusy {
+				busyNow = true
+				break
+			}
+			if age(now, e.w0&tsMask) > f.horizon {
+				if take { // a fresh insert follows: the placer mustn't install this one too
+					f.stashWrite(p, e, stashEntry{})
+				}
+				break
+			}
+			w0, w1 = e.w0, e.w1
+			if take {
+				f.stashWrite(p, e, stashEntry{})
+			}
+			mu.Unlock()
+			return w0, w1, true, false
+		}
+		mu.Unlock()
+		if !busyNow {
+			return 0, 0, false, retry
+		}
+		retry = true
+		runtime.Gosched()
+	}
 }
 
 // lostRecently: without an overflow table, some history was lost within a horizon.
@@ -744,13 +854,15 @@ func (f *Filter) Folded() uint64 { return f.folded.Load() }
 // instead of spilled to the overflow table.
 func (f *Filter) Shed() uint64 { return f.shed.Load() }
 
-// Waited counts ConstantTime first touches that found both lines full and
-// waited in the stash for later calls' pads to place them.
+// Waited counts first touches that found both lines full and waited for a
+// slot: in the stash for later calls' pads to place them (ConstantTime), or
+// in the wait room for the placer goroutine (Background).
 func (f *Filter) Waited() uint64 { return f.waited.Load() }
 
-// Waiting is the number of keys waiting in the stash for a slot now. If it
-// stays high, pads are too short for the insert rate, and calls also place
-// keys past their pads (see place).
+// Waiting is the number of keys waiting for a slot now. If it stays high,
+// ConstantTime pads are too short for the insert rate, and calls also place
+// keys past their pads (see place); with Background, the placer isn't
+// keeping up, and first touches search inline again.
 func (f *Filter) Waiting() int { return int(f.deferred.Load()) }
 
 // Restored counts returning keys whose history came back from the stash.
@@ -772,8 +884,14 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool) Result {
 			// lock covers only this path; hits never take it.
 			mu := &f.claimMu[h>>(64-claimStripeBits)]
 			mu.Lock()
+			m := &f.moves[h>>(64-claimStripeBits)]
+			b, d := m.begun.Load(), m.done.Load()
 			if i, _, _ = f.lookupStable(h, fp, tg, false); i < 0 {
 				s0, s1, src := f.recall(h, fp, tg, now, true)
+				if src == srcRetry || src == 0 && !f.settled(m, b, d) {
+					mu.Unlock()
+					continue
+				}
 				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src)
 				mu.Unlock()
 				if r.Count < 0 {
@@ -914,22 +1032,21 @@ func (f *Filter) place(t0 time.Time, budget time.Duration, now uint64) {
 		}
 		forced = false
 		s := time.Now()
-		if !f.placeNext(now) {
+		if !f.placeNext(p, now) {
 			return
 		}
 		f.placeNs.Store(int64(est + (time.Since(s)-est)/8))
 	}
 }
 
-// placeNext places the waiting keys of the next set (after the last one
-// visited) whose wait bit is set; false if no bit is set.
-func (f *Filter) placeNext(now uint64) bool {
-	p := f.stash.Load()
+// placeNext places the waiting keys of table p's next set (after the last
+// one visited) whose wait bit is set; false if no bit is set.
+func (f *Filter) placeNext(p *stashTable, now uint64) bool {
 	if p == nil {
 		return false
 	}
 	nw := uint64(len(p.wait))
-	start := f.placeAt.Load()
+	start := p.at.Load()
 	for k := range nw + 1 {
 		wi := (start/64 + k) % nw
 		b := p.wait[wi].Load()
@@ -940,25 +1057,29 @@ func (f *Filter) placeNext(now uint64) bool {
 			continue
 		}
 		set := wi*64 + uint64(bits.TrailingZeros64(b))
-		f.placeAt.Store(set + 1)
-		f.placeSet(set, now)
+		p.at.Store(set + 1)
+		if p == f.room.Load() {
+			f.placeRoomSet(p, set)
+		} else {
+			f.placeSet(p, set, now)
+		}
 		return true
 	}
 	return false
 }
 
-// placeSet moves set i's waiting keys into the table. A key whose stripe is
-// busy, or that loses a race for its slot, is left for a later step.
-func (f *Filter) placeSet(i, now uint64) {
-	p := f.stash.Load()
-	set, mu := p.e[i*stashWays:(i+1)*stashWays], &f.stashMu[i%stashStripes]
+// placeSet moves the waiting keys of table p's set i into the table. A key
+// whose stripe is busy, or that loses a race for its slot, is left for a
+// later step.
+func (f *Filter) placeSet(p *stashTable, i, now uint64) {
+	set, mu := p.e[i*stashWays:(i+1)*stashWays], &p.mu[i%stashStripes]
 	var ids [stashWays]uint64
 	n := 0
 	mu.Lock()
 	for k := range set {
 		if e := &set[k]; e.id != 0 && e.w0&deferMark != 0 {
 			if age(now, e.w0&tsMask) > f.horizon {
-				f.stashWrite(e, stashEntry{}) // expired while it waited
+				f.stashWrite(p, e, stashEntry{}) // expired while it waited
 				continue
 			}
 			ids[n], n = e.id, n+1
@@ -975,17 +1096,121 @@ func (f *Filter) placeSet(i, now uint64) {
 		if !cm.TryLock() {
 			continue
 		}
-		if w0, w1, ok := f.stashGet(id, now, true); ok {
+		if w0, w1, ok := f.tableGet(p, id, now, true); ok {
 			pl := id >> 28
 			al := f.alt(pl, fp)
 			switch {
 			case f.find(pl, fp<<1, tg) >= 0 || f.find(al, fp<<1|1, tg) >= 0:
 				f.stashPut(id, w0, w1, now) // the table holds the key: no longer waiting
-			case f.claimAt([2]uint64{pl, al}, [2]uint64{w0 &^ dispBit, w0 | dispBit}, w1, now, stripe, claimFull) < 0:
-				f.stashPutAs(id, w0, w1, now, w0&deferMark != 0)
+			case f.claimAt([2]uint64{pl, al}, [2]uint64{w0 &^ dispBit, w0 | dispBit}, w1, now, stripe, claimFull, nil) < 0:
+				f.stashPutAs(id, w0, w1, now, true)
 			}
 		}
 		cm.Unlock()
+	}
+}
+
+// placeRoomSet places the waiting keys of the wait room's set i
+// (Background).
+func (f *Filter) placeRoomSet(p *stashTable, i uint64) {
+	set, mu := p.e[i*stashWays:(i+1)*stashWays], &p.mu[i%stashStripes]
+	var waiting [stashWays]stashEntry
+	n := 0
+	mu.Lock()
+	for k := range set {
+		if e := set[k]; e.id != 0 && e.w0&deferMark != 0 {
+			waiting[n], n = e, n+1
+		}
+	}
+	if n == 0 {
+		p.wait[i/64].And(^(1 << (i % 64)))
+	}
+	mu.Unlock()
+	for _, e := range waiting[:n] {
+		f.placeRoomKey(p, e)
+	}
+}
+
+// placeRoomKey places waiting key e (as its set held it when read) at the
+// clock of its last touch, without its claim stripe: the search blocks no
+// first touch, and the key stays in the room meanwhile, where its touches
+// and counts find it. put commits it: it marks the room entry busy (w1
+// busy; a recall of the key waits that out, then looks in the table
+// again), installs the entry's words as they are now, and removes the entry,
+// or restores it if the install lost its race. The commit counts as a move
+// of the key's stripe, so a lookup that misses the table meanwhile looks
+// again. If a touch of the key took it out of the room first, put fails and
+// the key is that touch's to place.
+func (f *Filter) placeRoomKey(p *stashTable, e stashEntry) {
+	id := e.id
+	fp := id >> tagBits & (1<<16 - 1)
+	m := &f.moves[fp>>(16-claimStripeBits)]
+	pl := id >> 28
+	put := func(i int, w0, w1, mine0, _ uint64) bool {
+		set, mu := p.set(id)
+		mu.Lock()
+		var c *stashEntry
+		for k := range set {
+			if set[k].id == id && set[k].w0&deferMark != 0 && set[k].w1>>tagShift != tagBusy {
+				c = &set[k]
+			}
+		}
+		if c == nil {
+			mu.Unlock()
+			return false
+		}
+		c0, c1 := c.w0, c.w1
+		c.w1 = busy
+		mu.Unlock()
+		m.begun.Add(1)
+		ok := f.install(i, w0, w1, c0&^deferMark|mine0&dispBit, c1)
+		mu.Lock()
+		if ok {
+			f.stashWrite(p, c, stashEntry{})
+		} else {
+			c.w1 = c1
+		}
+		mu.Unlock()
+		m.done.Add(1)
+		return ok
+	}
+	f.claimAt([2]uint64{pl, f.alt(pl, fp)}, [2]uint64{e.w0 &^ deferMark, e.w0 | dispBit}, e.w1, e.w0&tsMask, noStripe, claimFull, put)
+}
+
+// noStripe, as claimAt's stripe: the caller holds no claim stripe.
+const noStripe = 1 << claimStripeBits
+
+// bgKick (Background) starts the placer goroutine unless it is running.
+func (f *Filter) bgKick() {
+	if !f.bgManual && !f.placing.Load() && f.placing.CompareAndSwap(false, true) {
+		go f.bgPlace()
+	}
+}
+
+const (
+	bgNap    = 50 * time.Microsecond
+	bgLinger = 20 // naps with nothing waiting before the placer exits
+)
+
+// bgPlace is the Background placer: it places waiting keys while any wait
+// (it never reads the filter's clock: see placeRoomKey), and exits after
+// bgLinger naps with nothing to place. A key that starts waiting as it
+// exits sees placing false and starts another, or is seen here (both flags
+// are sequentially consistent).
+func (f *Filter) bgPlace() {
+	for {
+		for idle := 0; idle < bgLinger; {
+			if f.deferred.Load() > 0 && f.placeNext(f.room.Load(), 0) {
+				idle = 0
+				continue
+			}
+			idle++
+			time.Sleep(bgNap)
+		}
+		f.placing.Store(false)
+		if f.deferred.Load() == 0 || !f.placing.CompareAndSwap(false, true) {
+			return
+		}
 	}
 }
 
@@ -1089,19 +1314,26 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 	// miss the history's newest event.
 	stamp := max(now, last)
 	ci := f.claim(h, fp, w1, now, stamp, sat)
-	if ci == claimWait { // ConstantTime, no free slot: wait in the stash, placed during pads (place)
-		if f.stashWait(f.stashID(h, fp, tg), fp<<48|sat|stamp, w1, now) {
+	if ci == claimWait {
+		// No free slot: wait for one, in the stash (ConstantTime; pads place
+		// it) or the wait room (Background; the placer goroutine places it).
+		// If more than one key per 16 wait-room entries waits, the placer
+		// isn't keeping up: search now.
+		if (f.ct || f.deferred.Load() <= int64(f.roomN*stashWays/16)) && f.stashWait(f.stashID(h, fp, tg), fp<<48|sat|stamp, w1, now) {
 			f.waited.Add(1)
 			src, r.Restored = 0, false
-		} else { // its stash set is full: search (and evict) now rather than drop a history
+			if f.bg {
+				f.bgKick()
+			}
+		} else { // its set is full: search (and evict) now rather than drop a history
 			ci = f.claimAt([2]uint64{f.primary(h), f.alt(f.primary(h), fp)},
-				[2]uint64{fp<<48 | sat | stamp, fp<<48 | dispBit | sat | stamp}, w1, now, h>>(64-claimStripeBits), claimFull)
+				[2]uint64{fp<<48 | sat | stamp, fp<<48 | dispBit | sat | stamp}, w1, now, h>>(64-claimStripeBits), claimFull, nil)
 		}
 	}
 	switch ci {
 	case -1:
 		if src == srcStash { // put it back for the retry
-			f.stashPut(f.stashID(h, fp, tg), s0, s1, now)
+			f.putBack(f.stashID(h, fp, tg), s0, s1, now)
 		}
 		return Result{Count: -1}
 	}
@@ -1186,16 +1418,17 @@ func (f *Filter) find(line, fpd, tg uint64) int {
 // register, published together with its word0. Returns word0 index, or -1
 // if it lost a race for a slot and the caller should look the key up again
 // (a racing writer may have completed it). The caller holds the key's claim
-// stripe. In ConstantTime it searches and evicts nothing: with no free slot
-// it returns claimWait, and the key waits in the stash (miss). The entry's
-// last touch is stamp; now is the caller's clock (expiry, eviction scores).
+// stripe. In ConstantTime and Background it searches and evicts nothing:
+// with no free slot it returns claimWait, and the key waits for a slot
+// (miss). The entry's last touch is stamp; now is the caller's clock
+// (expiry, eviction scores).
 func (f *Filter) claim(h, fp, w1, now, stamp, sat uint64) int {
 	mode := claimFull
-	if f.ct {
+	if f.ct || f.bg {
 		mode = claimDefer
 	}
 	return f.claimAt([2]uint64{f.primary(h), f.alt(f.primary(h), fp)},
-		[2]uint64{fp<<48 | sat | stamp, fp<<48 | dispBit | sat | stamp}, w1, now, h>>(64-claimStripeBits), mode)
+		[2]uint64{fp<<48 | sat | stamp, fp<<48 | dispBit | sat | stamp}, w1, now, h>>(64-claimStripeBits), mode, nil)
 }
 
 // claimAt modes: free slot, path or eviction (claimFull); free slot only,
@@ -1208,15 +1441,16 @@ const (
 )
 
 // claimAt is claim for an entry with lines and words mine (primary,
-// alternate), on claim stripe stripe, which the caller holds.
-func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int) int {
+// alternate), on claim stripe stripe, which the caller holds (noStripe: none).
+// put installs the entry (nil: install; see putNew).
+func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int, put putFunc) int {
 	for {
 		for li, line := range lines {
 			base := int(line * wordsPerLine)
 			for s := 0; s < wordsPerLine; s += 2 {
 				w0 := atomic.LoadUint64(&f.words[base+s])
 				if w0 == 0 || age(now, w0&tsMask) > f.horizon {
-					if f.install(base+s, w0, atomic.LoadUint64(&f.words[base+s+1]), mine[li], w1) {
+					if f.putNew(put, base+s, w0, atomic.LoadUint64(&f.words[base+s+1]), mine[li], w1) {
 						return base + s
 					}
 					return -1
@@ -1236,7 +1470,7 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
 			for li, line := range lines {
 				base := int(line * wordsPerLine)
 				for s := 0; s < wordsPerLine; s += 2 {
-					if f.relocate(base+s, line, mine[li], w1, now, depth, &budget, nil) {
+					if f.relocate(base+s, line, mine[li], w1, now, depth, &budget, nil, put) {
 						f.pressure.Store(p - p>>3) // EWMA toward "searches succeed"
 						return base + s
 					}
@@ -1293,13 +1527,26 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
 		// victim in neither; the move count tells it to look again.
 		m.begun.Add(1)
 		defer m.done.Add(1)
-		if !f.install(victim, victimW0, victimW1, mine[vli], w1) {
+		if !f.putNew(put, victim, victimW0, victimW1, mine[vli], w1) {
 			return -1
 		}
 		f.evictions.Add(1)
 		f.stashPut(f.slotID(lines[vli], victimW0, victimW1), victimW0, victimW1, now)
 		return victim
 	}
+}
+
+// putFunc installs a new key's entry in slot i (word index) if the slot still
+// holds w0/w1, as install does; a Background placement's put also takes the
+// key out of the wait room as it goes in.
+type putFunc func(i int, w0, w1, mine0, mine1 uint64) bool
+
+// putNew installs a new key's entry with put, or install if put is nil.
+func (f *Filter) putNew(put putFunc, i int, w0, w1, mine0, mine1 uint64) bool {
+	if put != nil {
+		return put(i, w0, w1, mine0, mine1)
+	}
+	return f.install(i, w0, w1, mine0, mine1)
 }
 
 // warmAlts loads one word of the alternate line of every entry in lines
@@ -1351,8 +1598,9 @@ func (f *Filter) install(i int, w0, w1, mine0, mine1 uint64) bool {
 // appears to the end of the hand-off: a lookup that misses meanwhile looks
 // again, and an evictor leaves both copy and source alone (evicting either
 // would split the key's history between the table and the stash). parent is
-// the move whose copy (mine0) this one installs, nil for a new key.
-func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budget *int, parent *moveCount) bool {
+// the move whose copy (mine0) this one installs, nil for a new key, which
+// put installs.
+func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budget *int, parent *moveCount, put putFunc) bool {
 	w0 := atomic.LoadUint64(&f.words[i])
 	if w0 == 0 {
 		return false
@@ -1376,7 +1624,7 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
 				return false
 			}
 		}
-		if f.install(i, w0, w1, mine0, mine1) {
+		if f.putNew(put, i, w0, w1, mine0, mine1) { // deeper levels pass no put: install
 			f.relocations.Add(1)
 			return true
 		}
@@ -1407,7 +1655,7 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
 	if depth > 0 {
 		f.warmLine(a) // the next lines of a's entries together, not one miss at a time
 		for s := 0; s < wordsPerLine; s += 2 {
-			if f.relocate(base+s, a, moved, w1, now, depth-1, budget, m) {
+			if f.relocate(base+s, a, moved, w1, now, depth-1, budget, m, nil) {
 				return replace(base + s)
 			}
 		}
@@ -1601,8 +1849,10 @@ func (f *Filter) Slots() int { return len(f.words) / 2 }
 // overflow table and hot entries once allocated (each on first use).
 func (f *Filter) Bytes() int {
 	n := 8 * len(f.words)
-	if s := f.stash.Load(); s != nil {
-		n += len(s.e)*int(unsafe.Sizeof(stashEntry{})) + 8*len(s.wait)
+	for _, s := range [2]*stashTable{f.stash.Load(), f.room.Load()} {
+		if s != nil {
+			n += len(s.e)*int(unsafe.Sizeof(stashEntry{})) + 8*len(s.wait)
+		}
 	}
 	if g := f.gh.Load(); g != nil {
 		n += 8 * len(g.words)
@@ -1706,12 +1956,35 @@ func (f *Filter) stashSet(id uint64) ([]stashEntry, *paddedMutex) {
 	return p.e[i*stashWays : (i+1)*stashWays : (i+1)*stashWays], mu
 }
 
-// stashTable: the stash's sets of stashWays entries, and a bit per set
-// that holds a key waiting for a slot (ConstantTime), set and cleared under
-// the set's lock.
+// stashTable: sets of stashWays entries, and a bit per set that holds a key
+// waiting for a slot, set and cleared under the set's lock. The eviction
+// stash is one (its waiting keys are ConstantTime's); the wait room is
+// another (Background's, outside ConstantTime).
 type stashTable struct {
 	e    []stashEntry
 	wait []atomic.Uint64
+	n    uint64                     // sets
+	mu   *[stashStripes]paddedMutex // the filter's, which exist before the table
+	at   atomic.Uint64              // the next set to place waiting keys from
+}
+
+func newStashTable(sets uint64, mu *[stashStripes]paddedMutex) *stashTable {
+	e := make([]stashEntry, sets*stashWays)
+	prefault(unsafe.Slice((*uint64)(unsafe.Pointer(&e[0])), len(e)*3))
+	return &stashTable{e: e, wait: make([]atomic.Uint64, (sets+63)/64), n: sets, mu: mu}
+}
+
+// set returns id's set and its lock.
+func (p *stashTable) set(id uint64) ([]stashEntry, *paddedMutex) {
+	i, _ := bits.Mul64(mix64(id), p.n)
+	return p.e[i*stashWays : (i+1)*stashWays : (i+1)*stashWays], &p.mu[i%stashStripes]
+}
+
+// waiting: id's set may hold a key waiting for a slot (its bit is set from
+// the first such key's write until the placer finds the set without one).
+func (p *stashTable) waiting(id uint64) bool {
+	i, _ := bits.Mul64(mix64(id), p.n)
+	return p.wait[i/64].Load()&(1<<(i%64)) != 0
 }
 
 // allocStash allocates the stash on the first eviction, so a filter that
@@ -1723,10 +1996,31 @@ func (f *Filter) allocStash() {
 	f.skMu.Lock()
 	defer f.skMu.Unlock()
 	if f.stash.Load() == nil {
-		e := make([]stashEntry, f.stashN*stashWays)
-		prefault(unsafe.Slice((*uint64)(unsafe.Pointer(&e[0])), len(e)*3))
-		f.stash.Store(&stashTable{e: e, wait: make([]atomic.Uint64, (f.stashN+63)/64)})
+		f.stash.Store(newStashTable(f.stashN, &f.stashMu))
 	}
+}
+
+// waitTable is where keys wait for a slot, allocated on first use (nil:
+// nowhere). ConstantTime: the stash, whose set every call reads anyway.
+// Background: the wait room, a small table of its own (one entry per 128
+// slots), so a filter that never evicts holds no stash.
+func (f *Filter) waitTable() *stashTable {
+	if f.ct {
+		if f.stashN == 0 {
+			return nil
+		}
+		f.allocStash()
+		return f.stash.Load()
+	}
+	if p := f.room.Load(); p != nil {
+		return p
+	}
+	f.skMu.Lock()
+	defer f.skMu.Unlock()
+	if f.room.Load() == nil {
+		f.room.Store(newStashTable(f.roomN, &f.roomMu))
+	}
+	return f.room.Load()
 }
 
 // stashPut keeps an evicted entry in its set: in its own old place, a free
@@ -1786,8 +2080,8 @@ func (f *Filter) stashPutAs(id, w0, w1, now uint64, wait bool) {
 	if out.id != 0 {
 		f.spill(out.id, out.w0&^deferMark, out.w1, now)
 	}
-	f.stashWrite(&set[way], stashEntry{id, w0, w1})
-	for until := (w0 & tsMask) + f.horizon; ; {
+	f.stashWrite(f.stash.Load(), &set[way], stashEntry{id, w0, w1})
+	for until := (w0 & tsMask) + f.horizon; !wait; { // a waiting key: see stashWait
 		u := f.stashUntil.Load()
 		if u >= until || f.stashUntil.CompareAndSwap(u, until) {
 			break
@@ -1796,41 +2090,46 @@ func (f *Filter) stashPutAs(id, w0, w1, now uint64, wait bool) {
 	mu.Unlock()
 }
 
-// stashWait puts a key that waits for a slot (ConstantTime) in a free or
-// expired way of its stash set, or in its own old place, and reports
-// whether it did: a full set drops nothing for it.
+// stashWait puts a key that waits for a slot in a free or expired way of its
+// set in the wait table (waitTable), or in its own old place, and reports
+// whether it did: a full set drops nothing for it. No stashUntil:
+// ConstantTime reads the stash anyway, and Background lookups read the
+// set's wait bit (stashMay).
 func (f *Filter) stashWait(id, w0, w1, now uint64) bool {
-	if f.stashN == 0 {
+	p := f.waitTable()
+	if p == nil {
 		return false
 	}
-	f.allocStash()
-	set, mu := f.stashSet(id)
+	set, mu := p.set(id)
 	mu.Lock()
 	defer mu.Unlock()
 	for i := range set {
 		if e := &set[i]; e.id == 0 || e.id == id || age(now, e.w0&tsMask) > f.horizon {
-			f.stashWrite(e, stashEntry{id, w0&^dispBit | deferMark, w1})
-			for until := (w0 & tsMask) + f.horizon; ; {
-				u := f.stashUntil.Load()
-				if u >= until || f.stashUntil.CompareAndSwap(u, until) {
-					break
-				}
-			}
+			f.stashWrite(p, e, stashEntry{id, w0&^dispBit | deferMark, w1})
 			return true
 		}
 	}
 	return false
 }
 
-// stashWrite replaces stash entry e (its set's lock held), keeping the count
-// of entries that wait for a slot.
-func (f *Filter) stashWrite(e *stashEntry, ne stashEntry) {
+// putBack returns a history recalled for an insert that lost a race for
+// its slot, for the retry to find: a key that waited back to wait, an
+// evicted one to the stash.
+func (f *Filter) putBack(id, w0, w1, now uint64) {
+	if w0&deferMark != 0 && f.stashWait(id, w0, w1, now) {
+		return
+	}
+	f.stashPut(id, w0, w1, now)
+}
+
+// stashWrite replaces entry e of table p (its set's lock held), keeping the
+// count of entries that wait for a slot.
+func (f *Filter) stashWrite(p *stashTable, e *stashEntry, ne stashEntry) {
 	if e.id != 0 && e.w0&deferMark != 0 {
 		f.deferred.Add(-1)
 	}
 	if ne.id != 0 && ne.w0&deferMark != 0 {
 		f.deferred.Add(1)
-		p := f.stash.Load()
 		set := uint64((uintptr(unsafe.Pointer(e)) - uintptr(unsafe.Pointer(&p.e[0]))) / unsafe.Sizeof(stashEntry{}) / stashWays)
 		if w := &p.wait[set/64]; w.Load()&(1<<(set%64)) == 0 {
 			w.Or(1 << (set % 64))
@@ -1841,10 +2140,15 @@ func (f *Filter) stashWrite(e *stashEntry, ne stashEntry) {
 
 // stashGet returns the live stash entry for id; take also removes it.
 func (f *Filter) stashGet(id, now uint64, take bool) (w0, w1 uint64, ok bool) {
-	if f.stashN == 0 {
+	return f.tableGet(f.stash.Load(), id, now, take)
+}
+
+// tableGet is stashGet in table p (nil: not allocated, so empty).
+func (f *Filter) tableGet(p *stashTable, id, now uint64, take bool) (w0, w1 uint64, ok bool) {
+	if p == nil {
 		return 0, 0, false
 	}
-	set, mu := f.stashSet(id)
+	set, mu := p.set(id)
 	mu.Lock()
 	defer mu.Unlock()
 	for i := range set {
@@ -1857,7 +2161,7 @@ func (f *Filter) stashGet(id, now uint64, take bool) (w0, w1 uint64, ok bool) {
 		}
 		w0, w1 = e.w0, e.w1
 		if take {
-			f.stashWrite(e, stashEntry{})
+			f.stashWrite(p, e, stashEntry{})
 		}
 		return w0, w1, true
 	}

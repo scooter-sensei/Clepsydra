@@ -3,13 +3,13 @@
 # every language.
 #
 #   ./test.sh smoke        build, vet, format, one call of every operation (~2 s)
-#   ./test.sh sanity       smoke + the unit suite (short) + ConstantTime mode + conformance vectors (~20 s)
+#   ./test.sh sanity       smoke + the unit suite (short) + ConstantTime and Background modes + conformance vectors (~30 s)
 #   ./test.sh regression   bug-fix tests and every deterministic result against verify/expected/ (~1 min)
 #                          --full also replays fixes, history and old harnesses (verify/run.sh, ~25 min)
 #   ./test.sh perf [A]     benchmarks of A (default: HEAD, or HEAD~1 on a clean tree) vs the
 #                          working tree, alternated on this host; fails if one is > PERF_MAX (1.20) x slower
 #   ./test.sh stress       race detector on the full suite, racy regression tests 300x,
-#                          concurrent soak with the Upper-bound check (TF_STRESS, default 60s), plain and -race,
+#                          concurrent soak with the Upper-bound check (TF_STRESS, default 60s), plain, -race and Background,
 #                          and the Upper-contract fuzzer over random configurations (TF_FUZZ, default 1e9 operations)
 #   ./test.sh all          smoke, sanity, regression, stress (perf is host-dependent: run it on purpose)
 #
@@ -41,6 +41,7 @@ sanity() {
 	smoke
 	check unit - go test -short -count=1 ./...
 	check constant-time - env TF_CT=1 go test -short -count=1 .
+	check background - env TF_BG=1 go test -short -count=1 .
 	check conformance - go test -count=1 -run '^TestConformance$' -v .
 }
 
@@ -88,6 +89,7 @@ stress() {
 	check racy-regressions - verify/replay.sh stress "${STRESS_RUNS:-300}"
 	check soak - env TF_STRESS="${TF_STRESS:-60s}" go test -count=1 -run '^TestStressSoak$' -v -timeout 0 .
 	check soak-race - env TF_STRESS="${TF_STRESS_RACE:-20s}" go test -race -count=1 -run '^TestStressSoak$' -v -timeout 0 .
+	check soak-background - env TF_BG=1 TF_STRESS="${TF_STRESS:-60s}" go test -count=1 -run '^TestStressSoak$' -v -timeout 0 .
 	check fuzz - env TF_FUZZ="${TF_FUZZ:-1e9}" go test -count=1 -run '^TestFuzzUpper$' -v -timeout 0 .
 }
 

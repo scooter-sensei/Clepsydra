@@ -1,0 +1,13 @@
+diff --git a/filter.go b/filter.go
+index 9e4c1fb..dfeebc6 100644
+--- a/filter.go
++++ b/filter.go
+@@ -731,7 +731,7 @@ func (f *Filter) stashMay(h, fp, tg, now uint64) bool {
+ // the key's stripe) counts as such a move, so a key found in neither is
+ // absent only if settled. Without a wait room no key moves that way.
+ func (f *Filter) settled(m *moveCount, b, d uint64) bool {
+-	return f.room.Load() == nil || b == d && m.begun.Load() == b
++	return true // mutation: trust a miss in table and room whatever moved
+ }
+ 
+ // roomGet is tableGet in the wait room (Background), where an entry being

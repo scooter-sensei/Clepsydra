@@ -9,7 +9,10 @@ import (
 	"unsafe"
 )
 
-func init() { forceCT = os.Getenv("TF_CT") != "" }
+func init() {
+	forceCT = os.Getenv("TF_CT") != ""
+	forceBG = os.Getenv("TF_BG") != ""
+}
 
 func newTest(t testing.TB, capacity int, horizon time.Duration) *Filter {
 	t.Helper()
@@ -397,8 +400,8 @@ func TestCoarseClock(t *testing.T) {
 // the stash comes with the first eviction, the overflow table with the
 // first history the stash drops.
 func TestMemoryOnFirstUse(t *testing.T) {
-	if forceCT {
-		t.Skip("ConstantTime allocates the stash on the first insert that waits for a slot")
+	if forceCT || forceBG {
+		t.Skip("ConstantTime and Background allocate the stash on the first insert that waits for a slot")
 	}
 	f := newTest(t, 4096, time.Minute)
 	table := 16 * f.Slots()
@@ -422,5 +425,13 @@ func TestMemoryOnFirstUse(t *testing.T) {
 	}
 	if g := f.gh.Load(); g == nil || f.Bytes() != table+stash+8*len(g.words) {
 		t.Fatalf("after the first fold: %d bytes, want the overflow table's too", f.Bytes())
+	}
+}
+
+// settle waits until a Background filter's placer has placed every waiting
+// key and exited, for tests that read the table's words directly.
+func settle(f *Filter) {
+	for f.placing.Load() || f.bg && !f.ct && f.deferred.Load() > 0 {
+		time.Sleep(100 * time.Microsecond)
 	}
 }

@@ -1,0 +1,452 @@
+diff --git a/conformance_test.go b/conformance_test.go
+index 4938048..bf7def7 100644
+--- a/conformance_test.go
++++ b/conformance_test.go
+@@ -296,7 +296,7 @@ func TestConformance(t *testing.T) {
+ 			if err := json.Unmarshal(b, &want); err != nil {
+ 				t.Fatal(err)
+ 			}
+-			if forceCT && want.End.Evictions > 0 {
++			if (forceCT || forceBG) && want.End.Evictions > 0 {
+ 				t.Skip("ConstantTime defers inserts that find no free slot, so which keys are evicted differs")
+ 			}
+ 			got, err := runVectors(t, vecScenario{name: want.Name, desc: want.Description, cfg: want.Config, hashes: len(want.Hashes) > 0}, want.Ops)
+diff --git a/filter.go b/filter.go
+index 0b02fc0..2ccae18 100644
+--- a/filter.go
++++ b/filter.go
+@@ -154,6 +154,14 @@ type Config struct {
+ 	// report it. docs/SECURITY.md has the measurements. Each call costs at
+ 	// least its pad in CPU.
+ 	ConstantTime time.Duration
++	// Background, if set, keeps cuckoo searches off the call path: a first
++	// touch that finds both its lines full (and, by default, no entry it
++	// can move in one step) waits in the stash, where its touches and counts
++	// find it, and a background goroutine places it (search, or evict as
++	// usual). The goroutine runs while keys wait and exits soon after. A
++	// lookup that misses reads its stash set's wait bit. If more than one
++	// key per 16 stash entries waits, first touches search inline again.
++	Background bool
+ }
+ 
+ // Filter is safe for concurrent use. Hits never lock; first touches of a key
+@@ -224,6 +232,12 @@ type Filter struct {
+ 	hotN       int                      // hot entries; 0: none
+ 	promoted   atomic.Uint64
+ 	hotRefused atomic.Uint64
++	bg         bool        // Config.Background
++	bgDepth    int         // Background: deepest search done inline (-1: none; experiments)
++	placing    atomic.Bool // Background: the placer goroutine is running
++	bgManual   bool        // tests: Background without the goroutine (the test places)
++	_          [64]byte
++	lastNow    atomic.Uint64 // Background: latest clock of a key that started waiting
+ }
+ 
+ // Test hooks, if set: testHookCopied runs between a relocation's copy and
+@@ -234,6 +248,13 @@ var testHookCopied, testHookVictim func()
+ // forceCT turns ConstantTime on in every filter (tests: TF_CT=1).
+ var forceCT bool
+ 
++// forceBG turns Background on in every filter (tests: TF_BG=1); bgDepthDefault
++// is the deepest search a Background insert does inline (TF_BG_DEPTH).
++var (
++	forceBG        bool
++	bgDepthDefault = 0
++)
++
+ type paddedMutex struct {
+ 	sync.Mutex
+ 	_ [56]byte
+@@ -303,6 +324,7 @@ func New(cfg Config) (*Filter, error) {
+ 	f.hotN = min(max(cfg.Hot, 0), hotIdxMask)
+ 	f.ct, f.pad = cfg.ConstantTime > 0 || cfg.ConstantTime == AutoPad || forceCT, cfg.ConstantTime
+ 	f.auto = cfg.ConstantTime == AutoPad
++	f.bg, f.bgDepth = cfg.Background || forceBG, bgDepthDefault
+ 	for i := range f.padQ {
+ 		f.padQ[i].q.Store(int64(autoStart) * 1000)
+ 	}
+@@ -548,21 +570,28 @@ const (
+ func (f *Filter) read(h, now uint64) (w0, w1 uint64, src int) {
+ 	fp, tg := fingerprint(h), tag(h)
+ 	if !f.ct {
+-		// lookupStable's first pass, inline: one scan whether the key is
+-		// found or not.
++		// lookupStable, inline: one scan whether the key is found or not.
++		// The stash gate is read between the scan and the stability check:
++		// a waiting key that leaves the stash for the table counts as a
++		// move of its stripe (placeSet), so if no move began by the check,
++		// the key was still waiting when the gate was read.
+ 		m := &f.moves[h>>(64-claimStripeBits)]
+-		b, d := m.begun.Load(), m.done.Load()
+-		i := f.locate(h, fp, tg)
+-		if w0, w1, ok := f.slotWords(i, fp, tg); ok {
+-			return w0, w1, srcTable
+-		}
+-		if i >= 0 || b != d || m.begun.Load() != b {
+-			if i, w0, w1 := f.lookupStable(h, fp, tg, false); i >= 0 {
++		for try := 0; ; try++ {
++			b, d := m.begun.Load(), m.done.Load()
++			i := f.locate(h, fp, tg)
++			if w0, w1, ok := f.slotWords(i, fp, tg); ok {
+ 				return w0, w1, srcTable
+ 			}
+-		}
+-		if now > f.stashUntil.Load() {
+-			return 0, 0, 0
++			may := f.stashMay(h, fp, tg, now)
++			if i < 0 && b == d && m.begun.Load() == b {
++				if !may {
++					return 0, 0, 0
++				}
++				break
++			}
++			if try > 0 {
++				runtime.Gosched()
++			}
+ 		}
+ 	}
+ 	// Under the key's stripe: an eviction moves the key to the stash while
+@@ -654,7 +683,7 @@ func (f *Filter) addSketch(r *Result, h, window, now uint64) {
+ // recall finds h's evicted history in the stash (removed from it if take).
+ // The caller holds h's claim stripe.
+ func (f *Filter) recall(h, fp, tg, now uint64, take bool) (w0, w1 uint64, src int) {
+-	if !f.ct && now > f.stashUntil.Load() {
++	if !f.ct && !f.stashMay(h, fp, tg, now) {
+ 		return 0, 0, 0
+ 	}
+ 	if w0, w1, ok := f.stashGet(f.stashID(h, fp, tg), now, take); ok {
+@@ -663,6 +692,24 @@ func (f *Filter) recall(h, fp, tg, now uint64, take bool) (w0, w1 uint64, src in
+ 	return 0, 0, 0
+ }
+ 
++// stashMay: the stash may hold h's history at now: an evicted entry live at
++// now, or (Background) a key waiting for a slot in h's stash set, whose
++// wait bit is set while it waits.
++func (f *Filter) stashMay(h, fp, tg, now uint64) bool {
++	if now <= f.stashUntil.Load() {
++		return true
++	}
++	if !f.bg {
++		return false
++	}
++	p := f.stash.Load()
++	if p == nil {
++		return false
++	}
++	i, _ := bits.Mul64(mix64(f.stashID(h, fp, tg)), f.stashN)
++	return p.wait[i/64].Load()&(1<<(i%64)) != 0
++}
++
+ // lostRecently: without an overflow table, some history was lost within a horizon.
+ func (f *Filter) lostRecently(now uint64) bool {
+ 	la := f.lostAt.Load()
+@@ -975,6 +1022,14 @@ func (f *Filter) placeSet(i, now uint64) {
+ 		if !cm.TryLock() {
+ 			continue
+ 		}
++		// Lookups outside ConstantTime don't take the stripe: from leaving
++		// the stash until it is in the table (or back), the key counts as a
++		// move of its stripe, so a lookup that misses meanwhile looks again.
++		var m *moveCount
++		if !f.ct {
++			m = &f.moves[stripe]
++			m.begun.Add(1)
++		}
+ 		if w0, w1, ok := f.stashGet(id, now, true); ok {
+ 			pl := id >> 28
+ 			al := f.alt(pl, fp)
+@@ -985,10 +1040,54 @@ func (f *Filter) placeSet(i, now uint64) {
+ 				f.stashPutAs(id, w0, w1, now, w0&deferMark != 0)
+ 			}
+ 		}
++		if m != nil {
++			m.done.Add(1)
++		}
+ 		cm.Unlock()
+ 	}
+ }
+ 
++// bgKick (Background) notes the clock of a key that started waiting and
++// starts the placer goroutine unless it is running.
++func (f *Filter) bgKick(now uint64) {
++	for {
++		l := f.lastNow.Load()
++		if l >= now || f.lastNow.CompareAndSwap(l, now) {
++			break
++		}
++	}
++	if !f.bgManual && !f.placing.Load() && f.placing.CompareAndSwap(false, true) {
++		go f.bgPlace()
++	}
++}
++
++const (
++	bgNap    = 50 * time.Microsecond
++	bgLinger = 20 // naps with nothing waiting before the placer exits
++)
++
++// bgPlace is the Background placer: it places waiting keys while any wait,
++// at the latest clock of a key that started waiting (it never reads the
++// filter's clock), and exits after bgLinger naps with nothing to place. A
++// key that starts waiting as it exits sees placing false and starts
++// another, or is seen here (both flags are sequentially consistent).
++func (f *Filter) bgPlace() {
++	for {
++		for idle := 0; idle < bgLinger; {
++			if f.deferred.Load() > 0 && f.placeNext(f.lastNow.Load()) {
++				idle = 0
++				continue
++			}
++			idle++
++			time.Sleep(bgNap)
++		}
++		f.placing.Store(false)
++		if f.deferred.Load() == 0 || !f.placing.CompareAndSwap(false, true) {
++			return
++		}
++	}
++}
++
+ // hit counts a touch in slot i, which held the key when it was found. ok is
+ // false if the slot changed hands meanwhile and the caller must look again.
+ func (f *Filter) hit(h uint64, i int, fp, tg, window, now uint64, wantCount bool) (Result, bool) {
+@@ -1089,10 +1188,13 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
+ 	// miss the history's newest event.
+ 	stamp := max(now, last)
+ 	ci := f.claim(h, fp, w1, now, stamp, sat)
+-	if ci == claimWait { // ConstantTime, no free slot: wait in the stash, placed during pads (place)
++	if ci == claimWait { // no free slot: wait in the stash, placed during pads (place) or by the placer goroutine (Background)
+ 		if f.stashWait(f.stashID(h, fp, tg), fp<<48|sat|stamp, w1, now) {
+ 			f.waited.Add(1)
+ 			src, r.Restored = 0, false
++			if f.bg {
++				f.bgKick(now)
++			}
+ 		} else { // its stash set is full: search (and evict) now rather than drop a history
+ 			ci = f.claimAt([2]uint64{f.primary(h), f.alt(f.primary(h), fp)},
+ 				[2]uint64{fp<<48 | sat | stamp, fp<<48 | dispBit | sat | stamp}, w1, now, h>>(64-claimStripeBits), claimFull)
+@@ -1191,18 +1293,23 @@ func (f *Filter) find(line, fpd, tg uint64) int {
+ // last touch is stamp; now is the caller's clock (expiry, eviction scores).
+ func (f *Filter) claim(h, fp, w1, now, stamp, sat uint64) int {
+ 	mode := claimFull
+-	if f.ct {
++	switch {
++	case f.ct:
+ 		mode = claimDefer
++	case f.bg && f.deferred.Load() <= int64(f.stashN*stashWays/16):
++		mode = claimShallow
+ 	}
+ 	return f.claimAt([2]uint64{f.primary(h), f.alt(f.primary(h), fp)},
+ 		[2]uint64{fp<<48 | sat | stamp, fp<<48 | dispBit | sat | stamp}, w1, now, h>>(64-claimStripeBits), mode)
+ }
+ 
+ // claimAt modes: free slot, path or eviction (claimFull); free slot only,
+-// else claimWait (claimDefer).
++// else claimWait (claimDefer); free slot or a path of up to bgDepth+1
++// moves, else claimWait (claimShallow, Background).
+ const (
+ 	claimFull = iota
+ 	claimDefer
++	claimShallow
+ 
+ 	claimWait = -2
+ )
+@@ -1223,7 +1330,11 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
+ 				}
+ 			}
+ 		}
+-		if mode == claimDefer {
++		maxDepth := relocDepth
++		if mode == claimShallow {
++			maxDepth = f.bgDepth
++		}
++		if mode == claimDefer || maxDepth < 0 {
+ 			return claimWait
+ 		}
+ 		// Iterative deepening: all short paths before any long one. The deep
+@@ -1232,7 +1343,7 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
+ 		p := f.pressure.Load()
+ 		budget := 8 + int(uint64(relocBudget-8)*(pressureOne-uint64(p))>>pressureShift)
+ 		f.warmAlts(lines)
+-		for depth := 0; depth <= relocDepth; depth++ {
++		for depth := 0; depth <= maxDepth; depth++ {
+ 			for li, line := range lines {
+ 				base := int(line * wordsPerLine)
+ 				for s := 0; s < wordsPerLine; s += 2 {
+@@ -1243,6 +1354,9 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
+ 				}
+ 			}
+ 		}
++		if mode == claimShallow {
++			return claimWait // not a full search: leaves the EWMA alone
++		}
+ 		f.pressure.Store(p - p>>3 + pressureOne>>3) // EWMA toward "searches fail"
+ 		victim, vli, victimScore, victimW0, victimW1 := -1, 0, uint64(1<<64-1), uint64(0), uint64(0)
+ 		for li, line := range lines {
+@@ -1787,7 +1901,7 @@ func (f *Filter) stashPutAs(id, w0, w1, now uint64, wait bool) {
+ 		f.spill(out.id, out.w0&^deferMark, out.w1, now)
+ 	}
+ 	f.stashWrite(&set[way], stashEntry{id, w0, w1})
+-	for until := (w0 & tsMask) + f.horizon; ; {
++	for until := (w0 & tsMask) + f.horizon; !wait; { // a waiting key: see stashWait
+ 		u := f.stashUntil.Load()
+ 		if u >= until || f.stashUntil.CompareAndSwap(u, until) {
+ 			break
+@@ -1809,13 +1923,9 @@ func (f *Filter) stashWait(id, w0, w1, now uint64) bool {
+ 	defer mu.Unlock()
+ 	for i := range set {
+ 		if e := &set[i]; e.id == 0 || e.id == id || age(now, e.w0&tsMask) > f.horizon {
++			// No stashUntil: ConstantTime reads the stash anyway, and
++			// Background lookups read the set's wait bit (stashMay).
+ 			f.stashWrite(e, stashEntry{id, w0&^dispBit | deferMark, w1})
+-			for until := (w0 & tsMask) + f.horizon; ; {
+-				u := f.stashUntil.Load()
+-				if u >= until || f.stashUntil.CompareAndSwap(u, until) {
+-					break
+-				}
+-			}
+ 			return true
+ 		}
+ 	}
+diff --git a/filter_test.go b/filter_test.go
+index b7c4777..ace1c8c 100644
+--- a/filter_test.go
++++ b/filter_test.go
+@@ -1,6 +1,7 @@
+ package temporalfilter
+ 
+ import (
++	"fmt"
+ 	"math/rand/v2"
+ 	"os"
+ 	"sync"
+@@ -9,7 +10,13 @@ import (
+ 	"unsafe"
+ )
+ 
+-func init() { forceCT = os.Getenv("TF_CT") != "" }
++func init() {
++	forceCT = os.Getenv("TF_CT") != ""
++	forceBG = os.Getenv("TF_BG") != ""
++	if d := os.Getenv("TF_BG_DEPTH"); d != "" {
++		fmt.Sscan(d, &bgDepthDefault)
++	}
++}
+ 
+ func newTest(t testing.TB, capacity int, horizon time.Duration) *Filter {
+ 	t.Helper()
+@@ -397,8 +404,8 @@ func TestCoarseClock(t *testing.T) {
+ // the stash comes with the first eviction, the overflow table with the
+ // first history the stash drops.
+ func TestMemoryOnFirstUse(t *testing.T) {
+-	if forceCT {
+-		t.Skip("ConstantTime allocates the stash on the first insert that waits for a slot")
++	if forceCT || forceBG {
++		t.Skip("ConstantTime and Background allocate the stash on the first insert that waits for a slot")
+ 	}
+ 	f := newTest(t, 4096, time.Minute)
+ 	table := 16 * f.Slots()
+diff --git a/fuzz_test.go b/fuzz_test.go
+index c55a8b8..1b5bf9d 100644
+--- a/fuzz_test.go
++++ b/fuzz_test.go
+@@ -90,10 +90,10 @@ func TestFuzzUpper(t *testing.T) {
+ 
+ // fuzzResult tallies one case (or several).
+ type fuzzResult struct {
+-	ops, checks, sat, floored, lostLow                      uint64
+-	ct, noStash, noOverflow, smallOverflow, noHot, smallHot uint64 // cases by configuration
+-	evictions, folded, promoted, waited                     uint64
+-	fail                                                    string
++	ops, checks, sat, floored, lostLow                          uint64
++	ct, bg, noStash, noOverflow, smallOverflow, noHot, smallHot uint64 // cases by configuration
++	evictions, folded, promoted, waited                         uint64
++	fail                                                        string
+ }
+ 
+ func (r *fuzzResult) add(o fuzzResult) {
+@@ -103,6 +103,7 @@ func (r *fuzzResult) add(o fuzzResult) {
+ 	r.floored += o.floored
+ 	r.lostLow += o.lostLow
+ 	r.ct += o.ct
++	r.bg += o.bg
+ 	r.noStash += o.noStash
+ 	r.noOverflow += o.noOverflow
+ 	r.smallOverflow += o.smallOverflow
+@@ -116,9 +117,9 @@ func (r *fuzzResult) add(o fuzzResult) {
+ 
+ func (r *fuzzResult) summary() string {
+ 	return fmt.Sprintf("%d ops, %d answers checked (%d Saturated, %d low behind a live floor, %d low after a loss with the overflow off); "+
+-		"cases with ConstantTime %d, no stash %d, no overflow %d, small overflow %d, no hot entries %d, few hot entries %d; "+
++		"cases with ConstantTime %d, Background %d, no stash %d, no overflow %d, small overflow %d, no hot entries %d, few hot entries %d; "+
+ 		"evictions %d, folded %d, promoted %d, waited %d",
+-		r.ops, r.checks, r.sat, r.floored, r.lostLow, r.ct, r.noStash, r.noOverflow, r.smallOverflow, r.noHot, r.smallHot,
++		r.ops, r.checks, r.sat, r.floored, r.lostLow, r.ct, r.bg, r.noStash, r.noOverflow, r.smallOverflow, r.noHot, r.smallHot,
+ 		r.evictions, r.folded, r.promoted, r.waited)
+ }
+ 
+@@ -205,6 +206,16 @@ func fuzzCase(seed uint64) (res fuzzResult) {
+ 	if rng.IntN(5) == 0 {
+ 		f.ct, res.ct = true, 1 // functional ConstantTime (no pad), as TF_CT=1 runs it
+ 	}
++	// Background cases come from their own stream, so every other case is
++	// drawn as before. The placer runs at seeded points instead of in a
++	// goroutine, so a case still replays exactly.
++	bgRng := rand.New(rand.NewPCG(seed, 0xb6))
++	placeEvery := 0
++	if bgRng.IntN(4) == 0 {
++		f.bg, f.bgManual, res.bg = true, true, 1
++		f.bgDepth = bgRng.IntN(2) - 1
++		placeEvery = []int{1, 4, 32, 512}[bgRng.IntN(4)]
++	}
+ 	defer func() {
+ 		res.evictions, res.folded, res.promoted, res.waited = f.Evictions(), f.Folded(), f.Promoted(), f.Waited()
+ 	}()
+@@ -228,7 +239,7 @@ func fuzzCase(seed uint64) (res fuzzResult) {
+ 	out := make([]bool, 16)
+ 	cnt := make([]int, 16)
+ 	desc := func() string {
+-		return fmt.Sprintf("config %+v ct %v horizon %d ticks unit %d lag <= %d ops/horizon %.0f", cfg, f.ct, H, unit, maxLag, perH)
++		return fmt.Sprintf("config %+v ct %v bg %v depth %d place 1/%d horizon %d ticks unit %d lag <= %d ops/horizon %.0f", cfg, f.ct, f.bg, f.bgDepth, placeEvery, H, unit, maxLag, perH)
+ 	}
+ 	check := func(op string, h, window, now uint64, r Result) bool {
+ 		res.checks++
+@@ -346,6 +357,9 @@ func fuzzCase(seed uint64) (res fuzzResult) {
+ 				trace("decay", traceKey, now, "")
+ 			}
+ 		}
++		if placeEvery > 0 && bgRng.IntN(placeEvery) == 0 {
++			f.placeNext(f.lastNow.Load())
++		}
+ 		if traceKey != 0 { // report the operation after which the traced key's slot or stash entry is gone
+ 			w := f.whereIs(traceKey, T)
+ 			if in := strings.Contains(w, "slot") || strings.Contains(w, "stash"); in != traceIn {
+diff --git a/inserttail_test.go b/inserttail_test.go
+index 3ff7a29..c9bce46 100644
+--- a/inserttail_test.go
++++ b/inserttail_test.go
+@@ -23,7 +23,7 @@ func TestInsertTail(t *testing.T) {
+ 	const capacity, probes = 1 << 21, 40_000
+ 	tables := 1
+ 	fmt.Sscan(os.Getenv("TF_TABLES"), &tables)
+-	names := []string{"free slot", "moved 1", "moved 2", "moved 3", "moved 4+", "evicted", "noise"}
++	names := []string{"free slot", "moved 1", "moved 2", "moved 3", "moved 4+", "evicted", "noise", "waited"}
+ 	for _, load := range []float64{0.85, 0.90, 0.95} {
+ 		ts := make([][]float64, len(names))
+ 		var all []float64
+@@ -44,12 +44,14 @@ func TestInsertTail(t *testing.T) {
+ 				hs[i] = f.HashUint64(rng.Uint64())
+ 			}
+ 			for _, h := range hs {
+-				r0, e0 := f.Relocations(), f.Evictions()
++				r0, e0, w0 := f.Relocations(), f.Evictions(), f.Waited()
+ 				t0 := time.Now()
+ 				f.TouchAt(h, 60_000, now)
+ 				d := float64(time.Since(t0).Nanoseconds())
+ 				k := 0
+ 				switch moved := f.Relocations() - r0; {
++				case f.Waited() != w0:
++					k = 7
+ 				case f.Evictions() != e0:
+ 					k = 5
+ 				case moved > 0:

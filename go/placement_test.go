@@ -406,6 +406,7 @@ func TestComparedEntries(t *testing.T) {
 	for i := range uint64(capN) {
 		f.CheckAndTouchAt(mix64(i), 0, 1)
 	}
+	settle(f)
 	var with, without int
 	for i := range uint64(probes) {
 		h := mix64(capN + i)

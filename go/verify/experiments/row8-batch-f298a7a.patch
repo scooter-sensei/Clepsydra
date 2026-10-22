@@ -1,0 +1,221 @@
+diff --git a/filter.go b/filter.go
+index 0b02fc0..a9e8cd0 100644
+--- a/filter.go
++++ b/filter.go
+@@ -27,6 +27,7 @@ import (
+ 	"runtime"
+ 	"sync"
+ 	"sync/atomic"
++	"syscall"
+ 	"time"
+ 	"unsafe"
+ )
+@@ -342,6 +343,15 @@ func prefault(w []uint64) {
+ }
+ 
+ func alignedWords(n int) []uint64 {
++	if expTHP && n*8 >= 8<<20 {
++		const huge = 2 << 20
++		buf := make([]uint64, n+huge/8)
++		off := int((huge-uintptr(unsafe.Pointer(&buf[0]))%huge)%huge) / 8
++		w := buf[off : off+n : off+n]
++		b := unsafe.Slice((*byte)(unsafe.Pointer(&w[0])), len(w)*8)
++		_ = syscall.Madvise(b[:len(b)/huge*huge], 14) // MADV_HUGEPAGE
++		return w
++	}
+ 	buf := make([]uint64, n+wordsPerLine)
+ 	const align = wordsPerLine * 8 // bytes per bucket
+ 	off := int((align-uintptr(unsafe.Pointer(&buf[0]))%align)%align) / 8
+@@ -675,6 +685,30 @@ func (f *Filter) lostRecently(now uint64) bool {
+ // lines that are already in flight or cached. out must be at least len(hs).
+ func (f *Filter) CheckAndTouchBatch(hs []uint64, window, now uint64, out []bool) {
+ 	out = out[:len(hs)]
++	if expPF == 3 { // experiment: prefetch primaries; touch keys their primary holds, prefetch the others' alternate line and touch them last
++		var later [batchChunk]int
++		for lo := 0; lo < len(hs); lo += batchChunk {
++			hi := min(lo+batchChunk, len(hs))
++			for _, h := range hs[lo:hi] {
++				prefetch(unsafe.Pointer(&f.words[f.primary(h)*wordsPerLine]))
++			}
++			n := 0
++			for i := lo; i < hi; i++ {
++				h := hs[i]
++				p, fp := f.primary(h), fingerprint(h)
++				if f.find(p, fp<<1, tag(h)) >= 0 {
++					out[i] = f.touch(h, window, now, false).Seen
++					continue
++				}
++				prefetch(unsafe.Pointer(&f.words[f.alt(p, fp)*wordsPerLine]))
++				later[n], n = i, n+1
++			}
++			for _, i := range later[:n] {
++				out[i] = f.touch(hs[i], window, now, false).Seen
++			}
++		}
++		return
++	}
+ 	for lo := 0; lo < len(hs); lo += batchChunk {
+ 		hi := min(lo+batchChunk, len(hs))
+ 		f.warm(hs[lo:hi])
+@@ -718,13 +752,45 @@ const batchChunk = 64
+ // warm loads each key's primary line without using the result, so the misses
+ // for a whole chunk are in flight at once.
+ func (f *Filter) warm(hs []uint64) {
++	switch expPF {
++	case 1, 3: // experiment: prefetch instructions instead of loads
++		for _, h := range hs {
++			prefetch(unsafe.Pointer(&f.words[f.primary(h)*wordsPerLine]))
++		}
++		return
++	case 2: // experiment: prefetch both lines of every key
++		for _, h := range hs {
++			p := f.primary(h)
++			prefetch(unsafe.Pointer(&f.words[p*wordsPerLine]))
++			prefetch(unsafe.Pointer(&f.words[f.alt(p, fingerprint(h))*wordsPerLine]))
++		}
++		return
++	}
+ 	var sink uint64
+ 	for _, h := range hs {
+ 		sink += atomic.LoadUint64(&f.words[f.primary(h)*wordsPerLine])
+ 	}
++	if expWarm2 { // experiment: then the alternate line of each key its primary doesn't hold
++		for _, h := range hs {
++			p, fp := f.primary(h), fingerprint(h)
++			if f.find(p, fp<<1, tag(h)) < 0 {
++				sink += atomic.LoadUint64(&f.words[f.alt(p, fp)*wordsPerLine])
++			}
++		}
++	}
+ 	runtime.KeepAlive(sink)
+ }
+ 
++// Experiments (row 8): expWarm2, the two-phase warm; expTHP, tables of
++// 8 MiB or more 2 MiB-aligned and advised huge pages.
++var expWarm2, expTHP bool
++
++// expPF (experiment, row 8): 0 loads (as committed); 1 prefetch the primary
++// lines; 2 prefetch both lines of every key; 3 prefetch primaries, touch the
++// keys their primary holds first and the rest, their alternate line
++// prefetched, last.
++var expPF int
++
+ // Evictions counts live keys displaced because both candidate lines were full.
+ func (f *Filter) Evictions() uint64 { return f.evictions.Load() }
+ 
+diff --git a/prefetch_amd64.go b/prefetch_amd64.go
+new file mode 100644
+index 0000000..46607fc
+--- /dev/null
++++ b/prefetch_amd64.go
+@@ -0,0 +1,10 @@
++package temporalfilter
++
++import "unsafe"
++
++// prefetch issues PREFETCHT0 for p's cache line (experiment, row 8). Unlike a
++// load, a prefetch doesn't hold up retirement, and locked instructions (the
++// touches' CASes) don't wait for it.
++//
++//go:noescape
++func prefetch(p unsafe.Pointer)
+diff --git a/prefetch_amd64.s b/prefetch_amd64.s
+new file mode 100644
+index 0000000..32927d3
+--- /dev/null
++++ b/prefetch_amd64.s
+@@ -0,0 +1,7 @@
++#include "textflag.h"
++
++// func prefetch(p unsafe.Pointer)
++TEXT ·prefetch(SB),NOSPLIT,$0-8
++	MOVQ p+0(FP), AX
++	PREFETCHT0 (AX)
++	RET
+diff --git a/r8_test.go b/r8_test.go
+new file mode 100644
+index 0000000..8ec6a52
+--- /dev/null
++++ b/r8_test.go
+@@ -0,0 +1,81 @@
++package temporalfilter
++
++import (
++	"bufio"
++	"math/rand/v2"
++	"os"
++	"strings"
++	"testing"
++	"time"
++)
++
++func init() {
++	expWarm2 = os.Getenv("TF_WARM2") == "1"
++	expTHP = os.Getenv("TF_THP") == "1"
++	if v := os.Getenv("TF_PF"); v != "" {
++		expPF = int(v[0] - '0')
++	}
++}
++
++// TestRow8 (TF_EXP=1): TestThroughput's batched line, repeated: a 2M-key
++// table at 90% of its slots, CheckAndTouchBatch (64 keys) over a 4M-key
++// uniform stream of present keys, TF_REPS times (default 5).
++func TestRow8(t *testing.T) {
++	if os.Getenv("TF_EXP") == "" {
++		t.Skip("set TF_EXP=1")
++	}
++	reps := 5
++	if s := os.Getenv("TF_REPS"); s != "" {
++		reps = 0
++		for _, c := range s {
++			reps = reps*10 + int(c-'0')
++		}
++	}
++	const capacity = 1 << 21
++	f, err := New(Config{Capacity: capacity, Horizon: time.Minute, Resolution: time.Millisecond, Clock: func() uint64 { return 1000 }})
++	if err != nil {
++		t.Fatal(err)
++	}
++	keys := make([]uint64, f.Slots()*90/100)
++	for i := range keys {
++		keys[i] = mix64(uint64(i) + 1<<44)
++		f.TouchAt(keys[i], 0, 1000)
++	}
++	disp := 0
++	for _, h := range keys {
++		if f.find(f.primary(h), fingerprint(h)<<1, tag(h)) < 0 {
++			disp++
++		}
++	}
++	stream := make([]uint64, 1<<22)
++	rng := rand.New(rand.NewPCG(1, 2))
++	for i := range stream {
++		stream[i] = keys[rng.IntN(len(keys))]
++	}
++	out := make([]bool, 64)
++	var rates []float64
++	for range reps {
++		start := time.Now()
++		for i := 0; i+64 <= len(stream); i += 64 {
++			f.CheckAndTouchBatch(stream[i:i+64], 60_000, 1000, out)
++		}
++		rates = append(rates, float64(len(stream))/time.Since(start).Seconds()/1e6)
++	}
++	t.Logf("pf %d warm2 %v thp %v: %d MB, %.1f%% of keys displaced, AnonHugePages %s; batched M keys/s: %.2f",
++		expPF, expWarm2, expTHP, f.Bytes()>>20, 100*float64(disp)/float64(len(keys)), anonHuge(), rates)
++}
++
++func anonHuge() string {
++	fh, err := os.Open("/proc/self/smaps_rollup")
++	if err != nil {
++		return "?"
++	}
++	defer fh.Close()
++	s := bufio.NewScanner(fh)
++	for s.Scan() {
++		if strings.HasPrefix(s.Text(), "AnonHugePages:") {
++			return strings.Join(strings.Fields(s.Text())[1:], " ")
++		}
++	}
++	return "?"
++}

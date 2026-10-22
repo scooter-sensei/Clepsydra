@@ -111,3 +111,21 @@ func TestUnitOfMatchesDivision(t *testing.T) {
 		}
 	}
 }
+
+// TestCountsLastTouchWhole: the newest bucket's last event lies exactly at
+// the slot's lastTouch, so a window that reaches it counts it whole and
+// spreads only the bucket's other events. Eleven touches 200 ms apart in one
+// 2.5 s unit, the last at 27,000: spreading all eleven over [25,000, 27,000]
+// read 200 ms as 1.1 events (truth 2) and 400 ms as 2.2 (truth 3).
+func TestCountsLastTouchWhole(t *testing.T) {
+	f := newTest(t, 1000, time.Minute) // unit 2,500 ticks: [25,000, 27,500) is one unit
+	h := mix64(42)
+	for ts := uint64(25_000); ts <= 27_000; ts += 200 {
+		f.TouchAt(h, 0, ts)
+	}
+	for _, c := range []struct{ window, want uint64 }{{200, 2}, {400, 3}, {2_000, 11}} {
+		if got := f.CountAt(h, c.window, 27_000); uint64(got.Count) != c.want {
+			t.Errorf("window %d ms: Count %d, want %d (%+v)", c.window, got.Count, c.want, got)
+		}
+	}
+}

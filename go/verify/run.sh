@@ -24,6 +24,7 @@ check constant-time - env TF_CT=1 go test -count=1 .
 check exact verify/expected/exact.txt go run ./cmd/tfbench -exact
 check placement verify/expected/placement.txt placement
 check register-experiment verify/expected/register-experiment.txt register_experiment
+check velocity-bound verify/expected/velocity-bound.txt velocity_bound
 check attacks verify/expected/attacks.txt attacks
 check rates verify/expected/rates.txt rates
 check sketch-experiments verify/expected/sketch-experiments.txt sketch_experiments

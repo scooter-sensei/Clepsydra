@@ -61,7 +61,7 @@ Ranges span the 5 traffic shapes; `go test -run TestRegisterExperiment -v` print
 
 The dyadic register roughly halves short-window error (mean over shapes at 1s: 0.38 → 0.20; at 5s: 0.21 → 0.09), which is where fraud velocity rules live ("5 cards in 10s"). It loses on 60s windows (0.030 → 0.071).
 
-**What shipped:** an age-graded variant of this register with `Horizon/24` units and counter widths 5,5,6,7,8,8,9 (`go/register.go`), which scores 0.081 on the scorecard's velocity metric against the linear register's 0.129 [D5, R3].
+**What shipped:** an age-graded variant of this register with `Horizon/24` units and counter widths 5,5,6,7,8,8,9 (`go/register.go`), which scores 0.078 on the scorecard's velocity metric against the linear register's 0.129 [D5, R3] (0.081 until the newest bucket's last event counted whole, 2026-10-22).
 
 ### 3.3 Laplace register (prototyped; negative result)
 

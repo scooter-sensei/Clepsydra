@@ -53,6 +53,10 @@ register_experiment() {
 	go test -count=1 -run '^TestRegisterExperiment$' -v . | sed -n '/normalized MAE/,/^--- /p' | grep -v '^--- ' | sed -E 's/^ *[a-z_]+\.go:[0-9]+: *//; s/^ +//'
 }
 
+velocity_bound() {
+	TF_EXP=1 go test -count=1 -run '^TestVelocityBound$' -v . | sed -n '/normalized MAE/,/^--- /p' | grep -v '^--- ' | sed -E 's/^ *[a-z_]+\.go:[0-9]+: *//'
+}
+
 attacks() {
 	go test -count=1 -run '^(TestAttackForgedIdentity|TestAttackStripeFlood|TestAttackEvictionReset|TestAttackFloodCollateral|TestAttackHeavyHitter|TestUpperBoundRandom)$' -v . |
 		grep -vE '^(=== |--- |PASS|ok |FAIL)' | sed -E 's/^ *[a-z_]+\.go:[0-9]+: //'

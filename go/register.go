@@ -238,9 +238,11 @@ func (f *Filter) mass(id, w1, last, now uint64) uint64 {
 // to now, so no resolution is lost to merging. Two facts from word0 make it
 // exact at the extremes: nothing happened after last, so a window ending
 // before it holds zero and one reaching it holds at least one; and the
-// newest non-empty bucket's events all lie in [its start, last]. The one
-// bucket the window's trailing edge cuts is assumed uniform for Count and
-// counted whole for Upper.
+// newest non-empty bucket's events all lie in [its start, last], one of them
+// at last. The one bucket the window's trailing edge cuts is assumed uniform
+// for Count (if it is the newest, the event at last counts whole and the
+// rest are spread: velocity MAE 0.0807 -> 0.0779) and counted whole for
+// Upper.
 //
 // sat is the slot's saturated bit: some event overflowed its bucket within
 // the register's span. The bucket it overflowed from still covers its time
@@ -278,16 +280,20 @@ func (f *Filter) estimate(id, w1, last, now, window uint64, sat bool) (r Result,
 		}
 		hit = hit || c >= satPerUnit
 		upper += c
+		a := 0.0 // events known to lie inside the window, counted whole
 		if newest {
 			hi = max(lo, min(float64(last), hi))
 			newest = false
+			if from < hi {
+				a = 1 // one of them lies exactly at last
+			}
 		}
 		if from <= lo {
 			est += float64(c)
 			continue
 		}
 		if from < hi {
-			est += float64(c) * (hi - from) / (hi - lo)
+			est += a + (float64(c)-a)*(hi-from)/(hi-lo)
 		}
 		break
 	}

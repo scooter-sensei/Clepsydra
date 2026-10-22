@@ -47,7 +47,7 @@ word1: tag(12) | epoch(4) | 7 velocity buckets (48)  age-graded counter, or the 
 |---|---|---|
 | `CheckAndTouch(key, W) bool` | CAS `lastTouch` to now, returns `now − lastTouch ≤ W`, counts the event | 1 line on a primary hit |
 | `CheckAndTouchBatch(hs, W, now, out)` | Same for many keys; issues every key's line load first so cache misses overlap | see speed table |
-| `VelocityCount(key, W) int` | Reads the buckets as laid out at the register's own epoch (no re-bucketing), sums those inside W and interpolates the one W's edge cuts, assuming uniform density | 1 line |
+| `VelocityCount(key, W) int` | Reads the buckets as laid out at the register's own epoch (no re-bucketing), sums those inside W and interpolates the one W's edge cuts, assuming uniform density; in the newest bucket the event at lastTouch counts whole and only the others are spread | 1 line |
 | `TouchAndCount(key, W)` | Both in one pass | 1 line |
 | `TouchAndCountBatch`, `VelocityCountBatch` | Batched like CheckAndTouchBatch | see speed table |
 | `ContainsAt(h, W, now)` | Read-only freshness check | 1 line |
@@ -87,7 +87,7 @@ word1: tag(12) | epoch(4) | 7 velocity buckets (48)  age-graded counter, or the 
 - **Evictions at 97.8%** [D8, D10]: not the layout. The load threshold for 2 choices × 4 slots is 98.04%, and an exact placement oracle on the same stream places every key (0 forced drops). The filter's ~4,575 evictions come from its bounded search: the oracle's shortest paths needed 5 moves for 3,406 inserts, past the filter's 4. The stash gives every evicted key that returns its history back.
 - **False positives** [D2, D3]: 0 of 723,513 negatives on the churn workload; 18 in 1e9 never-inserted probes at capacity (1.8e-8; Poisson 95% interval 1.07e-8–2.84e-8; model 1.27e-8).
 - **Memory** [D6, D17, A14]: 18.8 B per key at design load; 31.1 B per key under a heavy flood.
-- **Velocity error** [D5]: 0.081, averaged over 1–60s windows and 5 traffic shapes (0.227 at 1 s, 0.024 at 60 s). The original 6×8 linear register scored 0.129 on the same harness [R3].
+- **Velocity error** [D5]: 0.078, averaged over 1–60s windows and 5 traffic shapes (0.214 at 1 s, 0.024 at 60 s). The original 6×8 linear register scored 0.129 on the same harness [R3]. Most of what remains is the register's information: under a uniform model of events within a bucket no estimator reading it gets below ~0.058 on this workload, and 0.05 would need about 1.25 s resolution near now [D18].
 - **Floods** [A14]: a strict limit of 20 turns away 0.12% / 0.17% / 0.29% of new keys after heavy floods of 2x / 3x / 4x the table's slots, and every offender keeps its full `Count`.
 
 **Speed** (one host per round; `go/verify/speed.md` has the runs, `go/verify/ab.sh` repeats them; compare ratios, not absolute numbers): see `go/verify/speed.md` and, for the 2026-10-21 round, `go/results/round-2026-10-21.md`.

@@ -1,4 +1,4 @@
-hot entries   rate=10/s window=1s count/exact min=0.909 max=1.000 saturated=0.0% unflagged_upper_low=0
+hot entries   rate=10/s window=1s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=10/s window=5s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=10/s window=15s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=10/s window=60s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
@@ -13,32 +13,32 @@ hot entries   rate=13/s window=5s count/exact min=1.000 max=1.015 saturated=0.0%
 hot entries   rate=13/s window=15s count/exact min=0.995 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=13/s window=60s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=13/s promoted=1 refused=0
-hot entries   rate=20/s window=1s count/exact min=0.952 max=1.000 saturated=0.0% unflagged_upper_low=0
+hot entries   rate=20/s window=1s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=20/s window=5s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=20/s window=15s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=20/s window=60s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=20/s promoted=1 refused=0
-hot entries   rate=50/s window=1s count/exact min=0.980 max=1.000 saturated=0.0% unflagged_upper_low=0
+hot entries   rate=50/s window=1s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=50/s window=5s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=50/s window=15s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=50/s window=60s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=50/s promoted=1 refused=0
-hot entries   rate=100/s window=1s count/exact min=0.990 max=1.000 saturated=0.0% unflagged_upper_low=0
+hot entries   rate=100/s window=1s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=100/s window=5s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=100/s window=15s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=100/s window=60s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=100/s promoted=1 refused=0
-hot entries   rate=200/s window=1s count/exact min=0.995 max=1.000 saturated=0.0% unflagged_upper_low=0
+hot entries   rate=200/s window=1s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=200/s window=5s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=200/s window=15s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=200/s window=60s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=200/s promoted=1 refused=0
-hot entries   rate=500/s window=1s count/exact min=0.998 max=1.000 saturated=0.0% unflagged_upper_low=0
+hot entries   rate=500/s window=1s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=500/s window=5s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=500/s window=15s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=500/s window=60s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=500/s promoted=1 refused=0
-hot entries   rate=1000/s window=1s count/exact min=0.999 max=1.000 saturated=0.0% unflagged_upper_low=0
+hot entries   rate=1000/s window=1s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=1000/s window=5s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=1000/s window=15s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=1000/s window=60s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
@@ -48,12 +48,12 @@ hot entries   rate=2000/s window=5s count/exact min=1.000 max=1.000 saturated=0.
 hot entries   rate=2000/s window=15s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=2000/s window=60s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=2000/s promoted=1 refused=0
-hot entries   rate=5000/s window=1s count/exact min=0.999 max=1.000 saturated=0.0% unflagged_upper_low=0
+hot entries   rate=5000/s window=1s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=5000/s window=5s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=5000/s window=15s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=5000/s window=60s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 hot entries   rate=5000/s promoted=1 refused=0
-register only rate=10/s window=1s count/exact min=0.909 max=1.000 saturated=0.0% unflagged_upper_low=0
+register only rate=10/s window=1s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 register only rate=10/s window=5s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 register only rate=10/s window=15s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
 register only rate=10/s window=60s count/exact min=1.000 max=1.000 saturated=0.0% unflagged_upper_low=0
@@ -69,23 +69,23 @@ register only rate=20/s window=1s count/exact min=0.619 max=1.000 saturated=80.0
 register only rate=20/s window=5s count/exact min=0.624 max=0.743 saturated=100.0% unflagged_upper_low=0
 register only rate=20/s window=15s count/exact min=0.628 max=0.751 saturated=100.0% unflagged_upper_low=0
 register only rate=20/s window=60s count/exact min=0.635 max=0.695 saturated=100.0% unflagged_upper_low=0
-register only rate=50/s window=1s count/exact min=0.235 max=0.706 saturated=100.0% unflagged_upper_low=0
+register only rate=50/s window=1s count/exact min=0.255 max=0.706 saturated=100.0% unflagged_upper_low=0
 register only rate=50/s window=5s count/exact min=0.247 max=0.375 saturated=100.0% unflagged_upper_low=0
 register only rate=50/s window=15s count/exact min=0.252 max=0.375 saturated=100.0% unflagged_upper_low=0
 register only rate=50/s window=60s count/exact min=0.254 max=0.337 saturated=100.0% unflagged_upper_low=0
-register only rate=100/s window=1s count/exact min=0.119 max=0.396 saturated=100.0% unflagged_upper_low=0
+register only rate=100/s window=1s count/exact min=0.129 max=0.396 saturated=100.0% unflagged_upper_low=0
 register only rate=100/s window=5s count/exact min=0.124 max=0.218 saturated=100.0% unflagged_upper_low=0
 register only rate=100/s window=15s count/exact min=0.126 max=0.210 saturated=100.0% unflagged_upper_low=0
 register only rate=100/s window=60s count/exact min=0.127 max=0.189 saturated=100.0% unflagged_upper_low=0
-register only rate=200/s window=1s count/exact min=0.060 max=0.209 saturated=100.0% unflagged_upper_low=0
+register only rate=200/s window=1s count/exact min=0.065 max=0.209 saturated=100.0% unflagged_upper_low=0
 register only rate=200/s window=5s count/exact min=0.062 max=0.117 saturated=100.0% unflagged_upper_low=0
 register only rate=200/s window=15s count/exact min=0.063 max=0.116 saturated=100.0% unflagged_upper_low=0
 register only rate=200/s window=60s count/exact min=0.063 max=0.100 saturated=100.0% unflagged_upper_low=0
-register only rate=500/s window=1s count/exact min=0.024 max=0.086 saturated=100.0% unflagged_upper_low=0
+register only rate=500/s window=1s count/exact min=0.026 max=0.086 saturated=100.0% unflagged_upper_low=0
 register only rate=500/s window=5s count/exact min=0.025 max=0.049 saturated=100.0% unflagged_upper_low=0
 register only rate=500/s window=15s count/exact min=0.025 max=0.049 saturated=100.0% unflagged_upper_low=0
 register only rate=500/s window=60s count/exact min=0.025 max=0.042 saturated=100.0% unflagged_upper_low=0
-register only rate=1000/s window=1s count/exact min=0.012 max=0.043 saturated=100.0% unflagged_upper_low=0
+register only rate=1000/s window=1s count/exact min=0.013 max=0.043 saturated=100.0% unflagged_upper_low=0
 register only rate=1000/s window=5s count/exact min=0.012 max=0.025 saturated=100.0% unflagged_upper_low=0
 register only rate=1000/s window=15s count/exact min=0.013 max=0.025 saturated=100.0% unflagged_upper_low=0
 register only rate=1000/s window=60s count/exact min=0.013 max=0.021 saturated=100.0% unflagged_upper_low=0
@@ -93,7 +93,7 @@ register only rate=2000/s window=1s count/exact min=0.006 max=0.021 saturated=10
 register only rate=2000/s window=5s count/exact min=0.006 max=0.012 saturated=100.0% unflagged_upper_low=0
 register only rate=2000/s window=15s count/exact min=0.006 max=0.013 saturated=100.0% unflagged_upper_low=0
 register only rate=2000/s window=60s count/exact min=0.006 max=0.011 saturated=100.0% unflagged_upper_low=0
-register only rate=5000/s window=1s count/exact min=0.002 max=0.009 saturated=100.0% unflagged_upper_low=0
+register only rate=5000/s window=1s count/exact min=0.003 max=0.009 saturated=100.0% unflagged_upper_low=0
 register only rate=5000/s window=5s count/exact min=0.002 max=0.005 saturated=100.0% unflagged_upper_low=0
 register only rate=5000/s window=15s count/exact min=0.003 max=0.005 saturated=100.0% unflagged_upper_low=0
 register only rate=5000/s window=60s count/exact min=0.003 max=0.004 saturated=100.0% unflagged_upper_low=0

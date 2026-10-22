@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Model checks of the slot protocol (verify/tla/*.tla) with TLC.
 #
-#   verify/tla.sh [model...]   WaitRoom, RegisterEpoch, Relocate (default:
-#                              all): the protocol as committed at a few
-#                              sizes, then each guard undone (each must
-#                              break an invariant)
+#   verify/tla.sh [model...]   WaitRoom, RegisterEpoch, Relocate, RoomWays
+#                              (default: all): the protocol as committed at
+#                              a few sizes, then each guard undone (each
+#                              must break an invariant)
 #
 # Needs java (11 or later) and tla2tools.jar (TLA+ tools 1.7.4, from
 # github.com/tlaplus/tlaplus/releases), at $TLA2TOOLS or
@@ -105,13 +105,26 @@ relocate() {
 	run ok Relocate "hiddenNoEvictCheck" "$inv" "$k" "$rd" "$ev" "$first" 'Variant = "hiddenNoEvictCheck"'
 }
 
+# RoomWays (claims A24): one wait-room set shared by a key the placer
+# commits and a key that waits beside it.
+roomways() {
+	local inv="KKept KOwn LOnce" w i
+	for w in 1 2; do
+		run ok RoomWays "fixed, $w way(s)" "$inv" 'Variant = "fixed"' "Ways = $w"
+	done
+	for i in KKept KOwn; do
+		run violation RoomWays "old (before A24): $i" "$i" 'Variant = "old"' "Ways = 2"
+	done
+}
+
 models=("$@")
-[ ${#models[@]} -gt 0 ] || models=(WaitRoom RegisterEpoch Relocate)
+[ ${#models[@]} -gt 0 ] || models=(WaitRoom RegisterEpoch Relocate RoomWays)
 for m in "${models[@]}"; do
 	case $m in
 	WaitRoom) waitroom ;;
 	RegisterEpoch) registerepoch ;;
 	Relocate) relocate ;;
+	RoomWays) roomways ;;
 	*) echo "unknown model $m"; bad=1 ;;
 	esac
 done

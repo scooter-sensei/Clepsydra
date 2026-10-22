@@ -251,8 +251,9 @@ type Filter struct {
 // wait room, testHookStamped after a touch moves its slot's last touch to a
 // later unit, before the register follows (realign, word1 busy);
 // testHookPicked after a relocation reads the entry at word index i, before
-// it copies it.
-var testHookCopied, testHookVictim, testHookTaken, testHookStamped func()
+// it copies it; testHookPlacing after the Background placer marks a waiting
+// key's wait-room entry busy, before it installs the key.
+var testHookCopied, testHookVictim, testHookTaken, testHookStamped, testHookPlacing func()
 var testHookPicked func(i int)
 
 // forceCT turns ConstantTime on in every filter (tests: TF_CT=1).
@@ -1252,6 +1253,9 @@ func (f *Filter) placeRoomKey(p *stashTable, e stashEntry) {
 		c0, c1 := c.w0, c.w1
 		c.w1 = busy
 		mu.Unlock()
+		if testHookPlacing != nil {
+			testHookPlacing()
+		}
 		m.begun.Add(1)
 		ok := f.install(i, w0, w1, c0&^deferMark|mine0&dispBit, c1)
 		mu.Lock()
@@ -2173,7 +2177,11 @@ func (f *Filter) stashPutAs(id, w0, w1, now uint64, wait bool) {
 // set in the wait table (waitTable), or in its own old place, and reports
 // whether it did: a full set drops nothing for it. No stashUntil:
 // ConstantTime reads the stash anyway, and Background lookups read the
-// set's wait bit (stashMay).
+// set's wait bit (stashMay). A way being committed to the table (word1
+// busy, placeRoomKey) is never taken, expired or not: the placer, which
+// released the set's lock to install it, removes it or puts its word1 back
+// afterwards, and would remove or overwrite the newcomer instead (claims
+// A24).
 func (f *Filter) stashWait(id, w0, w1, now uint64) bool {
 	p := f.waitTable()
 	if p == nil {
@@ -2183,7 +2191,7 @@ func (f *Filter) stashWait(id, w0, w1, now uint64) bool {
 	mu.Lock()
 	defer mu.Unlock()
 	for i := range set {
-		if e := &set[i]; e.id == 0 || e.id == id || age(now, e.w0&tsMask) > f.horizon {
+		if e := &set[i]; e.w1>>tagShift != tagBusy && (e.id == 0 || e.id == id || age(now, e.w0&tsMask) > f.horizon) {
 			f.stashWrite(p, e, stashEntry{id, w0&^dispBit | deferMark, w1})
 			return true
 		}

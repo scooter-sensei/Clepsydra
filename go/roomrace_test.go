@@ -1,6 +1,7 @@
 package temporalfilter
 
 import (
+	"math/bits"
 	"testing"
 	"time"
 )
@@ -60,5 +61,94 @@ func TestReadWhileTouchTakesWaitingKey(t *testing.T) {
 	}
 	if r := f.CountAt(key, 60_000, 1); r.Count != 4 {
 		t.Fatalf("after: %+v, want 4 events", r)
+	}
+}
+
+// TestWaitBesidePlacementKeepsKey: with Background, the placer commits a
+// waiting key L by marking its wait-room entry busy, installing it, and then
+// removing the entry, or putting its word1 back if the install failed. A
+// first touch of K meanwhile, whose lines are full and whose room set is
+// L's, waits in that set, where L's entry, last touched a horizon before
+// K's clock, looks expired. If K's wait takes L's way, busy as it is, the
+// placer's removal erases K's entry: K reads Upper 0 for its event, and its
+// next touch starts it afresh (the concurrent fuzzer's case 1068). K must
+// keep its event.
+func TestWaitBesidePlacementKeepsKey(t *testing.T) {
+	if forceCT {
+		t.Skip("Background has no effect with ConstantTime")
+	}
+	f, err := New(Config{Capacity: 4096, Horizon: time.Minute, Resolution: time.Millisecond,
+		Clock: func() uint64 { return 1 }, Background: true, Hot: -1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.bgManual = true
+	const t0 = 1
+	t1 := t0 + f.horizon + 1 // entries last touched at t0 have expired
+	var l uint64
+	for i := uint64(1); l == 0; i++ { // a key whose lines are full waits
+		w := f.Waited()
+		f.TouchAt(mix64(i), 0, t0)
+		if f.Waited() != w {
+			l = mix64(i)
+		}
+	}
+	p := f.room.Load()
+	set := func(h uint64) uint64 {
+		s, _ := bits.Mul64(mix64(f.stashID(h, fingerprint(h), tag(h))), p.n)
+		return s
+	}
+	lines := func(h uint64) [2]uint64 {
+		pl := f.primary(h)
+		return [2]uint64{pl, f.alt(pl, fingerprint(h))}
+	}
+	ll := lines(l)
+	var k uint64 // L's room set; two lines, neither of them L's; a claim stripe of its own
+	for i := uint64(1 << 40); k == 0; i++ {
+		h, kl := mix64(i), lines(mix64(i))
+		if set(h) == set(l) && h>>56 != l>>56 && kl[0] != kl[1] &&
+			kl[0] != ll[0] && kl[0] != ll[1] && kl[1] != ll[0] && kl[1] != ll[1] {
+			k = h
+		}
+	}
+	kl := lines(k)
+	for _, line := range kl { // K's lines full of entries live at t1, so its first touch waits
+		for i := uint64(1 << 44); countLine(f, line, t1) < 4; i++ {
+			if h := mix64(i); f.primary(h) == line {
+				f.TouchAt(h, 0, t1)
+			}
+		}
+	}
+	for _, line := range ll { // room for L: its lines' entries from t0 are swept
+		f.sweepLine(line, t1)
+	}
+	if f.Waiting() != 1 {
+		t.Fatalf("%d keys waiting, want L alone", f.Waiting())
+	}
+	fired := false
+	testHookPlacing = func() {
+		if fired {
+			return
+		}
+		fired = true
+		w := f.Waited()
+		f.TouchAt(k, 0, t1) // K waits in L's set while L's entry is busy
+		if f.Waited() == w {
+			t.Error("K's first touch did not wait")
+		}
+	}
+	defer func() { testHookPlacing = nil }()
+	f.placeNext(p, 0) // places L
+	if !fired {
+		t.Fatal("the placer did not commit L")
+	}
+	if f.locate(l, fingerprint(l), tag(l)) < 0 {
+		t.Fatal("L is not in the table")
+	}
+	if r := f.CountAt(k, f.horizon, t1); r.Upper < 1 && !r.Saturated {
+		t.Fatalf("K reads %+v after L's placement, want Upper >= 1", r)
+	}
+	if r := f.TouchAt(k, f.horizon, t1); r.Upper < 2 && !r.Saturated {
+		t.Fatalf("K's second touch reads %+v, want Upper >= 2", r)
 	}
 }

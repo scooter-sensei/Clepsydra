@@ -183,6 +183,15 @@ func (f *Filter) whereIs(h, now uint64) string {
 			}
 		}
 	}
+	if p := f.room.Load(); p != nil {
+		set, _ := p.set(id)
+		for _, e := range set {
+			if e.id == id {
+				v, ok := f.viewOf(id, e.w1, e.w0&tsMask)
+				s += fmt.Sprintf("room last %d busy %v hot %v ok %v epoch %d counts %v (wait bit %v); ", e.w0&tsMask, e.w1>>tagShift == tagBusy, isHot(e.w1), ok, v.e, v.c, p.waiting(id))
+			}
+		}
+	}
 	if g := f.gh.Load(); g != nil {
 		r, _ := g.estimate(id, f.horizon, now)
 		s += fmt.Sprintf("ghost %+v", r)

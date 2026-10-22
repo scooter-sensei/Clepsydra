@@ -245,7 +245,7 @@ func (f *Filter) spill(id, w0, w1, now uint64) {
 		return
 	}
 	if f.skW == 0 {
-		f.dropped(now)
+		f.dropped(max(now, last)) // its events may be in a window until a horizon after its newest one
 		return
 	}
 	v, ok := f.viewOf(id, w1, last)

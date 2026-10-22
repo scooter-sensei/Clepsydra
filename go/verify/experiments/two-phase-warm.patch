@@ -1,0 +1,28 @@
+diff --git a/filter.go b/filter.go
+index 0b02fc0..034ad2c 100644
+--- a/filter.go
++++ b/filter.go
+@@ -715,13 +715,21 @@ func (f *Filter) VelocityCountBatch(hs []uint64, window, now uint64, counts []in
+ // batchChunk is ~ a core's outstanding-miss capacity, with headroom.
+ const batchChunk = 64
+ 
+-// warm loads each key's primary line without using the result, so the misses
+-// for a whole chunk are in flight at once.
++// warm loads the lines a chunk of keys will read, so their misses are in
++// flight together: every key's primary line, then the alternate line of each
++// key its primary line doesn't hold (a displaced key, or one never seen),
++// which would otherwise be a second miss waiting on the first.
+ func (f *Filter) warm(hs []uint64) {
+ 	var sink uint64
+ 	for _, h := range hs {
+ 		sink += atomic.LoadUint64(&f.words[f.primary(h)*wordsPerLine])
+ 	}
++	for _, h := range hs {
++		p, fp := f.primary(h), fingerprint(h)
++		if f.find(p, fp<<1, tag(h)) < 0 {
++			sink += atomic.LoadUint64(&f.words[f.alt(p, fp)*wordsPerLine])
++		}
++	}
+ 	runtime.KeepAlive(sink)
+ }
+ 

@@ -16,6 +16,10 @@ Every implementation (Go now; Python, C++ and Java later) has the same five test
 
 The soak and `TestFuzzUpper` give each key one goroutine, so a key is never read while another goroutine touches it. `TestFuzzConcurrent` (`TF_CFUZZ=<duration>`, e.g. `10m`) runs the fuzzer's configurations with 2 to 2×GOMAXPROCS goroutines on one filter, a fifth of its cases in ConstantTime and a fifth with Background (the placer a goroutine). Each goroutine owns its keys and checks `Upper` on every Touch and Count, as `TestFuzzUpper` does. One operation in eight is on a few keys every goroutine shares, and a Count of a shared key must cover the touches that returned before it began. The clock is shared, and callers read it with a lag of up to two units. A case's configuration and streams come from its seed (`TF_CFUZZ_SEED`, default 1), but its run depends on its races, so a failure doesn't replay exactly: `TF_CFUZZ_CASE=<seed>` runs that case `TF_CFUZZ_RUNS` times (default 20).
 
+## Model checks
+
+`go/verify/tla.sh` model-checks the slot protocol's concurrent parts with TLC (TLA+ tools 1.7.4, Java 11 or later): the wait room (`WaitRoom.tla`) and a register's 4-bit epoch against its last touch (`RegisterEpoch.tla`), in `go/verify/tla/`. Each model runs the protocol as committed, exhaustively at small sizes, and then each of its guards undone, which must break an invariant. `TLA_BIG=1` adds the large sizes the claims cite. The models are not in a test tier: they change only with the protocol, and some sizes take tens of minutes.
+
 ## Conformance vectors
 
 `spec/vectors/*.json` pin the filter's observable behaviour bit for bit, so a port can show it is the same filter. Each file is one scenario:

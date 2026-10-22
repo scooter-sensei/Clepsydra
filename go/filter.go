@@ -23,6 +23,7 @@ import (
 	"hash/maphash"
 	"math"
 	"math/bits"
+	"math/rand/v2"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -858,8 +859,12 @@ func (f *Filter) ctBegin(op int, now uint64) (t0 time.Time, pad time.Duration) {
 }
 
 // ctEnd moves op's own-work estimate with the work done since s (a sample
-// of calls, 1 in 4 by key, moves it) and spins until the pad has passed
-// since t0.
+// of calls, 1 in 4 by key, moves it) and spins until the pad, plus a random
+// dither, has passed since t0. The spin reads the clock every ~37 ns (2026-10-21
+// host), so a pad ending at a fixed time ends at a phase of those reads
+// that follows the call's own work, and keys whose work time is narrow show
+// it (Count at a fixed 1 µs pad: D 0.019-0.041; with the dither 0.007-0.014,
+// claims S41). The dither spans several reads and doesn't depend on the key.
 func (f *Filter) ctEnd(op int, h uint64, t0, s time.Time, pad time.Duration) {
 	if h>>8&3 == 0 {
 		qp := &f.padQ[op].q
@@ -871,9 +876,14 @@ func (f *Filter) ctEnd(op int, h uint64, t0, s time.Time, pad time.Duration) {
 			qp.Add(-autoDown)
 		}
 	}
+	pad += time.Duration(rand.Uint64N(uint64(padDither)))
 	for time.Since(t0) < pad {
 	}
 }
+
+// padDither is the span over which a ConstantTime pad's end is drawn: a mean
+// cost of 64 ns per call.
+const padDither = 128 * time.Nanosecond
 
 // place spends up to budget since t0 on keys that wait in the stash for a
 // slot (an insert that found its two lines full defers the cuckoo search to

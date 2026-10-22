@@ -65,6 +65,31 @@ func TestTimingLeak(t *testing.T) {
 	}
 }
 
+// TestCTPadEndIsDithered: a ConstantTime pad ends at a random point over a
+// span of several clock reads. A spin that ends at a fixed time ends at a
+// phase of the clock read that follows the call's own work (one read is
+// ~37 ns on the 2026-10-21 host), and keys whose work time is narrow show
+// it: Count at a fixed 1 µs pad leaked D 0.019-0.041 (claims S41). Calls
+// with no work of their own, spread end to end: their middle 80% must span
+// more than one clock read. Noise only widens the spread.
+func TestCTPadEndIsDithered(t *testing.T) {
+	f, err := New(Config{Capacity: 1024, Horizon: time.Minute, ConstantTime: time.Microsecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const n = 20_000
+	ds := make([]float64, n)
+	for i := range ds {
+		t0, pad := f.ctBegin(opTouch, 1)
+		f.ctEnd(opTouch, 0, t0, t0, pad)
+		ds[i] = float64(time.Since(t0).Nanoseconds())
+	}
+	slices.Sort(ds)
+	if spread := ds[n*9/10] - ds[n/10]; spread < 80 {
+		t.Fatalf("padded calls end within %.0f ns (p10 %.0f, p90 %.0f): the pad's end follows the clock's phase", spread, ds[n/10], ds[n*9/10])
+	}
+}
+
 // ks is the Kolmogorov-Smirnov distance between two sorted samples.
 func ks(a, b []float64) float64 {
 	d := 0.0

@@ -1,0 +1,102 @@
+diff --git a/filter.go b/filter.go
+index 7a1e67b..cc45751 100644
+--- a/filter.go
++++ b/filter.go
+@@ -23,6 +23,7 @@ import (
+ 	"hash/maphash"
+ 	"math"
+ 	"math/bits"
++	"math/rand/v2"
+ 	"runtime"
+ 	"sync"
+ 	"sync/atomic"
+@@ -871,10 +872,16 @@ func (f *Filter) ctEnd(op int, h uint64, t0, s time.Time, pad time.Duration) {
+ 			qp.Add(-autoDown)
+ 		}
+ 	}
++	if ctDither > 0 { // experiment: a random, key-independent end for the pad
++		pad += time.Duration(rand.Uint64N(uint64(ctDither)))
++	}
+ 	for time.Since(t0) < pad {
+ 	}
+ }
+ 
++// ctDither (experiment, TF_DITHER=<ns>): pads end up to this much later, at random.
++var ctDither time.Duration
++
+ // place spends up to budget since t0 on keys that wait in the stash for a
+ // slot (an insert that found its two lines full defers the cuckoo search to
+ // here, so no call's own work includes one). A step takes the next stash
+diff --git a/ctexp_test.go b/ctexp_test.go
+index 34054a3..34a1dc2 100644
+--- a/ctexp_test.go
++++ b/ctexp_test.go
+@@ -5,6 +5,8 @@ import (
+ 	"math/rand/v2"
+ 	"os"
+ 	"slices"
++	"strconv"
++	"strings"
+ 	"sync"
+ 	"testing"
+ 	"time"
+@@ -20,6 +22,10 @@ func TestCTPads(t *testing.T) {
+ 	if os.Getenv("TF_CTEXP") == "" {
+ 		t.Skip("set TF_CTEXP=1")
+ 	}
++	if ns, err := strconv.Atoi(os.Getenv("TF_DITHER")); err == nil {
++		ctDither = time.Duration(ns)
++		t.Logf("pad dither: up to %d ns", ns)
++	}
+ 	const capacity, probes = 1 << 21, 40_000
+ 	modes := []struct {
+ 		name string
+@@ -80,6 +86,16 @@ func TestCTPads(t *testing.T) {
+ 			slices.Sort(ts[1])
+ 			q := func(x []float64, p float64) float64 { return x[int(p*float64(len(x)-1))] }
+ 			d := ks(ts[0], ts[1])
++			if p := os.Getenv("TF_CTDUMP"); p != "" { // experiment: raw timings, one file per mode and op
++				name := fmt.Sprintf("%s/%s-%s.txt", p, strings.ReplaceAll(strings.ReplaceAll(m.name, " ", "_"), ",", ""), op)
++				var sb strings.Builder
++				for k := range ts {
++					for _, x := range ts[k] {
++						fmt.Fprintln(&sb, k, int64(x))
++					}
++				}
++				os.WriteFile(name, []byte(sb.String()), 0o644)
++			}
+ 			pad := ""
+ 			if f.ct {
+ 				p := time.Duration(f.padQ[map[string]int{"Touch": opTouch, "Count": opCount}[op]].q.Load() / 1000)
+diff --git a/spin_test.go b/spin_test.go
+new file mode 100755
+index 0000000..6606295
+--- /dev/null
++++ b/spin_test.go
+@@ -0,0 +1,26 @@
++package temporalfilter
++
++import (
++	"math/rand/v2"
++	"testing"
++	"time"
++)
++
++// TestSpinPeriod (experiment): how long one iteration of ctEnd's spin takes
++// (a time.Since call and a compare), and a dither draw.
++func TestSpinPeriod(t *testing.T) {
++	for range 3 {
++		t0 := time.Now()
++		n := 0
++		for time.Since(t0) < 10*time.Millisecond {
++			n++
++		}
++		t.Logf("spin: %d iterations in 10 ms: %.1f ns each", n, 1e7/float64(n))
++	}
++	t0 := time.Now()
++	var s uint64
++	for range 10_000_000 {
++		s += rand.Uint64N(64)
++	}
++	t.Logf("rand.Uint64N: %.1f ns (%d)", float64(time.Since(t0).Nanoseconds())/1e7, s%2)
++}

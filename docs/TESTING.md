@@ -12,6 +12,10 @@ Every implementation (Go now; Python, C++ and Java later) has the same five test
 
 `go/test.sh all` runs smoke, sanity, regression and stress. Perf is left out because its results depend on the host, so it runs only when asked.
 
+## Concurrent fuzzer
+
+The soak and `TestFuzzUpper` give each key one goroutine, so a key is never read while another goroutine touches it. `TestFuzzConcurrent` (`TF_CFUZZ=<duration>`, e.g. `10m`) runs the fuzzer's configurations with 2 to 2×GOMAXPROCS goroutines on one filter, a fifth of its cases in ConstantTime and a fifth with Background (the placer a goroutine). Each goroutine owns its keys and checks `Upper` on every Touch and Count, as `TestFuzzUpper` does. One operation in eight is on a few keys every goroutine shares, and a Count of a shared key must cover the touches that returned before it began. The clock is shared, and callers read it with a lag of up to two units. A case's configuration and streams come from its seed (`TF_CFUZZ_SEED`, default 1), but its run depends on its races, so a failure doesn't replay exactly: `TF_CFUZZ_CASE=<seed>` runs that case `TF_CFUZZ_RUNS` times (default 20).
+
 ## Conformance vectors
 
 `spec/vectors/*.json` pin the filter's observable behaviour bit for bit, so a port can show it is the same filter. Each file is one scenario:

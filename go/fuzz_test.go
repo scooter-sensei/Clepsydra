@@ -166,15 +166,14 @@ func (tr *fuzzTruth) trim() {
 	}
 }
 
-// fuzzCase runs one case: a configuration and an operation stream drawn
-// from seed.
-func fuzzCase(seed uint64) (res fuzzResult) {
-	rng := rand.New(rand.NewPCG(seed, 0x5eed_f022))
-	capacity := 1 << (6 + rng.IntN(9)) // 64 .. 32K keys
+// fuzzConfig draws a case's configuration (horizon H in ticks of 1 ms) and
+// tallies it in res.
+func fuzzConfig(rng *rand.Rand, res *fuzzResult) (cfg Config, capacity int, H uint64) {
+	capacity = 1 << (6 + rng.IntN(9)) // 64 .. 32K keys
 	capacity += rng.IntN(capacity)
 	horizons := []uint64{48, 96, 240, 1_000, 10_000, 60_000}
-	H := horizons[rng.IntN(len(horizons))]
-	cfg := Config{Capacity: capacity, Horizon: time.Duration(H) * time.Millisecond, Resolution: time.Millisecond, SpillMin: 1}
+	H = horizons[rng.IntN(len(horizons))]
+	cfg = Config{Capacity: capacity, Horizon: time.Duration(H) * time.Millisecond, Resolution: time.Millisecond, SpillMin: 1}
 	if rng.IntN(4) == 0 {
 		cfg.Load = 0.5 + 0.5*rng.Float64()
 	}
@@ -196,6 +195,14 @@ func fuzzCase(seed uint64) (res fuzzResult) {
 	case 1, 2:
 		cfg.Hot, res.smallHot = 1+rng.IntN(8), 1
 	}
+	return cfg, capacity, H
+}
+
+// fuzzCase runs one case: a configuration and an operation stream drawn
+// from seed.
+func fuzzCase(seed uint64) (res fuzzResult) {
+	rng := rand.New(rand.NewPCG(seed, 0x5eed_f022))
+	cfg, capacity, H := fuzzConfig(rng, &res)
 	var T uint64 = 1 + rng.Uint64N(1<<30) // the newest clock
 	cfg.Clock = func() uint64 { return T }
 	f, err := New(cfg)

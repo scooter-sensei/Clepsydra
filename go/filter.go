@@ -244,8 +244,9 @@ type Filter struct {
 
 // Test hooks, if set: testHookCopied runs between a relocation's copy and
 // its hand-off, testHookVictim between an eviction's choice of victim and
-// its install.
-var testHookCopied, testHookVictim func()
+// its install, testHookTaken after a touch takes a waiting key out of the
+// wait room.
+var testHookCopied, testHookVictim, testHookTaken func()
 
 // forceCT turns ConstantTime on in every filter (tests: TF_CT=1).
 var forceCT bool
@@ -563,6 +564,7 @@ const (
 	srcTable = iota + 1
 	srcStash
 	srcRetry // a waiting key was being committed to the table: look there again
+	srcRoom  // a waiting key taken out of the wait room (recall with take): its move is under way
 )
 
 // read returns h's slot words from the table or, if it was evicted, the
@@ -691,14 +693,26 @@ func (f *Filter) addSketch(r *Result, h, window, now uint64) {
 }
 
 // recall finds h's evicted history in the stash, or (Background) h waiting
-// in the wait room, removed if take. The caller holds h's claim stripe.
+// in the wait room, removed if take. The caller holds h's claim stripe. A
+// key taken out of the wait room (srcRoom) counts as a move of its stripe
+// from before it leaves until miss has placed it: lock-free lookups gate
+// on the room's wait bits, which the placer clears once a set holds no
+// waiting key, so a key in neither the table nor the room meanwhile would
+// read absent.
 func (f *Filter) recall(h, fp, tg, now uint64, take bool) (w0, w1 uint64, src int) {
 	id := f.stashID(h, fp, tg)
 	if !f.ct {
 		if p := f.room.Load(); p != nil && p.waiting(id) {
-			w0, w1, ok, retry := f.roomGet(p, id, now, take)
+			var mv *moveCount
+			if take {
+				mv = &f.moves[h>>(64-claimStripeBits)]
+			}
+			w0, w1, ok, retry := f.roomGet(p, id, now, mv)
 			if retry {
 				return 0, 0, srcRetry
+			}
+			if ok && take {
+				return w0, w1, srcRoom
 			}
 			if ok {
 				return w0, w1, srcStash
@@ -736,8 +750,10 @@ func (f *Filter) settled(m *moveCount, b, d uint64) bool {
 
 // roomGet is tableGet in the wait room (Background), where an entry being
 // committed to the table (w1 busy, placeRoomKey) is waited out; retry then
-// tells the caller to look in the table again if the entry went there.
-func (f *Filter) roomGet(p *stashTable, id, now uint64, take bool) (w0, w1 uint64, ok, retry bool) {
+// tells the caller to look in the table again if the entry went there. With
+// mv (the key's move counts) it takes the entry out, its move begun first.
+func (f *Filter) roomGet(p *stashTable, id, now uint64, mv *moveCount) (w0, w1 uint64, ok, retry bool) {
+	take := mv != nil
 	set, mu := p.set(id)
 	for {
 		busyNow := false
@@ -759,9 +775,13 @@ func (f *Filter) roomGet(p *stashTable, id, now uint64, take bool) (w0, w1 uint6
 			}
 			w0, w1 = e.w0, e.w1
 			if take {
+				mv.begun.Add(1)
 				f.stashWrite(p, e, stashEntry{})
 			}
 			mu.Unlock()
+			if take && testHookTaken != nil {
+				testHookTaken()
+			}
 			return w0, w1, true, false
 		}
 		mu.Unlock()
@@ -1329,6 +1349,8 @@ func (f *Filter) touchCTOnce(h, fp, tg, window, now uint64, wantCount bool) (Res
 // claim stripe, so no other first touch of h runs meanwhile.
 func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint64, src int) Result {
 	var r Result
+	// Taken out of the wait room (srcRoom): its move ends once it is placed.
+	room := src == srcRoom
 	w1, _ := f.nextReg(0, tg, now, now, true) // first event, published with the key
 	last, sat := now, uint64(0)
 	hotRestore := false
@@ -1370,11 +1392,13 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 				[2]uint64{fp<<48 | sat | stamp, fp<<48 | dispBit | sat | stamp}, w1, now, h>>(64-claimStripeBits), claimFull, nil)
 		}
 	}
-	switch ci {
-	case -1:
-		if src == srcStash { // put it back for the retry
-			f.putBack(f.stashID(h, fp, tg), s0, s1, now)
-		}
+	if ci == -1 && (src == srcStash || room) { // put it back for the retry
+		f.putBack(f.stashID(h, fp, tg), s0, s1, now)
+	}
+	if room { // in the table, or back in the room or the stash
+		f.moves[h>>(64-claimStripeBits)].done.Add(1)
+	}
+	if ci == -1 {
 		return Result{Count: -1}
 	}
 	if hotRestore && !f.hotAdd(w1, f.stashID(h, fp, tg), now, nil) {

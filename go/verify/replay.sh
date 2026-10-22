@@ -81,6 +81,7 @@ fixes() {
 	torn-lookup|6c051d0|6af5480|read_race_test.go|^TestReadDuringRelocationFindsKey$|10
 	ghost-stale-epoch|6af5480|642c3ef|verify/testdata/ghost_test.go|^TestGhostEpochRace$|10
 	ghost-ahead-of-clock|a02fe9b|2890196|verify/testdata/ghost_test.go|^TestGhostAddAheadOfClock$|3
+	restore-behind-clock|ee76cab|e9ceb3b|restore_test.go|^TestRestoreBehindLastTouch$|3
 	LIST
 }
 

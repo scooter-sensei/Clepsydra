@@ -9,7 +9,8 @@
 #   ./test.sh perf [A]     benchmarks of A (default: HEAD, or HEAD~1 on a clean tree) vs the
 #                          working tree, alternated on this host; fails if one is > PERF_MAX (1.20) x slower
 #   ./test.sh stress       race detector on the full suite, racy regression tests 300x,
-#                          concurrent soak with the Upper-bound check (TF_STRESS, default 60s), plain and -race
+#                          concurrent soak with the Upper-bound check (TF_STRESS, default 60s), plain and -race,
+#                          and the Upper-contract fuzzer over random configurations (TF_FUZZ, default 1e9 operations)
 #   ./test.sh all          smoke, sanity, regression, stress (perf is host-dependent: run it on purpose)
 #
 # Reports go to $OUT (default ./verify-report/<tier>).
@@ -86,6 +87,7 @@ stress() {
 	check racy-regressions - verify/replay.sh stress "${STRESS_RUNS:-300}"
 	check soak - env TF_STRESS="${TF_STRESS:-60s}" go test -count=1 -run '^TestStressSoak$' -v -timeout 0 .
 	check soak-race - env TF_STRESS="${TF_STRESS_RACE:-20s}" go test -race -count=1 -run '^TestStressSoak$' -v -timeout 0 .
+	check fuzz - env TF_FUZZ="${TF_FUZZ:-1e9}" go test -count=1 -run '^TestFuzzUpper$' -v -timeout 0 .
 }
 
 case $tier in

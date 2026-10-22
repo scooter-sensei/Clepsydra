@@ -117,7 +117,10 @@ type Config struct {
 	// slots, 8.9 B per slot once allocated, room for 3.2 histories per slot:
 	// a heavy flood of 4x the table's slots raises no floor. Negative: none;
 	// dropped histories are then lost and every unseen key reads Degraded
-	// for a horizon after a drop.
+	// for a horizon after a drop. A key that comes back after its history
+	// was lost is held again and reads low without a flag until the lost
+	// events leave the window: Upper is then a bound only while Lost hasn't
+	// moved within a horizon.
 	Overflow int
 	// SpillMin: a dropped history with fewer events than this in the horizon
 	// is shed (Shed counts it) instead of going to the overflow table, so a

@@ -24,10 +24,12 @@ import (
 // One operation in eight is on a few keys every goroutine shares, so a key's
 // reads race its touches; a Count of a shared key must cover the events whose
 // touches returned before it began. Events a call at the newest clock any
-// call has used could have expired are left out of the truth. A case's configuration and streams come from
-// its seed (TF_CFUZZ_SEED, default 1, for the first), but its run depends
-// on its races: TF_CFUZZ_CASE=<seed> runs one case TF_CFUZZ_RUNS times
-// (default 20).
+// call has used could have expired are left out of the truth. With
+// TF_CFUZZ_STRAGGLE=1, goroutine 0 of every case is a straggler, its calls
+// half a horizon to a horizon behind the clock. A case's configuration and
+// streams come from its seed (TF_CFUZZ_SEED, default 1, for the first), but
+// its run depends on its races: TF_CFUZZ_CASE=<seed> runs one case
+// TF_CFUZZ_RUNS times (default 20).
 func TestFuzzConcurrent(t *testing.T) {
 	if s := os.Getenv("TF_CFUZZ_CASE"); s != "" {
 		seed, err := strconv.ParseUint(s, 10, 64)
@@ -104,6 +106,10 @@ func cfuzzCase(seed uint64) (res fuzzResult) {
 	desc := fmt.Sprintf("config %+v ct %v bg %v goroutines %d horizon %d ticks unit %d lag <= %d ops/horizon %.0f",
 		cfg, f.ct, f.bg, workers, H, f.unit, maxLag, perH)
 	sh := &cfuzzShared{keys: make([]uint64, 1+rng.IntN(16)), tr: &fuzzTruth{ev: map[uint64][]uint64{}, horizon: H}}
+	straggle := os.Getenv("TF_CFUZZ_STRAGGLE") != ""
+	if straggle {
+		desc += " straggler"
+	}
 	for i := range sh.keys {
 		sh.keys[i] = mix64(1<<62 | uint64(i))
 	}
@@ -114,7 +120,7 @@ func cfuzzCase(seed uint64) (res fuzzResult) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			r := cfuzzWorker(f, uint64(g), wseed, ops, capacity/workers+1, H, maxLag, perH, &clock, &newest, sh)
+			r := cfuzzWorker(f, uint64(g), wseed, ops, capacity/workers+1, H, maxLag, perH, straggle && g == 0, &clock, &newest, sh)
 			mu.Lock()
 			defer mu.Unlock()
 			res.add(r)
@@ -154,8 +160,11 @@ func (s *cfuzzShared) snapshot(h uint64) *fuzzTruth {
 
 // cfuzzWorker is one goroutine of a concurrent case: ops operations on its
 // own keys (g in the top bits), share its share of the capacity, and on the
-// shared keys.
-func cfuzzWorker(f *Filter, g, seed uint64, ops, share int, H, maxLag uint64, perH float64, clock, newest *atomic.Uint64, sh *cfuzzShared) (res fuzzResult) {
+// shared keys. A straggler's calls run half a horizon to a horizon behind the
+// clock: a caller descheduled that long, or one passing its own timestamps.
+// Its events stay in the truth while a horizon of the newest clock holds
+// them; its touches then race inserts and sweeps that see its keys expired.
+func cfuzzWorker(f *Filter, g, seed uint64, ops, share int, H, maxLag uint64, perH float64, straggler bool, clock, newest *atomic.Uint64, sh *cfuzzShared) (res fuzzResult) {
 	rng := rand.New(rand.NewPCG(seed, g))
 	key := func(k uint64) uint64 { return mix64(g<<48 ^ k) }
 	heavy := make([]uint64, 1+rng.IntN(4))
@@ -210,6 +219,9 @@ func cfuzzWorker(f *Filter, g, seed uint64, ops, share int, H, maxLag uint64, pe
 		now := clock.Load()
 		if maxLag > 0 && rng.IntN(4) == 0 {
 			now -= rng.Uint64N(maxLag + 1)
+		}
+		if straggler {
+			now -= min(now-1, H/2+rng.Uint64N(H/2+1))
 		}
 		for n := newest.Load(); now > n && !newest.CompareAndSwap(n, now); n = newest.Load() {
 		}

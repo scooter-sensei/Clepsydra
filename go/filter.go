@@ -253,9 +253,11 @@ type Filter struct {
 // testHookPicked after a relocation reads the entry at word index i, before
 // it copies it; testHookPlacing after the Background placer marks a waiting
 // key's wait-room entry busy, before it installs the key; testHookSweeping
-// after the decay sweep's first write to an expired slot, before its last.
+// after the decay sweep's first write to an expired slot, before its last;
+// testHookInstalling after an install takes slot i's word1 busy, before
+// its word0.
 var testHookCopied, testHookVictim, testHookTaken, testHookStamped, testHookPlacing, testHookSweeping func()
-var testHookPicked func(i int)
+var testHookPicked, testHookInstalling func(i int)
 
 // forceCT turns ConstantTime on in every filter (tests: TF_CT=1).
 var forceCT bool
@@ -1629,7 +1631,7 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
 			for s := 0; s < wordsPerLine; s += 2 {
 				w0 := atomic.LoadUint64(&f.words[base+s])
 				if w0 == 0 || age(now, w0&tsMask) > f.horizon {
-					if f.putNew(put, base+s, w0, atomic.LoadUint64(&f.words[base+s+1]), mine[li], w1) {
+					if f.putOver(put, base+s, w0, atomic.LoadUint64(&f.words[base+s+1]), mine[li], w1) {
 						return base + s
 					}
 					return -1
@@ -1728,6 +1730,23 @@ func (f *Filter) putNew(put putFunc, i int, w0, w1, mine0, mine1 uint64) bool {
 	return f.install(i, w0, w1, mine0, mine1)
 }
 
+// putOver is putNew over slot i's expired occupant w0 (0: none). The hold
+// (word1 busy until word0 is taken) counts as a move of the occupant's
+// stripe: a touch at a clock that finds the occupant live may move word0
+// on during it (the install then puts word1 back), and its count, finding
+// word1 busy, looks the key up again; that lookup, or another touch's,
+// must not miss the slot and put the key in a second one (claims A27).
+func (f *Filter) putOver(put putFunc, i int, w0, w1, mine0, mine1 uint64) bool {
+	if w0 == 0 {
+		return f.putNew(put, i, w0, w1, mine0, mine1)
+	}
+	m := &f.moves[w0>>(64-claimStripeBits)]
+	m.begun.Add(1)
+	ok := f.putNew(put, i, w0, w1, mine0, mine1)
+	m.done.Add(1)
+	return ok
+}
+
 // warmAlts loads one word of the alternate line of every entry in lines
 // without using it: the misses are in flight together, and the search that
 // follows finds the lines on their way or cached.
@@ -1758,6 +1777,9 @@ func (f *Filter) warmLine(line uint64) {
 func (f *Filter) install(i int, w0, w1, mine0, mine1 uint64) bool {
 	if w1>>tagShift == tagBusy || !atomic.CompareAndSwapUint64(&f.words[i+1], w1, busy) {
 		return false
+	}
+	if testHookInstalling != nil {
+		testHookInstalling(i)
 	}
 	if !atomic.CompareAndSwapUint64(&f.words[i], w0, mine0) {
 		atomic.StoreUint64(&f.words[i+1], w1) // lost the slot; put word1 back
@@ -1840,7 +1862,7 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
 			m.done.Add(1)
 			return false
 		}
-		if f.install(base+s, d0, atomic.LoadUint64(&f.words[base+s+1]), moved, busy) {
+		if f.putOver(nil, base+s, d0, atomic.LoadUint64(&f.words[base+s+1]), moved, busy) {
 			if testHookCopied != nil {
 				testHookCopied()
 			}

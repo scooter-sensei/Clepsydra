@@ -18,7 +18,7 @@ The soak and `TestFuzzUpper` give each key one goroutine, so a key is never read
 
 ## Model checks
 
-`go/verify/tla.sh` model-checks the slot protocol's concurrent parts with TLC (TLA+ tools 1.7.4, Java 11 or later): the wait room (`WaitRoom.tla`), a register's 4-bit epoch against its last touch (`RegisterEpoch.tla`), a relocation's hidden copy against the key's touches, reads and eviction (`Relocate.tla`), and a wait-room set shared by a key being placed and one waiting beside it (`RoomWays.tla`), in `go/verify/tla/`. Each model runs the protocol as committed, exhaustively at small sizes, and then each of its guards undone, which must break an invariant. `TLA_BIG=1` adds the large sizes the claims cite. The models are not in a test tier: they change only with the protocol, and some sizes take tens of minutes.
+`go/verify/tla.sh` model-checks the slot protocol's concurrent parts with TLC (TLA+ tools 1.7.4, Java 11 or later): the wait room (`WaitRoom.tla`), a register's 4-bit epoch against its last touch (`RegisterEpoch.tla`), a relocation's hidden copy against the key's touches, reads and eviction (`Relocate.tla`), a wait-room set shared by a key being placed and one waiting beside it (`RoomWays.tla`), and a hold of an occupied slot (the decay sweep, an insert over an expired entry) against the occupant's lagging touch and its re-insert (`SlotHold.tla`), in `go/verify/tla/`. Each model runs the protocol as committed, exhaustively at small sizes, and then each of its guards undone, which must break an invariant. `TLA_BIG=1` adds the large sizes the claims cite. The models are not in a test tier: they change only with the protocol, and some sizes take tens of minutes.
 
 ## Conformance vectors
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Model checks of the slot protocol (verify/tla/*.tla) with TLC.
 #
-#   verify/tla.sh [model...]   WaitRoom, RegisterEpoch, Relocate, RoomWays
+#   verify/tla.sh [model...]   WaitRoom, RegisterEpoch, Relocate, RoomWays, SlotHold
 #                              (default: all): the protocol as committed at
 #                              a few sizes, then each guard undone (each
 #                              must break an invariant)
@@ -117,14 +117,35 @@ roomways() {
 	done
 }
 
+# SlotHold (claims A26, A27): a hold of an occupied slot (the decay sweep,
+# an insert over an expired entry) against the occupant's touches.
+slothold() {
+	local inv="NoDup NoZombie Kept NoStuck" h lr r
+	for h in sweep insert; do
+		for lr in "TRUE FALSE" "FALSE TRUE" "TRUE TRUE"; do
+			read -r l re <<<"$lr"
+			run ok SlotHold "fixed, $h, lagging $l, reinsert $re" "$inv" 'Variant = "fixed"' "Holder = \"$h\"" "Lagging = $l" "Reinsert = $re"
+		done
+	done
+	for r in NeverTaken NeverPutBack NeverWaited; do
+		run violation SlotHold "fixed, reachable: $r" "$r" 'Variant = "fixed"' 'Holder = "sweep"' 'Lagging = TRUE' 'Reinsert = TRUE'
+	done
+	run violation SlotHold "oldSweep (before 7236f76): NoZombie" "NoZombie" 'Variant = "oldSweep"' 'Holder = "sweep"' 'Lagging = FALSE' 'Reinsert = TRUE'
+	for h in sweep insert; do
+		run violation SlotHold "noCount, $h: NoDup" "NoDup" 'Variant = "noCount"' "Holder = \"$h\"" 'Lagging = TRUE' 'Reinsert = FALSE'
+	done
+	run violation SlotHold "noPutBack: NoStuck" "NoStuck" 'Variant = "noPutBack"' 'Holder = "sweep"' 'Lagging = TRUE' 'Reinsert = FALSE'
+}
+
 models=("$@")
-[ ${#models[@]} -gt 0 ] || models=(WaitRoom RegisterEpoch Relocate RoomWays)
+[ ${#models[@]} -gt 0 ] || models=(WaitRoom RegisterEpoch Relocate RoomWays SlotHold)
 for m in "${models[@]}"; do
 	case $m in
 	WaitRoom) waitroom ;;
 	RegisterEpoch) registerepoch ;;
 	Relocate) relocate ;;
 	RoomWays) roomways ;;
+	SlotHold) slothold ;;
 	*) echo "unknown model $m"; bad=1 ;;
 	esac
 done

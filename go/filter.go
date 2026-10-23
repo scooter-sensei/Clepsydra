@@ -252,8 +252,9 @@ type Filter struct {
 // later unit, before the register follows (realign, word1 busy);
 // testHookPicked after a relocation reads the entry at word index i, before
 // it copies it; testHookPlacing after the Background placer marks a waiting
-// key's wait-room entry busy, before it installs the key.
-var testHookCopied, testHookVictim, testHookTaken, testHookStamped, testHookPlacing func()
+// key's wait-room entry busy, before it installs the key; testHookSweeping
+// after the decay sweep's first write to an expired slot, before its last.
+var testHookCopied, testHookVictim, testHookTaken, testHookStamped, testHookPlacing, testHookSweeping func()
 var testHookPicked func(i int)
 
 // forceCT turns ConstantTime on in every filter (tests: TF_CT=1).
@@ -1899,6 +1900,22 @@ func (f *Filter) decayStep(now uint64, budget uint64) int {
 	return int(n)
 }
 
+// sweepLine clears line's slots expired at now. It takes a slot as install
+// does, for no key: word1 busy first, then word0 to 0 (or word1 back if
+// word0 changed), then word1 to 0. A first touch takes a free slot only
+// with word1 not busy, so none lands in the slot while it is cleared.
+// Before, the sweep cleared word0, then CASed word1 from the register it
+// had read to 0: a first touch could take the slot between the two and
+// install a register bit-identical to the old one (its key's, one event,
+// the same 4 epoch bits), which the CAS then cleared, leaving the key's
+// fingerprint with an empty register, a slot no lookup matches (claims
+// A26).
+//
+// The hold counts as a move of the occupant's stripe, as realign's does: a
+// touch at a clock that finds the occupant live may move word0 on during
+// it (the sweep then puts word1 back), and its count, finding word1 busy,
+// looks the key up again. That lookup must not miss the slot and put the
+// key in a second one.
 func (f *Filter) sweepLine(line, now uint64) {
 	base := int(line * wordsPerLine)
 	for s := 0; s < wordsPerLine; s += 2 {
@@ -1910,9 +1927,21 @@ func (f *Filter) sweepLine(line, now uint64) {
 		if w1>>tagShift == tagBusy {
 			continue // being handed over
 		}
-		if atomic.CompareAndSwapUint64(&f.words[base+s], w0, 0) {
-			atomic.CompareAndSwapUint64(&f.words[base+s+1], w1, 0)
+		m := &f.moves[w0>>(64-claimStripeBits)] // the occupant's stripe (its hash's top bits are its fp's)
+		m.begun.Add(1)
+		if !atomic.CompareAndSwapUint64(&f.words[base+s+1], w1, busy) {
+			m.done.Add(1)
+			continue // touched since
 		}
+		if testHookSweeping != nil {
+			testHookSweeping()
+		}
+		if atomic.CompareAndSwapUint64(&f.words[base+s], w0, 0) {
+			atomic.StoreUint64(&f.words[base+s+1], 0)
+		} else {
+			atomic.StoreUint64(&f.words[base+s+1], w1) // touched since: put word1 back
+		}
+		m.done.Add(1)
 	}
 }
 

@@ -1,0 +1,244 @@
+diff --git a/cmd/batcharms/main.go b/cmd/batcharms/main.go
+new file mode 100644
+index 0000000..ae6bd66
+--- /dev/null
++++ b/cmd/batcharms/main.go
+@@ -0,0 +1,66 @@
++// batcharms times CheckAndTouchBatch in a program that imports the library
++// alone (TF_BATCH, TF_CHUNK pick the arm): 64-key batches over a uniform
++// 4M-key stream of present keys at 90% load, for tables of 2^n keys
++// (-sizes, default 16,18,20,21,23: 1 to 150 MB). Prints M keys/s, best of
++// -reps. Run arms alternately: for r in 1 2 3 4; do for a in loads ""; do
++// TF_BATCH=$a ./batcharms; done; done.
++package main
++
++import (
++	"flag"
++	"fmt"
++	"math/rand/v2"
++	"os"
++	"strconv"
++	"strings"
++	"time"
++
++	tf "github.com/scooter-sensei/clepsydra/go"
++)
++
++func mix64(x uint64) uint64 {
++	x ^= x >> 30
++	x *= 0xbf58476d1ce4e5b9
++	x ^= x >> 27
++	x *= 0x94d049bb133111eb
++	return x ^ x>>31
++}
++
++func main() {
++	reps := flag.Int("reps", 3, "repetitions per size (best is printed)")
++	sizes := flag.String("sizes", "16,18,20,21,23", "table sizes, log2 keys")
++	flag.Parse()
++	arm := os.Getenv("TF_BATCH")
++	if arm == "" {
++		arm = "committed"
++	}
++	var out []string
++	for _, s := range strings.Split(*sizes, ",") {
++		lg, _ := strconv.Atoi(s)
++		f, err := tf.New(tf.Config{Capacity: 1 << lg, Horizon: time.Minute, Resolution: time.Millisecond, Clock: func() uint64 { return 1000 }})
++		if err != nil {
++			panic(err)
++		}
++		keys := make([]uint64, f.Slots()*90/100)
++		for i := range keys {
++			keys[i] = mix64(uint64(i) + 1<<44)
++			f.TouchAt(keys[i], 0, 1000)
++		}
++		stream := make([]uint64, 1<<22)
++		rng := rand.New(rand.NewPCG(1, 2))
++		for i := range stream {
++			stream[i] = keys[rng.IntN(len(keys))]
++		}
++		res := make([]bool, 64)
++		best := 0.0
++		for range *reps {
++			t0 := time.Now()
++			for i := 0; i+64 <= len(stream); i += 64 {
++				f.CheckAndTouchBatch(stream[i:i+64], 60_000, 1000, res)
++			}
++			best = max(best, float64(len(stream))/time.Since(t0).Seconds()/1e6)
++		}
++		out = append(out, fmt.Sprintf("2^%d (%d MB) %.2f", lg, f.Bytes()>>20, best))
++	}
++	fmt.Printf("%s chunk %s: %s\n", arm, os.Getenv("TF_CHUNK"), strings.Join(out, " | "))
++}
+diff --git a/exp_batch.go b/exp_batch.go
+new file mode 100644
+index 0000000..8700ef1
+--- /dev/null
++++ b/exp_batch.go
+@@ -0,0 +1,127 @@
++package temporalfilter
++
++import (
++	"os"
++	"strconv"
++	"sync/atomic"
++	"unsafe"
++)
++
++// Experiment (row 8, claims S48): CheckAndTouchBatch's arms, by TF_BATCH:
++//   loads      the batch before S48: load every primary line, touch in order
++//   prim       prefetch the primary lines, touch in order
++//   both       prefetch both lines of every key, touch in order
++//   split      prefetch primaries; touch the keys found there first, then the
++//              rest, their alternate lines prefetched (each key's own order
++//              kept by 64 hash bins)
++//   inter      as split, but a key found in its primary line is touched as
++//              soon as it is found (the S47 patch's arm 3)
++//   interhint  inter, the touch starting from the slot found
++//   orderednohint, orderednoalt  the committed arm without the slots handed
++//              to the touches, or without the alternate-line prefetch
++// TF_CHUNK: keys per chunk (default 32, at most 64), for every arm.
++var expBatch = os.Getenv("TF_BATCH")
++
++var expChunk = func() int {
++	if n, err := strconv.Atoi(os.Getenv("TF_CHUNK")); err == nil && n > 0 && n <= batchChunk {
++		return n
++	}
++	return 32
++}()
++
++func (f *Filter) prefetchOne(line uint64) {
++	l := [1]uint64{line}
++	prefetchLines(unsafe.Pointer(&f.words[0]), &l[0], 1)
++}
++
++func (f *Filter) batchArm(hs []uint64, window, now uint64, out []bool) {
++	var lines [batchChunk]uint64
++	var at, later [batchChunk]int
++	w := unsafe.Pointer(&f.words[0])
++	for lo := 0; lo < len(hs); lo += expChunk {
++		hi := min(lo+expChunk, len(hs))
++		ch := hs[lo:hi]
++		switch expBatch {
++		case "loads":
++			var sink uint64
++			for _, h := range ch {
++				sink += atomic.LoadUint64(&f.words[f.primary(h)*wordsPerLine])
++			}
++			_ = sink
++			for i := lo; i < hi; i++ {
++				out[i] = f.touch(hs[i], window, now, false, -1).Seen
++			}
++		case "prim", "both":
++			n := 0
++			for _, h := range ch {
++				p := f.primary(h)
++				lines[n], n = p, n+1
++				if expBatch == "both" {
++					lines[n], n = f.alt(p, fingerprint(h)), n+1
++					if n == batchChunk {
++						prefetchLines(w, &lines[0], n)
++						n = 0
++					}
++				}
++			}
++			prefetchLines(w, &lines[0], n)
++			for i := lo; i < hi; i++ {
++				out[i] = f.touch(hs[i], window, now, false, -1).Seen
++			}
++		case "split", "inter", "interhint":
++			for k, h := range ch {
++				lines[k] = f.primary(h)
++			}
++			prefetchLines(w, &lines[0], len(ch))
++			var second uint64
++			n, m := 0, 0
++			for i := lo; i < hi; i++ {
++				h := hs[i]
++				p, fp, bin := lines[i-lo], fingerprint(h), uint64(1)<<(h>>58)
++				if j := f.find(p, fp<<1, tag(h)); j < 0 {
++					f.prefetchOne(f.alt(p, fp))
++				} else if second&bin == 0 {
++					switch expBatch {
++					case "inter":
++						out[i] = f.touch(h, window, now, false, -1).Seen
++					case "interhint":
++						out[i] = f.touch(h, window, now, false, j).Seen
++					default:
++						at[n], n = i, n+1
++					}
++					continue
++				}
++				second |= bin
++				later[m], m = i, m+1
++			}
++			for _, i := range at[:n] {
++				out[i] = f.touch(hs[i], window, now, false, -1).Seen
++			}
++			for _, i := range later[:m] {
++				out[i] = f.touch(hs[i], window, now, false, -1).Seen
++			}
++		case "orderednohint", "orderednoalt":
++			var a [batchChunk]int
++			if expBatch == "orderednoalt" {
++				for k, h := range ch {
++					lines[k] = f.primary(h)
++				}
++				prefetchLines(w, &lines[0], len(ch))
++				for k, h := range ch {
++					a[k] = f.find(lines[k], fingerprint(h)<<1, tag(h))
++				}
++			} else {
++				f.warm(ch, &a)
++			}
++			for i := lo; i < hi; i++ {
++				i0 := a[i-lo]
++				if expBatch == "orderednohint" {
++					i0 = -1
++				}
++				out[i] = f.touch(hs[i], window, now, false, i0).Seen
++			}
++		default:
++			panic("TF_BATCH: unknown arm " + expBatch)
++		}
++	}
++}
+diff --git a/filter.go b/filter.go
+index f1e117c..e311c9c 100644
+--- a/filter.go
++++ b/filter.go
+@@ -784,9 +784,13 @@ func (f *Filter) lostRecently(now uint64) bool {
+ // (see warm). out must be at least len(hs).
+ func (f *Filter) CheckAndTouchBatch(hs []uint64, window, now uint64, out []bool) {
+ 	out = out[:len(hs)]
++	if expBatch != "" {
++		f.batchArm(hs, window, now, out)
++		return
++	}
+ 	var at [batchChunk]int
+-	for lo := 0; lo < len(hs); lo += batchChunk {
+-		hi := min(lo+batchChunk, len(hs))
++	for lo := 0; lo < len(hs); lo += expChunk {
++		hi := min(lo+expChunk, len(hs))
+ 		f.warm(hs[lo:hi], &at)
+ 		for i := lo; i < hi; i++ {
+ 			out[i] = f.touch(hs[i], window, now, false, at[i-lo]).Seen
+@@ -826,7 +830,7 @@ func (f *Filter) VelocityCountBatch(hs []uint64, window, now uint64, counts []in
+ 
+ // batchChunk is how many keys warm overlaps (S48: 32 beat 64 on tables
+ // near the last-level cache's size and matched it past them).
+-const batchChunk = 32
++const batchChunk = 64 // experiment: arrays sized for TF_CHUNK up to 64
+ 
+ // warm overlaps the cache misses of a chunk's keys (memory-level
+ // parallelism). It prefetches every key's primary line, looks for each key
+@@ -841,6 +845,9 @@ const batchChunk = 32
+ // key: its work, outside the calls' pads, doesn't depend on what the table
+ // holds (touchCT reads both lines anyway).
+ func (f *Filter) warm(hs []uint64, at *[batchChunk]int) {
++	if len(hs) > batchChunk {
++		panic("chunk")
++	}
+ 	var lines [2 * batchChunk]uint64
+ 	w := unsafe.Pointer(&f.words[0])
+ 	if f.ct {

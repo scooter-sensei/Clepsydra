@@ -41,7 +41,14 @@ fixes() {
 	# added.) The split and handshake fixes of
 	# 5524228 and a02fe9b are proven by deterministic tests on hooks those
 	# commits added (TestEvictionDuringMoveKeepsHistory,
-	# TestEvictionRacingMoveStart), so they can't run on the code before.
+	# TestEvictionRacingMoveStart), so they can't run on the code before;
+	# so are the 2026-10-22 fixes of the wait-room transfer (15bbc28,
+	# testHookTaken), the register epoch (5e21d7e, testHookStamped), the
+	# copy of an evicted key (0c08517, testHookPicked), the wait-room
+	# ways (277f9ed, testHookPlacing), the decay sweep's slot hold
+	# (7236f76, testHookSweeping) and an insert's hold over an expired
+	# occupant (c1cbace, testHookInstalling). The visible copy (0c08517) and the reclaimed hot
+	# entry (5638eac) need no new hook: their tests run on the code before.
 	# Duplicate slots: the striped lock (593bd1b) removed most; the install
 	# order in f31512c removed the rare rest (a race with relocation), so
 	# both cases end at f31512c. Lost counts under relocation: f31512c's
@@ -84,6 +91,9 @@ fixes() {
 	ghost-stale-epoch|6af5480|642c3ef|verify/testdata/ghost_test.go|^TestGhostEpochRace$|10
 	ghost-ahead-of-clock|a02fe9b|2890196|verify/testdata/ghost_test.go|^TestGhostAddAheadOfClock$|3
 	restore-behind-clock|ee76cab|e9ceb3b|verify/testdata/restore_test.go|^TestRestoreBehindLastTouch$|3
+	move-visible-copy|908e03e|0c08517|movecopy_test.go|^TestReadDuringMoveSeesEveryEvent$|3
+	hot-entry-reclaimed|277f9ed|5638eac|hot_test.go|^TestRestoreAfterHotEntryReclaimed$|3
+	hot-entry-reclaimed-in-claim|277f9ed|5638eac|hot_test.go|^TestHotEntryReclaimedDuringRestore$|3
 	LIST
 }
 

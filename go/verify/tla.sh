@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Model checks of the slot protocol (verify/tla/*.tla) with TLC.
 #
-#   verify/tla.sh [model...]   WaitRoom, RegisterEpoch, Relocate, RoomWays, SlotHold
+#   verify/tla.sh [model...]   WaitRoom, RegisterEpoch, Relocate, RoomWays, SlotHold,
+#                              TagStripe
 #                              (default: all): the protocol as committed at
 #                              a few sizes, then each guard undone (each
 #                              must break an invariant)
@@ -137,8 +138,30 @@ slothold() {
 	run violation SlotHold "noPutBack: NoStuck" "NoStuck" 'Variant = "noPutBack"' 'Holder = "sweep"' 'Lagging = TRUE' 'Reinsert = FALSE'
 }
 
+# TagStripe (claims A28): which stripe a hold counts on. Two keys; the
+# holder reads word0 and word1 in steps of their own.
+tagstripe() {
+	local inv="NoDup ReadNotLow Kept NoStuck" h st same
+	for h in insert sweep; do
+		for st in free J; do
+			[ $h = sweep ] && [ $st = free ] && continue
+			for same in FALSE TRUE; do
+				[ $st = free ] && [ $same = TRUE ] && continue
+				run ok TagStripe "tag, $h, start $st, same tag $same" "$inv" 'Variant = "tag"' "Holder = \"$h\"" "Start = \"$st\"" "SameTag = $same" 'Reader = TRUE'
+			done
+		done
+	done
+	run violation TagStripe "fp (before A28), insert over word0 0: NoDup" NoDup 'Variant = "fp"' 'Holder = "insert"' 'Start = "free"' 'SameTag = FALSE' 'Reader = FALSE'
+	run violation TagStripe "fp, insert over word0 0: ReadNotLow" ReadNotLow 'Variant = "fp"' 'Holder = "insert"' 'Start = "free"' 'SameTag = FALSE' 'Reader = TRUE'
+	run violation TagStripe "fp, sweep, torn: NoDup" NoDup 'Variant = "fp"' 'Holder = "sweep"' 'Start = "J"' 'SameTag = FALSE' 'Reader = FALSE'
+	run violation TagStripe "fp, insert over J, torn: NoDup" NoDup 'Variant = "fp"' 'Holder = "insert"' 'Start = "J"' 'SameTag = FALSE' 'Reader = FALSE'
+	run ok TagStripe "reread, sweep, other tag" "$inv" 'Variant = "reread"' 'Holder = "sweep"' 'Start = "J"' 'SameTag = FALSE' 'Reader = TRUE'
+	run violation TagStripe "reread, sweep, same tag: NoDup" NoDup 'Variant = "reread"' 'Holder = "sweep"' 'Start = "J"' 'SameTag = TRUE' 'Reader = FALSE'
+	run violation TagStripe "reread, insert over J, same tag: ReadNotLow" ReadNotLow 'Variant = "reread"' 'Holder = "insert"' 'Start = "J"' 'SameTag = TRUE' 'Reader = TRUE'
+}
+
 models=("$@")
-[ ${#models[@]} -gt 0 ] || models=(WaitRoom RegisterEpoch Relocate RoomWays SlotHold)
+[ ${#models[@]} -gt 0 ] || models=(WaitRoom RegisterEpoch Relocate RoomWays SlotHold TagStripe)
 for m in "${models[@]}"; do
 	case $m in
 	WaitRoom) waitroom ;;
@@ -146,6 +169,7 @@ for m in "${models[@]}"; do
 	Relocate) relocate ;;
 	RoomWays) roomways ;;
 	SlotHold) slothold ;;
+	TagStripe) tagstripe ;;
 	*) echo "unknown model $m"; bad=1 ;;
 	esac
 done

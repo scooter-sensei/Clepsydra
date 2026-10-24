@@ -192,12 +192,12 @@ type Filter struct {
 	pressure    atomic.Uint32 // EWMA of relocation-search failure, 0..pressureOne
 	_           [60]byte
 	claimMu     [1 << claimStripeBits]paddedMutex // serializes first touches per key
-	// moves counts, per claim stripe, moves of a key's entry under way: a
-	// relocation from before its hidden copy goes in to the copy's
-	// publication or clearing, an eviction from taking the slot to stashing
-	// the history. A lookup's miss is trusted only if none overlapped it
-	// (lookupStable), and an evictor leaves a key with one under way alone
-	// (claim).
+	// moves counts, per stripe of word1 tags (moveOf), moves of a key's
+	// entry under way: a relocation from before its hidden copy goes in to
+	// the copy's publication or clearing, an eviction from taking the slot
+	// to stashing the history, and every other hold of an occupied slot. A
+	// lookup's miss is trusted only if none overlapped it (lookupStable),
+	// and an evictor leaves a key with one under way alone (claim).
 	moves [1 << claimStripeBits]moveCount
 
 	sip    sipKey
@@ -255,9 +255,12 @@ type Filter struct {
 // key's wait-room entry busy, before it installs the key; testHookSweeping
 // after the decay sweep's first write to an expired slot, before its last;
 // testHookInstalling after an install takes slot i's word1 busy, before
-// its word0.
+// its word0; testHookOpenSeen after an insert reads slot i's word0 free
+// or expired, before its word1; testHookSweepSeen after the decay sweep
+// reads slot i's word0, before its word1; testHookSweepRead after it reads
+// word1, before its hold.
 var testHookCopied, testHookVictim, testHookTaken, testHookStamped, testHookPlacing, testHookSweeping func()
-var testHookPicked, testHookInstalling func(i int)
+var testHookPicked, testHookInstalling, testHookOpenSeen, testHookSweepSeen, testHookSweepRead func(i int)
 
 // forceCT turns ConstantTime on in every filter (tests: TF_CT=1).
 var forceCT bool
@@ -281,6 +284,15 @@ type moveCount struct {
 	begun, done atomic.Uint64
 	evicting    atomic.Int64
 }
+
+// moveOf is the move counts of entries whose word1 tag is tg. A hold of a
+// slot takes word1 busy by a CAS from the value it read, so whoever the
+// slot holds when the CAS succeeds has that value's tag: counted on the
+// tag's stripe, the hold tells that key's lookups to look again, even when
+// it is not the occupant whose word0 the holder read (a key installed
+// between the holder's reads of word0 and word1, or one whose word1 is
+// bit-identical to the old occupant's: the same tag, epoch bits and counts).
+func (f *Filter) moveOf(tg uint64) *moveCount { return &f.moves[tg&(1<<claimStripeBits-1)] }
 
 // New allocates a Filter sized for cfg.Load slot occupancy at cfg.Capacity.
 func New(cfg Config) (*Filter, error) {
@@ -589,7 +601,7 @@ func (f *Filter) read(h, now uint64) (w0, w1 uint64, src int) {
 		// a waiting key that leaves the wait room for the table counts as a
 		// move of its stripe (placeRoomKey), so if no move began by the
 		// check, the key was still waiting when the gate was read.
-		m := &f.moves[h>>(64-claimStripeBits)]
+		m := f.moveOf(tg)
 		for try := 0; ; try++ {
 			b, d := m.begun.Load(), m.done.Load()
 			i := f.locate(h, fp, tg)
@@ -613,7 +625,7 @@ func (f *Filter) read(h, now uint64) (w0, w1 uint64, src int) {
 	mu := &f.claimMu[h>>(64-claimStripeBits)]
 	mu.Lock()
 	defer mu.Unlock()
-	m := &f.moves[h>>(64-claimStripeBits)]
+	m := f.moveOf(tg)
 	for {
 		b, d := m.begun.Load(), m.done.Load()
 		i, w0, w1 := f.lookupStable(h, fp, tg, true)
@@ -637,10 +649,10 @@ func (f *Filter) read(h, now uint64) (w0, w1 uint64, src int) {
 // already scanned and out of the other in between is missed by both scans;
 // an eviction likewise takes a key out of the table before its history
 // reaches the stash. A miss is trusted only if no such move of a key on h's
-// claim stripe began or ended around the scan. Moves never wait on a
+// tag stripe (moveOf) began or ended around the scan. Moves never wait on a
 // lookup, so the retry loop ends.
 func (f *Filter) lookupStable(h, fp, tg uint64, both bool) (i int, w0, w1 uint64) {
-	m := &f.moves[h>>(64-claimStripeBits)]
+	m := f.moveOf(tg)
 	for {
 		b, d := m.begun.Load(), m.done.Load()
 		if both {
@@ -725,7 +737,7 @@ func (f *Filter) recall(h, fp, tg, now uint64, take bool) (w0, w1 uint64, src in
 		if p := f.room.Load(); p != nil && p.waiting(id) {
 			var mv *moveCount
 			if take {
-				mv = &f.moves[h>>(64-claimStripeBits)]
+				mv = f.moveOf(tg)
 			}
 			w0, w1, ok, retry := f.roomGet(p, id, now, mv)
 			if retry {
@@ -964,7 +976,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 			// lock covers only this path; hits never take it.
 			mu := &f.claimMu[h>>(64-claimStripeBits)]
 			mu.Lock()
-			m := &f.moves[h>>(64-claimStripeBits)]
+			m := f.moveOf(tg)
 			b, d := m.begun.Load(), m.done.Load()
 			if i, _, _ = f.lookupStable(h, fp, tg, false); i < 0 {
 				s0, s1, src := f.recall(h, fp, tg, now, true)
@@ -1238,7 +1250,7 @@ func (f *Filter) placeRoomSet(p *stashTable, i uint64) {
 func (f *Filter) placeRoomKey(p *stashTable, e stashEntry) {
 	id := e.id
 	fp := id >> tagBits & (1<<16 - 1)
-	m := &f.moves[fp>>(16-claimStripeBits)]
+	m := f.moveOf(id & (1<<tagBits - 1))
 	pl := id >> 28
 	put := func(i int, w0, w1, mine0, _ uint64) bool {
 		set, mu := p.set(id)
@@ -1393,7 +1405,7 @@ func (f *Filter) realign(h uint64, i int, w0, old, tg, now uint64) (w1 uint64, o
 	if old>>tagShift != tg || isHot(old) {
 		return 0, false, false
 	}
-	m := &f.moves[h>>(64-claimStripeBits)]
+	m := f.moveOf(tg)
 	m.begun.Add(1)
 	defer m.done.Add(1)
 	if !atomic.CompareAndSwapUint64(&f.words[i+1], old, busy) {
@@ -1510,7 +1522,7 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 		f.putBack(f.stashID(h, fp, tg), s0, s1, now)
 	}
 	if room { // in the table, or back in the room or the stash
-		f.moves[h>>(64-claimStripeBits)].done.Add(1)
+		f.moveOf(tg).done.Add(1)
 	}
 	if ci == -1 {
 		return Result{Count: -1}
@@ -1631,6 +1643,9 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
 			for s := 0; s < wordsPerLine; s += 2 {
 				w0 := atomic.LoadUint64(&f.words[base+s])
 				if w0 == 0 || age(now, w0&tsMask) > f.horizon {
+					if testHookOpenSeen != nil {
+						testHookOpenSeen(base + s)
+					}
 					if f.putOver(put, base+s, w0, atomic.LoadUint64(&f.words[base+s+1]), mine[li], w1) {
 						return base + s
 					}
@@ -1667,8 +1682,9 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
 				ts := w0 & tsMask
 				vw1 := atomic.LoadUint64(&f.words[base+s+1])
 				// Read after the slot: a copy goes in only once its move is
-				// counted, so a key whose move is under way is left alone.
-				if mv := &f.moves[w0>>(64-claimStripeBits)]; mv.begun.Load() != mv.done.Load() {
+				// counted, so a key whose move is under way is left alone. A
+				// busy word1 (a hold, or a move's hidden copy) can't be taken.
+				if mv := f.moveOf(vw1 >> tagShift); vw1>>tagShift == tagBusy || mv.begun.Load() != mv.done.Load() {
 					continue
 				}
 				score := min(f.mass(f.slotID(line, w0, vw1), vw1, ts, now), 1<<16-1)<<48 | ts
@@ -1698,7 +1714,7 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
 		// A move of the victim's stripe that began after the scan may have
 		// copied the victim, and its hand-off would then fail: back off (see
 		// moveCount).
-		m := &f.moves[vs]
+		m := f.moveOf(victimW1 >> tagShift)
 		m.evicting.Add(1)
 		defer m.evicting.Add(-1)
 		if m.begun.Load() != m.done.Load() {
@@ -1730,17 +1746,21 @@ func (f *Filter) putNew(put putFunc, i int, w0, w1, mine0, mine1 uint64) bool {
 	return f.install(i, w0, w1, mine0, mine1)
 }
 
-// putOver is putNew over slot i's expired occupant w0 (0: none). The hold
-// (word1 busy until word0 is taken) counts as a move of the occupant's
-// stripe: a touch at a clock that finds the occupant live may move word0
-// on during it (the install then puts word1 back), and its count, finding
-// word1 busy, looks the key up again; that lookup, or another touch's,
-// must not miss the slot and put the key in a second one (claims A27).
+// putOver is putNew over slot i's expired occupant w0 (0: none), whose
+// word1 read w1. The hold (word1 busy until word0 is taken) counts as a
+// move of the stripe of w1's tag, whoever has w1 by then: a touch at a
+// clock that finds the occupant live may move word0 on during it (the
+// install then puts word1 back), and its count, finding word1 busy, looks
+// the key up again; that lookup, or another touch's, must not miss the
+// slot and put the key in a second one (claims A27). w0 and w1 are two
+// reads: a key installed between them has w1, and the hold, counted on
+// w0's stripe (or on none, over a word0 of 0), hid it from its own touches
+// and reads (claims A28).
 func (f *Filter) putOver(put putFunc, i int, w0, w1, mine0, mine1 uint64) bool {
-	if w0 == 0 {
+	if w1 == 0 || w1>>tagShift == tagBusy { // free (word1 is 0 only once word0 is), or held: no hold to count
 		return f.putNew(put, i, w0, w1, mine0, mine1)
 	}
-	m := &f.moves[w0>>(64-claimStripeBits)]
+	m := f.moveOf(w1 >> tagShift) // whoever holds w1 when the install takes it
 	m.begun.Add(1)
 	ok := f.putNew(put, i, w0, w1, mine0, mine1)
 	m.done.Add(1)
@@ -1829,9 +1849,9 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
 	}
 	a := f.alt(line, w0>>48)
 	base := int(a * wordsPerLine)
-	moved := w0 ^ dispBit                   // displaced iff it wasn't
-	m := &f.moves[w0>>(64-claimStripeBits)] // the entry's key's stripe (its hash's top bits are its fp's)
-	replace := func(d int) bool {           // the hidden copy is at d; now take the source
+	moved := w0 ^ dispBit         // displaced iff it wasn't
+	m := f.moveOf(w1 >> tagShift) // the entry's key's stripe
+	replace := func(d int) bool { // the hidden copy is at d; now take the source
 		defer m.done.Add(1)
 		if parent != nil {
 			parent.begun.Add(1) // the parent's copy goes in (hidden) with this install
@@ -1933,11 +1953,11 @@ func (f *Filter) decayStep(now uint64, budget uint64) int {
 // fingerprint with an empty register, a slot no lookup matches (claims
 // A26).
 //
-// The hold counts as a move of the occupant's stripe, as realign's does: a
-// touch at a clock that finds the occupant live may move word0 on during
-// it (the sweep then puts word1 back), and its count, finding word1 busy,
-// looks the key up again. That lookup must not miss the slot and put the
-// key in a second one.
+// The hold counts as a move of the stripe of the word1 it takes busy, as
+// every hold does (moveOf): a touch at a clock that finds the occupant
+// live may move word0 on during it (the sweep then puts word1 back), and
+// its count, finding word1 busy, looks the key up again. That lookup must
+// not miss the slot and put the key in a second one.
 func (f *Filter) sweepLine(line, now uint64) {
 	base := int(line * wordsPerLine)
 	for s := 0; s < wordsPerLine; s += 2 {
@@ -1945,11 +1965,17 @@ func (f *Filter) sweepLine(line, now uint64) {
 		if w0 == 0 || age(now, w0&tsMask) <= f.horizon {
 			continue
 		}
+		if testHookSweepSeen != nil {
+			testHookSweepSeen(base + s)
+		}
 		w1 := atomic.LoadUint64(&f.words[base+s+1])
 		if w1>>tagShift == tagBusy {
 			continue // being handed over
 		}
-		m := &f.moves[w0>>(64-claimStripeBits)] // the occupant's stripe (its hash's top bits are its fp's)
+		if testHookSweepRead != nil {
+			testHookSweepRead(base + s)
+		}
+		m := f.moveOf(w1 >> tagShift) // the stripe of whoever holds w1 when the CAS takes it
 		m.begun.Add(1)
 		if !atomic.CompareAndSwapUint64(&f.words[base+s+1], w1, busy) {
 			m.done.Add(1)

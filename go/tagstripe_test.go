@@ -1,6 +1,7 @@
 package temporalfilter
 
 import (
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -9,7 +10,7 @@ import (
 // Races where a CAS from a value read earlier takes a slot that changed
 // hands: a slot's word1 isn't unique to its occupant, since two keys with
 // the same 12-bit tag have bit-identical first registers in one unit, and a
-// holder reads word0 and word1 in two loads (claims A28, A29).
+// holder reads word0 and word1 in two loads (claims A28-A30).
 
 // keyAt: a hash with primary line line, fingerprint fp and tag tg, whose
 // touches don't run the inline decay step.
@@ -452,5 +453,49 @@ func TestSweepSameTagHoldHidesKey(t *testing.T) {
 	waitFor(t, done, "K's touch")
 	if sl, r := slotsOf(f, k), f.CountAt(k, f.horizon, tS); len(sl) != 1 || r.Upper < 2 && !r.Saturated {
 		t.Fatalf("K in slots %v, reads %+v after 2 touches", sl, r)
+	}
+}
+
+// TestStaleHotResetKeepsTouches (claims A30): K is hot. At t1 touch A
+// finds K's slot past the horizon and resets it; touch B, after A's word0,
+// finds K live. Before, A moved word0, then reset whatever word1 held by a
+// CAS: B's event was gone whether B had added to the entry (word1
+// unchanged: 300 events at sweepT0 stay in the entry's oldest bucket 25
+// units on, so B doesn't demote it; case 4291's kind) or demoted it (50
+// units on, the entry's events are past it, and B hands the register, with
+// its event, back to the slot; case 3490's kind).
+func TestStaleHotResetKeepsTouches(t *testing.T) {
+	for _, gap := range []uint64{25, 50} {
+		t.Run(fmt.Sprintf("gap%d", gap), func(t *testing.T) { staleHotReset(t, gap) })
+	}
+}
+
+func staleHotReset(t *testing.T, gap uint64) {
+	f := newMinuteFilter(t, 1000)
+	k := keyAt(f, 7, twoLineFPs(f, 7, 0x6600, 1)[0], 0x321)
+	for range 300 {
+		f.TouchAt(k, 0, sweepT0)
+	}
+	if sl := slotsOf(f, k); len(sl) != 1 || !isHot(atomic.LoadUint64(&f.words[sl[0]+1])) {
+		t.Fatalf("setup: K in %v, not hot", sl)
+	}
+	t1 := sweepT0 + gap*f.unit
+	fired := false
+	var done chan struct{}
+	testHookStamped = func() {
+		if !fired {
+			fired = true
+			done = during(func() { f.TouchAt(k, 0, t1) })
+		}
+	}
+	defer func() { testHookStamped = nil }()
+	f.TouchAt(k, 0, t1)
+	testHookStamped = nil
+	if !fired {
+		t.Fatal("A did not move K's last touch")
+	}
+	waitFor(t, done, "B's touch")
+	if r := f.CountAt(k, f.horizon, t1); r.Upper < 2 && !r.Saturated {
+		t.Fatalf("K reads %+v after 2 touches at t1", r)
 	}
 }

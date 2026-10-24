@@ -1007,7 +1007,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 		var w1, ref uint64
 		var over, ok bool
 		nu, lu := f.unitOf(now), f.unitOf(last)
-		if old, far, wait := f.farAhead(i, nu, lu); wait {
+		if old, far, wait := f.farAhead(i, nu, lu, stale); wait {
 			runtime.Gosched()
 			continue // another touch is realigning the slot (see hit)
 		} else if far {
@@ -1340,7 +1340,11 @@ func (f *Filter) bgPlace() {
 // of the key between its two writes read the old register as the new
 // unit's, and the first then aged that touch's event by the gap, or, past
 // the horizon, reset it away (claims A21). A hot entry keeps its own full
-// unit: its key's touches all count lock-free.
+// unit: its key's touches count lock-free, except one that finds the slot
+// past the horizon, whose reset goes through realign too. Before, it moved
+// word0, then reset word1 by a CAS from the hot pointer; a touch after its
+// word0 found the key live and added to the entry, which leaves word1 as it
+// was, and the reset dropped that event (claims A30).
 func (f *Filter) hit(h uint64, i int, fp, tg, window, now uint64, wantCount bool) (Result, bool) {
 	w0 := atomic.LoadUint64(&f.words[i])
 	if w0>>48 != fp {
@@ -1351,7 +1355,7 @@ func (f *Filter) hit(h uint64, i int, fp, tg, window, now uint64, wantCount bool
 	var w1, ref uint64
 	var over, ok bool
 	nu, lu := f.unitOf(now), f.unitOf(last)
-	if old, far, wait := f.farAhead(i, nu, lu); wait {
+	if old, far, wait := f.farAhead(i, nu, lu, stale); wait {
 		return Result{}, false
 	} else if far {
 		w1, over, ok = f.realign(h, i, w0, old, tg, now)
@@ -1386,7 +1390,7 @@ func (f *Filter) hit(h uint64, i int, fp, tg, window, now uint64, wantCount bool
 // hot entry's word1, which counts lock-free whatever the gap). wait: word1
 // is busy, so its unit can't be read; a touch that moved word0 on now could
 // leave it 8 units past the register the holder publishes.
-func (f *Filter) farAhead(i int, nu, lu int64) (old uint64, far, wait bool) {
+func (f *Filter) farAhead(i int, nu, lu int64, stale bool) (old uint64, far, wait bool) {
 	if nu <= lu {
 		return 0, false, false
 	}
@@ -1394,17 +1398,22 @@ func (f *Filter) farAhead(i int, nu, lu int64) (old uint64, far, wait bool) {
 	if old>>tagShift == tagBusy {
 		return old, false, true
 	}
-	return old, !isHot(old) && nu-regEpoch(old, lu) > epochMask/2, false
+	if isHot(old) { // its own full unit; but a reset must hold the slot (realign)
+		return old, stale, false
+	}
+	return old, nu-regEpoch(old, lu) > epochMask/2, false
 }
 
 // realign is hit's count of a touch at now 8 or more units past the unit of
-// slot i's register (old, read against word0 w0): word1 goes busy, word0
+// slot i's register (old, read against word0 w0), or past the horizon of
+// the slot of a hot key (old points to its entry, which it gives up and
+// starts afresh): word1 goes busy, word0
 // moves to now, then the register, advanced to now's unit with the touch
 // counted, is published in word1. While word1 is busy, a lookup that
 // misses the slot looks again: the hold counts as a move of the key's
 // stripe. ok is false if the slot changed meanwhile.
 func (f *Filter) realign(h uint64, i int, w0, old, tg, now uint64) (w1 uint64, over, ok bool) {
-	if old>>tagShift != tg || isHot(old) {
+	if old>>tagShift != tg || isHot(old) && age(now, w0&tsMask) <= f.horizon {
 		return 0, false, false
 	}
 	m := f.moveOf(tg)

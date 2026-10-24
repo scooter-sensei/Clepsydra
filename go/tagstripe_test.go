@@ -9,7 +9,7 @@ import (
 // Races where a CAS from a value read earlier takes a slot that changed
 // hands: a slot's word1 isn't unique to its occupant, since two keys with
 // the same 12-bit tag have bit-identical first registers in one unit, and a
-// holder reads word0 and word1 in two loads (claims A28).
+// holder reads word0 and word1 in two loads (claims A28, A29).
 
 // keyAt: a hash with primary line line, fingerprint fp and tag tg, whose
 // touches don't run the inline decay step.
@@ -86,6 +86,220 @@ func waitFor(t *testing.T, done chan struct{}, what string) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatalf("%s did not return", what)
+	}
+}
+
+// TestCountAcrossSameTagHandOver (claims A29): K's touch at the tick of its
+// last checks K's slot, then, before its count's CAS, an insert of K2,
+// whose tag is K's, evicts K (one event, the lightest of the 8 slots) and
+// takes its slot with a fresh register bit-identical to K's. The CAS from
+// K's register then succeeds, into K2's: before, K's history went to the
+// stash without the touch (case 12598's kind).
+func TestCountAcrossSameTagHandOver(t *testing.T) {
+	f := newMinuteFilter(t, 4)
+	if f.lines != 2 {
+		t.Fatalf("lines %d, want 2", f.lines)
+	}
+	const t0, T = 60_000, 0x5a5
+	fps := twoLineFPs(f, 0, 0x1100, 9)
+	for j := range 7 { // two events each
+		h := keyAt(f, uint64(j%2), fps[j], 0x100+uint64(j))
+		f.TouchAt(h, 0, t0)
+		f.TouchAt(h, 0, t0)
+	}
+	k, k2 := keyAt(f, 1, fps[7], T), keyAt(f, 0, fps[8], T)
+	f.TouchAt(k, 0, t0)
+	ks := slotsOf(f, k)
+	if len(ks) != 1 || f.Occupancy(t0) != 8 {
+		t.Fatalf("setup: K in %v, occupancy %d", ks, f.Occupancy(t0))
+	}
+	i, kw1 := ks[0], atomic.LoadUint64(&f.words[ks[0]+1])
+	fired, same := false, false
+	testHookBumping = func(j int) {
+		if fired || j != i {
+			return
+		}
+		fired = true
+		f.TouchAt(k2, 0, t0)
+		sl := slotsOf(f, k2)
+		same = len(sl) == 1 && sl[0] == i && atomic.LoadUint64(&f.words[i+1]) == kw1
+	}
+	defer func() { testHookBumping = nil }()
+	f.TouchAt(k, 0, t0)
+	testHookBumping = nil
+	if !fired || !same {
+		t.Fatalf("K2 did not take K's slot with K's word1 (%#x) during K's count", kw1)
+	}
+	if r := f.CountAt(k, f.horizon, t0); r.Upper < 2 && !r.Saturated {
+		t.Fatalf("K reads %+v after 2 touches", r)
+	}
+	if r := f.CountAt(k2, f.horizon, t0); r.Upper < 1 {
+		t.Fatalf("K2 reads %+v after 1 touch", r)
+	}
+}
+
+// TestCountThenEvictionCountsOnce (claims A29): right after K's count's
+// CAS, an insert of K2, of another tag, evicts K (two events now, the
+// lightest of the 8 slots) and takes its slot. word0, read again, is K2's,
+// but the count went with K's history to the stash: K must not count it
+// again (the slot holds another tag). The first fix B looked again on any
+// change of word0, and K read one high (the racy stress's kind).
+func TestCountThenEvictionCountsOnce(t *testing.T) {
+	f := newMinuteFilter(t, 4)
+	if f.lines != 2 {
+		t.Fatalf("lines %d, want 2", f.lines)
+	}
+	const t0 = 60_000
+	fps := twoLineFPs(f, 0, 0x1100, 9)
+	for j := range 7 { // three events each
+		h := keyAt(f, uint64(j%2), fps[j], 0x100+uint64(j))
+		for range 3 {
+			f.TouchAt(h, 0, t0)
+		}
+	}
+	k, k2 := keyAt(f, 1, fps[7], 0x5a5), keyAt(f, 0, fps[8], 0x5a6)
+	f.TouchAt(k, 0, t0)
+	ks := slotsOf(f, k)
+	if len(ks) != 1 || f.Occupancy(t0) != 8 {
+		t.Fatalf("setup: K in %v, occupancy %d", ks, f.Occupancy(t0))
+	}
+	i := ks[0]
+	fired, taken := false, false
+	testHookBumped = func(j int) {
+		if fired || j != i {
+			return
+		}
+		fired = true
+		f.TouchAt(k2, 0, t0)
+		sl := slotsOf(f, k2)
+		taken = len(sl) == 1 && sl[0] == i
+	}
+	defer func() { testHookBumped = nil }()
+	f.TouchAt(k, 0, t0)
+	testHookBumped = nil
+	if !fired || !taken {
+		t.Fatal("K2 did not take K's slot after K's count")
+	}
+	if r := f.CountAt(k, f.horizon, t0); r.Count != 2 || r.Upper != 2 {
+		t.Fatalf("K reads %+v after 2 touches", r)
+	}
+}
+
+// TestCountThenMoveCountsOnce (claims A29): right after K's count's CAS,
+// an insert of N, whose two lines are full, moves K (the first entry of
+// N's first line) to K's other line and takes its slot. The count went
+// with the copy: K must not count it again.
+func TestCountThenMoveCountsOnce(t *testing.T) {
+	f := newMinuteFilter(t, 1000)
+	const p, t0 = 7, 60_000
+	fk := twoLineFPs(f, p, 0x7100, 1)[0]
+	a := f.alt(p, fk)
+	var fn uint64
+	for _, c := range twoLineFPs(f, p, 0x7200, 64) {
+		if b := f.alt(p, c); b != a {
+			fn = c
+			break
+		}
+	}
+	b := f.alt(p, fn)
+	k := keyAt(f, p, fk, 0x5a5)
+	f.TouchAt(k, 0, t0)
+	for j, l := range []uint64{p, p, p, b, b, b, b} { // N's lines full, K's other line empty
+		h := keyAt(f, l, 0x7300+uint64(j), 0x100+uint64(j))
+		f.TouchAt(h, 0, t0)
+		f.TouchAt(h, 0, t0)
+	}
+	n := keyAt(f, p, fn, 0x5a6)
+	ks := slotsOf(f, k)
+	if len(ks) != 1 || ks[0] != int(p*wordsPerLine) || f.Occupancy(t0) != 8 {
+		t.Fatalf("setup: K in %v, occupancy %d", ks, f.Occupancy(t0))
+	}
+	i := ks[0]
+	fired, moved := false, false
+	testHookBumped = func(j int) {
+		if fired || j != i {
+			return
+		}
+		fired = true
+		f.TouchAt(n, 0, t0)
+		sn, sk := slotsOf(f, n), slotsOf(f, k)
+		moved = len(sn) == 1 && sn[0] == i && len(sk) == 1 && uint64(sk[0]/wordsPerLine) == a
+	}
+	defer func() { testHookBumped = nil }()
+	f.TouchAt(k, 0, t0)
+	testHookBumped = nil
+	if !fired || !moved {
+		t.Fatal("N did not move K out of its slot after K's count")
+	}
+	if r := f.CountAt(k, f.horizon, t0); r.Count != 2 || r.Upper != 2 {
+		t.Fatalf("K reads %+v after 2 touches", r)
+	}
+}
+
+// TestCountIntoHeldSameTagSlotLooksAgain (claims A29): K's count lands in
+// K2's register, as in TestCountAcrossSameTagHandOver; then, before K's
+// touch reads word0 again, a touch of K2 10 units on holds the slot
+// (realign) for 20 ms. word0 is K2's and word1 busy: the touch must wait
+// out the hold, which puts back a register of K's tag, and count afresh.
+// Reading the busy word1 as another tag, K would read one low.
+func TestCountIntoHeldSameTagSlotLooksAgain(t *testing.T) {
+	f := newMinuteFilter(t, 4)
+	if f.lines != 2 {
+		t.Fatalf("lines %d, want 2", f.lines)
+	}
+	const t0, T = 60_000, 0x5a5
+	fps := twoLineFPs(f, 0, 0x1100, 9)
+	for j := range 7 { // two events each
+		h := keyAt(f, uint64(j%2), fps[j], 0x100+uint64(j))
+		f.TouchAt(h, 0, t0)
+		f.TouchAt(h, 0, t0)
+	}
+	k, k2 := keyAt(f, 1, fps[7], T), keyAt(f, 0, fps[8], T)
+	f.TouchAt(k, 0, t0)
+	ks := slotsOf(f, k)
+	if len(ks) != 1 || f.Occupancy(t0) != 8 {
+		t.Fatalf("setup: K in %v, occupancy %d", ks, f.Occupancy(t0))
+	}
+	i, kw1 := ks[0], atomic.LoadUint64(&f.words[ks[0]+1])
+	t1 := t0 + 10*f.unit
+	stage := 0
+	var inHold atomic.Bool
+	held, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	testHookStamped = func() { // K2's realign, word1 busy
+		if inHold.CompareAndSwap(false, true) {
+			close(held)
+			<-release
+		}
+	}
+	testHookBumping = func(j int) {
+		if stage == 0 && j == i {
+			stage = 1
+			f.TouchAt(k2, 0, t0)
+			if sl := slotsOf(f, k2); len(sl) == 1 && sl[0] == i && atomic.LoadUint64(&f.words[i+1]) == kw1 {
+				stage = 2
+			}
+		}
+	}
+	testHookBumped = func(j int) {
+		if stage == 2 && j == i {
+			stage = 3
+			go func() {
+				f.TouchAt(k2, 0, t1)
+				close(done)
+			}()
+			<-held
+			time.AfterFunc(20*time.Millisecond, func() { close(release) })
+		}
+	}
+	defer func() { testHookStamped, testHookBumping, testHookBumped = nil, nil, nil }()
+	f.TouchAt(k, 0, t0)
+	testHookBumping, testHookBumped = nil, nil
+	if stage != 3 {
+		t.Fatalf("stage %d: K's count did not land in K2's slot", stage)
+	}
+	waitFor(t, done, "K2's touch")
+	if r := f.CountAt(k, f.horizon, t0); r.Upper < 2 && !r.Saturated {
+		t.Fatalf("K reads %+v after 2 touches", r)
 	}
 }
 

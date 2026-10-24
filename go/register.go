@@ -2,6 +2,7 @@ package temporalfilter
 
 import (
 	"math/bits"
+	"runtime"
 	"sync/atomic"
 )
 
@@ -177,13 +178,19 @@ func hot(w1 uint64) bool {
 
 // bump counts one event at now in the register of the slot at word index i,
 // which must still hold the caller's key: word0's fingerprint and displaced
-// bit fpd, word1's tag tg. It reports false, writing nothing, if the slot has
-// been handed to another key since the caller found it. word0 is checked
-// after word1 is read: a hand-over makes word1 busy before it changes word0,
-// so an old value that passes both checks still belongs to the caller's key
-// (a newcomer with the same tag can't be mistaken for it). A key whose
-// register would overflow is promoted to a hot entry instead (hot.go); a
-// promoted key's events go to its entry and word1 stays as it is.
+// bit fpd, word1's tag tg. It reports false if the slot has been handed to
+// another key since the caller found it. word0 is checked after word1 is
+// read: a hand-over makes word1 busy before it changes word0, so an old
+// value that passes both checks belonged to the caller's key when word0 was
+// read. The CAS that counts comes after, and compares word1 alone: a slot
+// handed meanwhile to a key with the same tag can hold a register
+// bit-identical to the one read (two keys' first events in one unit), and
+// the CAS then counts there. word0, read again after it, and word1 tell
+// (strayed): bump then reports false, and the caller counts the event for
+// its key afresh (the other key reads one high). Before, the event was the
+// key's no more (claims A29). A key whose register would overflow is
+// promoted to a hot entry instead (hot.go); a promoted key's events go to
+// its entry and word1 stays as it is.
 //
 // The register's epoch is read against word0's last touch as loaded here,
 // after word1 (ref, returned), not the caller's: a realign since the
@@ -222,10 +229,46 @@ func (f *Filter) bump(i int, fpd, tg, now uint64, nu int64, last uint64, lu int6
 				return pw, ref, false, true
 			}
 		}
-		if nw == old || atomic.CompareAndSwapUint64(&f.words[i+1], old, nw) {
+		if testHookBumping != nil {
+			testHookBumping(i)
+		}
+		if nw == old {
+			return nw, ref, over, true
+		}
+		if atomic.CompareAndSwapUint64(&f.words[i+1], old, nw) {
+			if testHookBumped != nil {
+				testHookBumped(i)
+			}
+			if atomic.LoadUint64(&f.words[i])>>47 != fpd && f.strayed(i, tg) {
+				return 0, 0, false, false // the count went to another key: count afresh
+			}
 			return nw, ref, over, true
 		}
 		reset = false // a concurrent touch already reset it; merge
+	}
+}
+
+// strayed reports whether bump's count, a CAS of slot i's word1 (word index)
+// from a register of the key with tag tg, may have gone to another key: the
+// caller has read word0 after the CAS, and it is no longer the key's. Either
+// the slot changed hands before the CAS, to a key whose register was
+// bit-identical to the one read, so of tag tg, and the count went to that
+// key; or it changed hands after, and the count went with the key's history
+// (to the stash, or the key's new slot), and the slot now holds a key of
+// another tag (but one time in 4096). word1 tells them apart once any hold
+// of the slot is over: a holder may put back the register it took (realign,
+// the sweep, an install that lost word0), so strayed waits out a busy word1
+// (holds never wait on touches) and decides on the load it waited on. A
+// later hand-over to a key of tag tg reads as the first case, and the event
+// is counted twice (the key reads one high); a same-tag key handed on to a
+// key of another tag within the touch's window, as the second (one low).
+func (f *Filter) strayed(i int, tg uint64) bool {
+	for {
+		w1 := atomic.LoadUint64(&f.words[i+1])
+		if w1>>tagShift != tagBusy {
+			return w1 != 0 && w1>>tagShift == tg // 0: a free slot (0 is also a tag)
+		}
+		runtime.Gosched()
 	}
 }
 

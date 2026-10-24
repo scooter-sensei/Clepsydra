@@ -333,17 +333,30 @@ func (f *Filter) hotClose(idx, id uint64) (v view, ok bool) {
 // promote moves the register of the key in slot i (word index; w0 and old:
 // its words, last: its lastTouch before this touch) to a hot entry with
 // this touch counted, instead of letting the touch spill. It returns the
-// slot's new word1, or ok false if no entry is free or word1 changed
-// meanwhile.
+// slot's new word1, or ok false if no entry is free, word1 changed
+// meanwhile, or the slot is another key's (claims A29).
 func (f *Filter) promote(i int, w0, old, tg, last, now uint64) (w1 uint64, ok bool) {
 	w1, idx, id := f.hotEntryFor(i, w0, old, tg, last, now)
 	if w1 == 0 {
 		return 0, false
 	}
-	if !atomic.CompareAndSwapUint64(&f.words[i+1], old, w1) {
+	// Published under a hold, counted as a move, not by a CAS from old: a
+	// slot handed to a key with old's tag can hold old bit for bit, and
+	// would point to this key's entry. Under the hold, word0 says whose the
+	// slot is.
+	m := f.moveOf(tg)
+	m.begun.Add(1)
+	defer m.done.Add(1)
+	if !atomic.CompareAndSwapUint64(&f.words[i+1], old, busy) {
 		f.hotClose(idx, id) // never published
 		return 0, false
 	}
+	if atomic.LoadUint64(&f.words[i])>>47 != w0>>47 {
+		atomic.StoreUint64(&f.words[i+1], old)
+		f.hotClose(idx, id)
+		return 0, false
+	}
+	atomic.StoreUint64(&f.words[i+1], w1)
 	f.promoted.Add(1)
 	return w1, true
 }

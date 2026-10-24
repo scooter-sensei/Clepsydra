@@ -2,7 +2,7 @@
 # Model checks of the slot protocol (verify/tla/*.tla) with TLC.
 #
 #   verify/tla.sh [model...]   WaitRoom, RegisterEpoch, Relocate, RoomWays, SlotHold,
-#                              TagStripe
+#                              TagStripe, BumpABA
 #                              (default: all): the protocol as committed at
 #                              a few sizes, then each guard undone (each
 #                              must break an invariant)
@@ -160,8 +160,32 @@ tagstripe() {
 	run violation TagStripe "reread, insert over J, same tag: ReadNotLow" ReadNotLow 'Variant = "reread"' 'Holder = "insert"' 'Start = "J"' 'SameTag = TRUE' 'Reader = TRUE'
 }
 
+# BumpABA (claims A29): a touch's count CAS across hand-overs: before the
+# CAS to a key with the same tag (the count lands there), after it (the
+# count went with the key's history), a hold that puts word1 back, and a
+# second hand-over.
+bumpaba() {
+	local same hold second
+	for hold in FALSE TRUE; do
+		for second in FALSE TRUE; do
+			run ok BumpABA "tag, other tag, hold $hold, second $second" "KKept KExact K2Kept" 'Variant = "tag"' 'SameTag = FALSE' "Hold = $hold" "Second = $second"
+		done
+		run ok BumpABA "tag, same tag, hold $hold" "KKept K2Kept" 'Variant = "tag"' 'SameTag = TRUE' "Hold = $hold" 'Second = FALSE'
+	done
+	run violation BumpABA "tag, same tag after the count: KExact" KExact 'Variant = "tag"' 'SameTag = TRUE' 'Hold = FALSE' 'Second = FALSE'
+	run violation BumpABA "tag, same tag, then another: KKept" KKept 'Variant = "tag"' 'SameTag = TRUE' 'Hold = FALSE' 'Second = TRUE'
+	run violation BumpABA "noWait, same tag, hold: KKept" KKept 'Variant = "noWait"' 'SameTag = TRUE' 'Hold = TRUE' 'Second = FALSE'
+	for same in FALSE TRUE; do
+		run ok BumpABA "post, same tag $same, hold, second" "KKept K2Kept" 'Variant = "post"' "SameTag = $same" 'Hold = TRUE' 'Second = TRUE'
+	done
+	run violation BumpABA "post (first fix B), other tag: KExact" KExact 'Variant = "post"' 'SameTag = FALSE' 'Hold = FALSE' 'Second = FALSE'
+	run ok BumpABA "old, other tag, hold, second" "KKept KExact K2Kept" 'Variant = "old"' 'SameTag = FALSE' 'Hold = TRUE' 'Second = TRUE'
+	run violation BumpABA "old (before A29), same tag: KKept" KKept 'Variant = "old"' 'SameTag = TRUE' 'Hold = FALSE' 'Second = FALSE'
+	run violation BumpABA "tag, reachable: NeverAgain" NeverAgain 'Variant = "tag"' 'SameTag = TRUE' 'Hold = FALSE' 'Second = FALSE'
+}
+
 models=("$@")
-[ ${#models[@]} -gt 0 ] || models=(WaitRoom RegisterEpoch Relocate RoomWays SlotHold TagStripe)
+[ ${#models[@]} -gt 0 ] || models=(WaitRoom RegisterEpoch Relocate RoomWays SlotHold TagStripe BumpABA)
 for m in "${models[@]}"; do
 	case $m in
 	WaitRoom) waitroom ;;
@@ -170,6 +194,7 @@ for m in "${models[@]}"; do
 	RoomWays) roomways ;;
 	SlotHold) slothold ;;
 	TagStripe) tagstripe ;;
+	BumpABA) bumpaba ;;
 	*) echo "unknown model $m"; bad=1 ;;
 	esac
 done

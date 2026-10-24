@@ -255,12 +255,14 @@ type Filter struct {
 // key's wait-room entry busy, before it installs the key; testHookSweeping
 // after the decay sweep's first write to an expired slot, before its last;
 // testHookInstalling after an install takes slot i's word1 busy, before
-// its word0; testHookOpenSeen after an insert reads slot i's word0 free
+// its word0; testHookBumping after bump checks slot i's words, before its
+// count's CAS; testHookBumped after that CAS succeeds, before bump reads
+// word0 again; testHookOpenSeen after an insert reads slot i's word0 free
 // or expired, before its word1; testHookSweepSeen after the decay sweep
 // reads slot i's word0, before its word1; testHookSweepRead after it reads
 // word1, before its hold.
 var testHookCopied, testHookVictim, testHookTaken, testHookStamped, testHookPlacing, testHookSweeping func()
-var testHookPicked, testHookInstalling, testHookOpenSeen, testHookSweepSeen, testHookSweepRead func(i int)
+var testHookPicked, testHookInstalling, testHookBumping, testHookBumped, testHookOpenSeen, testHookSweepSeen, testHookSweepRead func(i int)
 
 // forceCT turns ConstantTime on in every filter (tests: TF_CT=1).
 var forceCT bool

@@ -2,7 +2,7 @@
 # Model checks of the slot protocol (verify/tla/*.tla) with TLC.
 #
 #   verify/tla.sh [model...]   WaitRoom, RegisterEpoch, Relocate, RoomWays, SlotHold,
-#                              TagStripe, BumpABA
+#                              TagStripe, BumpABA, HotEntry
 #                              (default: all): the protocol as committed at
 #                              a few sizes, then each guard undone (each
 #                              must break an invariant)
@@ -41,7 +41,7 @@ run() {
 	(cd "$d" && java -XX:+UseParallelGC -cp "$J" tlc2.TLC -workers "${TLC_WORKERS:-4}" -cleanup "$m" >tlc.log 2>&1)
 	grep -q 'is violated\|Deadlock reached\|^Error:' "$d/tlc.log" && got=violation
 	states=$(grep -o '[0-9,]* distinct states found' "$d/tlc.log" | tail -1)
-	why=$(grep -m1 -o 'Invariant [A-Za-z]* is violated\|Deadlock reached\|unexpected exception\|Parsing or semantic analysis failed' "$d/tlc.log")
+	why=$(grep -m1 -o 'Invariant [A-Za-z0-9]* is violated\|Deadlock reached\|unexpected exception\|Parsing or semantic analysis failed' "$d/tlc.log")
 	printf '%-13s %-40s %-9s (want %s) %s%s\n' "$m" "$label" "$got" "$want" "$states" "${why:+; $why}"
 	[ "$got" = "$want" ] || bad=1
 }
@@ -184,8 +184,27 @@ bumpaba() {
 	run violation BumpABA "tag, reachable: NeverAgain" NeverAgain 'Variant = "tag"' 'SameTag = TRUE' 'Hold = FALSE' 'Second = FALSE'
 }
 
+# HotEntry: a hot entry's lock-free add (bucket 0's word: closed bit and
+# generation) against a writer that advances the entry, demotes it, or
+# reclaims it for another key.
+hotentry() {
+	local w a v
+	for w in advance demote reclaim; do
+		for a in 1 2; do
+			run ok HotEntry "fixed, $w, $a adder(s)" "KExact K3Exact" 'Variant = "fixed"' "Writer = \"$w\"" "Adders = $(procs a "$a")"
+		done
+	done
+	for v in NeverRetried NeverLocked; do
+		run violation HotEntry "fixed, reachable: $v" "$v" 'Variant = "fixed"' 'Writer = "advance"' "Adders = $(procs a 1)"
+	done
+	run violation HotEntry "noGen, demote: KExact" KExact 'Variant = "noGen"' 'Writer = "demote"' "Adders = $(procs a 1)"
+	run violation HotEntry "noGen, reclaim: K3Exact" K3Exact 'Variant = "noGen"' 'Writer = "reclaim"' "Adders = $(procs a 1)"
+	run violation HotEntry "noClose, advance: KExact" KExact 'Variant = "noClose"' 'Writer = "advance"' "Adders = $(procs a 1)"
+	run violation HotEntry "idFirst, reclaim: K3Exact" K3Exact 'Variant = "idFirst"' 'Writer = "reclaim"' "Adders = $(procs a 1)"
+}
+
 models=("$@")
-[ ${#models[@]} -gt 0 ] || models=(WaitRoom RegisterEpoch Relocate RoomWays SlotHold TagStripe BumpABA)
+[ ${#models[@]} -gt 0 ] || models=(WaitRoom RegisterEpoch Relocate RoomWays SlotHold TagStripe BumpABA HotEntry)
 for m in "${models[@]}"; do
 	case $m in
 	WaitRoom) waitroom ;;
@@ -195,6 +214,7 @@ for m in "${models[@]}"; do
 	SlotHold) slothold ;;
 	TagStripe) tagstripe ;;
 	BumpABA) bumpaba ;;
+	HotEntry) hotentry ;;
 	*) echo "unknown model $m"; bad=1 ;;
 	esac
 done

@@ -21,6 +21,8 @@ import (
 // low, so a low answer whose bucket floor is live is counted, not failed. Each goroutine owns
 // its keys, so it knows their true counts exactly; the clock is shared and
 // moved by its own goroutine. Run it under -race too (go/test.sh stress).
+// TF_STRESS_TAGS=n amplifies tag coincidences as the concurrent fuzzer's
+// TF_CFUZZ_TAGS does (tagAmp; the soak uses fewer than 20,000 keys).
 func TestStressSoak(t *testing.T) {
 	d, err := time.ParseDuration(os.Getenv("TF_STRESS"))
 	if err != nil || d <= 0 {
@@ -57,6 +59,7 @@ func TestStressSoak(t *testing.T) {
 		}
 	}()
 	var ops, queries, sat, low, floored atomic.Int64
+	amp := newTagAmp("TF_STRESS_TAGS")
 	var firstLow atomic.Value
 	for g := range workers {
 		wg.Add(1)
@@ -65,9 +68,10 @@ func TestStressSoak(t *testing.T) {
 			rng := rand.New(rand.NewPCG(uint64(g), 1))
 			// Owned keys: a few heavy ones that always come back, plus a
 			// pool whose size cycles to push the table past capacity.
+			cache := map[uint64]uint64{}
 			heavy := make([]uint64, 8)
 			for i := range heavy {
-				heavy[i] = rng.Uint64()
+				heavy[i] = amp.h(rng.Uint64(), cache)
 			}
 			logs := map[uint64][]uint64{}
 			hs := make([]uint64, 16)
@@ -85,7 +89,7 @@ func TestStressSoak(t *testing.T) {
 				if rng.IntN(32) == 0 {
 					h = heavy[rng.IntN(len(heavy))]
 				} else {
-					h = mix64(uint64(g)<<40 | rng.Uint64N(pool))
+					h = amp.h(mix64(uint64(g)<<40|rng.Uint64N(pool)), cache)
 				}
 				now := clock.Load()
 				switch op := rng.IntN(10); {

@@ -26,7 +26,9 @@ import (
 // touches returned before it began. Events a call at the newest clock any
 // call has used could have expired are left out of the truth. With
 // TF_CFUZZ_STRAGGLE=1, goroutine 0 of every case is a straggler, its calls
-// half a horizon to a horizon behind the clock. A case's configuration and
+// half a horizon to a horizon behind the clock. With TF_CFUZZ_TAGS=n,
+// every key's tag is one of n values and its fingerprint unique in the
+// case, and capacity at most 4096 (tagAmp). A case's configuration and
 // streams come from its seed (TF_CFUZZ_SEED, default 1, for the first), but
 // its run depends on its races: TF_CFUZZ_CASE=<seed> runs one case
 // TF_CFUZZ_RUNS times (default 20).
@@ -80,6 +82,11 @@ func TestFuzzConcurrent(t *testing.T) {
 func cfuzzCase(seed uint64) (res fuzzResult) {
 	rng := rand.New(rand.NewPCG(seed, 0xc0_f022))
 	cfg, capacity, H := fuzzConfig(rng, &res)
+	amp := newTagAmp("TF_CFUZZ_TAGS")
+	if amp != nil { // fewer than 65,536 keys a case
+		capacity = min(capacity, 4096)
+		cfg.Capacity = capacity
+	}
 	var clock, newest atomic.Uint64 // the clock callers read; the newest any call has used
 	clock.Store(1 + rng.Uint64N(1<<30))
 	newest.Store(clock.Load())
@@ -111,7 +118,7 @@ func cfuzzCase(seed uint64) (res fuzzResult) {
 		desc += " straggler"
 	}
 	for i := range sh.keys {
-		sh.keys[i] = mix64(1<<62 | uint64(i))
+		sh.keys[i] = amp.h(mix64(1<<62|uint64(i)), nil)
 	}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -120,7 +127,7 @@ func cfuzzCase(seed uint64) (res fuzzResult) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			r := cfuzzWorker(f, uint64(g), wseed, ops, capacity/workers+1, H, maxLag, perH, straggle && g == 0, &clock, &newest, sh)
+			r := cfuzzWorker(f, uint64(g), wseed, ops, capacity/workers+1, H, maxLag, perH, straggle && g == 0, &clock, &newest, sh, amp)
 			mu.Lock()
 			defer mu.Unlock()
 			res.add(r)
@@ -164,9 +171,10 @@ func (s *cfuzzShared) snapshot(h uint64) *fuzzTruth {
 // clock: a caller descheduled that long, or one passing its own timestamps.
 // Its events stay in the truth while a horizon of the newest clock holds
 // them; its touches then race inserts and sweeps that see its keys expired.
-func cfuzzWorker(f *Filter, g, seed uint64, ops, share int, H, maxLag uint64, perH float64, straggler bool, clock, newest *atomic.Uint64, sh *cfuzzShared) (res fuzzResult) {
+func cfuzzWorker(f *Filter, g, seed uint64, ops, share int, H, maxLag uint64, perH float64, straggler bool, clock, newest *atomic.Uint64, sh *cfuzzShared, amp *tagAmp) (res fuzzResult) {
 	rng := rand.New(rand.NewPCG(seed, g))
-	key := func(k uint64) uint64 { return mix64(g<<48 ^ k) }
+	cache := map[uint64]uint64{}
+	key := func(k uint64) uint64 { return amp.h(mix64(g<<48^k), cache) }
 	heavy := make([]uint64, 1+rng.IntN(4))
 	for i := range heavy {
 		heavy[i] = key(1<<40 | uint64(i))

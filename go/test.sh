@@ -10,7 +10,9 @@
 #                          working tree, alternated on this host; fails if one is > PERF_MAX (1.20) x slower
 #   ./test.sh stress       race detector on the full suite, racy regression tests 300x,
 #                          concurrent soak with the Upper-bound check (TF_STRESS, default 60s), plain, -race and Background,
-#                          and the Upper-contract fuzzer over random configurations (TF_FUZZ, default 1e9 operations)
+#                          and Background with tags shared 8 ways (TF_STRESS_TAGS=8), the Upper-contract fuzzer over random
+#                          configurations (TF_FUZZ, default 1e9 operations), and the concurrent fuzzer
+#                          (TF_CFUZZ, default 5m), plain and with tags shared 8 ways (TF_CFUZZ_TAGS=8)
 #   ./test.sh all          smoke, sanity, regression, stress (perf is host-dependent: run it on purpose)
 #
 # Reports go to $OUT (default ./verify-report/<tier>).
@@ -18,7 +20,7 @@ set -uo pipefail
 cd "$(dirname "$0")"
 . verify/lib.sh
 tier=${1:-}
-[ -n "$tier" ] || { sed -n '2,15p' "$0"; exit 2; }
+[ -n "$tier" ] || { sed -n '2,17p' "$0"; exit 2; }
 shift
 OUT=${OUT:-verify-report/$tier}
 . verify/checks.sh
@@ -90,7 +92,10 @@ stress() {
 	check soak - env TF_STRESS="${TF_STRESS:-60s}" go test -count=1 -run '^TestStressSoak$' -v -timeout 0 .
 	check soak-race - env TF_STRESS="${TF_STRESS_RACE:-20s}" go test -race -count=1 -run '^TestStressSoak$' -v -timeout 0 .
 	check soak-background - env TF_BG=1 TF_STRESS="${TF_STRESS:-60s}" go test -count=1 -run '^TestStressSoak$' -v -timeout 0 .
+	check soak-background-tags - env TF_BG=1 TF_STRESS="${TF_STRESS:-60s}" TF_STRESS_TAGS=8 go test -count=1 -run '^TestStressSoak$' -v -timeout 0 .
 	check fuzz - env TF_FUZZ="${TF_FUZZ:-1e9}" go test -count=1 -run '^TestFuzzUpper$' -v -timeout 0 .
+	check fuzz-concurrent - env TF_CFUZZ="${TF_CFUZZ:-5m}" go test -count=1 -run '^TestFuzzConcurrent$' -v -timeout 0 .
+	check fuzz-concurrent-tags - env TF_CFUZZ="${TF_CFUZZ:-5m}" TF_CFUZZ_TAGS=8 go test -count=1 -run '^TestFuzzConcurrent$' -v -timeout 0 .
 }
 
 case $tier in
@@ -100,7 +105,7 @@ all)
 	regression
 	stress
 	;;
-*) sed -n '2,15p' "$0"; exit 2 ;;
+*) sed -n '2,17p' "$0"; exit 2 ;;
 esac
 if [ $failed = 0 ]; then say "ALL PASS ($tier)"; else say "SOME CHECKS FAILED ($tier; logs in $OUT)"; fi
 exit $failed

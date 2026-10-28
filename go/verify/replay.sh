@@ -107,11 +107,18 @@ stress() {
 	mkdir -p "$d"
 	go test -c -o "$d/t.test" .
 	for re in '^TestConcurrentFirstInsertNoDuplicates$' '^TestTouchRacingRelocationKeepsCounts$' '^TestAbandonedMoveKeepsCounts$' '^TestStashConcurrentEvictions$'; do
-		local f par=4
+		# Each test its own directory: runmany's logs are run.<n>.log,
+		# which the next test's runs would overwrite.
+		local f par=4 dd="$d/${re//[^A-Za-z]/}" r
+		mkdir -p "$dd"
 		[ "$re" = '^TestAbandonedMoveKeepsCounts$' ] && par=1
-		f=$(PAR=$par runmany "$d" "$d/t.test" "$re" "$n")
+		f=$(PAR=$par runmany "$dd" "$d/t.test" "$re" "$n")
 		printf 'stress %-44s failed %s/%s\n' "$re" "$f" "$n"
-		[ "$f" = 0 ] || bad=1
+		[ "$f" = 0 ] && continue
+		bad=1
+		for r in $(cat "$dd/fails"); do
+			grep -h -E 'rounds lost counts|_test\.go:[0-9]+:|^panic:' "$dd/run.$r.log" | head -3 | sed "s|^ *|    run $r: |"
+		done
 	done
 }
 

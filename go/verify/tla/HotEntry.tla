@@ -18,14 +18,20 @@
 (* touch handing the counts back to K's slot as a register and freeing the *)
 (* entry; "reclaim", the entry reclaimed (K's events past the horizon at   *)
 (* the reclaimer's clock, which can be ahead of the adders') and given to  *)
-(* K3 with one event at unit 1, the counts K had.                          *)
+(* K3 with one event at unit 1, the counts K had; "spill", an eviction     *)
+(* taking K's slot and, the stash dropping it, spilling K's history to the *)
+(* overflow table: it closes the entry under its lock and spills the state *)
+(* (spill, claims A32). An adder whose entry is gone and whose slot is no  *)
+(* longer K's inserts K afresh with its event.                             *)
 (*                                                                         *)
 (* Variant "fixed": as committed. "noGen": unlock reopens c0 without a new *)
 (* generation. "noClose": lock doesn't close c0. "idFirst": the fast path  *)
-(* loads the owner and the epoch before c0.                                *)
+(* loads the owner and the epoch before c0. "noSpillClose": the spill      *)
+(* reads the entry without taking it (before A32).                         *)
 (* Invariants: KExact (once all are done, K's events per unit, in the      *)
-(* entry while K's and in its slot's register, are exactly its touches;    *)
-(* not checked with "reclaim", which drops K's history), K3Exact (K3's     *)
+(* entry while K's slot points to it, its slot's register and the          *)
+(* overflow table, are exactly its touches; not checked with "reclaim",    *)
+(* which drops K's history), K3Exact (K3's                                 *)
 (* entry holds exactly K3's event). Reachable: NeverRetried (a fast-path   *)
 (* CAS fails), NeverLocked (an adder takes the lock path).                 *)
 (***************************************************************************)
@@ -40,8 +46,9 @@ Zero == [u \in Units |-> 0]
 variables
   ver = 0, owner = "K", epoch = 1, cnt = 1, closed = FALSE, gen = 0,
   older = Zero,                 \* counts of units before epoch
-  slot = "ptr",                 \* K's slot's word1: "ptr" (points here) or "reg"
+  slot = "ptr",                 \* K's slot's word1: "ptr" (points here), "reg", or "gone" (evicted)
   reg = Zero,                   \* K's register, once in the slot
+  ghost = Zero,                 \* K's history in the overflow table
   retried = FALSE, locked = FALSE;
 
 define
@@ -49,7 +56,7 @@ define
   Count(o, u) == IF owner /= o THEN 0 ELSE IF u = epoch THEN cnt ELSE older[u]
   KTrue == [u \in Units |-> IF u = 1 THEN 1 + Cardinality(Adders)
                             ELSE IF Writer \in {"advance", "demote"} THEN 1 ELSE 0]
-  KHas(u) == Count("K", u) + (IF slot = "reg" THEN reg[u] ELSE 0)
+  KHas(u) == (IF slot = "ptr" THEN Count("K", u) ELSE 0) + (IF slot = "reg" THEN reg[u] ELSE 0) + ghost[u]
   AllDone == \A p \in DOMAIN pc : pc[p] = "Done"
   KExact == AllDone /\ Writer /= "reclaim" => \A u \in Units : KHas(u) = KTrue[u]
   K3Exact == AllDone /\ Writer = "reclaim" => Count("K3", 1) = 1 /\ Count("K3", 2) = 0
@@ -101,7 +108,7 @@ a_unlockFail:
   unlock();
 a_slot:                                   \* bump: back to K's slot
   if slot = "reg" then reg[1] := reg[1] + 1;          \* demoted: count in the register
-  else slot := "reg" || reg := [Zero EXCEPT ![1] = 1]; \* the entry is gone: start afresh
+  else slot := "reg" || reg := [Zero EXCEPT ![1] = 1]; \* the entry, or the slot, gone: K afresh
   end if;
 a_out:
   skip;
@@ -111,7 +118,9 @@ fair process writer = "w"
 variables wo = Zero, we = 0, wn = 0;
 begin
 w_start:
-  if Writer = "reclaim" then goto r_lock; end if;
+  if Writer = "reclaim" then goto r_lock;
+  elsif Writer = "spill" then goto s_evict;
+  end if;
 w_lock:                                   \* K's touch at unit 2, by the lock path
   lock();
 w_close:
@@ -143,6 +152,22 @@ r_close2:
 r_alloc:
   owner := "K3" || epoch := 1 || cnt := 1 || older := Zero;
 r_unlock2:
+  unlock();
+  goto w_out;
+s_evict:                                  \* an eviction takes K's slot; the stash drops the history
+  slot := "gone";
+s_take:
+  if Variant = "noSpillClose" then goto s_snap; end if;
+s_lock:
+  lock();
+s_close:
+  if Variant /= "noClose" then closed := TRUE; end if;
+s_snap:                                   \* spill: the entry's state to the overflow table
+  ghost := [u \in Units |-> Count("K", u)];
+  if Variant = "noSpillClose" then goto w_out; end if;
+s_free:
+  owner := "free";
+s_unlock:
   unlock();
 w_out:
   skip;

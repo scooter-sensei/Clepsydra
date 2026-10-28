@@ -260,9 +260,10 @@ type Filter struct {
 // word0 again; testHookOpenSeen after an insert reads slot i's word0 free
 // or expired, before its word1; testHookSweepSeen after the decay sweep
 // reads slot i's word0, before its word1; testHookSweepRead after it reads
-// word1, before its hold.
+// word1, before its hold; testHookHotAdding after bump checks slot i's
+// words and finds a hot pointer, before it adds to the entry.
 var testHookCopied, testHookVictim, testHookTaken, testHookStamped, testHookPlacing, testHookSweeping func()
-var testHookPicked, testHookInstalling, testHookBumping, testHookBumped, testHookOpenSeen, testHookSweepSeen, testHookSweepRead func(i int)
+var testHookPicked, testHookInstalling, testHookBumping, testHookBumped, testHookOpenSeen, testHookSweepSeen, testHookSweepRead, testHookHotAdding func(i int)
 
 // forceCT turns ConstantTime on in every filter (tests: TF_CT=1).
 var forceCT bool
@@ -2220,7 +2221,7 @@ func (f *Filter) stashPutAs(id, w0, w1, now uint64, wait bool) {
 	f.allocStash()
 	set, mu := f.stashSet(id)
 	mu.Lock()
-	way, least := -1, uint64(1<<64-1)
+	way, least, full := -1, uint64(1<<64-1), true // full: every way holds another live history
 	for i := range set {
 		e := &set[i]
 		if e.id == id {
@@ -2231,11 +2232,11 @@ func (f *Filter) stashPutAs(id, w0, w1, now uint64, wait bool) {
 				mu.Unlock()
 				return
 			}
-			way, least = i, 0
+			way, least, full = i, 0, false
 			break
 		}
 		if e.id == 0 || age(now, e.w0&tsMask) > f.horizon {
-			way, least = i, 0
+			way, least, full = i, 0, false
 			break
 		}
 		if m := f.mass(e.id, e.w1, e.w0&tsMask, now); m < least {
@@ -2243,12 +2244,18 @@ func (f *Filter) stashPutAs(id, w0, w1, now uint64, wait bool) {
 		}
 	}
 	var out stashEntry // the history that leaves the stash, if any
-	if least > 0 {
+	if full {
 		if least > f.mass(id, w1, w0&tsMask, now) {
 			f.spill(id, w0, w1, now)
 			mu.Unlock()
 			return
 		}
+		// The lightest leaves through spill even with no events in the
+		// horizon: a touch of a hot key that has moved word0 adds to its
+		// entry by the key's identity, and spill closes the entry, so the
+		// add fails and the touch counts afresh. Overwritten in place, the
+		// history left its entry the key's, and the add counted where
+		// nothing pointed (claims A32).
 		out = set[way]
 	}
 	if out.id != 0 {

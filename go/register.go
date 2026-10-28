@@ -207,6 +207,9 @@ func (f *Filter) bump(i int, fpd, tg, now uint64, nu int64, last uint64, lu int6
 		}
 		ref = w0 & tsMask
 		if isHot(old) && !reset {
+			if testHookHotAdding != nil {
+				testHookHotAdding(i)
+			}
 			if f.hotAdd(old, f.slotID(uint64(i/wordsPerLine), w0, old), now, &f.words[i+1]) {
 				return old, ref, false, true
 			}
@@ -283,6 +286,11 @@ func (f *Filter) mass(id, w1, last, now uint64) uint64 {
 	if !ok {
 		return 0
 	}
+	return f.viewMass(&v, now)
+}
+
+// viewMass is mass for a register state already read.
+func (f *Filter) viewMass(v *view, now uint64) uint64 {
 	oldest := int64(now-min(now, f.horizon)) / int64(f.unit) // unit of now-H, rounded down
 	var n uint64
 	top := v.e + 1

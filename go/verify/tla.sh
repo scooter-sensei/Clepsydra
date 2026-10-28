@@ -196,11 +196,11 @@ bumpaba() {
 }
 
 # HotEntry: a hot entry's lock-free add (bucket 0's word: closed bit and
-# generation) against a writer that advances the entry, demotes it, or
-# reclaims it for another key.
+# generation) against a writer that advances the entry, demotes it,
+# reclaims it for another key, or spills its key's history (claims A32).
 hotentry() {
 	local w a v
-	for w in advance demote reclaim; do
+	for w in advance demote reclaim spill; do
 		for a in 1 2; do
 			run ok HotEntry "fixed, $w, $a adder(s)" "KExact K3Exact" 'Variant = "fixed"' "Writer = \"$w\"" "Adders = $(procs a "$a")"
 		done
@@ -212,6 +212,8 @@ hotentry() {
 	run violation HotEntry "noGen, reclaim: K3Exact" K3Exact 'Variant = "noGen"' 'Writer = "reclaim"' "Adders = $(procs a 1)"
 	run violation HotEntry "noClose, advance: KExact" KExact 'Variant = "noClose"' 'Writer = "advance"' "Adders = $(procs a 1)"
 	run violation HotEntry "idFirst, reclaim: K3Exact" K3Exact 'Variant = "idFirst"' 'Writer = "reclaim"' "Adders = $(procs a 1)"
+	run violation HotEntry "noSpillClose (before A32), spill: KExact" KExact 'Variant = "noSpillClose"' 'Writer = "spill"' "Adders = $(procs a 1)"
+	run violation HotEntry "noClose, spill: KExact" KExact 'Variant = "noClose"' 'Writer = "spill"' "Adders = $(procs a 1)"
 }
 
 models=("$@")

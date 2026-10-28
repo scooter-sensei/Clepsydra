@@ -238,21 +238,36 @@ func (s *sketch) estimate(id, window, now uint64, full bool) (r Result, ok bool)
 }
 
 // spill sends a history the stash is dropping (identity id, slot words w0,
-// w1) to the overflow table, or, without one, records it as lost.
+// w1) to the overflow table, or, without one, records it as lost. A hot
+// history's entry is closed and its last state spilled: a touch that found
+// the key's slot before the history left it adds by the key's identity, and
+// its add then fails and it looks again, instead of counting in an entry
+// nothing points to (claims A32). A live history with no events in the
+// horizon (its touch has moved word0 and not yet counted, which it then does
+// afresh) is neither spilled nor lost.
 func (f *Filter) spill(id, w0, w1, now uint64) {
 	last := w0 & tsMask
 	if age(now, last) > f.horizon {
 		return
 	}
+	var v view
+	ok := true
+	if isHot(w1) {
+		v, ok = f.hotClose(hotIdx(w1), id)
+	} else {
+		v, _ = f.viewOf(id, w1, last)
+	}
+	m := f.viewMass(&v, now)
+	if ok && m == 0 {
+		return // no events in the horizon yet: the touch that moved word0 counts afresh
+	}
 	if f.skW == 0 {
 		f.dropped(max(now, last)) // its events may be in a window until a horizon after its newest one
 		return
 	}
-	v, ok := f.viewOf(id, w1, last)
 	if !ok {
 		return // its hot entry is no longer its own: nothing of it is left to spill
 	}
-	m := f.mass(id, w1, last, now)
 	if f.spillMin > 1 && m < f.spillMin {
 		f.shed.Add(1)
 		return

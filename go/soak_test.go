@@ -32,11 +32,15 @@ func TestStressSoak(t *testing.T) {
 	workers := max(4, 2*runtime.GOMAXPROCS(0))
 	var clock atomic.Uint64
 	clock.Store(1)
-	// Hot entries for every heavy key (8 per worker) and some of the pool, so
-	// heavy answers are checked rather than Saturated (refused promotions
-	// are the fuzzer's few-hot-entries cases and the attack tests').
+	// Hot entries for every heavy key (8 per worker) and most of the pool's
+	// keys that pass a register's 31 events in a unit, so their answers are
+	// checked rather than Saturated (refused promotions are the fuzzer's
+	// few-hot-entries cases and the attack tests'). 10 per worker left 63%
+	// of answers Saturated, nearly all refused promotions; 80 leaves 24%,
+	// mostly histories in the overflow table while the pool is 4-8x the
+	// table (2026-10-28, 30 s soaks).
 	f, err := New(Config{Capacity: capacity, Horizon: 10 * time.Second, Resolution: time.Millisecond,
-		Clock: clock.Load, SpillMin: 1, Hot: 10 * workers})
+		Clock: clock.Load, SpillMin: 1, Hot: 80 * workers})
 	if err != nil {
 		t.Fatal(err)
 	}

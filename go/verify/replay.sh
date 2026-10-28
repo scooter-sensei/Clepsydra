@@ -47,7 +47,10 @@ fixes() {
 	# copy of an evicted key (0c08517, testHookPicked), the wait-room
 	# ways (277f9ed, testHookPlacing), the decay sweep's slot hold
 	# (7236f76, testHookSweeping) and an insert's hold over an expired
-	# occupant (c1cbace, testHookInstalling). The visible copy (0c08517) and the reclaimed hot
+	# occupant (c1cbace, testHookInstalling), as are the 2026-10-23/24
+	# fixes (43e707b, 200e5ea, 9464187: tagstripe_test.go) and a hot
+	# history's exits from the stash (0becd6e, testHookHotAdding:
+	# hotspill_test.go). The visible copy (0c08517) and the reclaimed hot
 	# entry (5638eac) need no new hook: their tests run on the code before.
 	# Duplicate slots: the striped lock (593bd1b) removed most; the install
 	# order in f31512c removed the rare rest (a race with relocation), so

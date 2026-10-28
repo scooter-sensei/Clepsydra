@@ -11,6 +11,8 @@
 # workloads are seeded and single-threaded, and the integer-key hash is
 # unkeyed. Expected files were produced on linux/amd64 with Go 1.24.7; other
 # architectures may differ (Go may fuse floating-point multiply-adds there).
+# linux/arm64 under qemu-user matched them (GOARCH=arm64
+# GOFLAGS=-exec=qemu-aarch64 ./test.sh regression, 2026-10-28).
 set -uo pipefail
 cd "$(dirname "$0")/.."
 . verify/lib.sh

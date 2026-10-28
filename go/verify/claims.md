@@ -9,7 +9,7 @@ Every claim made about this filter (docs/DESIGN.md, docs/RESEARCH.md, results/, 
 - **corrected**: an earlier claim that the checks showed to be wrong; the corrected statement is given.
 - **unverifiable**: no code or data was kept to re-check it. Treat as anecdote.
 
-Run everything: `verify/isolated.sh` (fresh clone from a git bundle, official Go 1.24.7 image pinned by digest, `--network none`, empty caches), or `verify/run.sh` in any clean checkout. Deterministic results hold for linux/amd64 with Go 1.24.7; other architectures weren't tested. The last runs (Docker and unshare, all checks pass) are recorded in `verify/isolated-run.txt`.
+Run everything: `verify/isolated.sh` (fresh clone from a git bundle, official Go 1.24.7 image pinned by digest, `--network none`, empty caches), or `verify/run.sh` in any clean checkout. Deterministic results hold for linux/amd64 with Go 1.24.7, and for linux/arm64 under qemu-user 10.2.1 (`./test.sh regression` byte for byte, 2026-10-28 at 97a1997; see the round report); no arm64 hardware was tested. The last runs (Docker and unshare, all checks pass) are recorded in `verify/isolated-run.txt`.
 
 ## Deterministic results (checked)
 

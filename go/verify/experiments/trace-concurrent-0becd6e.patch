@@ -1,0 +1,619 @@
+diff -ruN -x '*.test' s9trpristine/go/filter.go s9trhead/go/filter.go
+--- a/filter.go	2026-10-28 07:29:12.000000000 +0000
++++ b/filter.go	2026-10-28 07:30:01.393013728 +0000
+@@ -737,12 +737,20 @@
+ func (f *Filter) recall(h, fp, tg, now uint64, take bool) (w0, w1 uint64, src int) {
+ 	id := f.stashID(h, fp, tg)
+ 	if !f.ct {
++		if traceOn {
++			if p := f.room.Load(); p != nil {
++				tr(trRecall, id, trBool(p.waiting(id)), trBool(take), now, 0)
++			}
++		}
+ 		if p := f.room.Load(); p != nil && p.waiting(id) {
+ 			var mv *moveCount
+ 			if take {
+ 				mv = f.moveOf(tg)
+ 			}
+ 			w0, w1, ok, retry := f.roomGet(p, id, now, mv)
++			if traceOn {
++				tr(trRoomGot, id, trBool(ok), trBool(retry), w0&tsMask, regSum(w1))
++			}
+ 			if retry {
+ 				return 0, 0, srcRetry
+ 			}
+@@ -754,12 +762,28 @@
+ 			}
+ 		}
+ 		if now > f.stashUntil.Load() {
++			if traceOn {
++				tr(trRecallMiss, id, 1, f.stashUntil.Load(), now, 0)
++			}
+ 			return 0, 0, 0
+ 		}
+ 	}
+ 	if w0, w1, ok := f.stashGet(id, now, take); ok {
+ 		return w0, w1, srcStash
+ 	}
++	if traceOn {
++		why := uint64(2)
++		if set, mu := f.stashSet(id); set != nil {
++			mu.Lock()
++			for _, e := range set {
++				if e.id == id {
++					why = 3
++				}
++			}
++			mu.Unlock()
++		}
++		tr(trRecallMiss, id, why, f.stashUntil.Load(), now, 0)
++	}
+ 	return 0, 0, 0
+ }
+ 
+@@ -804,12 +828,18 @@
+ 			}
+ 			if age(now, e.w0&tsMask) > f.horizon {
+ 				if take { // a fresh insert follows: the placer mustn't install this one too
++					if traceOn {
++						tr(trRoomExpired, id, regSum(e.w1), e.w0&tsMask, now, 0)
++					}
+ 					f.stashWrite(p, e, stashEntry{})
+ 				}
+ 				break
+ 			}
+ 			w0, w1 = e.w0, e.w1
+ 			if take {
++				if traceOn {
++					tr(trRoomTake, id, regSum(w1), w0&tsMask, now, 0)
++				}
+ 				mv.begun.Add(1)
+ 				f.stashWrite(p, e, stashEntry{})
+ 			}
+@@ -1026,6 +1056,9 @@
+ 		if !ok {
+ 			continue // the slot was handed to another key, or moved on, meanwhile; look again
+ 		}
++		if traceOn {
++			tr(trTouch, f.stashID(h, fp, tg), uint64(i), last, regSum(w1), now)
++		}
+ 		sat := w0&satBit != 0
+ 		if over != sat {
+ 			sat = f.markSat(i, w0>>48, over)
+@@ -1233,6 +1266,9 @@
+ 	}
+ 	if n == 0 {
+ 		p.wait[i/64].And(^(1 << (i % 64)))
++		if traceOn {
++			tr(trBitClear, 1<<63|i, 0, 0, 0, 0)
++		}
+ 	}
+ 	mu.Unlock()
+ 	for _, e := range waiting[:n] {
+@@ -1266,6 +1302,9 @@
+ 		}
+ 		if c == nil {
+ 			mu.Unlock()
++			if traceOn {
++				tr(trPlaceGone, id, uint64(i), 0, 0, 0)
++			}
+ 			return false
+ 		}
+ 		c0, c1 := c.w0, c.w1
+@@ -1276,6 +1315,9 @@
+ 		}
+ 		m.begun.Add(1)
+ 		ok := f.install(i, w0, w1, c0&^deferMark|mine0&dispBit, c1)
++		if traceOn {
++			tr(trPlace, id, uint64(i), regSum(c1), c0&tsMask, trBool(ok))
++		}
+ 		mu.Lock()
+ 		if ok {
+ 			f.stashWrite(p, c, stashEntry{})
+@@ -1373,6 +1415,9 @@
+ 	if !ok {
+ 		return Result{}, false // the slot was handed to another key, or moved on, meanwhile
+ 	}
++	if traceOn {
++		tr(trHit, f.stashID(h, fp, tg), uint64(i), last, regSum(w1), now)
++	}
+ 	sat := w0&satBit != 0
+ 	if over != sat {
+ 		sat = f.markSat(i, w0>>48, over)
+@@ -1489,6 +1534,9 @@
+ 	var r Result
+ 	// Taken out of the wait room (srcRoom): its move ends once it is placed.
+ 	room := src == srcRoom
++	if traceOn {
++		tr(trMissIn, f.stashID(h, fp, tg), uint64(src), regSum(s1), s0&tsMask, now)
++	}
+ 	w1, _ := f.nextReg(0, tg, now, now, true) // first event, published with the key
+ 	last, sat := now, uint64(0)
+ 	hotRestore := false
+@@ -1530,6 +1578,9 @@
+ 				[2]uint64{fp<<48 | sat | stamp, fp<<48 | dispBit | sat | stamp}, w1, now, h>>(64-claimStripeBits), claimFull, nil)
+ 		}
+ 	}
++	if traceOn {
++		tr(trMissOut, f.stashID(h, fp, tg), uint64(int64(ci)), regSum(w1), stamp, uint64(src))
++	}
+ 	if ci == -1 && (src == srcStash || room) { // put it back for the retry
+ 		f.putBack(f.stashID(h, fp, tg), s0, s1, now)
+ 	}
+@@ -1658,7 +1709,11 @@
+ 					if testHookOpenSeen != nil {
+ 						testHookOpenSeen(base + s)
+ 					}
+-					if f.putOver(put, base+s, w0, atomic.LoadUint64(&f.words[base+s+1]), mine[li], w1) {
++					ow1 := atomic.LoadUint64(&f.words[base+s+1])
++					if f.putOver(put, base+s, w0, ow1, mine[li], w1) {
++						if traceOn && w0 != 0 {
++							tr(trOverExp, f.slotID(line, w0, ow1), uint64(base+s), regSum(ow1), w0&tsMask, now)
++						}
+ 						return base + s
+ 					}
+ 					return -1
+@@ -1740,6 +1795,9 @@
+ 			return -1
+ 		}
+ 		f.evictions.Add(1)
++		if traceOn {
++			tr(trEvict, f.slotID(lines[vli], victimW0, victimW1), uint64(victim), regSum(victimW1), victimW0&tsMask, now)
++		}
+ 		f.stashPut(f.slotID(lines[vli], victimW0, victimW1), victimW0, victimW1, now)
+ 		return victim
+ 	}
+@@ -1875,6 +1933,9 @@
+ 		}
+ 		if f.putNew(put, i, w0, w1, mine0, mine1) { // deeper levels pass no put: install
+ 			atomic.StoreUint64(&f.words[d+1], w1) // the source held w0/w1 until the hand-off: publish
++			if traceOn {
++				tr(trMoved, f.slotID(line, w0, w1), uint64(i), uint64(d), regSum(w1), now)
++			}
+ 			f.relocations.Add(1)
+ 			return true
+ 		}
+@@ -1998,6 +2059,9 @@
+ 		}
+ 		if atomic.CompareAndSwapUint64(&f.words[base+s], w0, 0) {
+ 			atomic.StoreUint64(&f.words[base+s+1], 0)
++			if traceOn {
++				tr(trSweep, f.slotID(line, w0, w1), uint64(base+s), regSum(w1), w0&tsMask, now)
++			}
+ 		} else {
+ 			atomic.StoreUint64(&f.words[base+s+1], w1) // touched since: put word1 back
+ 		}
+@@ -2229,6 +2293,9 @@
+ 			// evicted, restored and evicted again meanwhile) must not
+ 			// overwrite the newer one.
+ 			if e.w0&tsMask > w0&tsMask || e.w0&tsMask == w0&tsMask && f.mass(e.id, e.w1, e.w0&tsMask, now) >= f.mass(id, w1, w0&tsMask, now) {
++				if traceOn {
++					tr(trStashKeep, id, regSum(w1), w0&tsMask, regSum(e.w1), now)
++				}
+ 				mu.Unlock()
+ 				return
+ 			}
+@@ -2236,6 +2303,9 @@
+ 			break
+ 		}
+ 		if e.id == 0 || age(now, e.w0&tsMask) > f.horizon {
++			if traceOn && e.id != 0 {
++				tr(trStashOver, e.id, id, 1, e.w0&tsMask, now)
++			}
+ 			way, least, full = i, 0, false
+ 			break
+ 		}
+@@ -2246,6 +2316,9 @@
+ 	var out stashEntry // the history that leaves the stash, if any
+ 	if full {
+ 		if least > f.mass(id, w1, w0&tsMask, now) {
++			if traceOn {
++				tr(trStashSpillSelf, id, regSum(w1), w0&tsMask, least, now)
++			}
+ 			f.spill(id, w0, w1, now)
+ 			mu.Unlock()
+ 			return
+@@ -2259,8 +2332,14 @@
+ 		out = set[way]
+ 	}
+ 	if out.id != 0 {
++		if traceOn {
++			tr(trStashOver, out.id, id, 2, out.w0&tsMask, now)
++		}
+ 		f.spill(out.id, out.w0&^deferMark, out.w1, now)
+ 	}
++	if traceOn {
++		tr(trStashPut, id, regSum(w1), w0&tsMask, out.id, now)
++	}
+ 	f.stashWrite(f.stash.Load(), &set[way], stashEntry{id, w0, w1})
+ 	for until := (w0 & tsMask) + f.horizon; !wait; { // a waiting key: see stashWait
+ 		u := f.stashUntil.Load()
+@@ -2290,10 +2369,16 @@
+ 	defer mu.Unlock()
+ 	for i := range set {
+ 		if e := &set[i]; e.w1>>tagShift != tagBusy && (e.id == 0 || e.id == id || age(now, e.w0&tsMask) > f.horizon) {
++			if traceOn {
++				tr(trWait, id, regSum(w1), w0&tsMask, e.id, now)
++			}
+ 			f.stashWrite(p, e, stashEntry{id, w0&^dispBit | deferMark, w1})
+ 			return true
+ 		}
+ 	}
++	if traceOn {
++		tr(trWaitFull, id, regSum(w1), w0&tsMask, now, 0)
++	}
+ 	return false
+ }
+ 
+@@ -2301,6 +2386,9 @@
+ // its slot, for the retry to find: a key that waited back to wait, an
+ // evicted one to the stash.
+ func (f *Filter) putBack(id, w0, w1, now uint64) {
++	if traceOn {
++		tr(trPutBack, id, regSum(w1), w0&tsMask, w0&deferMark, now)
++	}
+ 	if w0&deferMark != 0 && f.stashWait(id, w0, w1, now) {
+ 		return
+ 	}
+@@ -2346,6 +2434,9 @@
+ 		}
+ 		w0, w1 = e.w0, e.w1
+ 		if take {
++			if traceOn {
++				tr(trStashTake, id, regSum(w1), w0&tsMask, now, 0)
++			}
+ 			f.stashWrite(p, e, stashEntry{})
+ 		}
+ 		return w0, w1, true
+diff -ruN -x '*.test' s9trpristine/go/fuzzconc_test.go s9trhead/go/fuzzconc_test.go
+--- a/fuzzconc_test.go	2026-10-28 07:29:12.000000000 +0000
++++ b/fuzzconc_test.go	2026-10-28 07:30:01.395776605 +0000
+@@ -80,6 +80,7 @@
+ 
+ // cfuzzCase runs one concurrent case.
+ func cfuzzCase(seed uint64) (res fuzzResult) {
++	traceReset()
+ 	rng := rand.New(rand.NewPCG(seed, 0xc0_f022))
+ 	cfg, capacity, H := fuzzConfig(rng, &res)
+ 	amp := newTagAmp("TF_CFUZZ_TAGS")
+@@ -205,7 +206,7 @@
+ 			res.lostLow++
+ 		default:
+ 			res.fail = fmt.Sprintf("goroutine %d op %d %s: Upper %d < true %d (result %+v); key %x window %d now %d newest %d; events %v; %s",
+-				g, res.ops, op, r.Upper, exact, r, h, window, now, tr.newest, tail(tr.ev[h], 12), f.whereIs(h, now))
++				g, res.ops, op, r.Upper, exact, r, h, window, now, tr.newest, tail(tr.ev[h], 12), f.whereIs(h, now)+f.traceOf(h))
+ 			return false
+ 		}
+ 		return true
+@@ -257,7 +258,7 @@
+ 				if exact := before.count(h, window, now); r.Upper < exact && !f.floorLive(h, window, now) && !(f.skW == 0 && f.lostRecently(now)) {
+ 					res.checks++
+ 					res.fail = fmt.Sprintf("goroutine %d op %d shared Count: Upper %d < true %d (result %+v); key %x window %d now %d newest %d; events %v; %s",
+-						g, res.ops, r.Upper, exact, r, h, window, now, before.newest, tail(before.ev[h], 12), f.whereIs(h, now))
++						g, res.ops, r.Upper, exact, r, h, window, now, before.newest, tail(before.ev[h], 12), f.whereIs(h, now)+f.traceOf(h))
+ 					return res
+ 				}
+ 				res.checks++
+diff -ruN -x '*.test' s9trpristine/go/hot.go s9trhead/go/hot.go
+--- a/hot.go	2026-10-28 07:29:12.000000000 +0000
++++ b/hot.go	2026-10-28 07:30:01.395962010 +0000
+@@ -172,17 +172,26 @@
+ 			break
+ 		}
+ 		if e.c0.CompareAndSwap(c, c+n) {
++			if traceOn {
++				tr(trHotAdd, id, idx, n, uint64(u), 1)
++			}
+ 			return true
+ 		}
+ 	}
+ 	ver := e.lock()
+ 	if e.id.Load() != id {
++		if traceOn {
++			tr(trHotAddMiss, id, idx, n, uint64(u), e.id.Load())
++		}
+ 		e.unlock(ver)
+ 		return false
+ 	}
+ 	if u == e.epoch.Load() {
+ 		if c := e.c0.Load()&hotCount + n; c <= hotCount {
+ 			e.c0.Store(e.c0.Load()&^hotCount | c)
++			if traceOn {
++				tr(trHotAdd, id, idx, n, uint64(u), 2)
++			}
+ 			e.unlock(ver)
+ 			return true
+ 		}
+@@ -207,12 +216,18 @@
+ 		}
+ 		nw := old&^(1<<tagShift-1) | uint64(v.e)&epochMask<<48 | r.pack()
+ 		if atomic.CompareAndSwapUint64(slot, old, nw) {
++			if traceOn {
++				tr(trDemote, id, idx, regSum(nw), uint64(u), 0)
++			}
+ 			e.id.Store(0)
+ 			e.unlock(ver)
+ 			t.release(idx)
+ 			return true
+ 		}
+ 	}
++	if traceOn {
++		tr(trHotAdd, id, idx, n, uint64(u), 3)
++	}
+ 	e.store(&v)
+ 	e.unlock(ver)
+ 	return true
+@@ -276,6 +291,9 @@
+ 	ver := e.lock()
+ 	e.id.Store(id)
+ 	e.store(v)
++	if traceOn {
++		tr(trHotAlloc, id, idx, hsum(&v.c), uint64(v.e), 0)
++	}
+ 	e.unlock(ver)
+ 	t.inUse.Add(1)
+ 	return idx
+@@ -295,6 +313,9 @@
+ 		ver := e.lock()
+ 		ok := e.id.Load() != 0 && e.epoch.Load() < dead
+ 		if ok {
++			if traceOn {
++				tr(trHotReclaim, e.id.Load(), t.hand, uint64(e.epoch.Load()), uint64(u), 0)
++			}
+ 			e.id.Store(0)
+ 		}
+ 		e.unlock(ver)
+@@ -317,6 +338,9 @@
+ 	ver := e.lock()
+ 	if e.id.Load() == id {
+ 		v, ok = e.load(), true
++		if traceOn {
++			tr(trHotClose, id, idx, hsum(&v.c), 0, 0)
++		}
+ 		e.id.Store(0)
+ 	}
+ 	e.unlock(ver)
+diff -ruN -x '*.test' s9trpristine/go/overflow.go s9trhead/go/overflow.go
+--- a/overflow.go	2026-10-28 07:29:12.000000000 +0000
++++ b/overflow.go	2026-10-28 07:30:27.186144404 +0000
+@@ -246,6 +246,9 @@
+ // horizon (its touch has moved word0 and not yet counted, which it then does
+ // afresh) is neither spilled nor lost.
+ func (f *Filter) spill(id, w0, w1, now uint64) {
++	if traceOn {
++		tr(trSpill, id, regSum(w1), w0&tsMask, now, 0)
++	}
+ 	last := w0 & tsMask
+ 	if age(now, last) > f.horizon {
+ 		return
+diff -ruN -x '*.test' s9trpristine/go/register.go s9trhead/go/register.go
+--- a/register.go	2026-10-28 07:29:12.000000000 +0000
++++ b/register.go	2026-10-28 07:30:01.396384618 +0000
+@@ -216,6 +216,9 @@
+ 			if atomic.LoadUint64(&f.words[i+1]) != old {
+ 				continue // word1 changed (a demotion, or the slot changed hands): look again
+ 			}
++			if traceOn {
++				tr(trHotReset, f.slotID(uint64(i/wordsPerLine), w0, old), uint64(i), 0, now, 0)
++			}
+ 			reset = true // the entry aged out with the key's history: start afresh
+ 		}
+ 		refU := lu
+diff -ruN -x '*.test' s9trpristine/go/soak_test.go s9trhead/go/soak_test.go
+--- a/soak_test.go	2026-10-28 07:29:12.000000000 +0000
++++ b/soak_test.go	2026-10-28 07:30:01.396478483 +0000
+@@ -117,7 +117,7 @@
+ 					} else if r.Upper < exact {
+ 						if low.Add(1) == 1 {
+ 							again := f.CountAt(h, w, now)
+-							firstLow.Store(fmt.Sprintf("got %+v; asked again: %+v; window %d ms: exact %d (now %d, events %v); %s", r, again, w, exact, now, logs[h], f.whereIs(h, now)))
++							firstLow.Store(fmt.Sprintf("got %+v; asked again: %+v; window %d ms: exact %d (now %d, events %v); %s", r, again, w, exact, now, logs[h], f.whereIs(h, now)+f.traceOf(h)))
+ 						}
+ 					}
+ 				default:
+diff -ruN -x '*.test' s9trpristine/go/trace.go s9trhead/go/trace.go
+--- a/trace.go	1970-01-01 00:00:00.000000000 +0000
++++ b/trace.go	2026-10-28 07:30:01.396552701 +0000
+@@ -0,0 +1,86 @@
++package temporalfilter
++
++import (
++	"fmt"
++	"math/bits"
++)
++
++// Event kinds of the debugging trace (trace_on.go, build tag tftrace).
++const (
++	trTouch = iota + 1
++	trHit
++	trMissIn
++	trMissOut
++	trWait
++	trWaitFull
++	trRoomTake
++	trRoomExpired
++	trPlace
++	trPlaceGone
++	trPutBack
++	trEvict
++	trStashPut
++	trStashKeep
++	trStashSpillSelf
++	trStashTake
++	trMoved
++	trSweep
++	trSpill
++	trBitClear
++	trRecall
++	trRoomGot
++	trHotAlloc
++	trHotAdd
++	trHotAddMiss
++	trDemote
++	trHotReclaim
++	trHotClose
++	trHotReset
++	trOverExp
++	trRecallMiss
++	trStashOver
++)
++
++// regSum is the events a register holds (1<<32 for a hot entry's pointer).
++func regSum(w1 uint64) uint64 {
++	if isHot(w1) {
++		return 1 << 32
++	}
++	n := uint64(0)
++	for _, c := range unpack(w1 & regMask) {
++		n += c
++	}
++	return n
++}
++
++func trBool(b bool) uint64 {
++	if b {
++		return 1
++	}
++	return 0
++}
++
++// traceOf dumps h's records (its identity and its wait-room set).
++func (f *Filter) traceOf(h uint64) string {
++	if !traceOn {
++		return ""
++	}
++	id := f.stashID(h, fingerprint(h), tag(h))
++	set := uint64(1 << 62)
++	ways := ""
++	if p := f.room.Load(); p != nil {
++		set, _ = bits.Mul64(mix64(id), p.n)
++		for _, e := range p.e[set*stashWays : (set+1)*stashWays] {
++			ways += fmt.Sprintf(" [%x last %d defer %v busy %v]", e.id, e.w0&tsMask, e.w0&deferMark != 0, e.w1>>tagShift == tagBusy)
++		}
++		ways = fmt.Sprintf("\nroom set %d of %d (wait bit %v):%s", set, p.n, p.waiting(id), ways)
++	}
++	return ways + traceDump(id, 1<<63|set)
++}
++
++func hsum(c *[nBuckets]uint64) (n uint64) {
++	for _, x := range c {
++		n += x
++	}
++	return n
++}
+diff -ruN -x '*.test' s9trpristine/go/trace_off.go s9trhead/go/trace_off.go
+--- a/trace_off.go	1970-01-01 00:00:00.000000000 +0000
++++ b/trace_off.go	2026-10-28 07:30:01.396616690 +0000
+@@ -0,0 +1,11 @@
++//go:build !tftrace
++
++package temporalfilter
++
++const traceOn = false
++
++func tr(kind, id, a, b, c, d uint64) {}
++
++func traceDump(id, set uint64) string { return "" }
++
++func traceReset() {}
+diff -ruN -x '*.test' s9trpristine/go/trace_on.go s9trhead/go/trace_on.go
+--- a/trace_on.go	1970-01-01 00:00:00.000000000 +0000
++++ b/trace_on.go	2026-10-28 07:31:13.230336385 +0000
+@@ -0,0 +1,97 @@
++//go:build tftrace
++
++package temporalfilter
++
++import (
++	"fmt"
++	"os"
++	"slices"
++	"strings"
++	"sync/atomic"
++)
++
++const traceOn = true
++
++type traceRec struct{ seq, run, kind, id, a, b, c, d uint64 }
++
++const traceBits = 24
++
++var (
++	traceRing [1 << traceBits]traceRec
++	traceSeq  atomic.Uint64
++	traceStop atomic.Bool
++	traceRun  atomic.Uint64
++)
++
++// traceLite leaves out the most frequent records (touches, hits, hot adds),
++// whose cost can hide a race; TF_TRACE_ALL=1 keeps them.
++var traceLite = os.Getenv("TF_TRACE_ALL") == ""
++
++func tr(kind, id, a, b, c, d uint64) {
++	if traceLite && (kind == trTouch || kind == trHit || kind == trHotAdd) || traceStop.Load() {
++		return
++	}
++	n := traceSeq.Add(1)
++	traceRing[n&(1<<traceBits-1)] = traceRec{n, traceRun.Load(), kind, id, a, b, c, d}
++}
++
++var traceNames = map[uint64]string{
++	trTouch:          "touch      slot=%d last=%d events-after=%d now=%d",
++	trHit:            "hit        slot=%d last=%d events-after=%d now=%d",
++	trMissIn:         "miss-in    src=%d events=%d last=%d now=%d",
++	trMissOut:        "miss-out   ci=%d events=%d stamp=%d src=%d",
++	trWait:           "wait       events=%d last=%d over=%x now=%d",
++	trWaitFull:       "wait-full  events=%d last=%d now=%d %d",
++	trRoomTake:       "room-take  events=%d last=%d now=%d %d",
++	trRoomExpired:    "room-exp   events=%d last=%d now=%d %d",
++	trPlace:          "place      slot=%d events=%d last=%d ok=%d",
++	trPlaceGone:      "place-gone slot=%d %d %d %d",
++	trPutBack:        "put-back   events=%d last=%d defer=%x now=%d",
++	trEvict:          "evict      slot=%d events=%d last=%d now=%d",
++	trStashPut:       "stash-put  events=%d last=%d out=%x now=%d",
++	trStashKeep:      "stash-keep events=%d last=%d other-events=%d now=%d",
++	trStashSpillSelf: "stash-spill-self events=%d last=%d least=%d now=%d",
++	trStashTake:      "stash-take events=%d last=%d now=%d %d",
++	trMoved:          "moved      from=%d to=%d events=%d now=%d",
++	trSweep:          "sweep      slot=%d events=%d last=%d now=%d",
++	trSpill:          "spill      events=%d last=%d now=%d %d",
++	trBitClear:       "bit-clear  %d %d %d %d",
++	trRecall:         "recall     wait-bit=%d take=%d now=%d %d",
++	trRoomGot:        "room-got   ok=%d retry=%d last=%d events=%d",
++	trHotAlloc:       "hot-alloc  idx=%d events=%d unit=%d %d",
++	trHotAdd:         "hot-add    idx=%d n=%d unit=%d path=%d",
++	trHotAddMiss:     "hot-add-miss idx=%d n=%d unit=%d owner=%x",
++	trDemote:         "demote     idx=%d events=%d unit=%d %d",
++	trHotReclaim:     "hot-reclaim idx=%d epoch=%d unit=%d %d",
++	trHotClose:       "hot-close  idx=%d events=%d %d %d",
++	trHotReset:       "hot-reset  slot=%d %d now=%d %d",
++	trOverExp:        "over-exp   slot=%d events=%d last=%d now=%d",
++	trRecallMiss:     "recall-miss why=%d until=%d now=%d %d",
++	trStashOver:      "stash-over by=%x kind=%d last=%d now=%d",
++}
++
++// traceDump stops the trace and lists the records naming id (or its
++// wait-room set), oldest first.
++func traceDump(id, set uint64) string {
++	traceStop.Store(true)
++	var recs []traceRec
++	for i := range traceRing {
++		if r := &traceRing[i]; r.seq != 0 && r.run == traceRun.Load() && (r.id == id || r.id == set || r.a == id || r.b == id || r.c == id || r.d == id) {
++			recs = append(recs, *r)
++		}
++	}
++	slices.SortFunc(recs, func(a, b traceRec) int { return int(a.seq) - int(b.seq) })
++	var sb strings.Builder
++	fmt.Fprintf(&sb, "\ntrace of %x (%d records, ring seq %d):\n", id, len(recs), traceSeq.Load())
++	for _, r := range recs {
++		who := "self"
++		if r.id != id {
++			who = fmt.Sprintf("%x", r.id)
++		}
++		fmt.Fprintf(&sb, "  %9d %-6s "+traceNames[r.kind]+"\n", r.seq, who, r.a, r.b, r.c, r.d)
++	}
++	return sb.String()
++}
++
++// traceReset starts a new run: dumps list only its records.
++func traceReset() { traceRun.Add(1) }

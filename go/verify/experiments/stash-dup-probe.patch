@@ -1,0 +1,99 @@
+diff --git a/filter.go b/filter.go
+index aa7d02e..0e98c86 100644
+--- a/filter.go
++++ b/filter.go
+@@ -2357,6 +2357,7 @@ func (f *Filter) stashWrite(p *stashTable, e *stashEntry, ne stashEntry) {
+ 		}
+ 	}
+ 	*e = ne
++	probeCheck(f, p, e)
+ }
+ 
+ // stashGet returns the live stash entry for id; take also removes it.
+@@ -2381,6 +2382,7 @@ func (f *Filter) tableGet(p *stashTable, id, now uint64, take bool) (w0, w1 uint
+ 			return 0, 0, false
+ 		}
+ 		w0, w1 = e.w0, e.w1
++		probeGet(set, i)
+ 		if take {
+ 			f.stashWrite(p, e, stashEntry{})
+ 		}
+diff --git a/fuzzconc_test.go b/fuzzconc_test.go
+index fba41c1..d8142af 100644
+--- a/fuzzconc_test.go
++++ b/fuzzconc_test.go
+@@ -33,6 +33,7 @@ import (
+ // its run depends on its races: TF_CFUZZ_CASE=<seed> runs one case
+ // TF_CFUZZ_RUNS times (default 20).
+ func TestFuzzConcurrent(t *testing.T) {
++	defer func() { t.Logf("%s", probeLine()) }()
+ 	if s := os.Getenv("TF_CFUZZ_CASE"); s != "" {
+ 		seed, err := strconv.ParseUint(s, 10, 64)
+ 		if err != nil {
+diff --git a/soak_test.go b/soak_test.go
+index 2363773..c3d54d8 100644
+--- a/soak_test.go
++++ b/soak_test.go
+@@ -24,6 +24,7 @@ import (
+ // TF_STRESS_TAGS=n amplifies tag coincidences as the concurrent fuzzer's
+ // TF_CFUZZ_TAGS does (tagAmp; the soak uses fewer than 20,000 keys).
+ func TestStressSoak(t *testing.T) {
++	defer func() { t.Logf("%s", probeLine()) }()
+ 	d, err := time.ParseDuration(os.Getenv("TF_STRESS"))
+ 	if err != nil || d <= 0 {
+ 		t.Skip("set TF_STRESS=<duration> to run")
+diff --git a/stashprobe.go b/stashprobe.go
+new file mode 100644
+index 0000000..d2747ee
+--- /dev/null
++++ b/stashprobe.go
+@@ -0,0 +1,49 @@
++package temporalfilter
++
++import (
++	"fmt"
++	"sync/atomic"
++	"unsafe"
++)
++
++var probeWrites, probeDup, probeDupLive, probeDupOlder, probeDupRoom, probeGetOlder atomic.Int64
++
++// probeCheck (scratch): after entry e of table p was written, the other entries of its set with its identity.
++func probeCheck(f *Filter, p *stashTable, e *stashEntry) {
++	if e.id == 0 {
++		return
++	}
++	probeWrites.Add(1)
++	base := (uintptr(unsafe.Pointer(e)) - uintptr(unsafe.Pointer(&p.e[0]))) / unsafe.Sizeof(stashEntry{}) / stashWays * stashWays
++	for k := base; k < base+stashWays; k++ {
++		o := &p.e[k]
++		if o == e || o.id != e.id {
++			continue
++		}
++		probeDup.Add(1)
++		a, b := o.w0&tsMask, e.w0&tsMask
++		if max(a, b)-min(a, b) <= f.horizon {
++			probeDupLive.Add(1)
++		}
++		if a > b {
++			probeDupOlder.Add(1)
++		}
++		if p == f.room.Load() {
++			probeDupRoom.Add(1)
++		}
++	}
++}
++
++// probeGet (scratch): a get returns set[i]; is a newer entry of its identity later in the set?
++func probeGet(set []stashEntry, i int) {
++	for j := i + 1; j < len(set); j++ {
++		if set[j].id == set[i].id && set[j].w0&tsMask > set[i].w0&tsMask {
++			probeGetOlder.Add(1)
++		}
++	}
++}
++
++func probeLine() string {
++	return fmt.Sprintf("probe: %d stash/room writes, %d with another entry of the identity in the set (%d within a horizon, %d the written one older, %d in the wait room); %d gets returned an older entry",
++		probeWrites.Load(), probeDup.Load(), probeDupLive.Load(), probeDupOlder.Load(), probeDupRoom.Load(), probeGetOlder.Load())
++}

@@ -79,6 +79,13 @@ registerepoch() {
 	for v in noHold ownRef noWait noReread; do
 		run violation RegisterEpoch "$v" "$inv" "Touchers = $(procs t 2)" "$c" "Variant = \"$v\"" "H = 24"
 	done
+	# Experiments E21 and E22: realign by one CAS of both words (no hold),
+	# with the count's CAS comparing word0 too (cas2) or not (cas2r).
+	for v in cas2 cas2r; do
+		run ok RegisterEpoch "$v (E21/E22), 2 touchers" "$inv" "Touchers = $(procs t 2)" "$c" "Variant = \"$v\"" "H = 24"
+		[ "${TLA_BIG:-}" = 1 ] && run ok RegisterEpoch "$v (E21/E22), 3 touchers" "$inv" "Touchers = $(procs t 3)" "$c" "Variant = \"$v\"" "H = 24"
+	done
+	run violation RegisterEpoch "cas2NoReread: ReaderRight" ReaderRight "Touchers = $(procs t 2)" "$c" 'Variant = "cas2NoReread"' "H = 24"
 }
 
 # Relocate (claims A23): a relocation's copy, hidden until its hand-off,
@@ -182,6 +189,10 @@ bumpaba() {
 	run ok BumpABA "old, other tag, hold, second" "KKept KExact K2Kept" 'Variant = "old"' 'SameTag = FALSE' 'Hold = TRUE' 'Second = TRUE'
 	run violation BumpABA "old (before A29), same tag: KKept" KKept 'Variant = "old"' 'SameTag = TRUE' 'Hold = FALSE' 'Second = FALSE'
 	run violation BumpABA "tag, reachable: NeverAgain" NeverAgain 'Variant = "tag"' 'SameTag = TRUE' 'Hold = FALSE' 'Second = FALSE'
+	# Experiment E21 (not adopted): the count as one CAS of both words.
+	for same in FALSE TRUE; do
+		run ok BumpABA "cas2 (E21), same tag $same, hold, second" "KKept KExact K2Kept" 'Variant = "cas2"' "SameTag = $same" 'Hold = TRUE' 'Second = TRUE'
+	done
 }
 
 # HotEntry: a hot entry's lock-free add (bucket 0's word: closed bit and

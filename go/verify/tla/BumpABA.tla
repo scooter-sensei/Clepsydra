@@ -21,7 +21,8 @@
 (* with K's history. It decides on the load of word1 it waited on: a hold  *)
 (* may begin after that load (deciding on a second load read the hold's    *)
 (* busy word1 as another tag). "noWait": "tag" reading a busy word1 as     *)
-(* another tag.                                                            *)
+(* another tag. "cas2" (experiment E21): the count is one CAS of both      *)
+(* words, from those read; no re-read.                                     *)
 (* Invariants: KKept (once all are done, K's events in its slot and the    *)
 (* stash are at least its two touches: never low), KExact (exactly two:    *)
 (* never high either), K2Kept (K2's event is in its slot or the stash).    *)
@@ -60,9 +61,11 @@ t_r0:
   rv0 := w0[1];
   if rv0 /= "K" \/ rv1.t /= "T" then goto t_miss; end if;
 t_cas:
-  if w1[1] = rv1 then w1[1] := [t |-> "T", n |-> rv1.n + 1]; else goto t_r1; end if;
+  if w1[1] = rv1 /\ (Variant /= "cas2" \/ w0[1] = rv0) then w1[1] := [t |-> "T", n |-> rv1.n + 1];
+  else goto t_r1;
+  end if;
 t_post:
-  if Variant = "old" \/ w0[1] = "K" then goto t_out;
+  if Variant \in {"old", "cas2"} \/ w0[1] = "K" then goto t_out;
   elsif Variant = "post" then again := TRUE; goto t_miss;
   end if;
 t_wait:                                   \* one load of word1: wait on it, decide on it

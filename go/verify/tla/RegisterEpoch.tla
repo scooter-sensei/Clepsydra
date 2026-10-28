@@ -24,6 +24,12 @@
 (*   "ownRef"    fixed, but bump reads against the caller's last           *)
 (*   "noWait"    fixed, but a touch that finds word1 busy routes as if not *)
 (*   "noReread"  fixed, but the reader does not read word0 again           *)
+(*   "cas2"      experiments E21, E22: realign moves both words by one CAS *)
+(*               from those it read (no hold), and bump's CAS compares     *)
+(*               word0 too                                                 *)
+(*   "cas2NoReread" cas2, but the reader does not read word0 again         *)
+(*   "cas2r"     experiment E22 alone: realign as cas2, bump's CAS of      *)
+(*               word1 alone (as committed)                                *)
 (* Invariants: NotAged (no event placed older than it happened), Kept (no  *)
 (* event within the horizon of the newest clock lost), ReaderRight (a     *)
 (* reader that accepts a pair reads the register's unit).                  *)
@@ -35,6 +41,8 @@ CONSTANTS Touchers, Clocks, Variant, H
 Start == 100                       \* the key's first event, and its unit
 Resolve(bits, ref) == LET d == (ref - bits) % 16 IN IF d > 7 THEN ref - d + 16 ELSE ref - d
 Hold == Variant \notin {"old", "noHold"}
+CAS2 == {"cas2", "cas2NoReread", "cas2r"}    \* realign by one CAS of both words
+CountCAS2 == {"cas2", "cas2NoReread"}        \* bump's CAS compares word0 too
 
 (* --algorithm RegisterEpoch
 variables
@@ -67,7 +75,7 @@ t_route:                                     \* farAhead: word1, read against wo
   if Hold /\ c > last /\ busy /\ Variant /= "noWait" then
     goto t_load;                             \* held: its unit can't be read; look again
   elsif Hold /\ c > last /\ ~busy /\ c - Resolve(bits, last) >= 8 then
-    hv := ver;
+    hv := ver || rb := bits || rage := age;
     goto t_hold;
   end if;
 t_cas0:                                      \* word0 moves first, if later
@@ -85,7 +93,7 @@ t_w1:                                        \* bump: word1, then word0
 t_w0:
   cur := ts;
 t_bump:                                      \* the register read against a reference, advanced, CASed
-  if busy \/ ver /= rv then
+  if busy \/ ver /= rv \/ (Variant \in CountCAS2 /\ ts /= cur) then
     goto t_w1;
   else
     e := Resolve(rb, IF Variant \in {"old", "ownRef"} THEN last ELSE cur);
@@ -107,7 +115,24 @@ t_bump:                                      \* the register read against a refe
     goto t_done;
   end if;
 t_hold:                                      \* realign: CAS word1 (as routed) to busy
-  if busy \/ ver /= hv then
+  if Variant \in CAS2 then                   \* both words by one CAS from those read
+    if busy \/ ver /= hv \/ ts /= last then
+      goto t_load;
+    else
+      e := Resolve(rb, last);
+      ts := c;
+      if c - last > H then
+        age := [k \in {self} |-> 0];
+      else
+        age := [k \in DOMAIN rage \cup {self} |-> IF k = self THEN 0 ELSE rage[k] + (c - e)];
+      end if;
+      regE := c;
+      bits := c % 16;
+      ver := ver + 1;
+      truth := [k \in DOMAIN truth \cup {self} |-> IF k = self THEN c ELSE truth[k]];
+      goto t_done;
+    end if;
+  elsif busy \/ ver /= hv then
     goto t_load;
   else
     busy := TRUE || rb := bits || rage := age;
@@ -147,7 +172,7 @@ r_w1:
     b := bits || g := regE;
   end if;
 r_again:
-  if Variant \notin {"old", "noReread"} /\ ts /= a then
+  if Variant \notin {"old", "noReread", "cas2NoReread"} /\ ts /= a then
     goto r_w0;
   end if;
 r_check:

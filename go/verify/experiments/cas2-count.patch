@@ -1,0 +1,98 @@
+diff --git a/cas2_amd64.go b/cas2_amd64.go
+new file mode 100644
+index 0000000..6677263
+--- /dev/null
++++ b/cas2_amd64.go
+@@ -0,0 +1,13 @@
++package temporalfilter
++
++// hasCAS2 reports CMPXCHG16B (every x86-64 CPU since about 2006, though
++// GOAMD64=v1 doesn't promise it).
++var hasCAS2 = cpuHasCX16()
++
++// cas2 atomically replaces the 16-byte pair at p (16-byte aligned: a slot)
++// with new0, new1 if it still holds old0, old1.
++//
++//go:noescape
++func cas2(p *uint64, old0, old1, new0, new1 uint64) bool
++
++func cpuHasCX16() bool
+diff --git a/cas2_amd64.s b/cas2_amd64.s
+new file mode 100644
+index 0000000..1511e4e
+--- /dev/null
++++ b/cas2_amd64.s
+@@ -0,0 +1,23 @@
++#include "textflag.h"
++
++// func cas2(p *uint64, old0, old1, new0, new1 uint64) bool
++TEXT ·cas2(SB), NOSPLIT, $0-41
++	MOVQ p+0(FP), DI
++	MOVQ old0+8(FP), AX
++	MOVQ old1+16(FP), DX
++	MOVQ new0+24(FP), BX
++	MOVQ new1+32(FP), CX
++	LOCK
++	CMPXCHG16B (DI)
++	SETEQ ret+40(FP)
++	RET
++
++// func cpuHasCX16() bool
++TEXT ·cpuHasCX16(SB), NOSPLIT, $0-1
++	MOVL $1, AX
++	XORL CX, CX
++	CPUID
++	SHRL $13, CX
++	ANDL $1, CX
++	MOVB CX, ret+0(FP)
++	RET
+diff --git a/cas2_other.go b/cas2_other.go
+new file mode 100644
+index 0000000..00bdb6c
+--- /dev/null
++++ b/cas2_other.go
+@@ -0,0 +1,7 @@
++//go:build !amd64
++
++package temporalfilter
++
++const hasCAS2 = false
++
++func cas2(p *uint64, old0, old1, new0, new1 uint64) bool { panic("unreachable") }
+diff --git a/register.go b/register.go
+index 0356860..1246267 100644
+--- a/register.go
++++ b/register.go
+@@ -235,6 +235,18 @@ func (f *Filter) bump(i int, fpd, tg, now uint64, nu int64, last uint64, lu int6
+ 		if nw == old {
+ 			return nw, ref, over, true
+ 		}
++		if hasCAS2 { // the count and word0 in one CAS: it can't land in a newcomer (E21)
++			if cas2(&f.words[i], w0, old, w0, nw) {
++				if testHookBumped != nil {
++					testHookBumped(i)
++				}
++				return nw, ref, over, true
++			}
++			if atomic.LoadUint64(&f.words[i+1]) != old {
++				reset = false // a concurrent touch already reset it; merge
++			}
++			continue
++		}
+ 		if atomic.CompareAndSwapUint64(&f.words[i+1], old, nw) {
+ 			if testHookBumped != nil {
+ 				testHookBumped(i)
+diff --git a/tagstripe_test.go b/tagstripe_test.go
+index e08525b..bd64ce5 100644
+--- a/tagstripe_test.go
++++ b/tagstripe_test.go
+@@ -244,6 +244,9 @@ func TestCountThenMoveCountsOnce(t *testing.T) {
+ // out the hold, which puts back a register of K's tag, and count afresh.
+ // Reading the busy word1 as another tag, K would read one low.
+ func TestCountIntoHeldSameTagSlotLooksAgain(t *testing.T) {
++	if hasCAS2 {
++		t.Skip("cas2: a count can't land in another key's register")
++	}
+ 	f := newMinuteFilter(t, 4)
+ 	if f.lines != 2 {
+ 		t.Fatalf("lines %d, want 2", f.lines)

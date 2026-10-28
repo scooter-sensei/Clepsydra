@@ -3,7 +3,8 @@
 # every language.
 #
 #   ./test.sh smoke        build, vet, format, one call of every operation (~2 s)
-#   ./test.sh sanity       smoke + the unit suite (short) + ConstantTime and Background modes + conformance vectors (~30 s)
+#   ./test.sh sanity       smoke + the unit suite (short) + ConstantTime and Background modes + realign's hold
+#                          on amd64 (TF_NOCAS2=1) + conformance vectors (~40 s)
 #   ./test.sh regression   bug-fix tests and every deterministic result against verify/expected/ (~1 min)
 #                          --full also replays fixes, history and old harnesses (verify/run.sh, ~25 min)
 #   ./test.sh perf [A]     benchmarks of A (default: HEAD, or HEAD~1 on a clean tree) vs the
@@ -20,7 +21,7 @@ set -uo pipefail
 cd "$(dirname "$0")"
 . verify/lib.sh
 tier=${1:-}
-[ -n "$tier" ] || { sed -n '2,17p' "$0"; exit 2; }
+[ -n "$tier" ] || { sed -n '2,18p' "$0"; exit 2; }
 shift
 OUT=${OUT:-verify-report/$tier}
 . verify/checks.sh
@@ -44,6 +45,7 @@ sanity() {
 	check unit - go test -short -count=1 ./...
 	check constant-time - env TF_CT=1 go test -short -count=1 .
 	check background - env TF_BG=1 go test -short -count=1 .
+	check no-cas2 - env TF_NOCAS2=1 go test -short -count=1 .
 	check conformance - go test -count=1 -run '^TestConformance$' -v .
 }
 
@@ -105,7 +107,7 @@ all)
 	regression
 	stress
 	;;
-*) sed -n '2,17p' "$0"; exit 2 ;;
+*) sed -n '2,18p' "$0"; exit 2 ;;
 esac
 if [ $failed = 0 ]; then say "ALL PASS ($tier)"; else say "SOME CHECKS FAILED ($tier; logs in $OUT)"; fi
 exit $failed

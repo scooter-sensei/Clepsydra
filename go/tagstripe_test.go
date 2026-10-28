@@ -242,8 +242,14 @@ func TestCountThenMoveCountsOnce(t *testing.T) {
 // touch reads word0 again, a touch of K2 10 units on holds the slot
 // (realign) for 20 ms. word0 is K2's and word1 busy: the touch must wait
 // out the hold, which puts back a register of K's tag, and count afresh.
-// Reading the busy word1 as another tag, K would read one low.
+// Reading the busy word1 as another tag, K would read one low. With
+// realign's 16-byte CAS there is no hold: K's touch finds K2's realign
+// done, with K's tag in word1.
 func TestCountIntoHeldSameTagSlotLooksAgain(t *testing.T) {
+	realignModes(t, countIntoHeldSameTagSlot)
+}
+
+func countIntoHeldSameTagSlot(t *testing.T) {
 	f := newMinuteFilter(t, 4)
 	if f.lines != 2 {
 		t.Fatalf("lines %d, want 2", f.lines)
@@ -463,10 +469,13 @@ func TestSweepSameTagHoldHidesKey(t *testing.T) {
 // unchanged: 300 events at sweepT0 stay in the entry's oldest bucket 25
 // units on, so B doesn't demote it; case 4291's kind) or demoted it (50
 // units on, the entry's events are past it, and B hands the register, with
-// its event, back to the slot; case 3490's kind).
+// its event, back to the slot; case 3490's kind). With realign's 16-byte
+// CAS, B runs after A's realign.
 func TestStaleHotResetKeepsTouches(t *testing.T) {
 	for _, gap := range []uint64{25, 50} {
-		t.Run(fmt.Sprintf("gap%d", gap), func(t *testing.T) { staleHotReset(t, gap) })
+		t.Run(fmt.Sprintf("gap%d", gap), func(t *testing.T) {
+			realignModes(t, func(t *testing.T) { staleHotReset(t, gap) })
+		})
 	}
 }
 

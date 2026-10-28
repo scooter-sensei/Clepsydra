@@ -68,7 +68,7 @@ waitroom() {
 	done
 }
 
-# RegisterEpoch (claims A21): a register's 4-bit epoch against its last touch.
+# RegisterEpoch (claims A21, A33): a register's 4-bit epoch against its last touch.
 registerepoch() {
 	local inv="NotAged Kept ReaderRight" c='Clocks = {101, 107, 108, 116, 126}' v i
 	run ok RegisterEpoch "fixed, 2 touchers" "$inv" "Touchers = $(procs t 2)" "$c" 'Variant = "fixed"' "H = 24"
@@ -79,11 +79,14 @@ registerepoch() {
 	for v in noHold ownRef noWait noReread; do
 		run violation RegisterEpoch "$v" "$inv" "Touchers = $(procs t 2)" "$c" "Variant = \"$v\"" "H = 24"
 	done
-	# Experiments E21 and E22: realign by one CAS of both words (no hold),
-	# with the count's CAS comparing word0 too (cas2) or not (cas2r).
-	for v in cas2 cas2r; do
-		run ok RegisterEpoch "$v (E21/E22), 2 touchers" "$inv" "Touchers = $(procs t 2)" "$c" "Variant = \"$v\"" "H = 24"
-		[ "${TLA_BIG:-}" = 1 ] && run ok RegisterEpoch "$v (E21/E22), 3 touchers" "$inv" "Touchers = $(procs t 3)" "$c" "Variant = \"$v\"" "H = 24"
+	# Realign by one CAS of both words (no hold): as committed on amd64, the
+	# count's CAS of word1 alone (cas2r, claims A33); experiment E21, the
+	# count's CAS comparing word0 too (cas2).
+	for v in cas2r cas2; do
+		local what="amd64, A33"
+		[ $v = cas2 ] && what=E21
+		run ok RegisterEpoch "$v ($what), 2 touchers" "$inv" "Touchers = $(procs t 2)" "$c" "Variant = \"$v\"" "H = 24"
+		[ "${TLA_BIG:-}" = 1 ] && run ok RegisterEpoch "$v ($what), 3 touchers" "$inv" "Touchers = $(procs t 3)" "$c" "Variant = \"$v\"" "H = 24"
 	done
 	run violation RegisterEpoch "cas2NoReread: ReaderRight" ReaderRight "Touchers = $(procs t 2)" "$c" 'Variant = "cas2NoReread"' "H = 24"
 }

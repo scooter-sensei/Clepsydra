@@ -11,11 +11,16 @@ import (
 // resolved against the slot's last touch, so for g >= 8 Y read the old
 // register as the new unit's and X then aged Y's event with it by g units
 // (past the horizon, X's reset dropped it): the last two units read
-// Upper 1 for two events. Y must count in the current unit.
+// Upper 1 for two events. Y must count in the current unit. (With
+// realign's 16-byte CAS, X moves both words at once for g >= 8.)
 func TestTouchesRacingAfterGap(t *testing.T) {
 	if forceCT {
 		t.Skip("ConstantTime touches of a key run one at a time under its stripe")
 	}
+	realignModes(t, touchesRacingAfterGap)
+}
+
+func touchesRacingAfterGap(t *testing.T) {
 	for g := uint64(1); g <= 30; g++ {
 		f, err := New(Config{Capacity: 1000, Horizon: 48 * time.Millisecond, Resolution: time.Millisecond,
 			Clock: func() uint64 { return 1 }, Hot: -1})

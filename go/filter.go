@@ -1408,14 +1408,18 @@ func (f *Filter) farAhead(i int, nu, lu int64, stale bool) (old uint64, far, wai
 // realign is hit's count of a touch at now 8 or more units past the unit of
 // slot i's register (old, read against word0 w0), or past the horizon of
 // the slot of a hot key (old points to its entry, which it gives up and
-// starts afresh): word1 goes busy, word0
-// moves to now, then the register, advanced to now's unit with the touch
-// counted, is published in word1. While word1 is busy, a lookup that
-// misses the slot looks again: the hold counts as a move of the key's
-// stripe. ok is false if the slot changed meanwhile.
+// starts afresh): word0 moves to now and word1 to the register, advanced to
+// now's unit with the touch counted. With CMPXCHG16B (amd64) both move by
+// one CAS (realign2). Elsewhere word1 goes busy, word0 moves, then word1 is
+// published; while word1 is busy, a lookup that misses the slot looks
+// again: the hold counts as a move of the key's stripe. ok is false if the
+// slot changed meanwhile.
 func (f *Filter) realign(h uint64, i int, w0, old, tg, now uint64) (w1 uint64, over, ok bool) {
 	if old>>tagShift != tg || isHot(old) && age(now, w0&tsMask) <= f.horizon {
 		return 0, false, false
+	}
+	if hasCAS2 {
+		return f.realign2(i, w0, old, tg, now)
 	}
 	m := f.moveOf(tg)
 	m.begun.Add(1)
@@ -1438,6 +1442,38 @@ func (f *Filter) realign(h uint64, i int, w0, old, tg, now uint64) (w1 uint64, o
 		}
 	}
 	atomic.StoreUint64(&f.words[i+1], w1)
+	return w1, over, true
+}
+
+// realign2 is realign by one 16-byte CAS of both words from w0, old (claims
+// A33): word1 never goes busy, so no lookup looks again and no move is
+// counted, and a touch whose two loads straddle the CAS fails its own CAS
+// from what it read. The CAS compares word0 too: a slot handed meanwhile to
+// a key of old's tag can hold old bit for bit (promote). A promotion takes
+// its entry first and publishes it by the same CAS, and closes it again if
+// the CAS fails.
+func (f *Filter) realign2(i int, w0, old, tg, now uint64) (w1 uint64, over, ok bool) {
+	last := w0 & tsMask
+	n0 := w0&^tsMask | now
+	w1, over = f.nextReg(old, tg, last, now, age(now, last) > f.horizon)
+	var idx, id uint64
+	if over {
+		if pw, x, y := f.hotEntryFor(i, w0, old, tg, last, now); pw != 0 {
+			w1, over, idx, id = pw, false, x, y
+		}
+	}
+	if !cas2(&f.words[i], w0, old, n0, w1) {
+		if idx != 0 {
+			f.hotClose(idx, id) // never published
+		}
+		return 0, false, false
+	}
+	if idx != 0 {
+		f.promoted.Add(1)
+	}
+	if testHookStamped != nil {
+		testHookStamped()
+	}
 	return w1, over, true
 }
 

@@ -1,0 +1,15 @@
+diff --git a/hot.go b/hot.go
+index f80e35f..ae7cadc 100644
+--- a/hot.go
++++ b/hot.go
+@@ -171,9 +171,7 @@ func (t *hotTable) add(idx, id, n uint64, u int64, slot *uint64, old uint64) boo
+ 		if c&hotClosed != 0 || e.id.Load() != id || e.epoch.Load() != u || c&hotCount+n > hotCount {
+ 			break
+ 		}
+-		if e.c0.CompareAndSwap(c, c+n) {
+-			return true
+-		}
++		return true // ceiling arm: no CAS
+ 	}
+ 	ver := e.lock()
+ 	if e.id.Load() != id {

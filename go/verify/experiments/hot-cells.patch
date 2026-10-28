@@ -1,0 +1,341 @@
+diff --git a/cells_test.go b/cells_test.go
+new file mode 100755
+index 0000000..f4a87e2
+--- /dev/null
++++ b/cells_test.go
+@@ -0,0 +1,59 @@
++package temporalfilter
++
++import (
++	"sync"
++	"sync/atomic"
++	"testing"
++)
++
++// TestCellsExact (scratch, experiment E23): K hot; 12 goroutines touch it
++// 100,000 times each, their clocks crossing three unit boundaries at their
++// own pace (adds at the entry's unit go to c0 or a cell, older ones to the
++// lock path, a newer unit advances the entry and frees its block). K's
++// count over the horizon must be exact, and some block must have been used.
++// Run with -count to repeat.
++func TestCellsExact(t *testing.T) {
++	f := newMinuteFilter(t, 1000)
++	k := keyAt(f, 7, twoLineFPs(f, 7, 0x6600, 1)[0], 0x321)
++	for range 40 { // past the register's 31 events in a unit: promoted
++		f.TouchAt(k, 0, sweepT0)
++	}
++	if f.Promoted() != 1 {
++		t.Fatalf("K not promoted")
++	}
++	const workers, per = 12, 100_000
++	var used atomic.Bool
++	stop := make(chan struct{})
++	go func() { // did any entry take a block?
++		ht := f.hot.Load()
++		for {
++			select {
++			case <-stop:
++				return
++			default:
++			}
++			if ht.cfree.Load() != 1<<hotCellBlocks-1 {
++				used.Store(true)
++			}
++		}
++	}()
++	var wg sync.WaitGroup
++	for range workers {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			for i := range per {
++				f.TouchAt(k, 0, sweepT0+uint64(i/(per/4))*f.unit)
++			}
++		}()
++	}
++	wg.Wait()
++	close(stop)
++	end := sweepT0 + 3*f.unit
++	if r := f.CountAt(k, f.horizon, end); r.Count != 40+workers*per || r.Saturated {
++		t.Fatalf("K reads %+v, want Count %d (blocks used: %v)", r, 40+workers*per, used.Load())
++	}
++	if !used.Load() {
++		t.Fatalf("no block was used")
++	}
++}
+diff --git a/hot.go b/hot.go
+index f80e35f..eb606df 100644
+--- a/hot.go
++++ b/hot.go
+@@ -2,6 +2,8 @@ package temporalfilter
+ 
+ import (
+ 	"math"
++	"math/bits"
++	"math/rand/v2"
+ 	"runtime"
+ 	"sync"
+ 	"sync/atomic"
+@@ -51,6 +53,19 @@ const (
+ 	hotGen    = 1 << 33
+ )
+ 
++// Cells (experiment E23): blocks of hotCellsPer cells, one cache line
++// each, given to an entry whose c0 CAS fails hotCellAfter times in one add.
++const (
++	hotCellsPer   = 8
++	hotCellBlocks = 32
++	hotCellAfter  = 2
++)
++
++type hotCell struct {
++	c atomic.Uint64 // as c0: count | hotClosed | generation
++	_ [56]byte
++}
++
+ // isHot reports whether word1 points at a hot entry instead of holding a
+ // register.
+ func isHot(w1 uint64) bool {
+@@ -68,6 +83,9 @@ type hotTable struct {
+ 	full    atomic.Int64 // unit in which an allocation last found no entry
+ 	inUse   atomic.Int64
+ 	demoted atomic.Uint64
++	cells   []hotCell       // hotCellBlocks blocks of hotCellsPer
++	blk     []atomic.Uint32 // per entry: its block (1-based), 0 none; set under the entry's lock
++	cfree   atomic.Uint64   // free blocks, bit b-1
+ }
+ 
+ func (f *Filter) hotTable() *hotTable {
+@@ -82,6 +100,10 @@ func (f *Filter) hotTable() *hotTable {
+ 	w := alignedWords((f.hotN + 1) * int(unsafe.Sizeof(hotEntry{})/8))
+ 	prefault(w)
+ 	t := &hotTable{e: unsafe.Slice((*hotEntry)(unsafe.Pointer(&w[0])), f.hotN+1), next: 1}
++	cw := alignedWords(hotCellBlocks * hotCellsPer * 8)
++	t.cells = unsafe.Slice((*hotCell)(unsafe.Pointer(&cw[0])), hotCellBlocks*hotCellsPer)
++	t.blk = make([]atomic.Uint32, f.hotN+1)
++	t.cfree.Store(1<<hotCellBlocks - 1)
+ 	t.full.Store(satNone)
+ 	f.hot.Store(t)
+ 	return t
+@@ -142,13 +164,91 @@ func (e *hotEntry) store(v *view) {
+ 	e.sat.Store(v.sat)
+ }
+ 
++// block returns block b's cells.
++func (t *hotTable) block(b uint32) []hotCell {
++	return t.cells[(b-1)*hotCellsPer : b*hotCellsPer]
++}
++
++// lock takes entry idx and closes c0 and its cells.
++func (t *hotTable) lock(idx uint64) uint64 {
++	ver := t.e[idx].lock()
++	if b := t.blk[idx].Load(); b != 0 {
++		cs := t.block(b)
++		for j := range cs {
++			cs[j].c.Or(hotClosed)
++		}
++	}
++	return ver
++}
++
++// unlock reopens entry idx's cells and c0 with the next generation.
++func (t *hotTable) unlock(idx, ver uint64) {
++	if b := t.blk[idx].Load(); b != 0 {
++		cs := t.block(b)
++		for j := range cs {
++			cs[j].c.Store(cs[j].c.Load()&^hotClosed + hotGen)
++		}
++	}
++	t.e[idx].unlock(ver)
++}
++
++// load is the entry's load with its cells added to bucket 0.
++func (t *hotTable) load(idx uint64) view {
++	v := t.e[idx].load()
++	if b := t.blk[idx].Load(); b != 0 {
++		cs := t.block(b)
++		for j := range cs {
++			v.c[0] += cs[j].c.Load() & hotCount
++		}
++	}
++	return v
++}
++
++// store is the entry's store, its cells (folded into v by load) zeroed.
++func (t *hotTable) store(idx uint64, v *view) {
++	if b := t.blk[idx].Load(); b != 0 {
++		cs := t.block(b)
++		for j := range cs {
++			cs[j].c.Store(cs[j].c.Load() &^ hotCount)
++		}
++	}
++	t.e[idx].store(v)
++}
++
++// attach gives held entry idx a free block, zeroed and closed (unlock opens
++// it), if it has none and one is free.
++func (t *hotTable) attach(idx uint64) {
++	for t.blk[idx].Load() == 0 {
++		fr := t.cfree.Load()
++		if fr == 0 {
++			return
++		}
++		b := uint32(bits.TrailingZeros64(fr)) + 1
++		if t.cfree.CompareAndSwap(fr, fr&^(1<<(b-1))) {
++			cs := t.block(b)
++			for j := range cs {
++				cs[j].c.Store(cs[j].c.Load()&^hotCount | hotClosed)
++			}
++			t.blk[idx].Store(b)
++		}
++	}
++}
++
++// detach takes held entry idx's block back; its cells stay closed.
++func (t *hotTable) detach(idx uint64) {
++	if b := t.blk[idx].Load(); b != 0 {
++		t.blk[idx].Store(0)
++		t.cfree.Or(1 << (b - 1))
++	}
++}
++
+ // read returns entry idx's state if it belongs to id.
+ func (t *hotTable) read(idx, id uint64) (view, bool) {
+ 	e := &t.e[idx]
+ 	for spins := 0; ; spins++ {
+ 		if v1 := e.ver.Load(); v1&1 == 0 {
+ 			owner := e.id.Load()
+-			v := e.load()
++			v := t.load(idx)
+ 			if e.ver.Load() == v1 {
+ 				return v, owner == id
+ 			}
+@@ -166,28 +266,50 @@ func (t *hotTable) read(idx, id uint64) (view, bool) {
+ // the slot as a register and frees the entry (demote).
+ func (t *hotTable) add(idx, id, n uint64, u int64, slot *uint64, old uint64) bool {
+ 	e := &t.e[idx]
+-	for { // the usual case, a touch in the entry's own unit: one CAS
+-		c := e.c0.Load()
+-		if c&hotClosed != 0 || e.id.Load() != id || e.epoch.Load() != u || c&hotCount+n > hotCount {
+-			break
++	contended := false
++	if b := t.blk[idx].Load(); b != 0 { // a contended entry: one of its cells
++		cl := &t.block(b)[rand.Uint64()&(hotCellsPer-1)]
++		for {
++			c := cl.c.Load()
++			if c&hotClosed != 0 || e.id.Load() != id || e.epoch.Load() != u || t.blk[idx].Load() != b || c&hotCount+n > hotCount {
++				break
++			}
++			if cl.c.CompareAndSwap(c, c+n) {
++				return true
++			}
+ 		}
+-		if e.c0.CompareAndSwap(c, c+n) {
+-			return true
++	} else {
++		for fails := 1; ; fails++ { // the usual case, a touch in the entry's own unit: one CAS
++			c := e.c0.Load()
++			if c&hotClosed != 0 || e.id.Load() != id || e.epoch.Load() != u || c&hotCount+n > hotCount {
++				break
++			}
++			if e.c0.CompareAndSwap(c, c+n) {
++				return true
++			}
++			if fails == hotCellAfter {
++				contended = true
++				break
++			}
+ 		}
+ 	}
+-	ver := e.lock()
++	ver := t.lock(idx)
+ 	if e.id.Load() != id {
+-		e.unlock(ver)
++		t.unlock(idx, ver)
+ 		return false
+ 	}
+ 	if u == e.epoch.Load() {
++		if contended {
++			t.attach(idx)
++		}
+ 		if c := e.c0.Load()&hotCount + n; c <= hotCount {
+ 			e.c0.Store(e.c0.Load()&^hotCount | c)
+-			e.unlock(ver)
++			t.unlock(idx, ver)
+ 			return true
+ 		}
+ 	}
+-	v := e.load()
++	v := t.load(idx)
++	adv := u > v.e
+ 	if u >= v.e {
+ 		advanceWide(&v.c, v.e, u)
+ 		v.e = u
+@@ -208,13 +330,17 @@ func (t *hotTable) add(idx, id, n uint64, u int64, slot *uint64, old uint64) boo
+ 		nw := old&^(1<<tagShift-1) | uint64(v.e)&epochMask<<48 | r.pack()
+ 		if atomic.CompareAndSwapUint64(slot, old, nw) {
+ 			e.id.Store(0)
+-			e.unlock(ver)
++			t.detach(idx)
++			t.unlock(idx, ver)
+ 			t.release(idx)
+ 			return true
+ 		}
+ 	}
+-	e.store(&v)
+-	e.unlock(ver)
++	t.store(idx, &v)
++	if adv { // a new unit: the block goes back until the entry is contended again
++		t.detach(idx)
++	}
++	t.unlock(idx, ver)
+ 	return true
+ }
+ 
+@@ -273,10 +399,10 @@ func (f *Filter) hotAlloc(id uint64, v *view, now uint64) uint64 {
+ 		return 0
+ 	}
+ 	e := &t.e[idx]
+-	ver := e.lock()
++	ver := t.lock(idx)
+ 	e.id.Store(id)
+-	e.store(v)
+-	e.unlock(ver)
++	t.store(idx, v)
++	t.unlock(idx, ver)
+ 	t.inUse.Add(1)
+ 	return idx
+ }
+@@ -292,12 +418,13 @@ func (t *hotTable) reclaim(u int64) uint64 {
+ 		if e.id.Load() == 0 || e.epoch.Load() >= dead {
+ 			continue // free ones are on the free list
+ 		}
+-		ver := e.lock()
++		ver := t.lock(t.hand)
+ 		ok := e.id.Load() != 0 && e.epoch.Load() < dead
+ 		if ok {
+ 			e.id.Store(0)
++			t.detach(t.hand)
+ 		}
+-		e.unlock(ver)
++		t.unlock(t.hand, ver)
+ 		if ok {
+ 			t.inUse.Add(-1)
+ 			return t.hand
+@@ -314,12 +441,13 @@ func (f *Filter) hotClose(idx, id uint64) (v view, ok bool) {
+ 		return view{}, false
+ 	}
+ 	e := &t.e[idx]
+-	ver := e.lock()
++	ver := t.lock(idx)
+ 	if e.id.Load() == id {
+-		v, ok = e.load(), true
++		v, ok = t.load(idx), true
+ 		e.id.Store(0)
++		t.detach(idx)
+ 	}
+-	e.unlock(ver)
++	t.unlock(idx, ver)
+ 	if ok {
+ 		t.inUse.Add(-1)
+ 		t.mu.Lock()

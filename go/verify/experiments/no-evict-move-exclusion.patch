@@ -1,0 +1,56 @@
+diff --git a/filter.go b/filter.go
+index aa7d02e..d825980 100644
+--- a/filter.go
++++ b/filter.go
+@@ -285,7 +285,6 @@ type paddedMutex struct {
+ // lost, not the key's history (relocate).
+ type moveCount struct {
+ 	begun, done atomic.Uint64
+-	evicting    atomic.Int64
+ }
+ 
+ // moveOf is the move counts of entries whose word1 tag is tg. A hold of a
+@@ -1732,7 +1731,7 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
+ 				// Read after the slot: a copy goes in only once its move is
+ 				// counted, so a key whose move is under way is left alone. A
+ 				// busy word1 (a hold, or a move's hidden copy) can't be taken.
+-				if mv := f.moveOf(vw1 >> tagShift); vw1>>tagShift == tagBusy || mv.begun.Load() != mv.done.Load() {
++				if vw1>>tagShift == tagBusy {
+ 					continue
+ 				}
+ 				score := min(f.mass(f.slotID(line, w0, vw1), vw1, ts, now), 1<<16-1)<<48 | ts
+@@ -1763,11 +1762,6 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
+ 		// copied the victim, and its hand-off would then fail: back off (see
+ 		// moveCount).
+ 		m := f.moveOf(victimW1 >> tagShift)
+-		m.evicting.Add(1)
+-		defer m.evicting.Add(-1)
+-		if m.begun.Load() != m.done.Load() {
+-			return -1
+-		}
+ 		// Between the install and the stash a lock-free lookup finds the
+ 		// victim in neither; the move count tells it to look again.
+ 		m.begun.Add(1)
+@@ -1903,11 +1897,6 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
+ 		defer m.done.Add(1)
+ 		if parent != nil {
+ 			parent.begun.Add(1) // the parent's copy goes in (hidden) with this install
+-			if parent.evicting.Load() != 0 {
+-				parent.done.Add(1)
+-				f.abandon(d)
+-				return false
+-			}
+ 		}
+ 		if f.putNew(put, i, w0, w1, mine0, mine1) { // deeper levels pass no put: install
+ 			atomic.StoreUint64(&f.words[d+1], w1) // the source held w0/w1 until the hand-off: publish
+@@ -1926,10 +1915,6 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
+ 			continue
+ 		}
+ 		m.begun.Add(1)
+-		if m.evicting.Load() != 0 { // an eviction of this stripe is under way: it may take the source
+-			m.done.Add(1)
+-			return false
+-		}
+ 		if f.putOver(nil, base+s, d0, atomic.LoadUint64(&f.words[base+s+1]), moved, busy) {
+ 			if testHookCopied != nil {
+ 				testHookCopied()

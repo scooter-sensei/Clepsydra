@@ -32,7 +32,7 @@ Every file of `go/`, by category. Go builds a package from one directory and req
 |---|---|
 | Smoke and unit | `smoke_test.go` (every public operation once, three configs), `filter_test.go`, `register_test.go`, `disp_test.go` (the displaced bit), `batch_test.go`, `ghost_test.go`, `hot_test.go`, `background_test.go`, `ctwait_test.go` (ConstantTime's waiting keys) |
 | Conformance | `conformance_test.go` (`spec/vectors/`, `-update` regenerates them) |
-| Regression of fixed bugs | `regress_test.go`, `dup_test.go`, `reloc_race_test.go`, `abandon_test.go`, `read_race_test.go`, `restore_test.go`, `lost_test.go`, `movecopy_test.go`, `restorewait_test.go` (A37), `mirror_test.go` (A39) |
+| Regression of fixed bugs | `regress_test.go`, `dup_test.go`, `reloc_race_test.go`, `abandon_test.go`, `read_race_test.go`, `restore_test.go`, `lost_test.go`, `movecopy_test.go`, `restorewait_test.go` (A37), `mirror_test.go` (A39), `hotdrop_test.go` (A40) |
 | Concurrency races on hooks | `gaprace_test.go` (A21), `roomrace_test.go` (A20, A24), `split_race_test.go` (971dc4a, 64ebd85, A23), `sweep_race_test.go` (A26), `install_race_test.go` (A27), `tagstripe_test.go` (A28–A30), `hotspill_test.go` (A32, A38), `stash_race_test.go` (A6), `cas2_amd64_test.go`, `cas2_other_test.go` (realign both ways, A33) |
 | Fuzzers and soak | `fuzz_test.go` (`TestFuzzUpper`), `fuzzconc_test.go` (`TestFuzzConcurrent`), `soak_test.go` (`TestStressSoak`), `tagamp_test.go` (the tag amplifier, `TF_CFUZZ_TAGS`, `TF_STRESS_TAGS`) |
 | Attacks | `attack_test.go` |

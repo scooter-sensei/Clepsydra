@@ -1,0 +1,26 @@
+name: trailers
+
+# Fails when a commit reachable from a pushed branch or a pull request's head,
+# or a pull request's title or body, has a Co-authored-by trailer
+# (.githooks/no-co-author). Required on main, it keeps such commits out of it.
+on:
+  push:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+jobs:
+  no-co-author:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: commits
+        run: .githooks/no-co-author commits HEAD
+      - name: pull request title and body
+        if: github.event_name == 'pull_request'
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s\n\n%s\n' "$TITLE" "$BODY" | .githooks/no-co-author text "pull request"

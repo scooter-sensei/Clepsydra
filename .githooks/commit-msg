@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Rejects a commit whose message has a Co-authored-by trailer.
+exec "$(dirname "$0")/no-co-author" file "$1"

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Rejects a push that would publish a commit with a Co-authored-by trailer.
+# This also catches the commits commit-msg never saw: --no-verify, rebases,
+# cherry-picks, amends with a scripted message, merges of other branches.
+set -uo pipefail
+bad=0
+while read -r lref lsha rref rsha; do
+	[[ $lsha =~ ^0+$ ]] && continue # a deletion
+	if [[ $rsha =~ ^0+$ ]] || ! git cat-file -e "$rsha^{commit}" 2>/dev/null; then
+		# A new branch, or a remote tip we don't have: every commit not on a remote.
+		range=("$lsha" --not --remotes="$1")
+	else
+		range=("$rsha..$lsha")
+	fi
+	"$(dirname "$0")/no-co-author" commits "${range[@]}" || bad=1
+done
+exit $bad

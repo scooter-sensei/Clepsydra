@@ -38,3 +38,13 @@ cd go
 ./bench.sh "label"      # a scorecard row in docs/record/scorecard-history.md
 verify/run.sh           # every claim check (docs/artifact/claims.md)
 ```
+
+## Commits
+
+Commit messages carry no `Co-authored-by` trailers, in any spelling. After cloning, enable the hooks that reject them:
+
+```
+git config core.hooksPath .githooks
+```
+
+`commit-msg` checks each message as it is written; `pre-push` checks every commit a push would publish, including those made around `commit-msg` (rebases, cherry-picks, `--no-verify`). On GitHub, the `trailers` workflow checks every pushed branch's history and each pull request's commits, title and body.

@@ -127,6 +127,15 @@ func logOffKeys(t *testing.T, f *Filter, it int, salt uint64, ns []int64, hotTag
 				same = append(same, uint64(j))
 			}
 		}
-		t.Logf("round %d, hot key %d: count %d, true %d (%+d); tag %d: hot keys %v and %d cold keys share it; %s", it, k, got, want[k], got-want[k], tag(h), same, coldTags[tag(h)], f.whereIs(h, at))
+		where := "where unknown"
+		if describeKey != nil {
+			where = describeKey(f, h, at)
+		}
+		t.Logf("round %d, hot key %d: count %d, true %d (%+d); tag %d: hot keys %v and %d cold keys share it; %s", it, k, got, want[k], got-want[k], tag(h), same, coldTags[tag(h)], where)
 	}
 }
+
+// describeKey says where h's history is (soak_test.go sets it to whereIs).
+// verify/replay.sh copies this file alone into commits from before
+// whereIs, where it stays nil and the file still builds.
+var describeKey func(f *Filter, h, now uint64) string

@@ -165,6 +165,8 @@ func TestStressSoak(t *testing.T) {
 	}
 }
 
+func init() { describeKey = (*Filter).whereIs }
+
 // whereIs describes where h's history is: its slots (with the register's or
 // hot entry's counts), its stash entry, its overflow entries and floor.
 func (f *Filter) whereIs(h, now uint64) string {

@@ -1,0 +1,178 @@
+diff --git a/filter.go b/filter.go
+index 4ca8f10..e555af5 100644
+--- a/filter.go
++++ b/filter.go
+@@ -704,24 +704,6 @@ func (f *Filter) lookupStable(h, fp, tg uint64, both bool) (i int, w0, w1 uint64
+ 	}
+ }
+ 
+-// slotWords loads slot i's words if it still holds fp/tg. word0 is read
+-// again after word1: a realign between the two loads would pair the old
+-// last touch with the new register, whose epoch is read against it.
+-func (f *Filter) slotWords(i int, fp, tg uint64) (w0, w1 uint64, ok bool) {
+-	if i < 0 {
+-		return 0, 0, false
+-	}
+-	w0 = atomic.LoadUint64(&f.words[i])
+-	w1 = atomic.LoadUint64(&f.words[i+1])
+-	if w0>>48 != fp || w1>>tagShift != tg {
+-		return w0, w1, false
+-	}
+-	if a := atomic.LoadUint64(&f.words[i]); a != w0 && f.unitOf(a&tsMask) != f.unitOf(w0&tsMask) {
+-		return w0, w1, false
+-	}
+-	return w0, w1, true
+-}
+-
+ // sketchLive: the overflow table may hold a count at now. ConstantTime
+ // reads it whatever it holds.
+ func (f *Filter) sketchLive(now uint64) bool {
+@@ -1075,6 +1057,79 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 	}
+ }
+ 
++// slotWords loads slot i's words if it still holds fp/tg. word0 is read
++// again after word1: a realign between the two loads would pair the old
++// last touch with the new register, whose epoch is read against it.
++func (f *Filter) slotWords(i int, fp, tg uint64) (w0, w1 uint64, ok bool) {
++	if i < 0 {
++		return 0, 0, false
++	}
++	w0 = atomic.LoadUint64(&f.words[i])
++	w1 = atomic.LoadUint64(&f.words[i+1])
++	if w0>>48 != fp || w1>>tagShift != tg {
++		return w0, w1, false
++	}
++	if a := atomic.LoadUint64(&f.words[i]); a != w0 && f.unitOf(a&tsMask) != f.unitOf(w0&tsMask) {
++		return w0, w1, false
++	}
++	return w0, w1, true
++}
++
++// locate returns the word index of h's slot, or -1: an undisplaced entry in
++// the primary line or a displaced one in the alternate line.
++func (f *Filter) locate(h, fp, tg uint64) int {
++	p := f.primary(h)
++	if i := f.find(p, fp<<1, tg); i >= 0 {
++		return i
++	}
++	return f.find(f.alt(p, fp), fp<<1|1, tg)
++}
++
++// locateBoth is locate reading both lines every time (ConstantTime).
++func (f *Filter) locateBoth(h, fp, tg uint64) int {
++	p := f.primary(h)
++	i := f.find(p, fp<<1, tg)
++	j := f.find(f.alt(p, fp), fp<<1|1, tg)
++	if i >= 0 {
++		return i
++	}
++	return j
++}
++
++// find returns the word index of the slot in line whose fingerprint and
++// displaced bit equal fpd and whose tag is tg, or -1. The tag lives in word1
++// of the same cache line, so identity is effectively 28 bits at no extra
++// memory traffic.
++func (f *Filter) find(line, fpd, tg uint64) int {
++	base := int(line * wordsPerLine)
++	w := f.words[base : base+wordsPerLine : base+wordsPerLine]
++	for s := 0; s < wordsPerLine; s += 2 {
++		if atomic.LoadUint64(&w[s])>>47 == fpd && atomic.LoadUint64(&w[s+1])>>tagShift == tg {
++			return base + s
++		}
++	}
++	return -1
++}
++
++// farAhead: a touch in unit nu would move slot i's last touch (in unit lu)
++// 8 or more units past its register's unit (old: the register read, or a
++// hot entry's word1, which counts lock-free whatever the gap). wait: word1
++// is busy, so its unit can't be read; a touch that moved word0 on now could
++// leave it 8 units past the register the holder publishes.
++func (f *Filter) farAhead(i int, nu, lu int64, stale bool) (old uint64, far, wait bool) {
++	if nu <= lu {
++		return 0, false, false
++	}
++	old = atomic.LoadUint64(&f.words[i+1])
++	if old>>tagShift == tagBusy {
++		return old, false, true
++	}
++	if isHot(old) { // its own full unit; but a reset must hold the slot (realign)
++		return old, stale, false
++	}
++	return old, nu-regEpoch(old, lu) > epochMask/2, false
++}
++
+ // AutoPad as Config.ConstantTime pads each operation to a running estimate
+ // of its own work's 99.5th-percentile latency instead of a fixed duration.
+ const AutoPad time.Duration = -1
+@@ -1419,25 +1474,6 @@ func (f *Filter) hit(h uint64, i int, fp, tg, window, now uint64, wantCount bool
+ 	return r, true
+ }
+ 
+-// farAhead: a touch in unit nu would move slot i's last touch (in unit lu)
+-// 8 or more units past its register's unit (old: the register read, or a
+-// hot entry's word1, which counts lock-free whatever the gap). wait: word1
+-// is busy, so its unit can't be read; a touch that moved word0 on now could
+-// leave it 8 units past the register the holder publishes.
+-func (f *Filter) farAhead(i int, nu, lu int64, stale bool) (old uint64, far, wait bool) {
+-	if nu <= lu {
+-		return 0, false, false
+-	}
+-	old = atomic.LoadUint64(&f.words[i+1])
+-	if old>>tagShift == tagBusy {
+-		return old, false, true
+-	}
+-	if isHot(old) { // its own full unit; but a reset must hold the slot (realign)
+-		return old, stale, false
+-	}
+-	return old, nu-regEpoch(old, lu) > epochMask/2, false
+-}
+-
+ // realign is hit's count of a touch at now 8 or more units past the unit of
+ // slot i's register (old, read against word0 w0), or past the horizon of
+ // the slot of a hot key (old points to its entry, which it gives up and
+@@ -1650,42 +1686,6 @@ func (f *Filter) markSat(i int, fp uint64, on bool) bool {
+ 	}
+ }
+ 
+-// locate returns the word index of h's slot, or -1: an undisplaced entry in
+-// the primary line or a displaced one in the alternate line.
+-func (f *Filter) locate(h, fp, tg uint64) int {
+-	p := f.primary(h)
+-	if i := f.find(p, fp<<1, tg); i >= 0 {
+-		return i
+-	}
+-	return f.find(f.alt(p, fp), fp<<1|1, tg)
+-}
+-
+-// locateBoth is locate reading both lines every time (ConstantTime).
+-func (f *Filter) locateBoth(h, fp, tg uint64) int {
+-	p := f.primary(h)
+-	i := f.find(p, fp<<1, tg)
+-	j := f.find(f.alt(p, fp), fp<<1|1, tg)
+-	if i >= 0 {
+-		return i
+-	}
+-	return j
+-}
+-
+-// find returns the word index of the slot in line whose fingerprint and
+-// displaced bit equal fpd and whose tag is tg, or -1. The tag lives in word1
+-// of the same cache line, so identity is effectively 28 bits at no extra
+-// memory traffic.
+-func (f *Filter) find(line, fpd, tg uint64) int {
+-	base := int(line * wordsPerLine)
+-	w := f.words[base : base+wordsPerLine : base+wordsPerLine]
+-	for s := 0; s < wordsPerLine; s += 2 {
+-		if atomic.LoadUint64(&w[s])>>47 == fpd && atomic.LoadUint64(&w[s+1])>>tagShift == tg {
+-			return base + s
+-		}
+-	}
+-	return -1
+-}
+-
+ // claim installs fp in an empty or expired slot of the primary line, then the
+ // alternate line. If all eight are live it tries to relocate one of them to
+ // its own alternate line (one cuckoo step). Only then does it evict, taking

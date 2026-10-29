@@ -94,7 +94,7 @@ word1: tag(12) | epoch(4) | 7 velocity buckets (48)  age-graded counter, or the 
 - **Velocity error** [D5]: 0.078, averaged over 1–60s windows and 5 traffic shapes (0.214 at 1 s, 0.024 at 60 s). The original 6×8 linear register scored 0.129 on the same harness [R3]. Most of what remains is the register's information: under a uniform model of events within a bucket no estimator reading it gets below ~0.058 on this workload, and 0.05 would need about 1.25 s resolution near now [D18].
 - **Floods** [A14]: a strict limit of 20 turns away 0.12% / 0.17% / 0.29% of new keys after heavy floods of 2x / 3x / 4x the table's slots, and every offender keeps its full `Count`.
 
-**Speed** (one host per round; `go/verify/speed.md` has the runs, `go/verify/ab.sh` repeats them; compare ratios, not absolute numbers): see `go/verify/speed.md` and, for the 2026-10-21 round, `go/results/round-2026-10-21.md`.
+**Speed** (one host per round; `go/verify/speed.md` has the runs, `go/verify/ab.sh` repeats them; compare ratios, not absolute numbers): see `go/verify/speed.md` and, for the 2026-10-21 round, `go/results/round-2026-10-21.md`. On that host a benchmark moves a few percent with the code's placement in the binary, through the CPU's front end (in its worst layouts the op cache hands part of the hit to the legacy decoder), and about as much from run to run [S55, S58]: judge a change with `go/verify/lrab.sh` and `cycles/op` (docs/TESTING.md).
 
 ## Known limits
 

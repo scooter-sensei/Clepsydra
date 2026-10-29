@@ -209,7 +209,8 @@ func (t *hotTable) add(idx, id, n uint64, u int64, slot *uint64, old uint64) boo
 		if atomic.CompareAndSwapUint64(slot, old, nw) {
 			e.id.Store(0)
 			e.unlock(ver)
-			t.release(idx)
+			t.putFree(idx)
+			t.demoted.Add(1)
 			return true
 		}
 	}
@@ -233,14 +234,13 @@ func demotable(v *view, u int64) bool {
 	return true
 }
 
-// release puts a closed entry on the free list.
-func (t *hotTable) release(idx uint64) {
+// putFree puts a closed entry (its owner 0) on the free list.
+func (t *hotTable) putFree(idx uint64) {
 	t.inUse.Add(-1)
 	t.mu.Lock()
 	t.free = append(t.free, uint32(idx))
 	t.full.Store(satNone)
 	t.mu.Unlock()
-	t.demoted.Add(1)
 }
 
 // hotAlloc takes a free entry for id, holding v, or returns 0 if none is
@@ -321,11 +321,7 @@ func (f *Filter) hotClose(idx, id uint64) (v view, ok bool) {
 	}
 	e.unlock(ver)
 	if ok {
-		t.inUse.Add(-1)
-		t.mu.Lock()
-		t.free = append(t.free, uint32(idx))
-		t.full.Store(satNone)
-		t.mu.Unlock()
+		t.putFree(idx)
 	}
 	return v, ok
 }

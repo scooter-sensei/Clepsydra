@@ -114,7 +114,7 @@ func TestVelocityBound(t *testing.T) {
 		exact := float64(len(ts) - sort.Search(len(ts), func(j int) bool { return ts[j]+w >= now }))
 		exactSum[wi] += exact
 		got := []float64{float64(f.VelocityCountAt(hs[k], w, now))}
-		w0, w1, src := f.read(hs[k], now)
+		w0, w1, src := f.read(hs[k], now, -1)
 		last := w0 & tsMask
 		var v view
 		ok := src != 0 && age(now, last) <= f.horizon

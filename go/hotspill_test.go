@@ -136,3 +136,34 @@ func TestHotAddAfterStashDropCounts(t *testing.T) {
 		t.Fatalf("K reads %+v after a touch at t1", r)
 	}
 }
+
+// TestSpillOfForeignHotEntryIsNotLost: without an overflow table, a stash
+// drop whose hot entry is no longer the history's own (reclaimed past the
+// horizon, as a restore's hotGone treats it, or already spilled) has
+// nothing left to lose: Lost and the Degraded window stay as they were, as
+// with the overflow table. A history that is its own is still lost.
+func TestSpillOfForeignHotEntryIsNotLost(t *testing.T) {
+	f, err := New(Config{Capacity: 1000, Horizon: time.Minute, Resolution: time.Millisecond, Overflow: -1, Hot: 4,
+		Clock: func() uint64 { return 1 }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.hotTable() // entry 1, never handed out, is no one's
+	const now = 60_000
+	k := mix64(7)
+	fp, tg := fingerprint(k), tag(k)
+	id, w0 := f.stashID(k, fp, tg), fp<<48|now
+	foreign := tg<<tagShift | 1<<hotIdxShift
+	if !isHot(foreign) {
+		t.Fatal("not a hot pointer")
+	}
+	f.spill(id, w0, foreign, now)
+	if f.Lost() != 0 || f.lostRecently(now) {
+		t.Fatalf("a drop whose hot entry is another's: Lost %d, lost recently %v; want 0, false", f.Lost(), f.lostRecently(now))
+	}
+	own, _ := f.nextReg(0, tg, now, now, true)
+	f.spill(id, w0, own, now)
+	if f.Lost() != 1 || !f.lostRecently(now) {
+		t.Fatalf("a drop of a history with one event: Lost %d, lost recently %v; want 1, true", f.Lost(), f.lostRecently(now))
+	}
+}

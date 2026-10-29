@@ -548,11 +548,19 @@ func (f *Filter) VelocityCountAt(h, window, now uint64) int {
 }
 
 // CountAt is Count on a pre-hashed key, in ticks.
-func (f *Filter) CountAt(h, window, now uint64) Result {
+func (f *Filter) CountAt(h, window, now uint64) Result { return f.count(h, window, now, -1) }
+
+// count is CountAt; i0, if not -1, is a slot where a lookup just found h
+// (warm), as for touch. In ConstantTime its work is padded (ctBegin,
+// ctEnd), and sketchLive reads the overflow table whatever it holds.
+func (f *Filter) count(h, window, now uint64, i0 int) Result {
+	var t0, s time.Time
+	var pad time.Duration
 	if f.ct {
-		return f.countCT(h, window, now)
+		t0, pad = f.ctBegin(opCount, now)
+		s = time.Now()
 	}
-	w0, w1, src := f.read(h, now)
+	w0, w1, src := f.read(h, now, i0)
 	var r Result
 	if src != 0 && age(now, w0&tsMask) <= f.horizon {
 		r = f.estimateAt(h, w1, w0&tsMask, now, window, w0&satBit != 0)
@@ -562,6 +570,9 @@ func (f *Filter) CountAt(h, window, now uint64) Result {
 	}
 	if f.sketchLive(now) {
 		f.addSketch(&r, h, window, now)
+	}
+	if f.ct {
+		f.ctEnd(opCount, h, t0, s, pad)
 	}
 	return r
 }
@@ -587,31 +598,12 @@ func (f *Filter) estimateAt(h, w1, last, now, window uint64, sat bool) Result {
 	return Result{Count: 1, Upper: 1, Saturated: true}
 }
 
-// countCT is CountAt in ConstantTime mode.
-func (f *Filter) countCT(h, window, now uint64) Result {
-	t0, pad := f.ctBegin(opCount, now)
-	s := time.Now()
-	w0, w1, src := f.read(h, now)
-	var r Result
-	if src != 0 && age(now, w0&tsMask) <= f.horizon {
-		r = f.estimateAt(h, w1, w0&tsMask, now, window, w0&satBit != 0)
-		r.Seen = r.Count > 0
-	} else {
-		r.Degraded = f.lostRecently(now)
-	}
-	if f.sk.Load() != nil || f.gh.Load() != nil {
-		f.addSketch(&r, h, window, now)
-	}
-	f.ctEnd(opCount, h, t0, s, pad)
-	return r
-}
-
 // ContainsAt reports whether h was touched within window, without touching it.
 func (f *Filter) ContainsAt(h, window, now uint64) bool {
 	if f.ct {
 		return f.CountAt(h, window, now).Seen
 	}
-	w0, _, src := f.read(h, now)
+	w0, _, src := f.read(h, now, -1)
 	if src != 0 && age(now, w0&tsMask) <= min(window, f.horizon) {
 		return true
 	}
@@ -632,8 +624,10 @@ const (
 )
 
 // read returns h's slot words from the table or, if it was evicted, the
-// stash, and where they came from (0: neither).
-func (f *Filter) read(h, now uint64) (w0, w1 uint64, src int) {
+// stash, and where they came from (0: neither). i0, if not -1, is a slot
+// where a lookup just found h (warm): the first look reads it instead of
+// scanning, and a miss is concluded only from a scan.
+func (f *Filter) read(h, now uint64, i0 int) (w0, w1 uint64, src int) {
 	fp, tg := fingerprint(h), tag(h)
 	if !f.ct {
 		// lookupStable, inline: one scan whether the key is found or not.
@@ -644,8 +638,11 @@ func (f *Filter) read(h, now uint64) (w0, w1 uint64, src int) {
 		m := f.moveOf(tg)
 		for try := 0; ; try++ {
 			b, d := m.begun.Load(), m.done.Load()
-			i := f.locate(h, fp, tg)
-			if w0, w1, ok := f.slotWords(i, fp, tg); ok {
+			i, fpd := i0, fp<<1 // warm finds a key undisplaced in its primary line
+			if try > 0 || i < 0 {
+				i, fpd = f.locateAt(h, fp, tg)
+			}
+			if w0, w1, ok := f.slotWords(i, fpd, tg); ok {
 				return w0, w1, srcTable
 			}
 			may := f.stashMay(h, fp, tg, now)
@@ -695,13 +692,14 @@ func (f *Filter) lookupStable(h, fp, tg uint64, both bool) (i int, w0, w1 uint64
 	m := f.moveOf(tg)
 	for {
 		b, d := m.begun.Load(), m.done.Load()
+		var fpd uint64
 		if both {
-			i = f.locateBoth(h, fp, tg)
+			i, fpd = f.locateBoth(h, fp, tg)
 		} else {
-			i = f.locate(h, fp, tg)
+			i, fpd = f.locateAt(h, fp, tg)
 		}
 		if i >= 0 {
-			if w0, w1, ok := f.slotWords(i, fp, tg); ok {
+			if w0, w1, ok := f.slotWords(i, fpd, tg); ok {
 				return i, w0, w1
 			}
 		} else if b == d && m.begun.Load() == b {
@@ -711,16 +709,22 @@ func (f *Filter) lookupStable(h, fp, tg uint64, both bool) (i int, w0, w1 uint64
 	}
 }
 
-// slotWords loads slot i's words if it still holds fp/tg. word0 is read
-// again after word1: a realign between the two loads would pair the old
-// last touch with the new register, whose epoch is read against it.
-func (f *Filter) slotWords(i int, fp, tg uint64) (w0, w1 uint64, ok bool) {
+// slotWords loads slot i's words if it still holds fpd/tg: the fingerprint
+// and displaced bit (word0>>47) and the tag that the lookup matched there.
+// The displaced bit is part of the key's identity, as in find: a key with
+// the same fingerprint and tag whose primary line is this key's alternate
+// lives in this key's primary line displaced, and a relocation can move it
+// into the slot this key was found in between the lookup and the load.
+// word0 is read again after word1: a realign between the two loads would
+// pair the old last touch with the new register, whose epoch is read
+// against it.
+func (f *Filter) slotWords(i int, fpd, tg uint64) (w0, w1 uint64, ok bool) {
 	if i < 0 {
 		return 0, 0, false
 	}
 	w0 = atomic.LoadUint64(&f.words[i])
 	w1 = atomic.LoadUint64(&f.words[i+1])
-	if w0>>48 != fp || w1>>tagShift != tg {
+	if w0>>47 != fpd || w1>>tagShift != tg {
 		return w0, w1, false
 	}
 	if a := atomic.LoadUint64(&f.words[i]); a != w0 && f.unitOf(a&tsMask) != f.unitOf(w0&tsMask) {
@@ -911,7 +915,7 @@ func (f *Filter) VelocityCountBatch(hs []uint64, window, now uint64, counts []in
 		hi := min(lo+batchChunk, len(hs))
 		f.warm(hs[lo:hi], &at)
 		for i := lo; i < hi; i++ {
-			counts[i] = f.VelocityCountAt(hs[i], window, now)
+			counts[i] = f.count(hs[i], window, now, at[i-lo]).Count
 		}
 	}
 }
@@ -924,10 +928,11 @@ const batchChunk = 32
 // parallelism). It prefetches every key's primary line, looks for each key
 // there (at[k]: its slot, or -1), then prefetches the alternate lines of the
 // keys it didn't find there, so each key's operation, in order, finds its
-// lines cached or on their way, and a touch starts from its slot. Prefetch
-// instructions, unlike loads, don't hold up retirement, and the touches'
-// locked CASes don't wait for them. S48: 1.2x the loads it replaces at 90%
-// load on tables past the last-level cache; 0.9x on a table that fits it.
+// lines cached or on their way, and a touch or count starts from its slot.
+// Prefetch instructions, unlike loads, don't hold up retirement, and the
+// touches' locked CASes don't wait for them. S48: 1.2x the loads it replaces
+// at 90% load on tables past the last-level cache; 0.9x on a table that
+// fits it.
 //
 // In ConstantTime it looks nothing up and prefetches both lines of every
 // key: its work, outside the calls' pads, doesn't depend on what the table
@@ -1001,14 +1006,14 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 	}
 	fp, tg := fingerprint(h), tag(h)
 	for first := true; ; first = false {
-		i := -1
+		i, fpd := -1, uint64(0) // fpd: what locate matched in the slot (word0>>47)
 		if first {
-			if _, _, ok := f.slotWords(i0, fp, tg); ok {
-				i = i0
+			if _, _, ok := f.slotWords(i0, fp<<1, tg); ok { // warm finds a key undisplaced in its primary line
+				i, fpd = i0, fp<<1
 			}
 		}
 		if i < 0 {
-			i = f.locate(h, fp, tg)
+			i, fpd = f.locateAt(h, fp, tg)
 		}
 		if i < 0 {
 			// Miss: serialize first touches of the same key so two racers
@@ -1021,7 +1026,8 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 			mu.Lock()
 			m := f.moveOf(tg)
 			b, d := m.begun.Load(), m.done.Load()
-			if i, _, _ = f.lookupStable(h, fp, tg, false); i < 0 {
+			var w0 uint64
+			if i, w0, _ = f.lookupStable(h, fp, tg, false); i < 0 {
 				s0, s1, src := f.recall(h, fp, tg, now, true)
 				if src == srcRetry || src == 0 && !f.settled(m, b, d) {
 					mu.Unlock()
@@ -1038,10 +1044,14 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 				return r
 			}
 			mu.Unlock() // another first touch got there first: count as a hit
+			fpd = w0 >> 47
 		}
+		// hit, inline: called, it costs the cache-resident hit 1.05x and the
+		// touch batch 1.08x (placement-randomized, 6 layouts, cycles/op),
+		// so the slot protocol has this second copy. Keep the two the same.
 		w0 := atomic.LoadUint64(&f.words[i])
-		if w0>>48 != fp {
-			continue // slot was reclaimed between find and load; retry
+		if w0>>47 != fpd {
+			continue // slot was reclaimed, or handed to another key, between find and load; retry
 		}
 		last := w0 & tsMask
 		stale := age(now, last) > f.horizon
@@ -1061,14 +1071,14 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 			if nu > lu && testHookStamped != nil {
 				testHookStamped()
 			}
-			w1, ref, over, ok = f.bump(i, w0>>47, tg, now, nu, last, lu, stale)
+			w1, ref, over, ok = f.bump(i, fpd, tg, now, nu, last, lu, stale)
 		}
 		if !ok {
 			continue // the slot was handed to another key, or moved on, meanwhile; look again
 		}
 		sat := w0&satBit != 0
 		if over != sat {
-			sat = f.markSat(i, w0>>48, over)
+			sat = f.markSat(i, fpd, over)
 		}
 		var r Result
 		if wantCount {
@@ -1386,10 +1396,13 @@ func (f *Filter) bgPlace() {
 // word0, then reset word1 by a CAS from the hot pointer; a touch after its
 // word0 found the key live and added to the entry, which leaves word1 as it
 // was, and the reset dropped that event (claims A30).
-func (f *Filter) hit(h uint64, i int, fp, tg, window, now uint64, wantCount bool) (Result, bool) {
+//
+// fpd is the fingerprint and displaced bit the lookup matched in slot i
+// (slotWords). touch has an inline copy of this function, for speed.
+func (f *Filter) hit(h uint64, i int, fpd, tg, window, now uint64, wantCount bool) (Result, bool) {
 	w0 := atomic.LoadUint64(&f.words[i])
-	if w0>>48 != fp {
-		return Result{}, false // slot was reclaimed between find and load
+	if w0>>47 != fpd {
+		return Result{}, false // slot was reclaimed, or handed to another key, between find and load
 	}
 	last := w0 & tsMask
 	stale := age(now, last) > f.horizon
@@ -1415,7 +1428,7 @@ func (f *Filter) hit(h uint64, i int, fp, tg, window, now uint64, wantCount bool
 	}
 	sat := w0&satBit != 0
 	if over != sat {
-		sat = f.markSat(i, w0>>48, over)
+		sat = f.markSat(i, w0>>47, over)
 	}
 	seen := !stale && age(now, last) <= window
 	if !wantCount {
@@ -1547,13 +1560,13 @@ func (f *Filter) touchCT(h, window, now uint64, wantCount bool) Result {
 }
 
 func (f *Filter) touchCTOnce(h, fp, tg, window, now uint64, wantCount bool) (Result, bool) {
-	i, _, _ := f.lookupStable(h, fp, tg, true)
+	i, w0, _ := f.lookupStable(h, fp, tg, true)
 	s0, s1, src := f.recall(h, fp, tg, now, true)
 	if i >= 0 {
 		if src == srcStash { // a stale copy: the table's entry is newer
 			f.stashPut(f.stashID(h, fp, tg), s0, s1, now)
 		}
-		return f.hit(h, i, fp, tg, window, now, wantCount)
+		return f.hit(h, i, w0>>47, tg, window, now, wantCount)
 	}
 	r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src)
 	return r, r.Count >= 0
@@ -1591,21 +1604,26 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 	// with the older clock, a later window starting between the two would
 	// miss the history's newest event.
 	stamp := max(now, last)
-	ci := f.claim(h, fp, w1, now, stamp, sat)
+	mode := claimFull
+	if f.ct || f.bg {
+		mode = claimDefer
+	}
+	ci := f.claim(h, fp, w1, now, stamp, sat, mode)
 	if ci == claimWait {
 		// No free slot: wait for one, in the stash (ConstantTime; pads place
 		// it) or the wait room (Background; the placer goroutine places it).
 		// If more than one key per 16 wait-room entries waits, the placer
 		// isn't keeping up: search now.
 		if (f.ct || f.deferred.Load() <= int64(f.roomN*stashWays/16)) && f.stashWait(f.stashID(h, fp, tg), fp<<48|sat|stamp, w1, now) {
+			// An evicted history that waits came back all the same: this
+			// touch is Restored (and counted once; the touch that installs
+			// it later recalls a waiting entry, which isn't).
 			f.waited.Add(1)
-			src, r.Restored = 0, false
 			if f.bg {
 				f.bgKick()
 			}
 		} else { // its set is full: search (and evict) now rather than drop a history
-			ci = f.claimAt([2]uint64{f.primary(h), f.alt(f.primary(h), fp)},
-				[2]uint64{fp<<48 | sat | stamp, fp<<48 | dispBit | sat | stamp}, w1, now, h>>(64-claimStripeBits), claimFull, nil)
+			ci = f.claim(h, fp, w1, now, stamp, sat, claimFull)
 		}
 	}
 	if ci == -1 && (src == srcStash || room) { // put it back for the retry
@@ -1635,14 +1653,15 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 }
 
 // markSat sets (on) or clears the saturated bit of the slot at word index i
-// if it still holds fp, and returns the bit as left. It clears only while no
-// bucket is hot, reading word1 after word0: an overflowing touch writes its
-// register before it sets the bit, so a clear that read a register from
-// before that touch fails its CAS on the newer word0.
-func (f *Filter) markSat(i int, fp uint64, on bool) bool {
+// if it still holds fpd (fingerprint and displaced bit: word0>>47, as bump
+// checks), and returns the bit as left. It clears only while no bucket is
+// hot, reading word1 after word0: an overflowing touch writes its register
+// before it sets the bit, so a clear that read a register from before that
+// touch fails its CAS on the newer word0.
+func (f *Filter) markSat(i int, fpd uint64, on bool) bool {
 	for {
 		w0 := atomic.LoadUint64(&f.words[i])
-		if w0>>48 != fp {
+		if w0>>47 != fpd {
 			return on
 		}
 		if w0&satBit != 0 == on {
@@ -1660,22 +1679,29 @@ func (f *Filter) markSat(i int, fp uint64, on bool) bool {
 // locate returns the word index of h's slot, or -1: an undisplaced entry in
 // the primary line or a displaced one in the alternate line.
 func (f *Filter) locate(h, fp, tg uint64) int {
-	p := f.primary(h)
-	if i := f.find(p, fp<<1, tg); i >= 0 {
-		return i
-	}
-	return f.find(f.alt(p, fp), fp<<1|1, tg)
+	i, _ := f.locateAt(h, fp, tg)
+	return i
 }
 
-// locateBoth is locate reading both lines every time (ConstantTime).
-func (f *Filter) locateBoth(h, fp, tg uint64) int {
+// locateAt is locate, with the fingerprint and displaced bit it matched
+// (fpd, word0>>47): what a later load of the slot must still hold.
+func (f *Filter) locateAt(h, fp, tg uint64) (int, uint64) {
+	p := f.primary(h)
+	if i := f.find(p, fp<<1, tg); i >= 0 {
+		return i, fp << 1
+	}
+	return f.find(f.alt(p, fp), fp<<1|1, tg), fp<<1 | 1
+}
+
+// locateBoth is locateAt reading both lines every time (ConstantTime).
+func (f *Filter) locateBoth(h, fp, tg uint64) (int, uint64) {
 	p := f.primary(h)
 	i := f.find(p, fp<<1, tg)
 	j := f.find(f.alt(p, fp), fp<<1|1, tg)
 	if i >= 0 {
-		return i
+		return i, fp << 1
 	}
-	return j
+	return j, fp<<1 | 1
 }
 
 // find returns the word index of the slot in line whose fingerprint and
@@ -1701,16 +1727,13 @@ func (f *Filter) find(line, fpd, tg uint64) int {
 // register, published together with its word0. Returns word0 index, or -1
 // if it lost a race for a slot and the caller should look the key up again
 // (a racing writer may have completed it). The caller holds the key's claim
-// stripe. In ConstantTime and Background it searches and evicts nothing:
-// with no free slot it returns claimWait, and the key waits for a slot
-// (miss). The entry's last touch is stamp; now is the caller's clock
-// (expiry, eviction scores).
-func (f *Filter) claim(h, fp, w1, now, stamp, sat uint64) int {
-	mode := claimFull
-	if f.ct || f.bg {
-		mode = claimDefer
-	}
-	return f.claimAt([2]uint64{f.primary(h), f.alt(f.primary(h), fp)},
+// stripe. With mode claimDefer (ConstantTime and Background) it searches
+// and evicts nothing: with no free slot it returns claimWait, and the key
+// waits for a slot (miss). The entry's last touch is stamp; now is the
+// caller's clock (expiry, eviction scores).
+func (f *Filter) claim(h, fp, w1, now, stamp, sat uint64, mode int) int {
+	p := f.primary(h)
+	return f.claimAt([2]uint64{p, f.alt(p, fp)},
 		[2]uint64{fp<<48 | sat | stamp, fp<<48 | dispBit | sat | stamp}, w1, now, h>>(64-claimStripeBits), mode, nil)
 }
 
@@ -2199,15 +2222,13 @@ func (f *Filter) slotID(line, w0, w1 uint64) uint64 {
 	return line<<28 | fp<<tagBits | w1>>tagShift
 }
 
-// stashSet is id's set (none before the stash is allocated) and its lock.
+// stashSet is id's set in the stash and its lock (stashTable.set): none
+// before the stash is allocated.
 func (f *Filter) stashSet(id uint64) ([]stashEntry, *paddedMutex) {
-	i, _ := bits.Mul64(mix64(id), f.stashN)
-	mu := &f.stashMu[i%stashStripes]
-	p := f.stash.Load()
-	if p == nil {
-		return nil, mu
+	if p := f.stash.Load(); p != nil {
+		return p.set(id)
 	}
-	return p.e[i*stashWays : (i+1)*stashWays : (i+1)*stashWays], mu
+	return nil, nil
 }
 
 // stashTable: sets of stashWays entries, and a bit per set that holds a key
@@ -2341,13 +2362,20 @@ func (f *Filter) stashPutAs(id, w0, w1, now uint64, wait bool) {
 		f.spill(out.id, out.w0&^deferMark, out.w1, now)
 	}
 	f.stashWrite(f.stash.Load(), &set[way], stashEntry{id, w0, w1})
-	for until := (w0 & tsMask) + f.horizon; !wait; { // a waiting key: see stashWait
-		u := f.stashUntil.Load()
-		if u >= until || f.stashUntil.CompareAndSwap(u, until) {
-			break
-		}
+	if !wait { // a waiting key moves no gate: see stashWait
+		f.raiseStashUntil((w0 & tsMask) + f.horizon)
 	}
 	mu.Unlock()
+}
+
+// raiseStashUntil moves stashUntil up to until, if it is below.
+func (f *Filter) raiseStashUntil(until uint64) {
+	for {
+		u := f.stashUntil.Load()
+		if u >= until || f.stashUntil.CompareAndSwap(u, until) {
+			return
+		}
+	}
 }
 
 // stashWait puts a key that waits for a slot in a free or expired way of its

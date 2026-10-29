@@ -12,6 +12,8 @@ Every implementation (Go now; Python, C++ and Java later) has the same five test
 
 `go/test.sh all` runs smoke, sanity, regression and stress. Perf is left out because its results depend on the host, so it runs only when asked.
 
+Perf's gate and `go/verify/ab.sh` time each version at the one code layout its build gets. On the 2026-10-21 host placement alone moves a benchmark by up to 19% (claims S54), so a few percent between two builds says little. `go/verify/lrab.sh <regex> <layouts> <rounds> <arm>...` builds every arm at several layouts (never-run pad functions of seeded sizes at the top of three library files, the same in every arm at a layout) and reports each arm's ratio to the first, paired at each layout, as a geometric mean with a 95% interval, and how far placement alone moved the first arm. Use it to judge a change of a few percent.
+
 32-bit x86 needs no emulator: an amd64 Linux kernel runs 386 binaries, so `GOARCH=386 ./test.sh sanity` runs the suite as 32-bit code (it builds since 2026-10-29; the 386 build has no 16-byte CAS, so realign holds the slot as on arm64). Other architectures, without their hardware: Go's static test binaries run under qemu's user mode, so `GOARCH=arm64 GOFLAGS=-exec=qemu-aarch64 ./test.sh regression` runs the tier as arm64 code on an amd64 host (qemu-user 10.2.1 matched every expected file, 2026-10-28). This tests the arm64 build and its own paths (realign's hold, `prefetch_arm64.s`), not arm64's memory ordering: qemu runs the guest's atomics on the host's. Timing tests read qemu's clock, which costs ~566 ns per read: `TestCTPadEndIsDithered` fails there, correctly (the pad's 128 ns dither is under one read).
 
 ## Concurrent fuzzer

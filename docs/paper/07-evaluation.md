@@ -24,14 +24,14 @@ Thirteen targets were set for the structure (a targets spreadsheet, `temporal-fi
 |---|---|---|---|---|
 | 1 | Sustained per-key rate | ≥1,000/s | exact up to 5,000/s (the highest tested) [A15] | Met |
 | 2 | New keys turned away at a 4x flood | ≤1% | 0.29% (alarm: `Floored()`) [A14] | Met |
-| 3 | `Upper` below the truth | 0, fuzzed | 0 in floods, attack tests, soaks and 1.004e10 single-owner fuzzed operations (after e9ceb3b) [A18]. Concurrent: the fuzzer's rare lows (A22) explained and fixed (A28–A30); since, 0 failing in 8.02e9 unamplified operations (60 min) and in 40 minutes with tags shared 8 ways (21 failing cases in 10 minutes before). A further kind, a hot history leaving the stash while its touch adds (A32), fixed in 0becd6e: case 9787 0 of 12 batches of reruns (4 before). One modelled low remains, at ~6e-17 per count (A29) | Met |
+| 3 | `Upper` below the truth | 0, fuzzed | 0 in floods, attack tests, soaks and 1.004e10 single-owner fuzzed operations (after f44e7dd) [A18]. Concurrent: the fuzzer's rare lows (A22) explained and fixed (A28–A30); since, 0 failing in 8.02e9 unamplified operations (60 min) and in 40 minutes with tags shared 8 ways (21 failing cases in 10 minutes before). A further kind, a hot history leaving the stash while its touch adds (A32), fixed in 6b3cb39: case 9787 0 of 12 batches of reruns (4 before). One modelled low remains, at ~6e-17 per count (A29) | Met |
 | 4 | False-positive rate | ≤1e-7 | 1.8e-8 [D3] | Met |
 | 5 | Memory, steady state | ≤20 B/key | 18.8 [D6] | Met |
 | 6 | Memory under flood | ≤32 B/key | 31.1 [A14] | Met |
-| 7 | Velocity error | ≤0.05 | 0.0779 (0.0807 at 4b31a89); this register's floor ~0.058 [D18] | Gap |
-| 8 | Batched throughput at ≥90% load | ≥10 M/s per core | 11.53 M keys/s (22735cd; 9.0–10.2 before) [S47, S48] | Met |
+| 7 | Velocity error | ≤0.05 | 0.0779 (0.0807 at 9be2f39); this register's floor ~0.058 [D18] | Gap |
+| 8 | Batched throughput at ≥90% load | ≥10 M/s per core | 11.53 M keys/s (ccf23af; 9.0–10.2 before) [S47, S48] | Met |
 | 9 | Miss-insert latency | ≤150 ns | 429 ns (steady-state insert; the Xeon host read 491 at 0597649) | Gap |
-| 10 | Scaling to 16 cores | ≥12x | 6 cores: uniform 4.9x, Zipf 3.4x (5.1x and 3.6x at 6 goroutines, 7.9x and 5.5x at 12, at 7a9d87f) [S37, S53] | Gap; 16 cores untestable on the Ryzen host |
+| 10 | Scaling to 16 cores | ≥12x | 6 cores: uniform 4.9x, Zipf 3.4x (5.1x and 3.6x at 6 goroutines, 7.9x and 5.5x at 12, at ee5996c) [S37, S53] | Gap; 16 cores untestable on the Ryzen host |
 | 11 | Unseen Touch p99.9, no ConstantTime | ≤2 µs | default 3.9–6.6 µs at 85% load, 1.3–3.1% of inserts over 2 µs; with `Background` 3.3–3.9 µs, 0.16–0.19% over 2 µs (p99 1.0–1.1 µs). The host's floor: a 0.5 µs busy loop is over 2 µs in 0.05–0.15% of calls [S43, S45] | Gap on this host (code share ~0.1%) |
 | 12 | ConstantTime pad | ≤1 µs | 1 µs fixed (end dithered over 128 ns), or AutoPad 0.9–1.2 µs [S36, S41] | Met |
 | 13 | Distinguisher | ≤52% | Touch at 1 µs with the dithered pad: 50.9, 50.4, 50.6% (51.1–52.8% in five runs before) [S41] | Met |
@@ -57,7 +57,7 @@ Target 8 on the Ryzen host (`TestRow8`, four arms interleaved over five rounds; 
 - Huge pages are 5% faster in batches, in every round: less than the 22% raw random-load gain (S42), and insert classes were within 3% (S43). Not adopted: the gain is host-dependent and small, and 2 MiB page faults would land on first touches.
 - **Prefetch instructions** (same test, a second run): a load in the warm pass holds up retirement, and every touch's locked CAS waits for earlier loads; `PREFETCHT0` (assembly) does neither. Medians of the per-round medians: base 9.50; prefetching the primary lines 9.77 (+3%); prefetching both lines of every key 10.49 (+10%); prefetching primaries, touching the keys found there first, then prefetching the others' alternate lines and touching them last 10.93 (+15%, past 10 M/s in every round).
 
-The committed batch (22735cd) prefetches its chunk's primary lines, looks each key up there, prefetches the missing keys' alternate lines and touches the keys **in order** from the slot found: 9.57 → 11.53 M keys/s on a 38 MB table at 90% load (1.20x); 0.86x on a 1 MB table that fits the cache (the lookup pass costs), 1.07x at 4 MB, 1.20x at 19 MB, 1.17x at 150 MB [S48]. Other arms are in experiment E20.
+The committed batch (ccf23af) prefetches its chunk's primary lines, looks each key up there, prefetches the missing keys' alternate lines and touches the keys **in order** from the slot found: 9.57 → 11.53 M keys/s on a 38 MB table at 90% load (1.20x); 0.86x on a 1 MB table that fits the cache (the lookup pass costs), 1.07x at 4 MB, 1.20x at 19 MB, 1.17x at 150 MB [S48]. Other arms are in experiment E20.
 
 ### Unseen-key inserts and Background placement
 
@@ -72,7 +72,7 @@ With and without `Background` (interleaved, three runs each) [S45]:
 | 90% load, inserts over 2 µs | 9.2–11.0% | 0.21–0.33% |
 | 95% load, inserts over 2 µs | 52–54% | 16.0–16.4% |
 
-The Ryzen host takes the CPU away ~1,070 times a second (S43): a 0.5 µs busy loop timed the same way runs past 2 µs in 0.05–0.15% of calls, and a 1 µs loop in 0.12–0.16% (`TestHostFloor`). So p99.9 ≤ 2 µs can't be shown on that host for an operation near 1 µs; with Background the code's own share over 2 µs is ~0.1% at 85% and 90% load. Costs (S46): with Background off the default paths read 0.94–1.02 of 981cd70; with it on, absent-key lookups 1.08–1.12 (the wait-room bit), the caller's inserts 0.52–0.94. What is left of the code's share is the waiting path (room write, shared counters; ~0.6 µs p50).
+The Ryzen host takes the CPU away ~1,070 times a second (S43): a 0.5 µs busy loop timed the same way runs past 2 µs in 0.05–0.15% of calls, and a 1 µs loop in 0.12–0.16% (`TestHostFloor`). So p99.9 ≤ 2 µs can't be shown on that host for an operation near 1 µs; with Background the code's own share over 2 µs is ~0.1% at 85% and 90% load. Costs (S46): with Background off the default paths read 0.94–1.02 of 385d67f; with it on, absent-key lookups 1.08–1.12 (the wait-room bit), the caller's inserts 0.52–0.94. What is left of the code's share is the waiting path (room write, shared counters; ~0.6 µs p50).
 
 ### Throughput and scaling
 
@@ -80,12 +80,12 @@ The Ryzen host takes the CPU away ~1,070 times a second (S43): a 0.5 µs busy lo
 
 ```
 goroutines        1     2     4     6     8    12
-zipf, entry lock  8.0  12.0  22.6  28.5  30.6  29.9   (b798b1f)
-zipf, one CAS     9.7  15.6  26.5  33.2  41.5  44.1   (76b5b9a)
+zipf, entry lock  8.0  12.0  22.6  28.5  30.6  29.9   (500fcb7)
+zipf, one CAS     9.7  15.6  26.5  33.2  41.5  44.1   (3a44c40)
 uniform           5.4  10.1  18.9  26.6  29.7  30.6
 ```
 
-Batched, one goroutine reaches 9.3–10.2 M keys/s and single calls 5.1–5.6 M ops/s (uniform, present keys). Under Zipf s=1.1 (heaviest key ~9% of calls) every touch of a hot key writes its entry's line, so six cores reach 3.4x one core, uniform traffic 4.9x. With the entry lock, `hotEntry.lock` and its CAS took ~37% of CPU; at 90% load with 5% unseen keys, inserts (`claimAt` and its search) took 46% [S40]. A later reading at 7a9d87f: Zipf 3.59x at 6 goroutines and 5.51x at 12, uniform 5.11x and 7.93x [S53]. Four goroutines on one key run at 10 ns/op aggregate, 16 keys at 16 ns, 16K keys at 22 ns (Xeon host): same-tick touches skip the word0 CAS and full registers skip the word1 CAS, so a bot storm doesn't ping-pong the line [E16, S23].
+Batched, one goroutine reaches 9.3–10.2 M keys/s and single calls 5.1–5.6 M ops/s (uniform, present keys). Under Zipf s=1.1 (heaviest key ~9% of calls) every touch of a hot key writes its entry's line, so six cores reach 3.4x one core, uniform traffic 4.9x. With the entry lock, `hotEntry.lock` and its CAS took ~37% of CPU; at 90% load with 5% unseen keys, inserts (`claimAt` and its search) took 46% [S40]. A later reading at ee5996c: Zipf 3.59x at 6 goroutines and 5.51x at 12, uniform 5.11x and 7.93x [S53]. Four goroutines on one key run at 10 ns/op aggregate, 16 keys at 16 ns, 16K keys at 22 ns (Xeon host): same-tick touches skip the word0 CAS and full registers skip the word1 CAS, so a bot storm doesn't ping-pong the line [E16, S23].
 
 **The ceiling of per-core cells** [S53]. Under Zipf s 1.1 the top key takes ~12% of calls, and each of its touches is one CAS of its hot entry's bucket-0 word, a line every core writes. Per-core cells would spread that add, but every count of a hot key would then sum the cells (a rate limiter's `TouchAndCount` reads on every call). Before building them, the most they could give: `TestThroughput`'s scaling arm with a hot entry's add returning without its CAS (it counts nothing). The rule, written before the reading: build cells only if that ceiling is ≥ 1.25x at 12 goroutines. Reading (5 rounds alternated; medians): 1.00x at 1 goroutine, 1.17x at 2, 1.27x at 3, 1.34x at 4, 1.47x at 6, 1.30x at 8, 1.23x at 12. Uniform traffic, where nothing is promoted, 0.90–1.02. Below the bar at 12, so the cells weren't measured. The ceiling peaks at one goroutine per physical core (6) and falls on the SMT siblings, where other limits share the cost: on a host with more physical cores the case could differ. The design (experiment E23) is in [record/decisions.md](../record/decisions.md#scaling).
 
@@ -99,4 +99,4 @@ Every change on a hot path was measured as an A/B on one host; the results are c
 
 ### The scorecard's speed columns
 
-The scorecard's `hit hot` column (and `BenchmarkCheckAndTouchHitHot`) has timed refused hot-entry promotions since e9974b9: its 4,096 keys come back ~4,000 times within one unit, every register fills, and with the hot entries taken each touch tries a promotion that is refused [X36]. `BenchmarkCheckAndTouchHitCached` (ecf5006) times the cached hit. One 1M-key filter serves several of tfbench's columns in turn, so its registers fill as earlier columns' iterations add up, and how many there were depends on how fast those columns ran (not measured; [8 Limitations](08-limitations.md)).
+The scorecard's `hit hot` column (and `BenchmarkCheckAndTouchHitHot`) has timed refused hot-entry promotions since 964b518: its 4,096 keys come back ~4,000 times within one unit, every register fills, and with the hot entries taken each touch tries a promotion that is refused [X36]. `BenchmarkCheckAndTouchHitCached` (c0e32d1) times the cached hit. One 1M-key filter serves several of tfbench's columns in turn, so its registers fill as earlier columns' iterations add up, and how many there were depends on how fast those columns ran (not measured; [8 Limitations](08-limitations.md)).

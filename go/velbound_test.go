@@ -18,7 +18,7 @@ import (
 // four horizons) and scores, per window, sum|estimate - exact| / sum exact:
 //
 //   - filter: VelocityCountAt (must equal tfbench's figures);
-//   - spread: estimate's interpolation as it was until 395f738, every
+//   - spread: estimate's interpolation as it was until eed54e6, every
 //     event of the cut bucket spread uniformly;
 //   - anchored: the newest bucket's last event, which lies exactly at the
 //     slot's lastTouch, counts whole and only the other events are spread

@@ -19,9 +19,9 @@
 (* claim stripe, one at a time, as first touches do.                       *)
 (*                                                                         *)
 (* Variant: "fixed" is the protocol as committed (claims A26, A27).        *)
-(* "oldSweep" is the sweep before 7236f76 (word0 cleared, then word1 CASed *)
+(* "oldSweep" is the sweep before 2408705 (word0 cleared, then word1 CASed *)
 (* from the register read to 0; no hold). "noCount": the hold not counted  *)
-(* as a move (the sweep without its count; inserts before c1cbace).        *)
+(* as a move (the sweep without its count; inserts before 0779e1e).        *)
 (* "noPutBack": word1 left busy when word0 changed. Invariants: NoDup (K   *)
 (* matched in at most one slot), NoZombie (no slot with K's fingerprint    *)
 (* and an empty register), Kept (once all are done, K's slot holds every   *)
@@ -89,7 +89,7 @@ h_store:
 h_done:
   if Counted then done := done + 1; end if;
   goto h_out;
-o_cas0:                                   \* the sweep before 7236f76
+o_cas0:                                   \* the sweep before 2408705
   if w0[1] = rw0 then w0[1] := "free"; else goto h_out; end if;
 o_cas1:
   if w1[1] = rw1 then w1[1] := None; end if;

@@ -20,7 +20,7 @@ Read the paper in order for the idea; go to the specification to write a port; g
 ## Conventions
 
 - **Claim tags.** `[D1]`, `[A14]`, `[S45]` and so on point to [artifact/claims.md](artifact/claims.md), which gives each claim's check, result and status. The letter is the kind of evidence: **D** deterministic results, **A** attacks, adversarial and concurrent correctness, **R** replays of recorded results from git, **E** reverted experiments (patches), **S** speed (host-dependent), **X** corrected claims.
-- **Commits.** Short hashes (`e9974b9`) name the commit of this repository where a change landed; `go/verify/replay.sh` re-runs many of them.
+- **Commits.** Short hashes (`964b518`) name the commit of this repository where a change landed; `go/verify/replay.sh` re-runs many of them.
 - **Paths and commands.** Paths are relative to the repository root. Commands run in `go/` unless they say otherwise.
 - **Targets.** The 13 numbered performance and security targets (target 1 to target 13) are defined in [paper/07-evaluation.md](paper/07-evaluation.md#73-targets).
 - **Readings M1 to M9.** The placement study's readings, each with its rule written before it ran, are listed in [artifact/measuring-speed.md](artifact/measuring-speed.md#the-placement-study).
@@ -32,7 +32,7 @@ Speed figures are reported, not checked: they depend on the machine. Compare rat
 | Host | Machine | Used for |
 |---|---|---|
 | **Xeon host** (also "the reference host") | 4-vCPU Intel Xeon @ 2.1 GHz, 260 MB L3 (266,240 KB), Linux 6.18, Go 1.24.7 | every speed figure up to commit 0597649, including [artifact/speed-runs.md](artifact/speed-runs.md) and claims S1–S35 |
-| **Ryzen host** | AMD Ryzen 5 4600H under WSL2: 6 cores / 12 threads, 4 MB L3 per CCX, 4 KB pages, Go 1.24.7. A random DRAM access costs 189 ns with 4 KB pages and 147 ns with huge pages; about 4 misses stay in flight with 4 KB pages and 7 with huge pages; the CPU is taken away ~1,070 times a second for 15 µs at the median [S42, S43] | every speed figure from commit 4b31a89 on, claims S36–S60 |
+| **Ryzen host** | AMD Ryzen 5 4600H under WSL2: 6 cores / 12 threads, 4 MB L3 per CCX, 4 KB pages, Go 1.24.7. A random DRAM access costs 189 ns with 4 KB pages and 147 ns with huge pages; about 4 misses stay in flight with 4 KB pages and 7 with huge pages; the CPU is taken away ~1,070 times a second for 15 µs at the median [S42, S43] | every speed figure from commit 9be2f39 on, claims S36–S60 |
 
 On the Ryzen host the 1M-key "cold" benchmark table (20 MB) does not fit in L3, so "hit cold" mostly misses it; on the Xeon host the same table was L3-resident. A benchmark there also moves a few percent with the code's placement in the binary, through the CPU's front end (in its worst layouts the op cache hands part of the hit to the legacy decoder), and about as much from run to run [S55, S58]: see [artifact/measuring-speed.md](artifact/measuring-speed.md).
 

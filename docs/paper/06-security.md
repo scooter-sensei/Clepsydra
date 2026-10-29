@@ -76,7 +76,7 @@ floods: heavy (21-event keys) 1x, 2x, 4x slots; light (1-event keys) 16x, 64x
 
 With `SpillMin` 4, in the 1x flood, 102 spills went to the sketch instead of 3,693.
 
-**The ghost table against the sketch** (`TF_EXP=1 go test -run TestSketchShapes -v`; one bucket per history and one floor, the layout before a6aa29e) [A11]:
+**The ghost table against the sketch** (`TF_EXP=1 go test -run TestSketchShapes -v`; one bucket per history and one floor, the layout before 3603076) [A11]:
 
 ```
                         heavy 1x          | 2x                | 3x                | 4x                | light 16x         | 64x
@@ -92,7 +92,7 @@ With the defaults of that layout (`SpillMin` 4), `TestAttackFloodCollateral`: st
 
 ```
                               2x      3x      4x      6x      8x     B/key
-one bucket /4, 1 floor, s/8   1.80%  89.17%  100%    100%    100%    27.1   (6af5480)
+one bucket /4, 1 floor, s/8   1.80%  89.17%  100%    100%    100%    27.1   (17c55c8)
 one bucket /4, 3 floors       0.99%  78.59%  99.79%  100%    100%    27.1
 two buckets /2, 1 floor       0.11%   0.20%  40.81%  99.64%  99.91%  31.8
 two buckets /2, 3 floors      0.11%   0.20%  19.96%  97.30%  99.25%  31.8
@@ -135,7 +135,7 @@ fixed 3us         1.06 M ops/s; probe p50 unseen    3.1 us seen    3.1 us; KS D 
 
 The tracked pad gives KS D 0.011 against 0.005 at a fixed 3 µs, where the 95% noise floor at 20k samples is ~0.014; under 16 goroutines D 0.015 against 0.060; and `Count` takes 1.05 µs per call instead of 3.4 (−69%), 2.19 against 1.06 M ops/s under load. `AutoPad` for `Touch` settled at 3–5 µs depending on the run (D 0.009–0.014): no cheaper than a fixed 3 µs on that host, so it is kept as an option.
 
-**The waiting stash** (Ryzen host; `TestCTPads`, three runs at 4b31a89 on an idle host, same method) [S36]:
+**The waiting stash** (Ryzen host; `TestCTPads`, three runs at 9be2f39 on an idle host, same method) [S36]:
 
 ```
                  run 1                          run 2                          run 3

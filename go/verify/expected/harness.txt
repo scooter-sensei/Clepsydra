@@ -2833,7 +2833,7 @@ harness 6c051d0 Fix stash-to-overflow hand-off race; narrow the Upper guarantee
     steady window=60s rate=50/s reported/exact min=0.254 max=0.337
     steady window=60s rate=100/s reported/exact min=0.127 max=0.189
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 6af5480 Lookups can't miss a key mid-relocation; ConstantTime can't duplicate 
+harness 17c55c8 Lookups can't miss a key mid-relocation; ConstantTime can't duplicate 
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -2914,7 +2914,7 @@ harness 6af5480 Lookups can't miss a key mid-relocation; ConstantTime can't dupl
     steady window=60s rate=50/s reported/exact min=0.254 max=0.337
     steady window=60s rate=100/s reported/exact min=0.127 max=0.189
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 642c3ef Ghost table: an add can't overwrite a history written after its epoch 
+harness 42cc598 Ghost table: an add can't overwrite a history written after its epoch 
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -2995,7 +2995,7 @@ harness 642c3ef Ghost table: an add can't overwrite a history written after its 
     steady window=60s rate=50/s reported/exact min=0.254 max=0.337
     steady window=60s rate=100/s reported/exact min=0.127 max=0.189
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness ed48f7e read: one scan for a missing key
+harness 3f3ddbf read: one scan for a missing key
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -3076,7 +3076,7 @@ harness ed48f7e read: one scan for a missing key
     steady window=60s rate=50/s reported/exact min=0.254 max=0.337
     steady window=60s rate=100/s reported/exact min=0.127 max=0.189
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness e9974b9 Hot entries: a key past its register's capacity keeps exact counts
+harness 964b518 Hot entries: a key past its register's capacity keeps exact counts
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -3157,7 +3157,7 @@ harness e9974b9 Hot entries: a key past its register's capacity keeps exact coun
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 5524228 Evictions leave a key alone while its entry is being moved
+harness 971dc4a Evictions leave a key alone while its entry is being moved
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -3238,7 +3238,7 @@ harness 5524228 Evictions leave a key alone while its entry is being moved
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness a02fe9b Evictions and moves of one stripe exclude each other
+harness 64ebd85 Evictions and moves of one stripe exclude each other
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -3319,7 +3319,7 @@ harness a02fe9b Evictions and moves of one stripe exclude each other
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 2890196 Ghost table: a history from a clock behind its last touch stays live
+harness 00a9375 Ghost table: a history from a clock behind its last touch stays live
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -3400,7 +3400,7 @@ harness 2890196 Ghost table: a history from a clock behind its last touch stays 
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness a6aa29e Ghost table: two candidate buckets, three floors per bucket; sizes for
+harness 3603076 Ghost table: two candidate buckets, three floors per bucket; sizes for
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -3481,7 +3481,7 @@ harness a6aa29e Ghost table: two candidate buckets, three floors per bucket; siz
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 0add825 Allocate the stash on the first eviction; Bytes reports what a filter 
+harness 76ea6d0 Allocate the stash on the first eviction; Bytes reports what a filter 
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -3562,7 +3562,7 @@ harness 0add825 Allocate the stash on the first eviction; Bytes reports what a f
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness f304277 Config docs: Stash and Overflow defaults, two buckets, three floors, l
+harness 0acd412 Config docs: Stash and Overflow defaults, two buckets, three floors, l
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -3643,7 +3643,7 @@ harness f304277 Config docs: Stash and Overflow defaults, two buckets, three flo
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness b798b1f ConstantTime: inserts that find no free slot wait in the stash; pads p
+harness 500fcb7 ConstantTime: inserts that find no free slot wait in the stash; pads p
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -3724,7 +3724,7 @@ harness b798b1f ConstantTime: inserts that find no free slot wait in the stash; 
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 76b5b9a Hot entries: a touch in the entry's own unit counts with one CAS
+harness 3a44c40 Hot entries: a touch in the entry's own unit counts with one CAS
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -3805,7 +3805,7 @@ harness 76b5b9a Hot entries: a touch in the entry's own unit counts with one CAS
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness e9ceb3b A key restored behind its last touch keeps that last touch
+harness f44e7dd A key restored behind its last touch keeps that last touch
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -3886,7 +3886,7 @@ harness e9ceb3b A key restored behind its last touch keeps that last touch
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 4a8aa22 Fuzzer of the Upper contract; with the overflow off, Upper needs no lo
+harness 17f14d9 Fuzzer of the Upper contract; with the overflow off, Upper needs no lo
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -3967,7 +3967,7 @@ harness 4a8aa22 Fuzzer of the Upper contract; with the overflow off, Upper needs
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 5b58d63 ConstantTime: every pad ends at a random point over 128 ns
+harness 194ce5d ConstantTime: every pad ends at a random point over 128 ns
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -4048,7 +4048,7 @@ harness 5b58d63 ConstantTime: every pad ends at a random point over 128 ns
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 395f738 Velocity: the newest bucket's last event counts whole; what the regist
+harness eed54e6 Velocity: the newest bucket's last event counts whole; what the regist
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -4129,7 +4129,7 @@ harness 395f738 Velocity: the newest bucket's last event counts whole; what the 
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness dd18c6e Cuckoo search: one candidate's four next lines load together
+harness 8cd2f4e Cuckoo search: one candidate's four next lines load together
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -4210,7 +4210,7 @@ harness dd18c6e Cuckoo search: one candidate's four next lines load together
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 981cd70 A key that waited for a slot is not Restored
+harness 385d67f A key that waited for a slot is not Restored
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -4291,7 +4291,7 @@ harness 981cd70 A key that waited for a slot is not Restored
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness c12f98b A lost history counts as recent until a horizon after its newest event
+harness 80caa55 A lost history counts as recent until a horizon after its newest event
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -4372,7 +4372,7 @@ harness c12f98b A lost history counts as recent until a horizon after its newest
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness c849b7e Background: cuckoo searches off the call path (Config.Background)
+harness 3b8de31 Background: cuckoo searches off the call path (Config.Background)
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -4453,7 +4453,7 @@ harness c849b7e Background: cuckoo searches off the call path (Config.Background
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 22735cd Batches: prefetch the chunk's lines; touch each key from the slot foun
+harness ccf23af Batches: prefetch the chunk's lines; touch each key from the slot foun
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -4534,7 +4534,7 @@ harness 22735cd Batches: prefetch the chunk's lines; touch each key from the slo
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 7f242b1 Batches in ConstantTime: warm's work doesn't depend on the table
+harness ed4e271 Batches in ConstantTime: warm's work doesn't depend on the table
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -4615,7 +4615,7 @@ harness 7f242b1 Batches in ConstantTime: warm's work doesn't depend on the table
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 15bbc28 Background: a touch taking a waiting key out of the room counts as a m
+harness 335d75a Background: a touch taking a waiting key out of the room counts as a m
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -4696,7 +4696,7 @@ harness 15bbc28 Background: a touch taking a waiting key out of the room counts 
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 5e21d7e A touch 8+ units past the register's unit moves word0 and word1 togeth
+harness c026b30 A touch 8+ units past the register's unit moves word0 and word1 togeth
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -4777,7 +4777,7 @@ harness 5e21d7e A touch 8+ units past the register's unit moves word0 and word1 
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 0c08517 Relocation: the copy stays hidden until the hand-off
+harness 1683f77 Relocation: the copy stays hidden until the hand-off
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -4858,7 +4858,7 @@ harness 0c08517 Relocation: the copy stays hidden until the hand-off
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 277f9ed Background: a key's wait never takes a wait-room way being committed
+harness 1ea1686 Background: a key's wait never takes a wait-room way being committed
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -4939,7 +4939,7 @@ harness 277f9ed Background: a key's wait never takes a wait-room way being commi
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 5638eac Hot restore: a history whose hot entry was reclaimed starts afresh
+harness a519cf1 Hot restore: a history whose hot entry was reclaimed starts afresh
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -5020,7 +5020,7 @@ harness 5638eac Hot restore: a history whose hot entry was reclaimed starts afre
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 7236f76 Decay sweep: take a slot as install does, word1 busy first
+harness 2408705 Decay sweep: take a slot as install does, word1 busy first
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -5101,7 +5101,7 @@ harness 7236f76 Decay sweep: take a slot as install does, word1 busy first
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness c1cbace Insert over an expired occupant: the hold counts as the occupant's mov
+harness 0779e1e Insert over an expired occupant: the hold counts as the occupant's mov
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -5182,7 +5182,7 @@ harness c1cbace Insert over an expired occupant: the hold counts as the occupant
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 43e707b Slot holds count on the stripe of the tag they take (claims A28)
+harness dac6542 Slot holds count on the stripe of the tag they take (claims A28)
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -5263,7 +5263,7 @@ harness 43e707b Slot holds count on the stripe of the tag they take (claims A28)
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 200e5ea bump: a count that landed in a same-tag key is counted again (claims A
+harness 2087baa bump: a count that landed in a same-tag key is counted again (claims A
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -5344,7 +5344,7 @@ harness 200e5ea bump: a count that landed in a same-tag key is counted again (cl
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 9464187 A stale hot slot resets under realign's hold (claims A30)
+harness 326a1f9 A stale hot slot resets under realign's hold (claims A30)
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -5425,7 +5425,7 @@ harness 9464187 A stale hot slot resets under realign's hold (claims A30)
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 0becd6e A hot history that leaves the stash takes its entry with it (claims A3
+harness 6b3cb39 A hot history that leaves the stash takes its entry with it (claims A3
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -5506,7 +5506,7 @@ harness 0becd6e A hot history that leaves the stash takes its entry with it (cla
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 7a9d87f Realign by one CMPXCHG16B on amd64, no hold (claims A33)
+harness ee5996c Realign by one CMPXCHG16B on amd64, no hold (claims A33)
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -5587,7 +5587,7 @@ harness 7a9d87f Realign by one CMPXCHG16B on amd64, no hold (claims A33)
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 550f84a 32-bit builds: Hot's clamp through uint64, 1<<40 constants as uint64
+harness 04fc643 32-bit builds: Hot's clamp through uint64, 1<<40 constants as uint64
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -5668,7 +5668,7 @@ harness 550f84a 32-bit builds: Hot's clamp through uint64, 1<<40 constants as ui
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness b2ff9b1 Overflow reads decode against the epoch they loaded under (claims A34)
+harness a88887b Overflow reads decode against the epoch they loaded under (claims A34)
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -5749,7 +5749,7 @@ harness b2ff9b1 Overflow reads decode against the epoch they loaded under (claim
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness a07e5a0 Ticks stay inside a slot's 46 bits: MaxTick, checked off the hot paths
+harness b866d7f Ticks stay inside a slot's 46 bits: MaxTick, checked off the hot paths
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -5830,7 +5830,7 @@ harness a07e5a0 Ticks stay inside a slot's 46 bits: MaxTick, checked off the hot
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness 349bff8 Filter: the fields calls read sit in its header, off the counters' lin
+harness ade33ce Filter: the fields calls read sit in its header, off the counters' lin
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
@@ -5911,7 +5911,7 @@ harness 349bff8 Filter: the fields calls read sit in its header, off the counter
     steady window=60s rate=50/s reported/exact min=1.000 max=1.000
     steady window=60s rate=100/s reported/exact min=1.000 max=1.000
     memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
-harness a3ad726 Docs as a data structure's paper, spec, artifact and record; go/ by ca
+harness e42fc69 Docs as a data structure's paper, spec, artifact and record; go/ by ca
     churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
     churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
     churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15

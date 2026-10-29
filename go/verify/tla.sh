@@ -74,7 +74,7 @@ registerepoch() {
 	run ok RegisterEpoch "fixed, 2 touchers" "$inv" "Touchers = $(procs t 2)" "$c" 'Variant = "fixed"' "H = 24"
 	[ "${TLA_BIG:-}" = 1 ] && run ok RegisterEpoch "fixed, 3 touchers" "$inv" "Touchers = $(procs t 3)" "$c" 'Variant = "fixed"' "H = 24"
 	for i in NotAged Kept ReaderRight; do
-		run violation RegisterEpoch "old (before 5e21d7e): $i" "$i" "Touchers = $(procs t 2)" "$c" 'Variant = "old"' "H = 24"
+		run violation RegisterEpoch "old (before c026b30): $i" "$i" "Touchers = $(procs t 2)" "$c" 'Variant = "old"' "H = 24"
 	done
 	for v in noHold ownRef noWait noReread; do
 		run violation RegisterEpoch "$v" "$inv" "Touchers = $(procs t 2)" "$c" "Variant = \"$v\"" "H = 24"
@@ -141,7 +141,7 @@ slothold() {
 	for r in NeverTaken NeverPutBack NeverWaited; do
 		run violation SlotHold "fixed, reachable: $r" "$r" 'Variant = "fixed"' 'Holder = "sweep"' 'Lagging = TRUE' 'Reinsert = TRUE'
 	done
-	run violation SlotHold "oldSweep (before 7236f76): NoZombie" "NoZombie" 'Variant = "oldSweep"' 'Holder = "sweep"' 'Lagging = FALSE' 'Reinsert = TRUE'
+	run violation SlotHold "oldSweep (before 2408705): NoZombie" "NoZombie" 'Variant = "oldSweep"' 'Holder = "sweep"' 'Lagging = FALSE' 'Reinsert = TRUE'
 	for h in sweep insert; do
 		run violation SlotHold "noCount, $h: NoDup" "NoDup" 'Variant = "noCount"' "Holder = \"$h\"" 'Lagging = TRUE' 'Reinsert = FALSE'
 	done

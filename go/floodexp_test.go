@@ -28,7 +28,7 @@ func TestFloodSizing(t *testing.T) {
 		stash   int // stash entries: slots / stash
 	}
 	cfgs := []cfg{
-		{"one /4   f1 s/8 (6af5480)", 4, 1, 1, 8},
+		{"one /4   f1 s/8 (17c55c8)", 4, 1, 1, 8},
 		{"one /4   f3 s/8", 4, 1, 3, 8},
 		{"one /1.8 f1 s/8", 1.8, 1, 1, 8},
 		{"two /4   f1 s/8", 4, 2, 1, 8},

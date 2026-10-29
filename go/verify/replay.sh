@@ -36,23 +36,23 @@ runmany() {
 fixes() {
 	local n=${1:-20}
 	# name | commit with the bug | commit with the fix | test files copied from HEAD | test regex | runs | env
-	# (verify/testdata/ghost_test.go is the ghost test as of 2890196: HEAD's
+	# (verify/testdata/ghost_test.go is the ghost test as of 00a9375: HEAD's
 	# calls the later two-bucket newGhost. verify/testdata/restore_test.go is
-	# the restore test as of e9ceb3b: HEAD's reads forceBG, which c849b7e
+	# the restore test as of f44e7dd: HEAD's reads forceBG, which 3b8de31
 	# added.) The split and handshake fixes of
-	# 5524228 and a02fe9b are proven by deterministic tests on hooks those
+	# 971dc4a and 64ebd85 are proven by deterministic tests on hooks those
 	# commits added (TestEvictionDuringMoveKeepsHistory,
 	# TestEvictionRacingMoveStart), so they can't run on the code before;
-	# so are the fixes of the wait-room transfer (15bbc28,
-	# testHookTaken), the register epoch (5e21d7e, testHookStamped), the
-	# copy of an evicted key (0c08517, testHookPicked), the wait-room
-	# ways (277f9ed, testHookPlacing), the decay sweep's slot hold
-	# (7236f76, testHookSweeping) and an insert's hold over an expired
-	# occupant (c1cbace, testHookInstalling), as are the tag-stripe
-	# fixes (43e707b, 200e5ea, 9464187: tagstripe_test.go) and a hot
-	# history's exits from the stash (0becd6e, testHookHotAdding:
-	# hotspill_test.go). The visible copy (0c08517) and the reclaimed hot
-	# entry (5638eac) need no new hook: their tests run on the code before.
+	# so are the fixes of the wait-room transfer (335d75a,
+	# testHookTaken), the register epoch (c026b30, testHookStamped), the
+	# copy of an evicted key (1683f77, testHookPicked), the wait-room
+	# ways (1ea1686, testHookPlacing), the decay sweep's slot hold
+	# (2408705, testHookSweeping) and an insert's hold over an expired
+	# occupant (0779e1e, testHookInstalling), as are the tag-stripe
+	# fixes (dac6542, 2087baa, 326a1f9: tagstripe_test.go) and a hot
+	# history's exits from the stash (6b3cb39, testHookHotAdding:
+	# hotspill_test.go). The visible copy (1683f77) and the reclaimed hot
+	# entry (a519cf1) need no new hook: their tests run on the code before.
 	# Duplicate slots: the striped lock (593bd1b) removed most; the install
 	# order in f31512c removed the rare rest (a race with relocation), so
 	# both cases end at f31512c. Lost counts under relocation: f31512c's
@@ -91,14 +91,14 @@ fixes() {
 	lost-counts-same-tag-handover|4a037a5|d7fb2b5|abandon_test.go|^TestAbandonedMoveKeepsCounts$|200|PAR=1
 	negative-ticks|99c054a|a01e3dc|regress_test.go|^TestRegressNegativeTicks$|3
 	empty-batch-panic|2921fd4|d1db914|regress_test.go|^TestRegressEmptyBatch$|3
-	torn-lookup|6c051d0|6af5480|read_race_test.go|^TestReadDuringRelocationFindsKey$|10
-	ghost-stale-epoch|6af5480|642c3ef|verify/testdata/ghost_test.go|^TestGhostEpochRace$|10
-	ghost-ahead-of-clock|a02fe9b|2890196|verify/testdata/ghost_test.go|^TestGhostAddAheadOfClock$|3
-	restore-behind-clock|ee76cab|e9ceb3b|verify/testdata/restore_test.go|^TestRestoreBehindLastTouch$|3
-	move-visible-copy|908e03e|0c08517|movecopy_test.go|^TestReadDuringMoveSeesEveryEvent$|3
-	hot-entry-reclaimed|277f9ed|5638eac|hot_test.go|^TestRestoreAfterHotEntryReclaimed$|3
-	hot-entry-reclaimed-in-claim|277f9ed|5638eac|hot_test.go|^TestHotEntryReclaimedDuringRestore$|3
-	tick-past-range|2f2bf09|a07e5a0|regress_test.go|^TestRegressTickPastRange$|3
+	torn-lookup|6c051d0|17c55c8|read_race_test.go|^TestReadDuringRelocationFindsKey$|10
+	ghost-stale-epoch|17c55c8|42cc598|verify/testdata/ghost_test.go|^TestGhostEpochRace$|10
+	ghost-ahead-of-clock|64ebd85|00a9375|verify/testdata/ghost_test.go|^TestGhostAddAheadOfClock$|3
+	restore-behind-clock|a82f5c2|f44e7dd|verify/testdata/restore_test.go|^TestRestoreBehindLastTouch$|3
+	move-visible-copy|aeaca6d|1683f77|movecopy_test.go|^TestReadDuringMoveSeesEveryEvent$|3
+	hot-entry-reclaimed|1ea1686|a519cf1|hot_test.go|^TestRestoreAfterHotEntryReclaimed$|3
+	hot-entry-reclaimed-in-claim|1ea1686|a519cf1|hot_test.go|^TestHotEntryReclaimedDuringRestore$|3
+	tick-past-range|4f33a45|b866d7f|regress_test.go|^TestRegressTickPastRange$|3
 	LIST
 }
 

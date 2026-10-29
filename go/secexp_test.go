@@ -113,7 +113,7 @@ func TestSketchShapes(t *testing.T) {
 }
 
 // histStash is the stash these experiments ran with (slots/8 at 4,096 keys,
-// the default until a6aa29e); with the ghost table's one bucket per
+// the default until 3603076); with the ghost table's one bucket per
 // history and one floor, it keeps their recorded results reproducible.
 const histStash = 4820 / 8
 

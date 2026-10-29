@@ -35,15 +35,15 @@ How much of a speed reading's variation comes from the code (its placement in th
 
 | Reading | What it measured | Claims |
 |---|---|---|
-| M1 | counters per layout: 5c54259, 20 layouts, Zen 2 counters by raw event, HitHot at 3e7 iterations, 3 rounds × 4 groups | S58 |
-| M2 | S54's statistic, layouts against a null arm (layout 1's binary ×10): 5c54259, S54's five benchmarks, 10 layouts of the old `lrab.sh` pads, 6 rounds, ns/op | S55 |
+| M1 | counters per layout: 53bae65, 20 layouts, Zen 2 counters by raw event, HitHot at 3e7 iterations, 3 rounds × 4 groups | S58 |
+| M2 | S54's statistic, layouts against a null arm (layout 1's binary ×10): 53bae65, S54's five benchmarks, 10 layouts of the old `lrab.sh` pads, 6 rounds, ns/op | S55 |
 | M3 | placement sd against run sd: the tree with `cycles/op`, 16 layouts and the null arm, 4 rounds; one-way random-effects components of log readings, layouts as groups | S55, S56 |
 | M4 | 64-byte function alignment (E24) and PGO (E25) against the base, 16 layouts, 4 rounds, cycles/op | S57 |
 | M5 | 32 common shifts of 0–5.2 KB (one pad at the top of `filter.go`) | S58 |
 | M6 | the old 1-D pad family against the independent pads, seeds 1–16, alternated, 4 rounds, cycles/op | S59 |
 | M7, M7b | false sharing: 11 goroutines of `ContainsAt` on a cached table, a 12th adding to `f.waited`, to a counter on its own line, or idle; 8 rounds alternated, ns/op (M7b replicates M7 under a corrected rule) | S60 |
 | M8 | the 64-byte-aligned build's layouts 14–16 and the base's layout 15, counters | S58 |
-| M9 | the field move and hot-path adjacency: 16 layouts of 81478eb's pads, 4 rounds, cycles/op, a null arm | S60, E26 |
+| M9 | the field move and hot-path adjacency: 16 layouts of 7e1217d's pads, 4 rounds, cycles/op, a null arm | S60, E26 |
 
 | Reading | Result |
 |---|---|
@@ -54,7 +54,7 @@ How much of a speed reading's variation comes from the code (its placement in th
 | M5: 32 common shifts over 5.2 KB | HitHot 208–213 at every shift (layout 0's arrangement); sd over shifts 0.40–0.61 of placement's |
 | M4: aligned build, PGO against the base | see S57 and below |
 | M7b: 11 readers, a 12th writing `f.waited` / its own line | 8.74 / 5.20 ns as committed; 5.33 / 5.30 moved |
-| M9: fields / 81478eb; adjacency / fields (16 × 4, cycles/op) | fields 0.987–1.006 on all six; adjacency raised placement sd on all four it aimed at (HitHot 2.0 → 5.5%), HitHot 1.049, TouchAndCount 0.949 (E26, not adopted) |
+| M9: fields / 7e1217d; adjacency / fields (16 × 4, cycles/op) | fields 0.987–1.006 on all six; adjacency raised placement sd on all four it aimed at (HitHot 2.0 → 5.5%), HitHot 1.049, TouchAndCount 0.949 (E26, not adopted) |
 
 ### How much is the host's [S55, S56; correcting S54: X35]
 
@@ -89,11 +89,11 @@ The null arm's F is 0.39–0.95 for all six, so the estimator sees no placement 
 
 Neither removes placement's effect; each moves it. By the rule (half the sd on two of the four, no ratio over 1.02) 64-byte alignment fails (TouchAndCount 1.037) and PGO qualifies, but isn't adopted: with a profile in the repository the benchmarks would time a build users get only with their own profile (noted before the reading). PGO's speed is the user's to take: 2–14% in cycles on all six benchmarks with a profile of this workload. Go 1.24.7 and the current 1.27.3 alike align amd64 functions to 32 bytes, keep loop alignment off (`maxLoopPad = 0`) and offer 64-byte alignment only to PGO-hot loop headers (`PCALIGNMAX 64`, which raises the function's alignment too): there is no flag to try.
 
-`verify/lrab.sh` as committed in 8d689ce sized its three pads (seed·7919 + i·104729) mod 25, which are always (n, n+4, n+8) mod 25: one 1-D family, not three independent draws [X37]. 81478eb sizes six pads by a hash of (seed, place), three of them inside `filter.go` before `touch`, `hit` and `locate`, and reports placement's and the runs' sd and a null arm's interval. On this tree the old family read placement alike (M6: no benchmark's sd 1.5x higher with the new pads), so M3–M5 stand as measured.
+`verify/lrab.sh` as committed in e3dbb0c sized its three pads (seed·7919 + i·104729) mod 25, which are always (n, n+4, n+8) mod 25: one 1-D family, not three independent draws [X37]. 7e1217d sizes six pads by a hash of (seed, place), three of them inside `filter.go` before `touch`, `hit` and `locate`, and reports placement's and the runs' sd and a null arm's interval. On this tree the old family read placement alike (M6: no benchmark's sd 1.5x higher with the new pads), so M3–M5 stand as measured.
 
 ### What the benchmark made the code do [X36]
 
-`BenchmarkCheckAndTouchHitHot` has timed refused promotions since hot entries (e9974b9): its 4,096 keys return ~4,000 times within one unit, every register fills, and with the 37 hot entries taken every touch runs `bump` → `promote` → `hotEntryFor` and an atomic add on `hotRefused` (perf: 16% of its cycles in those three: hotEntryFor 8.6%, promote 3.8%, nextRegU 3.3%). Its loop stays under its name, since comparisons across commits match names; its comment says what it times. `BenchmarkCheckAndTouchHitCached` times the hit it meant: a clock of 64 ticks a touch, ~10 touches per key per unit, no register filled (checked after the loop).
+`BenchmarkCheckAndTouchHitHot` has timed refused promotions since hot entries (964b518): its 4,096 keys return ~4,000 times within one unit, every register fills, and with the 37 hot entries taken every touch runs `bump` → `promote` → `hotEntryFor` and an atomic add on `hotRefused` (perf: 16% of its cycles in those three: hotEntryFor 8.6%, promote 3.8%, nextRegU 3.3%). Its loop stays under its name, since comparisons across commits match names; its comment says what it times. `BenchmarkCheckAndTouchHitCached` times the hit it meant: a clock of 64 ticks a touch, ~10 touches per key per unit, no register filled (checked after the loop).
 
 ### False sharing of the per-call flag [S60]
 
@@ -101,7 +101,7 @@ Neither removes placement's effect; each moves it. By the rule (half the sd on t
 
 ### Two changes measured (M9)
 
-- **The field move** (349bff8, S60): 0.987–1.006 of 81478eb on all six benchmarks, under the 1.02 bar its rule set. Adopted.
+- **The field move** (ade33ce, S60): 0.987–1.006 of 7e1217d on all six benchmarks, under the 1.02 bar its rule set. Adopted.
 - **Hot-path adjacency** (E26): `slotWords`, `locate`, `locateBoth`, `find` and `farAhead` moved to right after `touch`, so the hit path's code in `filter.go` is contiguous (profile-guided code positioning done by source order). The premise was that conflicts come from hot functions scattered tens of KB apart. Placement's sd rose on all four benchmarks it aimed at (HitHot 2.0 → 5.5%, HitCached 2.2 → 4.2%, VelocityCount 2.9 → 4.7%, TouchAndCount 3.4 → 4.0%) and HitHot ran 4.9% slower, though TouchAndCount and VelocityCount ran 4–5% faster. Not adopted. With the severe layout the model doesn't predict, it is the second sign that the op cache's rule is not a plain set capacity.
 
 ## Host notes (Ryzen host)

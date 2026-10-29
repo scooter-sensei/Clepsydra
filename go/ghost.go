@@ -307,23 +307,41 @@ func (g *ghost) advance(ns uint64) {
 	g.epoch.Store(ns + 1)
 }
 
+// testHookGhostRead, if set, runs after estimate loads its buckets, before
+// it checks the epoch again.
+var testHookGhostRead func()
+
 // estimate is id's dropped events within window: matching entries count in
 // Count and Upper, the floors in Upper only. It reads both candidate lines
 // whatever it finds, so its work doesn't depend on the key (ConstantTime).
+//
+// The lines are decoded against the epoch they were loaded under: if an add
+// moved it on meanwhile, they are loaded again. Against the new epoch, an
+// entry its sweep cleared after the load decoded as four slices younger, so
+// a history dead for a horizon read as live; against the old one, an entry
+// written for the new epoch decodes as four slices older, dead
+// (TestGhostReadAcrossEpoch). An add moves the epoch at most once per slice,
+// so a read loads again at most once per slice.
 func (g *ghost) estimate(id, window, now uint64) (r Result, ok bool) {
-	ep := g.epoch.Load()
-	if ep == 0 || now > g.until.Load() {
-		return Result{}, false
-	}
 	bases, nb, fp := g.slot(id)
 	var line [2][ghWords]uint64
-	for bi, base := range bases[:nb] {
-		for i := range line[bi] {
-			line[bi][i] = atomic.LoadUint64(&g.words[base+i])
-		}
-	}
-	if g.epoch.Load() != ep {
+	var ep uint64
+	for {
 		ep = g.epoch.Load()
+		if ep == 0 || now > g.until.Load() {
+			return Result{}, false
+		}
+		for bi, base := range bases[:nb] {
+			for i := range line[bi] {
+				line[bi][i] = atomic.LoadUint64(&g.words[base+i])
+			}
+		}
+		if testHookGhostRead != nil {
+			testHookGhostRead()
+		}
+		if g.epoch.Load() == ep {
+			break
+		}
 	}
 	for bi := range nb {
 		if e := line[bi][0] >> g.floorShift(fp) & ghSubMask; e != 0 && g.live(g.real(e, ep), window, now) {

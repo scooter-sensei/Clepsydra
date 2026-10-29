@@ -87,3 +87,37 @@ func TestGhostAddAheadOfClock(t *testing.T) {
 		t.Fatalf("after the next epoch the history reads %+v, want 5 events", r)
 	}
 }
+
+// TestGhostReadAcrossEpoch: a read loads its buckets, then an add moves the
+// epoch on two slices and sweeps the entries dead by then, before the read
+// decodes what it loaded. Decoded against the new epoch, an entry four
+// slices older than it (the sweep's, loaded before it was cleared) reads as
+// current: a history whose newest event left the horizon reads as live,
+// Seen with its Count. Against the epoch the lines were loaded under it is
+// dead.
+func TestGhostReadAcrossEpoch(t *testing.T) {
+	const horizon = 10_000 // slices of 5,000 ticks
+	for _, choices := range []int{1, 2} {
+		g := newGhost(4*64, horizon, choices, 3)
+		g.add(1, 5, 1_000, false, 1_000)   // slice 0
+		g.add(2, 5, 10_500, false, 10_500) // slice 2: the epoch moves on, nothing is dead yet
+		// At 20,100 (slice 4) history 1's newest event is 19,100 old: dead.
+		// History 2's (slice 2) is live, so the read gets past g.until.
+		const now = 20_100
+		if r, ok := g.estimate(1, horizon, now); ok || r != (Result{}) {
+			t.Fatalf("choices %d: history 1 reads %+v before the add, want nothing", choices, r)
+		}
+		testHookGhostRead = func() {
+			testHookGhostRead = nil
+			g.add(3, 5, now-50, false, now-50) // slice 4: the epoch moves on two, slice 0 is swept
+		}
+		r, ok := g.estimate(1, horizon, now)
+		testHookGhostRead = nil
+		if ok || r != (Result{}) {
+			t.Errorf("choices %d: history 1, dead, reads %+v across the epoch's move", choices, r)
+		}
+		if r, ok := g.estimate(2, horizon, now); !ok || r.Count != 5 {
+			t.Errorf("choices %d: history 2, live, reads %+v", choices, r)
+		}
+	}
+}

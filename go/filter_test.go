@@ -315,7 +315,7 @@ func TestSprayCannotEvictRepeatOffender(t *testing.T) {
 	now := uint64(1000)
 	offenders := make([]uint64, 50)
 	for i := range offenders {
-		offenders[i] = mix64(uint64(1<<40 + i))
+		offenders[i] = mix64(1<<40 + uint64(i))
 		for range 20 {
 			f.CheckAndTouchAt(offenders[i], 0, now)
 		}

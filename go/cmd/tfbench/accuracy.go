@@ -191,7 +191,7 @@ func spray() int {
 	f, _ := tf.New(tf.Config{Capacity: capacity, Horizon: horizon, Resolution: time.Millisecond})
 	off := make([]uint64, sprayOffenders)
 	for i := range off {
-		off[i] = mix64(uint64(1<<40 + i))
+		off[i] = mix64(1<<40 + uint64(i))
 		for range 20 {
 			f.CheckAndTouchAt(off[i], 0, 1)
 		}

@@ -348,7 +348,7 @@ func New(cfg Config) (*Filter, error) {
 	if cfg.Hot == 0 {
 		cfg.Hot = int(max(16, lines*slotsPerLine/128))
 	}
-	f.hotN = min(max(cfg.Hot, 0), hotIdxMask)
+	f.hotN = int(min(uint64(max(cfg.Hot, 0)), hotIdxMask)) // through uint64: hotIdxMask overflows a 32-bit int
 	f.ct, f.pad = cfg.ConstantTime > 0 || cfg.ConstantTime == AutoPad || forceCT, cfg.ConstantTime
 	f.auto = cfg.ConstantTime == AutoPad
 	f.bg = (cfg.Background || forceBG) && !f.ct

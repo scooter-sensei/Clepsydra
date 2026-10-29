@@ -159,7 +159,7 @@ func BenchmarkInsertSaturated(b *testing.B) {
 	w := f.Ticks(30 * time.Second)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		f.CheckAndTouchAt(mix64(uint64(1<<40+i)), w, 1000)
+		f.CheckAndTouchAt(mix64(1<<40+uint64(i)), w, 1000)
 	}
 }
 
@@ -239,7 +239,7 @@ func BenchmarkContainsAbsent(b *testing.B) {
 	w := f.Ticks(30 * time.Second)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		f.ContainsAt(mix64(uint64(1<<40+i)), w, 2000)
+		f.ContainsAt(mix64(1<<40+uint64(i)), w, 2000)
 	}
 }
 
@@ -276,7 +276,7 @@ func BenchmarkContainsAbsentLatency(b *testing.B) {
 	dep := uint64(0)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		dep += b2u(f.ContainsAt(mix64(uint64(1<<40+i)+dep), w, 2000))
+		dep += b2u(f.ContainsAt(mix64(1<<40+uint64(i)+dep), w, 2000))
 	}
 }
 
@@ -357,7 +357,7 @@ func BenchmarkHugeAbsent(b *testing.B) {
 	w := f.Ticks(30 * time.Second)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		f.ContainsAt(mix64(uint64(1<<40+i)), w, 2000)
+		f.ContainsAt(mix64(1<<40+uint64(i)), w, 2000)
 	}
 }
 

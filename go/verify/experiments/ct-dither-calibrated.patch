@@ -1,0 +1,121 @@
+diff -ruN a/filter.go b/filter.go
+--- a/filter.go	2026-10-29 00:33:40.765851676 +0000
++++ b/filter.go	2026-10-29 00:33:40.768508966 +0000
+@@ -352,9 +352,7 @@
+ 	f.ct, f.pad = cfg.ConstantTime > 0 || cfg.ConstantTime == AutoPad || forceCT, cfg.ConstantTime
+ 	f.auto = cfg.ConstantTime == AutoPad
+ 	f.bg = (cfg.Background || forceBG) && !f.ct
+-	for i := range f.padQ {
+-		f.padQ[i].q.Store(int64(autoStart) * 1000)
+-	}
++	f.initPads()
+ 	f.unitInv = ^uint64(0)/f.unit + 1
+ 	f.words = alignedWords(int(lines * wordsPerLine))
+ 	if f.clock == nil {
+@@ -1091,7 +1089,8 @@
+ // host), so a pad ending at a fixed time ends at a phase of those reads
+ // that follows the call's own work, and keys whose work time is narrow show
+ // it (Count at a fixed 1 µs pad: D 0.019-0.041; with the dither 0.007-0.014,
+-// claims S41). The dither spans several reads and doesn't depend on the key.
++// claims S41). The dither spans several reads (spin.go) and doesn't depend
++// on the key.
+ func (f *Filter) ctEnd(op int, h uint64, t0, s time.Time, pad time.Duration) {
+ 	if h>>8&3 == 0 {
+ 		qp := &f.padQ[op].q
+@@ -1103,15 +1102,11 @@
+ 			qp.Add(-autoDown)
+ 		}
+ 	}
+-	pad += time.Duration(rand.Uint64N(uint64(padDither)))
++	pad += time.Duration(rand.Uint64() & ditherMask)
+ 	for time.Since(t0) < pad {
+ 	}
+ }
+ 
+-// padDither is the span over which a ConstantTime pad's end is drawn: a mean
+-// cost of 64 ns per call.
+-const padDither = 128 * time.Nanosecond
+-
+ // place spends up to budget since t0 on keys that wait in the stash for a
+ // slot (an insert that found its two lines full defers the cuckoo search to
+ // here, so no call's own work includes one). A step takes the next stash
+diff -ruN a/spin.go b/spin.go
+--- a/spin.go	1970-01-01 00:00:00.000000000 +0000
++++ b/spin.go	2026-10-29 00:33:40.775759894 +0000
+@@ -0,0 +1,56 @@
++package temporalfilter
++
++import (
++	"math/bits"
++	"sync"
++	"time"
++)
++
++// padDither is the span over which a ConstantTime pad's end is drawn where
++// the clock is fast: a mean cost of 64 ns per call.
++const padDither = 128 * time.Nanosecond
++
++// ditherMask draws a ConstantTime pad's random end (ctEnd): the end falls
++// uniformly over ditherMask+1 ns, padDither, or where an iteration of the
++// pad's spin takes more than a third of that, the power of two at or above
++// three iterations. A dither under one iteration ends the pad at the phase of
++// the reads again: a clock read costs ~566 ns under qemu-user and 0.5-1.5 µs
++// on VMs whose clock source is HPET or acpi_pm (an iteration, 37 ns on the
++// 2026-10-21 host). The clock is the host's, so the first ConstantTime New
++// measures it for every filter (calibrateDither).
++var (
++	ditherMask = uint64(padDither - 1)
++	ditherOnce sync.Once
++)
++
++// initPads starts each kind of call's own-work estimate at autoStart and,
++// for the first ConstantTime filter, calibrates the dither. Out of New, so
++// New's code doesn't grow: the hot paths after it in the binary would move,
++// and their speed moves with their placement (claims S52).
++//
++//go:noinline
++func (f *Filter) initPads() {
++	for i := range f.padQ {
++		f.padQ[i].q.Store(int64(autoStart) * 1000)
++	}
++	if f.ct {
++		ditherOnce.Do(calibrateDither)
++	}
++}
++
++// calibrateDither sets ditherMask from the fastest of 8 timed runs of 32
++// iterations of the spin, so a preemption doesn't widen it.
++func calibrateDither() {
++	it := time.Duration(1<<63 - 1)
++	for range 8 {
++		t0 := time.Now()
++		n := 0
++		for n < 32 && time.Since(t0) >= 0 {
++			n++
++		}
++		it = min(it, time.Since(t0)/32)
++	}
++	if span := 3 * it; span > padDither {
++		ditherMask = 1<<bits.Len64(uint64(span-1)) - 1
++	}
++}
+diff -ruN a/timing_test.go b/timing_test.go
+--- a/timing_test.go	2026-10-29 00:33:40.770652740 +0000
++++ b/timing_test.go	2026-10-29 00:33:40.772760084 +0000
+@@ -71,12 +71,15 @@
+ // ~37 ns on the 2026-10-21 host), and keys whose work time is narrow show
+ // it: Count at a fixed 1 µs pad leaked D 0.019-0.041 (claims S41). Calls
+ // with no work of their own, spread end to end: their middle 80% must span
+-// more than one clock read. Noise only widens the spread.
++// more than one clock read. Noise only widens the spread. On a slow clock
++// (qemu-user: ~566 ns a read) this holds only because the dither widens to
++// the clock (spin.go).
+ func TestCTPadEndIsDithered(t *testing.T) {
+ 	f, err := New(Config{Capacity: 1024, Horizon: time.Minute, ConstantTime: time.Microsecond})
+ 	if err != nil {
+ 		t.Fatal(err)
+ 	}
++	t.Logf("dither %v", time.Duration(ditherMask+1))
+ 	const n = 20_000
+ 	ds := make([]float64, n)
+ 	for i := range ds {

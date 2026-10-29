@@ -82,8 +82,8 @@ It loses: with 3–4 exponentials you can't make a sharp box, so the mean error 
 
 - **Keyed hashing is required for adversarial keys.** `HashUint64` was an unkeyed mixer, so an attacker who controls IDs could aim at one line. Both hashes are now keyed (seeded maphash, or SipHash-2-4 under `Config.Key`); SECURITY.md measures the attacks.
 - **No resizing.** Capacity is fixed at construction.
-- **Count saturation.** Per key, 1,273 events for a burst and 762 per horizon for steady traffic (exact up to about 725) [D7]. (Was 255 per sub-window in the v1 linear layout.)
+- **Count saturation.** A register alone holds 31 events per unit (Horizon/24): per key, 1,273 events for a burst and 762 per horizon for steady traffic (exact up to about 725) [D7]. Hot entries (32-bit counters for keys past that, one per 128 slots by default) make counts exact at every rate tested, to 5,000 events/s, until every entry is in use (`HotRefused`) [A15]. (Was 255 per sub-window in the v1 linear layout.)
 - **Memory.** 16 B per slot, 18.8 B per key at the default 85% load [D6]. Bloom-style APBF and TLBF use a few bits per key but give no counts and no per-query window.
 - **Single process.** The clock is monotonic per process. Cross-node use needs synchronized clocks or the merge path.
-- **Go limits.** No manual prefetch intrinsic and no SIMD fingerprint compare. The batch APIs overlap misses with plain loads instead.
+- **Go limits.** No prefetch intrinsic and no SIMD fingerprint compare. The batch APIs prefetch through a few lines of assembly (`PREFETCHT0` on amd64, `PRFM` on arm64; plain loads elsewhere) [S48].
 - **Accuracy on the Learned Cuckoo Filter is unverified.** I couldn't read its full text, so the originality claim for per-query windows rests on the works I could read.

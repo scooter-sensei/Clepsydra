@@ -97,6 +97,7 @@ fixes() {
 	move-visible-copy|908e03e|0c08517|movecopy_test.go|^TestReadDuringMoveSeesEveryEvent$|3
 	hot-entry-reclaimed|277f9ed|5638eac|hot_test.go|^TestRestoreAfterHotEntryReclaimed$|3
 	hot-entry-reclaimed-in-claim|277f9ed|5638eac|hot_test.go|^TestHotEntryReclaimedDuringRestore$|3
+	tick-past-range|2f2bf09|a07e5a0|regress_test.go|^TestRegressTickPastRange$|3
 	LIST
 }
 

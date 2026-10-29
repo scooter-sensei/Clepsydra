@@ -40,6 +40,8 @@ On the Ryzen host the 1M-key "cold" benchmark table (20 MB) does not fit in L3, 
 
 ```
 README.md            entry point
+.githooks/           commit-msg and pre-push hooks that reject Co-authored-by trailers;
+                     enable them once per clone: git config core.hooksPath .githooks
 docs/                this documentation (paper, specification, artifact, record)
 spec/vectors/        conformance vectors: language-neutral traces every implementation must reproduce
 go/                  Go reference implementation

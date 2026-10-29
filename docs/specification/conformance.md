@@ -35,7 +35,7 @@ Every implementation has the same five test tiers behind one entry point in its 
 
 `go/test.sh all` runs smoke, sanity, regression and stress. Perf is left out because its results depend on the host, so it runs only when asked. The perf gate's 12 benchmarks are CheckAndTouchHit, CheckAndTouchHitHot, CheckAndTouchMissInsert, TouchAndCount, VelocityCount, VelocityCountHot, ContainsAbsent, InsertSteady, InsertNearFull, InsertSaturated, CheckAndTouchParallel and CheckAndTouchBatch; `Huge*` (600 MB tables) only on request (`PERF_BENCH='Huge' ./test.sh perf`). A/A runs of one build differ by up to ~15% on a noisy host, so the gate catches only clear regressions; smaller effects need [the A/B tools](../artifact/measuring-speed.md).
 
-CI (`.github/workflows/go.yml`) runs `./test.sh sanity` and `./test.sh regression` on every push and pull request with Go 1.24.7 (the version `go/verify/expected/` was produced with), and the stress tier weekly (or any tier on request), uploading `go/verify-report/`.
+CI runs `./test.sh sanity` and `./test.sh regression` on every push and pull request (`.github/workflows/go.yml`) with Go 1.24.7 (the version `go/verify/expected/` was produced with), and the stress tier weekly, or any tier on request (`.github/workflows/tier.yml`), uploading `go/verify-report/`.
 
 The concurrent fuzzer, the model checks and running the tiers on other architectures are described in [artifact/reproducing.md](../artifact/reproducing.md).
 

@@ -1,0 +1,36 @@
+name: tier
+
+# The stress tier weekly, or any test.sh tier on request. Its own workflow,
+# so push and pull-request runs (go.yml) don't list it as skipped.
+on:
+  schedule:
+    - cron: "0 3 * * 1" # stress, weekly
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: "test.sh tier"
+        default: stress
+
+defaults:
+  run:
+    working-directory: go
+
+jobs:
+  tier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # regression --full and stress replay old commits
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.7" # verify/expected/ was produced with it
+          cache-dependency-path: go/go.mod
+      - env:
+          TIER: ${{ inputs.tier || 'stress' }}
+        run: ./test.sh "$TIER"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-report
+          path: go/verify-report/

@@ -38,5 +38,3 @@ cd go
 ./bench.sh "label"      # a scorecard row in docs/record/scorecard-history.md
 verify/run.sh           # every claim check (docs/artifact/claims.md)
 ```
-
-

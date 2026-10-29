@@ -1,15 +1,10 @@
 name: go
 
+# Sanity and regression on every push and pull request. The stress tier, and
+# any tier on request, run from tier.yml.
 on:
   push:
   pull_request:
-  schedule:
-    - cron: "0 3 * * 1" # stress, weekly
-  workflow_dispatch:
-    inputs:
-      tier:
-        description: "test.sh tier"
-        default: stress
 
 defaults:
   run:
@@ -17,7 +12,6 @@ defaults:
 
 jobs:
   test:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,24 +22,6 @@ jobs:
       - run: ./test.sh sanity
       - run: ./test.sh regression
       - if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: verify-report
-          path: go/verify-report/
-
-  tier:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # regression --full and stress replay old commits
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.24.7"
-          cache-dependency-path: go/go.mod
-      - run: ./test.sh ${{ inputs.tier || 'stress' }}
-      - if: always()
         uses: actions/upload-artifact@v4
         with:
           name: verify-report

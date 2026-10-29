@@ -1,28 +1,34 @@
 #!/usr/bin/env bash
 # Rejects Co-authored-by trailers in any spelling or case (co-authored-by,
 # Co-Authored-By, co-authored by, coauthored-by, ...). Used by the commit-msg
-# and pre-push hooks here and by .github/workflows/trailers.yml.
+# and pre-push hooks here.
 #
 #   no-co-author file <message file>      a commit message being written
 #   no-co-author commits <rev-list args>  existing commits (HEAD, A..B, ...)
-#   no-co-author text [label]             text on stdin (a pull request's title and body)
 #
-# Prints each offending line and exits 1 if there is one.
+# Prints each offending line and exits 1 if there is one; exits 2 if it
+# can't read what it was given.
 set -uo pipefail
 
-# check <mode>: text on stdin; a line "\001<label>" names what follows.
+# check <mode>: text on stdin; a line "\001<label>" names what follows. It
+# reads to the end even past commit -v's scissors (the diff below them):
+# exiting there would kill the writer with SIGPIPE once the diff outgrows
+# the pipe, and pipefail would fail the commit on that.
 check() {
 	awk -v mode="$1" '
 		/^\001/ { label = substr($0, 2); next }
-		mode == "file" && /^# -+ >8 -+$/ { exit } # commit -v: the diff below the scissors
+		mode == "file" && /^# -+ >8 -+$/ { cut = 1 }
+		cut { next }
 		tolower($0) ~ /^[[:space:]]*co[-_ ]?authored[-_ ]?by/ { printf "%s: %s\n", label, $0; found = 1 }
 		END { exit found }'
 }
 
 case "${1:-}" in
-file) { printf '\001commit message\n'; cat "$2"; } | check file ;;
+file)
+	[ -r "${2:-}" ] || { echo "no-co-author: can't read the commit message file '${2:-}'" >&2; exit 2; }
+	{ printf '\001commit message\n'; cat "$2"; } | check file
+	;;
 commits) shift; git log --format='%x01%h %s%n%B' "$@" | check commits ;;
-text) { printf '\001%s\n' "${2:-text}"; cat; } | check text ;;
 *) sed -n '2,10p' "$0"; exit 2 ;;
 esac
 rc=$?

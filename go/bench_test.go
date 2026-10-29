@@ -30,36 +30,44 @@ func BenchmarkCheckAndTouchHit(b *testing.B) {
 	f, hs := benchFilter(b)
 	w := f.Ticks(30 * time.Second)
 	b.ResetTimer()
+	c := startCycles()
 	for i := 0; i < b.N; i++ {
 		f.CheckAndTouchAt(hs[i&(benchKeys-1)], w, 2000+uint64(i>>10))
 	}
+	c.report(b)
 }
 
 func BenchmarkCheckAndTouchMissInsert(b *testing.B) {
 	f, _ := benchFilter(b)
 	w := f.Ticks(30 * time.Second)
 	b.ResetTimer()
+	c := startCycles()
 	for i := 0; i < b.N; i++ {
 		f.CheckAndTouchAt(mix64(uint64(benchKeys+i)), w, 2000+uint64(i>>10))
 	}
+	c.report(b)
 }
 
 func BenchmarkTouchAndCount(b *testing.B) {
 	f, hs := benchFilter(b)
 	w := f.Ticks(30 * time.Second)
 	b.ResetTimer()
+	c := startCycles()
 	for i := 0; i < b.N; i++ {
 		f.TouchAndCountAt(hs[i&(benchKeys-1)], w, 2000+uint64(i>>10))
 	}
+	c.report(b)
 }
 
 func BenchmarkVelocityCount(b *testing.B) {
 	f, hs := benchFilter(b)
 	w := f.Ticks(30 * time.Second)
 	b.ResetTimer()
+	c := startCycles()
 	for i := 0; i < b.N; i++ {
 		f.VelocityCountAt(hs[i&(benchKeys-1)], w, 2000)
 	}
+	c.report(b)
 }
 
 func BenchmarkCheckAndTouchParallel(b *testing.B) {
@@ -133,8 +141,12 @@ func BenchmarkBaselineMutexMapParallel(b *testing.B) {
 	})
 }
 
-// Hit path with a cache-resident working set (4K keys, 128 KiB table):
-// isolates the algorithm's CPU cost from DRAM latency.
+// Hits on a cache-resident table (4K keys, 75 KiB) whose registers are full:
+// each key comes back ~4,000 times within one unit, so after its first 31
+// touches every touch overflows its register and, the hot entries (~37)
+// all taken, tries a promotion that is refused (HotRefused). The refused
+// path of a flood, not a typical hit: BenchmarkCheckAndTouchHitCached
+// times that.
 func BenchmarkCheckAndTouchHitHot(b *testing.B) {
 	const n = 1 << 12
 	f, _ := New(Config{Capacity: n, Horizon: time.Minute})
@@ -145,8 +157,34 @@ func BenchmarkCheckAndTouchHitHot(b *testing.B) {
 	}
 	w := f.Ticks(30 * time.Second)
 	b.ResetTimer()
+	c := startCycles()
 	for i := 0; i < b.N; i++ {
 		f.CheckAndTouchAt(hs[i&(n-1)], w, 2000+uint64(i>>10))
+	}
+	c.report(b)
+}
+
+// Hit path with a cache-resident working set (4K keys, 75 KiB table):
+// isolates the algorithm's CPU cost from DRAM latency. The clock moves 64
+// ticks a touch, so each key comes back every 262 ms, ~10 times a 2.5 s
+// unit: its register never fills, and one touch in ~10 starts a new unit.
+func BenchmarkCheckAndTouchHitCached(b *testing.B) {
+	const n = 1 << 12
+	f, _ := New(Config{Capacity: n, Horizon: time.Minute})
+	hs := make([]uint64, n)
+	for i := range hs {
+		hs[i] = mix64(uint64(i))
+		f.CheckAndTouchAt(hs[i], 0, 1000)
+	}
+	w := f.Ticks(30 * time.Second)
+	b.ResetTimer()
+	c := startCycles()
+	for i := 0; i < b.N; i++ {
+		f.CheckAndTouchAt(hs[i&(n-1)], w, 2000+uint64(i)*64)
+	}
+	c.report(b)
+	if f.HotRefused()+f.Promoted() != 0 || f.Evictions() != 0 {
+		b.Fatalf("a register filled or a key left: promoted %d, refused %d, evicted %d", f.Promoted(), f.HotRefused(), f.Evictions())
 	}
 }
 
@@ -168,10 +206,12 @@ func BenchmarkCheckAndTouchBatch(b *testing.B) {
 	w := f.Ticks(30 * time.Second)
 	out := make([]bool, 64)
 	b.ResetTimer()
+	c := startCycles()
 	for i := 0; i < b.N; i += 64 {
 		lo := i & (benchKeys - 1)
 		f.CheckAndTouchBatch(hs[lo:lo+64], w, 2000+uint64(i>>10), out)
 	}
+	c.report(b)
 }
 
 func BenchmarkTouchAndCountBatch(b *testing.B) {
@@ -179,10 +219,12 @@ func BenchmarkTouchAndCountBatch(b *testing.B) {
 	w := f.Ticks(30 * time.Second)
 	seen, counts := make([]bool, 64), make([]int, 64)
 	b.ResetTimer()
+	c := startCycles()
 	for i := 0; i < b.N; i += 64 {
 		lo := i & (benchKeys - 1)
 		f.TouchAndCountBatch(hs[lo:lo+64], w, 2000+uint64(i>>10), seen, counts)
 	}
+	c.report(b)
 }
 
 func BenchmarkVelocityCountBatch(b *testing.B) {
@@ -190,10 +232,12 @@ func BenchmarkVelocityCountBatch(b *testing.B) {
 	w := f.Ticks(30 * time.Second)
 	counts := make([]int, 64)
 	b.ResetTimer()
+	c := startCycles()
 	for i := 0; i < b.N; i += 64 {
 		lo := i & (benchKeys - 1)
 		f.VelocityCountBatch(hs[lo:lo+64], w, 2000, counts)
 	}
+	c.report(b)
 }
 
 // Steady state near the limit: ~98% slot load, keys expiring as fast as they
@@ -228,9 +272,11 @@ func BenchmarkVelocityCountHot(b *testing.B) {
 	}
 	w := f.Ticks(30 * time.Second)
 	b.ResetTimer()
+	c := startCycles()
 	for i := 0; i < b.N; i++ {
 		f.VelocityCountAt(hs[i&(n-1)], w, 20_000_000)
 	}
+	c.report(b)
 }
 
 // Lookup of keys never inserted, on a cold table at 85% slot load.
@@ -238,9 +284,11 @@ func BenchmarkContainsAbsent(b *testing.B) {
 	f, _ := benchFilter(b)
 	w := f.Ticks(30 * time.Second)
 	b.ResetTimer()
+	c := startCycles()
 	for i := 0; i < b.N; i++ {
 		f.ContainsAt(mix64(1<<40+uint64(i)), w, 2000)
 	}
+	c.report(b)
 }
 
 // Steady-state insert: time advances so keys expire as fast as they arrive,
@@ -255,10 +303,12 @@ func BenchmarkInsertSteady(b *testing.B) {
 		f.CheckAndTouchAt(mix64(benchKeys+ctr), w, 1000+ctr*perKey)
 	}
 	b.ResetTimer()
+	c := startCycles()
 	for i := 0; i < b.N; i++ {
 		ctr++
 		f.CheckAndTouchAt(mix64(benchKeys+ctr), w, 1000+ctr*perKey)
 	}
+	c.report(b)
 }
 
 func b2u(b bool) uint64 {

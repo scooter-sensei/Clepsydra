@@ -22,8 +22,8 @@ import (
 // hand-over just after the count, which reads one high). TF_DISTINCT_TAGS=1
 // keeps cold keys off the hot keys' tags (hot keys may still share one: in
 // about half the rounds); TF_SHARED_TAGS=1 puts every cold key on one (7
-// of 1,800 runs read one high so, against 3 of ~6,700 with real tags,
-// 2026-10-28). A failing round logs each hot
+// of 1,800 runs read one high so, against 3 of ~6,700 with real tags).
+// A failing round logs each hot
 // key whose count is off, with who shares its tag (logOffKeys).
 func TestAbandonedMoveKeepsCounts(t *testing.T) {
 	iters := 300

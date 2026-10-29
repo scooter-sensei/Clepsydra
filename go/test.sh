@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test tiers for the Go implementation. docs/TESTING.md defines them for
+# Test tiers for the Go implementation. docs/specification/conformance.md defines them for
 # every language.
 #
 #   ./test.sh smoke        build, vet, format, one call of every operation (~2 s)
@@ -19,12 +19,12 @@
 # Reports go to $OUT (default ./verify-report/<tier>).
 set -uo pipefail
 cd "$(dirname "$0")"
-. verify/lib.sh
+. verify/lib/lib.sh
 tier=${1:-}
 [ -n "$tier" ] || { sed -n '2,18p' "$0"; exit 2; }
 shift
 OUT=${OUT:-verify-report/$tier}
-. verify/checks.sh
+. verify/lib/checks.sh
 env_info >"$OUT/env.txt"
 
 fmt_check() { # gofmt lists nothing
@@ -37,7 +37,7 @@ smoke() {
 	check build - go build ./...
 	check vet - go vet ./...
 	check gofmt - fmt_check
-	check smoke - go test -count=1 -run '^(TestSmoke|TestSipHashVectors)$' .
+	check smoke - go test -count=1 -run '^(TestSmoke|TestSipHashVectors)$' . ./internal/siphash
 }
 
 sanity() {

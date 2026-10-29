@@ -5,10 +5,10 @@
 # Each one is applied to a fresh export of that commit, then today's accuracy
 # harness (cmd/tfbench -exact) and the patch's own tests run on it.
 # Speed effects are host-dependent: verify/ab.sh fbe6968 fbe6968+verify/experiments/<name>.patch <bench>.
-# verify/experiments/README.md describes each patch.
+# docs/artifact/experiments.md describes each patch.
 set -uo pipefail
 cd "$(dirname "$0")/.."
-. verify/lib.sh
+. verify/lib/lib.sh
 WORK=${WORK:-$(mktemp -d)}
 BASE=fbe6968
 root=$PWD
@@ -17,7 +17,7 @@ prep() { # prep <name> [patch]: tree at BASE plus the patch and today's harness
 	local d="$WORK/exp-$1"
 	export_tree "$BASE" "$d"
 	[ -n "${2:-}" ] && (cd "$d" && git apply "$root/$2")
-	rm -rf "$d/cmd/tfbench" && mkdir -p "$d/cmd" && cp -r cmd/tfbench "$d/cmd/" && cp -r internal "$d/" && fix_imports "$d"
+	rm -rf "$d/cmd/tfbench" "$d/internal/workload" && mkdir -p "$d/cmd" "$d/internal" && cp -r cmd/tfbench "$d/cmd/" && cp -r internal/workload "$d/internal/" && fix_imports "$d"
 	echo "$d"
 }
 

@@ -4,27 +4,29 @@ import (
 	"os"
 	"sync/atomic"
 	"testing"
+
+	"github.com/scooter-sensei/clepsydra/go/internal/cpu"
 )
 
 func init() {
 	if os.Getenv("TF_NOCAS2") != "" {
-		hasCAS2 = false // realign holds the slot, as on other architectures
+		cpu.HasCAS2 = false // realign holds the slot, as on other architectures
 	}
 }
 
 // realignModes runs fn with realign's 16-byte CAS, when the CPU has it, and
 // then with its hold.
 func realignModes(t *testing.T, fn func(t *testing.T)) {
-	if hasCAS2 {
+	if cpu.HasCAS2 {
 		t.Run("cas2", fn)
-		hasCAS2 = false
-		defer func() { hasCAS2 = true }()
+		cpu.HasCAS2 = false
+		defer func() { cpu.HasCAS2 = true }()
 	}
 	t.Run("hold", fn)
 }
 
 func TestCAS2(t *testing.T) {
-	if !hasCAS2 {
+	if !cpu.HasCAS2 {
 		t.Skip("no CMPXCHG16B, or TF_NOCAS2")
 	}
 	f := newMinuteFilter(t, 1000)
@@ -35,7 +37,7 @@ func TestCAS2(t *testing.T) {
 		ok         bool
 	}{{11, 20, false}, {10, 21, false}, {10, 20, true}} {
 		w0, w1 := f.words[2], f.words[3]
-		if ok := cas2(p, c.old0, c.old1, 30, 40); ok != c.ok {
+		if ok := cpu.CAS2(p, c.old0, c.old1, 30, 40); ok != c.ok {
 			t.Fatalf("cas2 from %d, %d over %d, %d: %v", c.old0, c.old1, w0, w1, ok)
 		}
 		want := [2]uint64{w0, w1}
@@ -54,7 +56,7 @@ func TestCAS2(t *testing.T) {
 // moved since realign read it, the slot is left as it was and the entry
 // closed again.
 func TestRealignCAS2(t *testing.T) {
-	if !hasCAS2 {
+	if !cpu.HasCAS2 {
 		t.Skip("no CMPXCHG16B, or TF_NOCAS2")
 	}
 	for _, moved := range []bool{false, true} {

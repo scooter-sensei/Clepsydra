@@ -14,7 +14,7 @@ import (
 )
 
 // Host probes (TF_EXP=1): what a timing claim on this host rests on. Every
-// latency and leak figure in verify/claims.md is measured on one host;
+// latency and leak figure in docs/artifact/claims.md is measured on one host;
 // these say how that host behaves, so figures from another can be read
 // against its own (claims S42, S43).
 

@@ -29,7 +29,7 @@ import (
 // in a floor. A key floored more than once in the same floor can read low
 // by all but its largest floored history; summing floors instead closes
 // that, but light floods then push every floor to 31 and deny every new key
-// (backlog, 2026-10-09). Floored counts the histories that left to a floor:
+// (docs/record/decisions.md). Floored counts the histories that left to a floor:
 // from the first, strict limits deny the keys that read it.
 //
 // Time is kept per entry as the slice (Horizon/2) of the history's newest

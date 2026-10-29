@@ -91,7 +91,7 @@ func TestFloodSizing(t *testing.T) {
 				}
 			}
 			// Turned away: as the attack tests count it (Degraded or Upper
-			// over k), and as SECURITY.md's recipe does (Upper reaching k).
+			// over k), and as the fail-closed recipe in docs/paper/06-security.md does (Upper reaching k).
 			// Causes: a fingerprint match (Count from the table) or floors
 			// only (Upper, not Count).
 			deg, test, recipe, byMatch, byFloor := 0, 0, 0, 0, 0

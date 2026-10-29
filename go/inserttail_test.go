@@ -13,7 +13,7 @@ import (
 // in a 2M-key table larger than the last-level cache filled to a given slot
 // load, and splits them by what the insert did: took a free slot, moved
 // entries along a cuckoo path (by how many entries moved), or evicted. It
-// shows which path makes the unseen-key tail (docs/SECURITY.md, Timing).
+// shows which path makes the unseen-key tail (docs/paper/06-security.md, Timing).
 // Each load point pools TF_TABLES (default 1) fresh tables of 40,000 probes,
 // and "noise" times an empty call in the same loop: the host's own tail.
 func TestInsertTail(t *testing.T) {

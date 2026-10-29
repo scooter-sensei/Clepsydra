@@ -29,6 +29,9 @@ import (
 	"sync/atomic"
 	"time"
 	"unsafe"
+
+	"github.com/scooter-sensei/clepsydra/go/internal/cpu"
+	"github.com/scooter-sensei/clepsydra/go/internal/siphash"
 )
 
 const (
@@ -92,14 +95,14 @@ type Config struct {
 	// CoarseClock, if > 0 and Clock is nil, makes the built-in clock a cached
 	// value refreshed every CoarseClock by one background goroutine: reading
 	// it is an atomic load instead of a monotonic clock read (BenchmarkClock*:
-	// ~1.4 vs 30-42 ns on the reference host, verify/speed.md),
+	// ~1.4 vs 30-42 ns on the reference host, docs/artifact/speed-runs.md),
 	// and timestamps are accurate to CoarseClock. Call Close to stop it.
 	CoarseClock time.Duration
 	// Key, if set, makes Hash and HashUint64 SipHash-2-4 under this 128-bit
 	// key: a keyed PRF, the same in every process that uses the key. Default:
 	// a random per-filter maphash seed, also secret but not a PRF. Either
 	// way an attacker who can't learn the key can't pick inputs that land on
-	// a chosen line, identity or lock stripe (docs/SECURITY.md).
+	// a chosen line, identity or lock stripe (docs/paper/06-security.md).
 	Key *[16]byte
 	// Stash is the number of eviction-stash entries (24 B each). A live key
 	// evicted from a full table is kept there, and its freshness and counts
@@ -114,7 +117,7 @@ type Config struct {
 	// time slice) in the less loaded of two buckets, so no flood can erase
 	// it within the horizon: Upper never reads below a key's true count,
 	// except for a key that left more than one history in a full bucket's
-	// floor (docs/SECURITY.md). A key's answer adds its own entries (Degraded
+	// floor (docs/paper/06-security.md). A key's answer adds its own entries (Degraded
 	// then set), so other keys' histories add nothing unless their
 	// fingerprint matches (about 0.3% of keys while the table is full). When
 	// both buckets are full, the lightest history leaves and one of the
@@ -158,7 +161,7 @@ type Config struct {
 	// estimate of its own work's 99.5th percentile, capped at ConstantTime.
 	// If keys wait faster than pads place them (more than one per 16 stash
 	// entries), every call places one set past its pad. Waited and Waiting
-	// report it. docs/SECURITY.md has the measurements. Each call costs at
+	// report it. docs/paper/06-security.md has the measurements. Each call costs at
 	// least its pad in CPU.
 	ConstantTime time.Duration
 	// Background, if set, keeps cuckoo searches off the call path: a first
@@ -214,7 +217,7 @@ type Filter struct {
 	// and an evictor leaves a key with one under way alone (claim).
 	moves [1 << claimStripeBits]moveCount
 
-	sip    sipKey
+	sip    siphash.Key
 	keyed  bool                       // Config.Key set: hash with sip
 	stash  atomic.Pointer[stashTable] // nil until the first eviction
 	stashN uint64                     // sets of stashWays entries
@@ -340,7 +343,7 @@ func New(cfg Config) (*Filter, error) {
 		seed:    maphash.MakeSeed(),
 	}
 	if cfg.Key != nil {
-		f.sip, f.keyed = newSipKey(cfg.Key), true
+		f.sip, f.keyed = siphash.NewKey(cfg.Key), true
 	}
 	if cfg.Stash == 0 {
 		cfg.Stash = int(max(1, lines*slotsPerLine/16))
@@ -449,7 +452,7 @@ func (f *Filter) Ticks(d time.Duration) uint64 { return uint64(max(d, 0) / f.res
 // key (Config.Key).
 func (f *Filter) Hash(key string) uint64 {
 	if f.keyed {
-		return f.sip.string(key)
+		return f.sip.HashString(key)
 	}
 	return maphash.String(f.seed, key)
 }
@@ -459,7 +462,7 @@ func (f *Filter) Hash(key string) uint64 {
 // are given: pass them only Hash or HashUint64 values of this filter.
 func (f *Filter) HashUint64(k uint64) uint64 {
 	if f.keyed {
-		return f.sip.uint64(k)
+		return f.sip.HashUint64(k)
 	}
 	return maphash.Comparable(f.seed, k)
 }
@@ -467,7 +470,7 @@ func (f *Filter) HashUint64(k uint64) uint64 {
 // Result is the full answer of Touch and Count, including how far it can be
 // trusted. A fail-closed caller (rate limit, abuse check) should treat
 // Saturated as "over any limit above Count" and, while Degraded, a key not
-// Seen as possibly a returning one. docs/SECURITY.md has the threat model.
+// Seen as possibly a returning one. docs/paper/06-security.md has the threat model.
 type Result struct {
 	// Seen: the key was touched within the window (before this touch).
 	Seen bool
@@ -937,13 +940,13 @@ func (f *Filter) warm(hs []uint64, at *[batchChunk]int) {
 			p := f.primary(h)
 			lines[2*k], lines[2*k+1], at[k] = p, f.alt(p, fingerprint(h)), -1
 		}
-		prefetchLines(w, &lines[0], 2*len(hs))
+		cpu.PrefetchLines(w, &lines[0], 2*len(hs))
 		return
 	}
 	for k, h := range hs {
 		lines[k] = f.primary(h)
 	}
-	prefetchLines(w, &lines[0], len(hs))
+	cpu.PrefetchLines(w, &lines[0], len(hs))
 	m := 0
 	for k, h := range hs {
 		p, fp := lines[k], fingerprint(h)
@@ -951,7 +954,7 @@ func (f *Filter) warm(hs []uint64, at *[batchChunk]int) {
 			lines[m], m = f.alt(p, fp), m+1 // m <= k: the entries before k's are used
 		}
 	}
-	prefetchLines(w, &lines[0], m)
+	cpu.PrefetchLines(w, &lines[0], m)
 }
 
 // Evictions counts live keys displaced because both candidate lines were full.
@@ -1124,7 +1127,7 @@ func (f *Filter) ctBegin(op int, now uint64) (t0 time.Time, pad time.Duration) {
 
 // ctEnd moves op's own-work estimate with the work done since s (a sample
 // of calls, 1 in 4 by key, moves it) and spins until the pad, plus a random
-// dither, has passed since t0. The spin reads the clock every ~37 ns (2026-10-21
+// dither, has passed since t0. The spin reads the clock every ~37 ns (the Ryzen
 // host), so a pad ending at a fixed time ends at a phase of those reads
 // that follows the call's own work, and keys whose work time is narrow show
 // it (Count at a fixed 1 µs pad: D 0.019-0.041; with the dither 0.007-0.014,
@@ -1456,7 +1459,7 @@ func (f *Filter) realign(h uint64, i int, w0, old, tg, now uint64) (w1 uint64, o
 	if old>>tagShift != tg || isHot(old) && age(now, w0&tsMask) <= f.horizon {
 		return 0, false, false
 	}
-	if hasCAS2 {
+	if cpu.HasCAS2 {
 		return f.realign2(i, w0, old, tg, now)
 	}
 	m := f.moveOf(tg)
@@ -1500,7 +1503,7 @@ func (f *Filter) realign2(i int, w0, old, tg, now uint64) (w1 uint64, over, ok b
 			w1, over, idx, id = pw, false, x, y
 		}
 	}
-	if !cas2(&f.words[i], w0, old, n0, w1) {
+	if !cpu.CAS2(&f.words[i], w0, old, n0, w1) {
 		if idx != 0 {
 			f.hotClose(idx, id) // never published
 		}

@@ -1,0 +1,48 @@
+# Isolated runs
+
+The last full runs of `go/verify/isolated.sh`, both at commit 8a59c44, on the Xeon host: the Docker path and the unshare path (`ISOLATION=unshare`). Every check passed in both. `verify/run.sh` has gained checks since (the constant-time and no-CAS2 suites, the velocity bound, attacks, rates, sketch experiments and flood sizing).
+
+```
+== Docker
+isolation: docker
+image: mirror.gcr.io/library/golang@sha256:b8bae5bd9ba9b1f89b635c91c24cc75cea335a16fb5076310f38566fc674b1ec
+commit:   8a59c44b7d6da622ed72bb66cdafe58f2c01a824
+go:       go version go1.24.7 linux/amd64
+GOFLAGS=-mod=readonly GOPROXY=off GOTOOLCHAIN=local GOCACHE=/root/.cache/go-build
+kernel:   Linux 6.18.44-fc-v80 x86_64
+cpu:      Intel(R) Xeon(R) Processor @ 2.10GHz x 4, L3 266240K
+network:  unreachable
+PASS  vet (4s)
+PASS  tests (8s)
+PASS  race (21s)
+PASS  exact (10s)
+PASS  placement (6s)
+PASS  register-experiment (0s)
+PASS  fixes (156s)
+PASS  stress (103s)
+PASS  history (120s)
+PASS  harness (271s)
+PASS  experiments (89s)
+ALL PASS
+
+== unshare (ISOLATION=unshare)
+isolation: unshare
+commit:   8a59c44b7d6da622ed72bb66cdafe58f2c01a824
+go:       go version go1.24.7 linux/amd64
+kernel:   Linux 6.18.44-fc-v80 x86_64
+cpu:      Intel(R) Xeon(R) Processor @ 2.10GHz x 4, L3 266240K
+network:  unreachable
+GOFLAGS=-mod=readonly GOPROXY=off GOTOOLCHAIN=local GOCACHE=<fresh temp dir>
+PASS  vet (4s)
+PASS  tests (8s)
+PASS  race (23s)
+PASS  exact (11s)
+PASS  placement (5s)
+PASS  register-experiment (1s)
+PASS  fixes (155s)
+PASS  stress (102s)
+PASS  history (119s)
+PASS  harness (277s)
+PASS  experiments (89s)
+ALL PASS
+```

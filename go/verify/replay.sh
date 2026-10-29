@@ -4,18 +4,19 @@
 #
 #   verify/replay.sh fixes [N]   each bug-fix test: fails on the commit with the bug, passes on the fix
 #   verify/replay.sh stress [N]  the racy regression tests at the working tree, N runs each
-#   verify/replay.sh history     each results/history.md row: re-run that commit's own tfbench -quick,
+#   verify/replay.sh history     each docs/record/scorecard-history.md row: re-run that commit's own tfbench -quick,
 #                                compare the deterministic columns with the recorded row
 #   verify/replay.sh harness     today's accuracy harness (tfbench -exact) on every commit that
-#                                changed the library, plus the one older-harness case the backlog cites
+#                                changed the library, plus the one older-harness case docs/record/changes.md cites (item 1)
 #
 # Each subcommand prints one result line per case and exits non-zero if a
 # case did not reproduce.
 set -uo pipefail
 cd "$(dirname "$0")/.."
-. verify/lib.sh
+. verify/lib/lib.sh
 WORK=${WORK:-$(mktemp -d)}
 HEAD_REV=$(git rev-parse --short HEAD)
+HISTORY=$TOP/docs/record/scorecard-history.md
 bad=0
 
 tree() { # tree <rev> <dir>: export a commit's files (no .git)
@@ -42,12 +43,12 @@ fixes() {
 	# 5524228 and a02fe9b are proven by deterministic tests on hooks those
 	# commits added (TestEvictionDuringMoveKeepsHistory,
 	# TestEvictionRacingMoveStart), so they can't run on the code before;
-	# so are the 2026-10-22 fixes of the wait-room transfer (15bbc28,
+	# so are the fixes of the wait-room transfer (15bbc28,
 	# testHookTaken), the register epoch (5e21d7e, testHookStamped), the
 	# copy of an evicted key (0c08517, testHookPicked), the wait-room
 	# ways (277f9ed, testHookPlacing), the decay sweep's slot hold
 	# (7236f76, testHookSweeping) and an insert's hold over an expired
-	# occupant (c1cbace, testHookInstalling), as are the 2026-10-23/24
+	# occupant (c1cbace, testHookInstalling), as are the tag-stripe
 	# fixes (43e707b, 200e5ea, 9464187: tagstripe_test.go) and a hot
 	# history's exits from the stash (0becd6e, testHookHotAdding:
 	# hotspill_test.go). The visible copy (0c08517) and the reclaimed hot
@@ -140,7 +141,7 @@ history() {
 	# Old harnesses named the FN columns by load point; map by position for
 	# those, by name for the rest.
 	local hh
-	hh=$(grep -m1 '^| when' results/history.md)
+	hh=$(grep -m1 '^| when' "$HISTORY")
 	while IFS= read -r row; do
 		local when rev c
 		when=$(awk -F'|' '{gsub(/^ +| +$/, "", $2); print $2}' <<<"$row")
@@ -177,25 +178,27 @@ history() {
 			printf 'history %s %-8s tree %s: recorded %s replayed %s=> MISMATCH %d/%d columns\n' "$when" "$rev" "$c" "$want" "$got" "$m" "$n"
 			bad=1
 		fi
-	done < <(grep -E '^\| [0-9]{2}-[0-9]{2} ' results/history.md)
+	done < <(grep -E '^\| [0-9]{2}-[0-9]{2} ' "$HISTORY")
 }
 
 harness() {
 	# Today's accuracy harness against each library version.
 	local h="$WORK/harness-src"
 	tree HEAD "$h"
-	# The library is every non-test .go file of the module's top directory
-	# (filter.go and register.go first; ghost.go, hot.go, overflow.go and
-	# sip.go later). Commits that only moved it (into go/) are skipped.
+	# The library is every non-test .go file of the module's top directory and of
+	# internal/cpu and internal/siphash (filter.go and register.go first; ghost.go,
+	# hot.go, overflow.go and sip.go later; sip.go and the assembly wrappers then
+	# moved into internal/). Commits that only moved it (into go/) are skipped; only
+	# internal/workload is replaced by today's, the harness's own input.
 	local c prev="" lib
-	for c in $(git rev-list --reverse HEAD -- ':(top,glob)*.go' ':(top,glob)go/*.go' ':(top,exclude,glob)**/*_test.go' | cut -c1-7); do
-		lib=$(git -C "$TOP" ls-tree -r "$c" | awk '$4 ~ /^(go\/)?[^\/]*\.go$/ && $4 !~ /_test\.go$/ {print $3}')
+	for c in $(git rev-list --reverse HEAD -- ':(top,glob)*.go' ':(top,glob)go/*.go' ':(top,glob)go/internal/cpu/*.go' ':(top,glob)go/internal/siphash/*.go' ':(top,exclude,glob)**/*_test.go' | cut -c1-7); do
+		lib=$(git -C "$TOP" ls-tree -r "$c" | awk '$4 ~ /^(go\/)?([^\/]*|internal\/(cpu|siphash)\/[^\/]*)\.go$/ && $4 !~ /_test\.go$/ {print $3}')
 		[ "$lib" = "$prev" ] && continue
 		prev=$lib
 		local d="$WORK/harness-$c"
 		tree "$c" "$d"
-		rm -rf "$d/cmd/tfbench" "$d/internal" && mkdir -p "$d/cmd"
-		cp -r "$h/cmd/tfbench" "$d/cmd/" && cp -r "$h/internal" "$d/" && fix_imports "$d"
+		rm -rf "$d/cmd/tfbench" "$d/internal/workload" && mkdir -p "$d/cmd" "$d/internal"
+		cp -r "$h/cmd/tfbench" "$d/cmd/" && cp -r "$h/internal/workload" "$d/internal/" && fix_imports "$d"
 		printf 'harness %s %s\n' "$c" "$(git log -1 --format=%s "$c" | cut -c1-70)"
 		(cd "$d" && go run -tags accuracyonly ./cmd/tfbench -exact 2>&1) | sed 's/^/    /'
 	done

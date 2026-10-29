@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scorecard: tests (race), then accuracy + speed, appended to results/history.md.
+# Scorecard: tests (race), then accuracy + speed, appended to ../docs/record/scorecard-history.md.
 # Usage: ./bench.sh "what changed"
 set -euo pipefail
 cd "$(dirname "$0")"

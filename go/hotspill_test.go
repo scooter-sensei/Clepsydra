@@ -14,7 +14,7 @@ import (
 // spills K's history to the overflow table. T's add counts by K's identity
 // in K's entry, which no slot or stash points to any more: before, it
 // succeeded there and the event was gone (case 9787 of the concurrent
-// fuzzer, 2026-10-25).
+// fuzzer).
 func TestHotAddAfterSpillCounts(t *testing.T) {
 	f, err := New(Config{Capacity: 4, Horizon: time.Minute, Resolution: time.Millisecond,
 		Clock: func() uint64 { return 1 }, Stash: -1})
@@ -73,7 +73,7 @@ func TestHotAddAfterSpillCounts(t *testing.T) {
 // history weighs nothing (T's event isn't in it yet), and the fourth put
 // after it, finding no free or expired way, takes K's as the lightest, with
 // nothing to spill. T's add counted in K's entry, which no slot or stash
-// pointed to any more, and the event was gone (case 9787, 2026-10-28).
+// pointed to any more, and the event was gone (case 9787).
 func TestHotAddAfterStashDropCounts(t *testing.T) {
 	f, err := New(Config{Capacity: 4, Horizon: time.Minute, Resolution: time.Millisecond,
 		Clock: func() uint64 { return 1 }, Stash: 4})

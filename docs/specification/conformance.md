@@ -1,0 +1,49 @@
+# Conformance: vectors and test tiers
+
+An implementation is the same filter when it reproduces the conformance vectors exactly, and it is tested the same way when it provides the same five test tiers. Both rules apply to every implementation: Go now, Python, C++ and Java later.
+
+## Conformance vectors
+
+`spec/vectors/*.json` pin the filter's observable behaviour bit for bit, so a port can show it is the same filter. Each file is one scenario:
+
+- `key_hex`: the SipHash-2-4 key, the same in every file (bytes 00..0f).
+- `config`: what the filter is built with. Defaults apply to fields that are absent: load 0.85, stash 1 entry per 16 slots, overflow 5 units per 9 slots (two candidate buckets, three floors per bucket), spill_min 4, hot entries 1 per 128 slots.
+- `hashes`: `Hash(string)` and `HashUint64(uint64)` under the key, as 16 hex digits.
+- `ops`: calls in order on one fresh filter. The clock reads `now_ms` during the call, at a resolution of `resolution_ms`. `op` is `touch` (record an event, then answer) or `count` (answer only), and `want` is the full Result. A missing flag means false.
+- `end`: the counters and occupancy after the last op.
+
+| Scenario | What it exercises |
+|---|---|
+| `basic` | hashing, Seen and Count at assorted windows, events exactly one window old |
+| `burst` | rates above the register's capacity (`Saturated`), then decay |
+| `churn` | a 4x-capacity flood of one-off keys against 8 repeat keys (velocity-aware eviction) |
+| `overflow` | a small stash: evicted histories come back from the stash (`Restored`) or the overflow table (`Degraded`) |
+
+A port passes when it reproduces every `want`, every hash and `end` exactly. The vectors describe the default (non-ConstantTime) insert policy: in ConstantTime and Background modes a first touch that finds both lines full waits and is placed later, so which keys get evicted differs, and the Go suite skips the vectors with evictions under `TF_CT=1` and `TF_BG=1`. Go regenerates the files with `go test -run TestConformance -update` (in `go/`). Do that only for a deliberate change in behaviour, and say so in the commit, because every port must then follow.
+
+## Test tiers
+
+Every implementation has the same five test tiers behind one entry point in its folder (`go/test.sh <tier>`). A tier passes only if every check in it passes. Each check writes a log, and the run ends with a summary (reports go to `$OUT`, default `./verify-report/<tier>`).
+
+| Tier | Question it answers | When to run | Go: what it runs | Time (Go) |
+|---|---|---|---|---|
+| **smoke** | Does it build and do the basic operations work at all? | every save or commit | build, vet, gofmt, `TestSmoke` (every public operation once, under three configs), SipHash reference vectors | ~2 s |
+| **sanity** | Is the whole unit suite green? | every push | smoke, plus the unit suite (`-short`), the suite again in ConstantTime mode (`TF_CT=1`), in Background mode (`TF_BG=1`) and, on amd64, with realign's hold instead of its 16-byte CAS (`TF_NOCAS2=1`: the path of other architectures), and the conformance vectors | ~40 s |
+| **regression** | Has anything that was once fixed or measured changed? | every push to main | conformance vectors, bug-fix tests (`TestRegress*`), and every deterministic result compared byte for byte with `go/verify/expected/`: accuracy scorecard, placement limits, register experiment, velocity bound, attacks, sustained rates, overflow experiments, flood sizing. `--full` also replays each recorded bug on the commit that had it and the commit that fixed it, every scorecard row, and old harnesses (`go/verify/run.sh`) | ~1 min (`--full` ~25 min) |
+| **perf** | Is this change slower? | before merging anything on a hot path | the 12 core benchmarks of a base revision and of the working tree, built once and run alternately on the same host; fails when both the minimum and the median are more than `PERF_MAX` (1.20) times the base | ~5 min |
+| **stress** | Does it hold under concurrency and overload? | before a release, nightly | race detector on the whole suite, racy regression tests 300 times each, and a soak (`TestStressSoak`): every operation from 2 goroutines per core for `TF_STRESS` (60 s), while the key pool cycles from 0.5x to 4x capacity. The soak checks the fail-closed contract on every count, then runs again under the race detector and in Background mode. Then a fuzzer (`TestFuzzUpper`): `TF_FUZZ` (1e9) operations over random configurations (table, stash, overflow and hot sizes, horizons, ConstantTime, Background with the placer run at seeded points), load from idle to 64x capacity per horizon, and callers' clocks lagging by up to two units, checking `Upper` against an exact model on every count and touch, and the other way, that what the register answers (the overflow table's part taken out) counts no event from further back than its buckets reach and reads `Seen` exactly when the key has an event in the window (a planted double count on restore, or a `Seen` a unit late, fails in seconds; the `Upper` check alone passes both). Each case is one goroutine from a seed, so a failure replays exactly (`TF_FUZZ_CASE=<seed>`, and `TF_FUZZ_TRACE=<key>` for that key's operations). Last, the concurrent fuzzer for `TF_CFUZZ` (5 min), plain and with tags shared 8 ways, and a Background soak with tags shared 8 ways | ~30 min |
+
+`go/test.sh all` runs smoke, sanity, regression and stress. Perf is left out because its results depend on the host, so it runs only when asked. The perf gate's 12 benchmarks are CheckAndTouchHit, CheckAndTouchHitHot, CheckAndTouchMissInsert, TouchAndCount, VelocityCount, VelocityCountHot, ContainsAbsent, InsertSteady, InsertNearFull, InsertSaturated, CheckAndTouchParallel and CheckAndTouchBatch; `Huge*` (600 MB tables) only on request (`PERF_BENCH='Huge' ./test.sh perf`). A/A runs of one build differ by up to ~15% on a noisy host, so the gate catches only clear regressions; smaller effects need [the A/B tools](../artifact/measuring-speed.md).
+
+CI (`.github/workflows/go.yml`) runs `./test.sh sanity` and `./test.sh regression` on every push and pull request with Go 1.24.7 (the version `go/verify/expected/` was produced with), and the stress tier weekly (or any tier on request), uploading `go/verify-report/`.
+
+The concurrent fuzzer, the model checks and running the tiers on other architectures are described in [artifact/reproducing.md](../artifact/reproducing.md).
+
+## Layout rule for a new language
+
+```
+<lang>/test.<ext or sh>   the tier entry point: smoke | sanity | regression | perf | stress | all
+<lang>/...                its own build, tests and benchmarks
+```
+
+A port goes in its own top-level folder (`python/`, `cpp/`, `java/`), follows [the format](format.md), and must reproduce `spec/vectors/` exactly. Its regression tier must include the conformance vectors. Its smoke tier must call every public operation once.

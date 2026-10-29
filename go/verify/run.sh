@@ -12,11 +12,11 @@
 # unkeyed. Expected files were produced on linux/amd64 with Go 1.24.7; other
 # architectures may differ (Go may fuse floating-point multiply-adds there).
 # linux/arm64 under qemu-user matched them (GOARCH=arm64
-# GOFLAGS=-exec=qemu-aarch64 ./test.sh regression, 2026-10-28).
+# GOFLAGS=-exec=qemu-aarch64 ./test.sh regression, at 97a1997).
 set -uo pipefail
 cd "$(dirname "$0")/.."
-. verify/lib.sh
-. verify/checks.sh
+. verify/lib/lib.sh
+. verify/lib/checks.sh
 
 env_info | tee "$OUT/env.txt" | sed 's/^/      /' | tee -a "$SUM" >/dev/null
 check vet - go vet ./...

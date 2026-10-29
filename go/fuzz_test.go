@@ -17,7 +17,7 @@ import (
 // TestFuzzUpper (TF_FUZZ=<operations>, e.g. 1e10) checks the fail-closed
 // contract over random configurations and operation streams: unless an
 // answer is Saturated, its Upper is never below the key's true count in the
-// window (docs/DESIGN.md, Trust flags). It checks Count's answers and
+// window (docs/paper/04-operations.md, trust flags). It checks Count's answers and
 // Touch's own (which include the touch). The documented exceptions are
 // counted, not failed: a low answer behind a live overflow floor (a key
 // floored more than once), and, with the overflow table off, a low answer

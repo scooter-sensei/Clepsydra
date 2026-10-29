@@ -5,7 +5,7 @@
 #
 # An arm is a revision spec as in verify/ab.sh (HEAD, ., 4103013,
 # HEAD+verify/experiments/<name>.patch). verify/ab.sh times each version at
-# the one code layout its build happens to get, and on the 2026-10-21 host
+# the one code layout its build happens to get, and on the Ryzen host (docs/README.md, Hosts)
 # placement moves a benchmark by a few percent (S54, S55). Here every arm is
 # built at <layouts> layouts: never-run pad functions of 0 to 24 statements
 # (~0-450 bytes), sized independently by a hash of the layout's seed and the
@@ -26,7 +26,7 @@
 # host-dependent: compare ratios on one host.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-. verify/lib.sh
+. verify/lib/lib.sh
 [ $# -ge 5 ] || { sed -n '2,26p' "$0"; exit 2; }
 RE=$1 K=$2 ROUNDS=$3
 shift 3

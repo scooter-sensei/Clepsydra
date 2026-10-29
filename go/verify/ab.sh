@@ -12,7 +12,7 @@
 # S56). Speed is host-dependent: compare ratios, not absolute numbers.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-. verify/lib.sh
+. verify/lib/lib.sh
 [ $# -ge 3 ] || { sed -n '2,13p' "$0"; exit 2; }
 A=$1 B=$2 RE=$3 ROUNDS=${4:-8}
 tmp=$(mktemp -d)

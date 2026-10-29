@@ -68,7 +68,7 @@ func TestTimingLeak(t *testing.T) {
 // TestCTPadEndIsDithered: a ConstantTime pad ends at a random point over a
 // span of several clock reads. A spin that ends at a fixed time ends at a
 // phase of the clock read that follows the call's own work (one read is
-// ~37 ns on the 2026-10-21 host), and keys whose work time is narrow show
+// ~37 ns on the Ryzen host), and keys whose work time is narrow show
 // it: Count at a fixed 1 µs pad leaked D 0.019-0.041 (claims S41). Calls
 // with no work of their own, spread end to end: their middle 80% must span
 // more than one clock read. Noise only widens the spread.

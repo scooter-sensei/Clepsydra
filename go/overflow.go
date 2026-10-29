@@ -23,7 +23,7 @@ import (
 // cleared when a newer slice takes it. The default shape (4 rows, 8-bit
 // counters, Horizon/2 slices) packs a column's ring into one word; it beat
 // 16-bit counters and Horizon/4 slices at two thirds of the memory
-// (verify/claims.md A9).
+// (docs/artifact/claims.md A9).
 //
 // Adds are lock-free (a CAS per row); only handing a ring position to a new
 // slice takes the mutex. Reads are lock-free; counters only grow while

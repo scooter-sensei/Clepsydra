@@ -16,7 +16,7 @@ import (
 // the load from half the capacity to 4x it, and checks the fail-closed
 // contract on every Count: unless the answer is flagged Saturated, Upper
 // is never below the key's true count in the window. One exception is
-// documented (docs/SECURITY.md): a key that left more than one history in
+// documented (docs/paper/06-security.md): a key that left more than one history in
 // an overflow bucket's floor can read up to all but the largest of them
 // low, so a low answer whose bucket floor is live is counted, not failed. Each goroutine owns
 // its keys, so it knows their true counts exactly; the clock is shared and
@@ -38,7 +38,7 @@ func TestStressSoak(t *testing.T) {
 	// few-hot-entries cases and the attack tests'). 10 per worker left 63%
 	// of answers Saturated, nearly all refused promotions; 80 leaves 24%,
 	// mostly histories in the overflow table while the pool is 4-8x the
-	// table (2026-10-28, 30 s soaks).
+	// table (30 s soaks).
 	f, err := New(Config{Capacity: capacity, Horizon: 10 * time.Second, Resolution: time.Millisecond,
 		Clock: clock.Load, SpillMin: 1, Hot: 80 * workers})
 	if err != nil {

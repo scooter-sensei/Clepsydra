@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Re-measures every speed claim, one comparison at a time, and prints a
-# Markdown report (verify/speed.md was produced this way). Host-dependent:
+# Markdown report (docs/artifact/speed-runs.md was produced this way). Host-dependent:
 # compare the B/A ratios, not absolute numbers. Takes about an hour and
 # ~2 GB of RAM (the DRAM benchmarks build 600 MB tables).
 #
-#   verify/speed.sh > verify/speed.md
+#   verify/speed.sh > ../docs/artifact/speed-runs.md
 set -uo pipefail
 cd "$(dirname "$0")/.."
-. verify/lib.sh
+. verify/lib/lib.sh
 X=verify/experiments
 ab() { # ab <claim> <A> <B> <regex> [rounds]
 	echo "### $1"
@@ -20,7 +20,7 @@ ab() { # ab <claim> <A> <B> <regex> [rounds]
 }
 echo "# Speed measurements"
 echo
-echo "Produced by \`verify/speed.sh\` on $(date -u +%Y-%m-%d). Each block is \`verify/ab.sh\`: both builds run alternately, ns/op min and median over the rounds, B/A = ratio of medians. Benchmarks with the same name are compared as each commit defines them."
+echo "Produced by \`verify/speed.sh\` at commit $(git rev-parse --short HEAD). Each block is \`verify/ab.sh\`: both builds run alternately, ns/op min and median over the rounds, B/A = ratio of medians. Benchmarks with the same name are compared as each commit defines them."
 echo
 echo '```'
 echo "$(go version); $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ //') x $(nproc); L3 $(cat /sys/devices/system/cpu/cpu0/cache/index3/size 2>/dev/null)"
@@ -29,7 +29,7 @@ echo
 echo "## Scorecard speed columns at HEAD (cmd/tfbench, best of 3 per column, 3 runs)"
 echo
 echo '```'
-grep -m1 '^| when' results/history.md
+grep -m1 '^| when' "$TOP/docs/record/scorecard-history.md"
 for i in 1 2 3; do go run ./cmd/tfbench 2>/dev/null | tail -1; done
 echo '```'
 echo

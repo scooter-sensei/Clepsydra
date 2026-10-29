@@ -2,7 +2,7 @@
 // false positives, and latency, measured the same way every run so
 // iterations are comparable.
 //
-//	go run ./cmd/tfbench -label "what changed"   # prints and appends to results/history.md
+//	go run ./cmd/tfbench -label "what changed"   # prints and appends to ../docs/record/scorecard-history.md
 //
 // Accuracy is measured against exact ground truth (a map of last-seen times)
 // on a churn workload: a stream mixing new keys and repeats, run for 4
@@ -63,8 +63,8 @@ func main() {
 	fmt.Println(row)
 	fmt.Fprintf(os.Stderr, "(%.0fs; live keys/capacity: %.2f %.2f %.2f)\n", time.Since(t0).Seconds(), c10.live, c20.live, c25.live)
 	if *label != "" && !*quick {
-		path := "results/history.md"
-		_ = os.MkdirAll("results", 0o755)
+		path := "../docs/record/scorecard-history.md"
+		_ = os.MkdirAll("../docs/record", 0o755)
 		if _, err := os.Stat(path); err != nil {
 			os.WriteFile(path, []byte(intro+header+"\n"), 0o644)
 		}

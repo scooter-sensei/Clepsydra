@@ -61,7 +61,7 @@ diff -ruN a/spin.go b/spin.go
 +// three iterations. A dither under one iteration ends the pad at the phase of
 +// the reads again: a clock read costs ~566 ns under qemu-user and 0.5-1.5 µs
 +// on VMs whose clock source is HPET or acpi_pm (an iteration, 37 ns on the
-+// 2026-10-21 host). The clock is the host's, so the first ConstantTime New
++// Ryzen host). The clock is the host's, so the first ConstantTime New
 +// measures it for every filter (calibrateDither).
 +var (
 +	ditherMask = uint64(padDither - 1)
@@ -103,7 +103,7 @@ diff -ruN a/timing_test.go b/timing_test.go
 --- a/timing_test.go	2026-10-29 00:33:40.770652740 +0000
 +++ b/timing_test.go	2026-10-29 00:33:40.772760084 +0000
 @@ -71,12 +71,15 @@
- // ~37 ns on the 2026-10-21 host), and keys whose work time is narrow show
+ // ~37 ns on the Ryzen host), and keys whose work time is narrow show
  // it: Count at a fixed 1 µs pad leaked D 0.019-0.041 (claims S41). Calls
  // with no work of their own, spread end to end: their middle 80% must span
 -// more than one clock read. Noise only widens the spread.

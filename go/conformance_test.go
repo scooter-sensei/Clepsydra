@@ -14,7 +14,7 @@ import (
 
 // Conformance vectors: language-neutral traces in ../spec/vectors/ that pin
 // the filter's observable behaviour bit for bit. Every port (Python, C++,
-// Java) must reproduce them; docs/TESTING.md describes the format.
+// Java) must reproduce them; docs/specification/conformance.md describes the format.
 //
 //	go test -run TestConformance -update   rewrites them from this code
 

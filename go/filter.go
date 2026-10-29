@@ -184,6 +184,15 @@ type Filter struct {
 	res     time.Duration
 	clock   func() uint64
 	seed    maphash.Seed
+	// Read by calls, written only by New (hot: by the first promotion):
+	// kept apart from the counters below, which calls on other cores write.
+	// On a counter's line, ct cost every core's lookups 1.68x while one
+	// core added to waited (claims S60).
+	ct   bool                     // Config.ConstantTime > 0
+	pad  time.Duration            // Config.ConstantTime
+	hot  atomic.Pointer[hotTable] // nil until the first promotion
+	hotN int                      // hot entries; 0: none
+	bg   bool                     // Config.Background
 
 	_           [64]byte
 	cursor      atomic.Uint64 // ContinuousDecay progress, in lines
@@ -232,16 +241,11 @@ type Filter struct {
 	skShape    sketchShape
 	spillMin   uint64 // histories lighter than this aren't spilled (Shed)
 	shed       atomic.Uint64
-	ct         bool                     // Config.ConstantTime > 0
-	deferred   atomic.Int64             // keys waiting for a slot (deferMark): in the stash (ConstantTime) or the wait room (Background)
-	waited     atomic.Uint64            // inserts that waited for a slot
-	placeNs    atomic.Int64             // ConstantTime: running mean of a placement step, ns
-	pad        time.Duration            // Config.ConstantTime
-	hot        atomic.Pointer[hotTable] // nil until the first promotion
-	hotN       int                      // hot entries; 0: none
+	deferred   atomic.Int64  // keys waiting for a slot (deferMark): in the stash (ConstantTime) or the wait room (Background)
+	waited     atomic.Uint64 // inserts that waited for a slot
+	placeNs    atomic.Int64  // ConstantTime: running mean of a placement step, ns
 	promoted   atomic.Uint64
 	hotRefused atomic.Uint64
-	bg         bool        // Config.Background
 	placing    atomic.Bool // Background: the placer goroutine is running
 	bgManual   bool        // tests: Background without the goroutine (the test places)
 	_          [64]byte

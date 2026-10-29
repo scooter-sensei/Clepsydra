@@ -32,8 +32,8 @@ Every file of `go/`, by category. Go builds a package from one directory and req
 |---|---|
 | Smoke and unit | `smoke_test.go` (every public operation once, three configs), `filter_test.go`, `register_test.go`, `disp_test.go` (the displaced bit), `batch_test.go`, `ghost_test.go`, `hot_test.go`, `background_test.go`, `ctwait_test.go` (ConstantTime's waiting keys) |
 | Conformance | `conformance_test.go` (`spec/vectors/`, `-update` regenerates them) |
-| Regression of fixed bugs | `regress_test.go`, `dup_test.go`, `reloc_race_test.go`, `abandon_test.go`, `read_race_test.go`, `restore_test.go`, `lost_test.go`, `movecopy_test.go` |
-| Concurrency races on hooks | `gaprace_test.go` (A21), `roomrace_test.go` (A20, A24), `split_race_test.go` (971dc4a, 64ebd85, A23), `sweep_race_test.go` (A26), `install_race_test.go` (A27), `tagstripe_test.go` (A28–A30), `hotspill_test.go` (A32), `stash_race_test.go` (A6), `cas2_amd64_test.go`, `cas2_other_test.go` (realign both ways, A33) |
+| Regression of fixed bugs | `regress_test.go`, `dup_test.go`, `reloc_race_test.go`, `abandon_test.go`, `read_race_test.go`, `restore_test.go`, `lost_test.go`, `movecopy_test.go`, `restorewait_test.go` (A37), `mirror_test.go` (A39) |
+| Concurrency races on hooks | `gaprace_test.go` (A21), `roomrace_test.go` (A20, A24), `split_race_test.go` (971dc4a, 64ebd85, A23), `sweep_race_test.go` (A26), `install_race_test.go` (A27), `tagstripe_test.go` (A28–A30), `hotspill_test.go` (A32, A38), `stash_race_test.go` (A6), `cas2_amd64_test.go`, `cas2_other_test.go` (realign both ways, A33) |
 | Fuzzers and soak | `fuzz_test.go` (`TestFuzzUpper`), `fuzzconc_test.go` (`TestFuzzConcurrent`), `soak_test.go` (`TestStressSoak`), `tagamp_test.go` (the tag amplifier, `TF_CFUZZ_TAGS`, `TF_STRESS_TAGS`) |
 | Attacks | `attack_test.go` |
 | Deterministic experiments (`verify/expected/`) | `placement_test.go` (the placement oracle, D8–D11), `rate_test.go` (A15), `velbound_test.go` (D18), `secexp_test.go` (A9–A11), `floodexp_test.go` (A14) |
@@ -50,5 +50,5 @@ Every file of `go/`, by category. Go builds a package from one directory and req
 | `verify/lib/` | `lib.sh` (tree export, import rewriting) and `checks.sh` (the checks behind `run.sh` and `test.sh`), sourced by the scripts |
 | `verify/expected/` | the golden outputs the deterministic checks must match byte for byte |
 | `verify/experiments/` | reverted experiments as git patches ([experiments.md](experiments.md)) |
-| `verify/testdata/` | older versions of `ghost_test.go` and `restore_test.go` that the bug replays need |
+| `verify/testdata/` | older versions of `ghost_test.go` and `restore_test.go`, and `mirror_test.go` without its read check, that the bug replays need |
 | `verify/tla/` | the TLA+ models of the slot protocol; `verify/tla/experiments/` holds `HotCells.tla`, the model of an experiment not adopted |

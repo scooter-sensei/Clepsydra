@@ -76,6 +76,13 @@ Items 56–59 came from a review of every library file and the test suite agains
 58. 32-bit builds (04fc643): `hotIdxMask` through `uint64` in `New`, `1<<40` constants in five tests and `tfbench`. 386 runs natively on the amd64 kernel: `go test -short` passes plain, ConstantTime and Background.
 59. `TestFuzzUpper` checks the other direction too (A36): what the register answers counts no event from further back than its edge bucket reaches, and `Seen` holds exactly when the key has an event in the window. The `Upper` check passed a double-counted restore and a late `Seen`; the new check fails both within a case's first 13,000 operations.
 
+Items 64–67 came from a review of the branch's code.
+
+64. An evicted key that waits for a slot is `Restored` (d6dbe56, A37): in Background and ConstantTime its waiting touch cleared the flag and skipped `Restored()`.
+65. A stash drop whose hot entry is no longer its own records no loss with the overflow table off (d6dbe56, A38), as with it on.
+66. The re-checks after a lookup match the key's identity, displaced bit included (d6dbe56, A39): `slotWords`, the hit's load of word0 and `markSat` compare word0>>47 with what `locateAt` or `locateBoth` matched, one compare as before.
+67. Fewer copies (d6dbe56): `CountAt` pads its own work in ConstantTime (`countCT` was a copy); `VelocityCountBatch` starts from warm's slots, as the touch batches do; `claim` takes its mode, and `miss`'s fallback calls it; `hotClose` and a demotion share `putFree`; `stashSet` is `stashTable.set`. `touch` keeps its inline copy of `hit`, now with a comment: called, `hit` cost the cache-resident hit 1.05x and the touch batch 1.08x (placement-randomized, 6 layouts, cycles/op; on the way, a version with `touch` calling `hit` and a per-hit computation of the slot's line read 1.14x on both). Speed against 30cd90d, placement-randomized (6 layouts, 3 rounds, cycles/op): the hits 0.98–1.01 (the cache-resident hit 0.984 [0.944, 1.025]), the touch batch 1.00, ContainsAbsent 1.00, TouchAndCount 0.97, VelocityCount 0.93 [0.89, 0.98], VelocityCountBatch 0.94 [0.90, 0.98].
+
 ## Measurement
 
 60. Benchmarks report `cycles/op` on Linux (c0e32d1, S56): user-mode cycles of the timed loop, counted on the benchmark's locked thread through `perf_event_open`. Run-to-run sd 10–33% lower than ns/op's on every benchmark measured (the host's clock frequency moves ns/op). `METRIC=cycles/op` in `verify/lrab.sh` and `verify/ab.sh`.

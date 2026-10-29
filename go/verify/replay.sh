@@ -39,7 +39,9 @@ fixes() {
 	# (verify/testdata/ghost_test.go is the ghost test as of 00a9375: HEAD's
 	# calls the later two-bucket newGhost. verify/testdata/restore_test.go is
 	# the restore test as of f44e7dd: HEAD's reads forceBG, which 3b8de31
-	# added.) The split and handshake fixes of
+	# added. verify/testdata/mirror_test.go is HEAD's mirror test without
+	# its read check: read's slot hint came with d6dbe56.) The split and
+	# handshake fixes of
 	# 971dc4a and 64ebd85 are proven by deterministic tests on hooks those
 	# commits added (TestEvictionDuringMoveKeepsHistory,
 	# TestEvictionRacingMoveStart), so they can't run on the code before;
@@ -99,6 +101,9 @@ fixes() {
 	hot-entry-reclaimed|1ea1686|a519cf1|hot_test.go|^TestRestoreAfterHotEntryReclaimed$|3
 	hot-entry-reclaimed-in-claim|1ea1686|a519cf1|hot_test.go|^TestHotEntryReclaimedDuringRestore$|3
 	tick-past-range|4f33a45|b866d7f|regress_test.go|^TestRegressTickPastRange$|3
+	restore-while-waiting|30cd90d|d6dbe56|restorewait_test.go|^TestEvictedKeyThatWaitsIsRestored$|3
+	spill-foreign-hot-entry|30cd90d|d6dbe56|hotspill_test.go|^TestSpillOfForeignHotEntryIsNotLost$|3
+	mirror-key-in-found-slot|30cd90d|d6dbe56|verify/testdata/mirror_test.go|^TestMirrorKeyInFoundSlotNotCounted$|3
 	LIST
 }
 

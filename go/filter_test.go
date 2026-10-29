@@ -436,3 +436,63 @@ func settle(f *Filter) {
 		time.Sleep(100 * time.Microsecond)
 	}
 }
+
+// TestTickRange: inserts, realigns and the decay step record ticks up to
+// MaxTick and panic past it, before taking any lock, so a caller that
+// recovers keeps a usable filter; New rejects a Clock already past it (one
+// counting from an epoch) and a horizon of MaxTick ticks.
+func TestTickRange(t *testing.T) {
+	const w = 1000
+	h := uint64(0x9e3779b97f4a7c15) // h&decayEvery != 0: no inline decay step
+	panics := func(call func()) (p bool) {
+		defer func() { p = recover() != nil }()
+		call()
+		return false
+	}
+	inserts := []struct {
+		name string
+		call func(f *Filter, now uint64)
+	}{
+		{"TouchAt", func(f *Filter, now uint64) { f.TouchAt(h, w, now) }},
+		{"CheckAndTouchAt", func(f *Filter, now uint64) { f.CheckAndTouchAt(h, w, now) }},
+		{"TouchAndCountAt", func(f *Filter, now uint64) { f.TouchAndCountAt(h, w, now) }},
+		{"CheckAndTouchBatch", func(f *Filter, now uint64) { f.CheckAndTouchBatch([]uint64{h}, w, now, make([]bool, 1)) }},
+		{"TouchAndCountBatch", func(f *Filter, now uint64) {
+			f.TouchAndCountBatch([]uint64{h}, w, now, make([]bool, 1), make([]int, 1))
+		}},
+	}
+	for _, c := range inserts {
+		f := newTest(t, 1000, time.Minute)
+		if !panics(func() { c.call(f, MaxTick+1) }) {
+			t.Errorf("%s inserting past MaxTick did not panic", c.name)
+		}
+		if panics(func() { c.call(f, MaxTick) }) {
+			t.Errorf("%s inserting at MaxTick (after a recovered panic) panicked", c.name)
+		}
+		if r := f.CountAt(h, w, MaxTick); !r.Seen || r.Count != 1 {
+			t.Errorf("%s: the key inserted at MaxTick reads %+v", c.name, r)
+		}
+	}
+	f := newTest(t, 1000, time.Minute)
+	f.TouchAt(h, w, MaxTick-10*f.unit)
+	if !panics(func() { f.TouchAt(h, w, MaxTick+1) }) { // 10 units on: realign
+		t.Error("a realigning touch past MaxTick did not panic")
+	}
+	f.TouchAt(h, w, MaxTick)
+	if r := f.CountAt(h, f.horizon, MaxTick); !r.Seen || r.Count != 2 {
+		t.Errorf("touches at MaxTick-10 units and MaxTick (after a recovered panic) read %+v", r)
+	}
+	for _, now := range []uint64{MaxTick, MaxTick + 1} {
+		f := newTest(t, 1000, time.Minute)
+		f.clock = func() uint64 { return now }
+		if p := panics(func() { f.ContinuousDecay() }); p != (now > MaxTick) {
+			t.Errorf("ContinuousDecay at %d: panicked %v", now, p)
+		}
+	}
+	if _, err := New(Config{Capacity: 1000, Horizon: time.Minute, Clock: func() uint64 { return uint64(time.Now().UnixMicro()) }}); err == nil {
+		t.Error("New accepted a clock in Unix microseconds")
+	}
+	if _, err := New(Config{Capacity: 1000, Horizon: 24 * time.Hour, Resolution: time.Nanosecond}); err == nil {
+		t.Error("New accepted a horizon of a day in nanoseconds (8.6e13 ticks)")
+	}
+}

@@ -74,14 +74,19 @@ type Config struct {
 	Capacity int
 	// Horizon is the largest window any query may use.
 	Horizon time.Duration
-	// Resolution is the clock tick. Default 1µs (46-bit timestamps last ~2.2y).
+	// Resolution is the clock tick. Default 1µs. A slot keeps its last touch
+	// in 46 bits, so ticks must stay at most MaxTick (2^46-1): 2.2 years of
+	// the built-in clock at 1µs, 19.5 hours at 1ns. An insert at a later
+	// tick panics (MaxTick).
 	Resolution time.Duration
 	// Load is the target slot occupancy when Capacity keys are live.
 	// Default 0.85. The scorecard (cmd/tfbench) misses no keys at 94% slot
 	// load and 0.051% at 97.8%. Lower values trade memory for headroom above
 	// Capacity.
 	Load float64
-	// Clock, if set, returns the current tick. It must be monotonic.
+	// Clock, if set, returns the current tick. It must be monotonic and
+	// stay at most MaxTick (a clock from an epoch, Unix microseconds say, is
+	// past it: New rejects a Clock that reads past it already).
 	// Default: monotonic time since New, in Resolution units.
 	Clock func() uint64
 	// CoarseClock, if > 0 and Clock is nil, makes the built-in clock a cached
@@ -309,11 +314,17 @@ func New(cfg Config) (*Filter, error) {
 	if horizon < 2*unitsPerHorizon { // unit >= 2 ticks
 		return nil, errors.New("temporalfilter: Horizon too small for Resolution")
 	}
+	if horizon >= MaxTick { // no tick could age a key past it
+		return nil, errors.New("temporalfilter: Horizon too large for Resolution (MaxTick ticks or more)")
+	}
 	if cfg.Load <= 0 {
 		cfg.Load = 0.85
 	}
 	if cfg.Load > 1 {
 		return nil, errors.New("temporalfilter: Load must be <= 1")
+	}
+	if cfg.Clock != nil && cfg.Clock() > MaxTick {
+		return nil, errTick
 	}
 	lines := max(2, uint64(math.Ceil(float64(cfg.Capacity)/(cfg.Load*slotsPerLine))))
 	f := &Filter{
@@ -407,6 +418,25 @@ func (f *Filter) Close() {
 
 // Now returns the filter's current tick.
 func (f *Filter) Now() uint64 { return f.clock() }
+
+// MaxTick is the latest tick a filter can record: a slot keeps its last
+// touch in 46 bits, and a later tick would run into the slot's flag and
+// fingerprint bits (its key would read unseen from then on). New rejects a
+// Clock already past it, and a first touch (an insert), a touch that
+// realigns its register (8 or more units after the last) and
+// ContinuousDecay panic past it. A hit or a count doesn't check, to keep
+// those paths as they are: a clock that passes MaxTick after its keys were
+// inserted gets wrong answers for them until the next insert panics.
+const MaxTick = tsMask
+
+var errTick = errors.New("temporalfilter: tick past MaxTick (2^46-1): see Config.Resolution")
+
+// checkTick panics if now is past MaxTick.
+func checkTick(now uint64) {
+	if now > MaxTick {
+		panic(errTick)
+	}
+}
 
 // Ticks converts a duration to filter ticks.
 func (f *Filter) Ticks(d time.Duration) uint64 { return uint64(max(d, 0) / f.res) }
@@ -976,7 +1006,10 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 		if i < 0 {
 			// Miss: serialize first touches of the same key so two racers
 			// can't each claim a slot (which would split its count). The
-			// lock covers only this path; hits never take it.
+			// lock covers only this path; hits never take it. A tick past
+			// MaxTick panics before it: a caller that recovers keeps a
+			// usable filter.
+			checkTick(now)
 			mu := &f.claimMu[h>>(64-claimStripeBits)]
 			mu.Lock()
 			m := f.moveOf(tg)
@@ -1415,6 +1448,7 @@ func (f *Filter) farAhead(i int, nu, lu int64, stale bool) (old uint64, far, wai
 // again: the hold counts as a move of the key's stripe. ok is false if the
 // slot changed meanwhile.
 func (f *Filter) realign(h uint64, i int, w0, old, tg, now uint64) (w1 uint64, over, ok bool) {
+	checkTick(now)
 	if old>>tagShift != tg || isHot(old) && age(now, w0&tsMask) <= f.horizon {
 		return 0, false, false
 	}
@@ -1481,6 +1515,7 @@ func (f *Filter) realign2(i int, w0, old, tg, now uint64) (w1 uint64, over, ok b
 // lookups whatever the key's state (both lines, stash, overflow), then the
 // hit or the insert.
 func (f *Filter) touchCT(h, window, now uint64, wantCount bool) Result {
+	checkTick(now) // before the stripe: realign's check would panic holding it
 	t0, pad := f.ctBegin(opTouch, now)
 	s := time.Now()
 	fp, tg := fingerprint(h), tag(h)
@@ -1976,6 +2011,7 @@ func (f *Filter) decayStep(now uint64, budget uint64) int {
 	if c >= target {
 		return 0
 	}
+	checkTick(now) // past it, every slot would read expired (only a step that sweeps gets here)
 	start := c
 	if target-start > f.lines { // fell behind by over a lap: skip ahead, lazy expiry covered it
 		start = target - f.lines

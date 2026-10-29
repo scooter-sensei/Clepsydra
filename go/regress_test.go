@@ -24,3 +24,23 @@ func TestRegressEmptyBatch(t *testing.T) {
 	f := newTest(t, 10, time.Minute)
 	f.CheckAndTouchBatch(nil, 1, 1, nil)
 }
+
+// A tick past the 46 bits of a slot's last touch ran into its saturated,
+// displaced and fingerprint bits: a caller passing Unix microseconds as
+// the *At methods' clock got every key back unseen with no count (a rate
+// limit failed open), and its slots were lost to lookups. Such a tick now
+// panics.
+func TestRegressTickPastRange(t *testing.T) {
+	f := newTest(t, 1000, time.Minute)
+	const h = 0x9e3779b97f4a7c15
+	now := uint64(time.Date(2026, 10, 29, 0, 0, 0, 0, time.UTC).UnixMicro()) // ~1.8e15 > 2^46
+	defer func() {
+		if recover() == nil {
+			t.Fatal("no panic")
+		}
+	}()
+	f.CheckAndTouchAt(h, 60e6, now)
+	seen := f.CheckAndTouchAt(h, 60e6, now+1)
+	t.Fatalf("touches at Unix microseconds (%d) returned; the second read seen %v and the key then counts %d, want true and 2",
+		now, seen, f.VelocityCountAt(h, 60e6, now+2))
+}

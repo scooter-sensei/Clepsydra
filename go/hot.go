@@ -432,6 +432,22 @@ func (f *Filter) hotGone(id, w1 uint64) bool {
 	return !ok
 }
 
+// slotDrop gives up the hot entry, if any, of a slot's history that the
+// slot itself discards past the horizon (a touch's reset, the sweep, an
+// insert over the expired occupant): id is the history's identity, w1 the
+// slot's word1 as taken. A slot is its key's only live reference to the
+// entry, so nothing else counts in it any more; left held, it stayed in
+// HotInUse until a reclaim, and a lagging touch's add that came after
+// landed in it, where nothing pointed, instead of failing and looking
+// again. The stash's and the wait room's expired ways don't close theirs:
+// such a way can share its entry with the key's live slot, once the entry
+// was reclaimed and given to the same key again.
+func (f *Filter) slotDrop(id, w1 uint64) {
+	if isHot(w1) {
+		f.hotClose(hotIdx(w1), id)
+	}
+}
+
 // hotAdd counts one event at now into the entry word1 points to. slot, if
 // not nil, is the word1 (holding w1) the touch found the key by: the entry
 // may then be handed back to it as a register (demote).

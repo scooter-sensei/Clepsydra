@@ -996,18 +996,73 @@ func (f *Filter) Waiting() int { return int(f.deferred.Load()) }
 func (f *Filter) Restored() uint64 { return f.restored.Load() }
 
 // touch is TouchAt. i0, if not -1, is a slot where a lookup just found h
-// (warm): its first look starts there if the slot still holds h.
+// (warm): its first look starts there if the slot still holds h. i0
+// ctInside is touchCT's call: every attempt takes h's stripe and makes the
+// same lookups whatever h's state (both lines, the stash), then counts in
+// h's slot or inserts it, the stripe held throughout.
+//
+// The count is the slot protocol's one copy, inline here: called as a
+// function it cost the cache-resident hit 1.05x and the touch batch 1.08x
+// (placement-randomized, 6 layouts, cycles/op).
+//
+// A register keeps 4 bits of its unit and is read against the slot's last
+// touch (word0), so word0 must never run 8 units or more ahead of it where
+// a touch or a read can see the pair. A touch that moves word0 first and
+// the register after keeps that only for a jump of under 8 units from the
+// register's own unit: it then moves word0 lock-free and counts with bump,
+// which reads the register against word0 as it is then. A touch 8 or more
+// units past the register's unit (a key idle a third of the horizon, or
+// past it) moves word0 and the register together under word1 busy
+// (realign). Before realign, such a touch moved word0 first: a second touch
+// of the key between its two writes read the old register as the new
+// unit's, and the first then aged that touch's event by the gap, or, past
+// the horizon, reset it away (claims A21). A hot entry keeps its own full
+// unit: its key's touches count lock-free, except one that finds the slot
+// past the horizon, whose reset goes through realign too. Before, it moved
+// word0, then reset word1 by a CAS from the hot pointer; a touch after its
+// word0 found the key live and added to the entry, which leaves word1 as it
+// was, and the reset dropped that event (claims A30).
 func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
-	if h&decayEvery == 0 {
-		f.decayStep(now, 1)
-	}
-	if f.ct {
-		return f.touchCT(h, window, now, wantCount)
+	ct := i0 == ctInside
+	if !ct {
+		if h&decayEvery == 0 {
+			f.decayStep(now, 1)
+		}
+		if f.ct {
+			return f.touchCT(h, window, now, wantCount)
+		}
 	}
 	fp, tg := fingerprint(h), tag(h)
+	var held *paddedMutex // ConstantTime: h's stripe, while held
 	for first := true; ; first = false {
-		i, fpd := -1, uint64(0) // fpd: what locate matched in the slot (word0>>47)
-		if first {
+		if held != nil { // released between attempts: a claim that fails on another stripe's TryLock must not hold its own while it retries
+			held.Unlock()
+			held = nil
+		}
+		i, fpd := -1, uint64(0) // fpd: what the lookup matched in the slot (word0>>47)
+		if ct {
+			held = &f.claimMu[h>>(64-claimStripeBits)]
+			held.Lock()
+			var w0 uint64
+			i, w0, _ = f.lookupStable(h, fp, tg, true)
+			s0, s1, src := f.recall(h, fp, tg, now, true)
+			if i < 0 {
+				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src)
+				if r.Count < 0 {
+					continue
+				}
+				held.Unlock()
+				if f.sketchLive(now) {
+					f.addSketch(&r, h, window, now)
+				}
+				return r
+			}
+			if src == srcStash { // a stale copy: the table's entry is newer
+				f.stashPut(f.stashID(h, fp, tg), s0, s1, now)
+			}
+			fpd = w0 >> 47
+		}
+		if first && !ct {
 			if _, _, ok := f.slotWords(i0, fp<<1, tg); ok { // warm finds a key undisplaced in its primary line
 				i, fpd = i0, fp<<1
 			}
@@ -1046,9 +1101,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 			mu.Unlock() // another first touch got there first: count as a hit
 			fpd = w0 >> 47
 		}
-		// hit, inline: called, it costs the cache-resident hit 1.05x and the
-		// touch batch 1.08x (placement-randomized, 6 layouts, cycles/op),
-		// so the slot protocol has this second copy. Keep the two the same.
+		// The count: slot i held h when it was found.
 		w0 := atomic.LoadUint64(&f.words[i])
 		if w0>>47 != fpd {
 			continue // slot was reclaimed, or handed to another key, between find and load; retry
@@ -1060,7 +1113,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 		nu, lu := f.unitOf(now), f.unitOf(last)
 		if old, far, wait := f.farAhead(i, nu, lu, stale); wait {
 			runtime.Gosched()
-			continue // another touch is realigning the slot (see hit)
+			continue // another touch is realigning the slot
 		} else if far {
 			w1, over, ok = f.realign(h, i, w0, old, tg, now)
 			ref = now
@@ -1085,12 +1138,18 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 			r = f.estimateAt(h, w1, max(now, ref), now, window, sat)
 		}
 		r.Seen = !stale && age(now, last) <= window
-		if f.sketchLive(now) {
+		if held != nil {
+			held.Unlock()
+		}
+		if f.sketchLive(now) { // ConstantTime: the overflow table is read whatever it holds
 			f.addSketch(&r, h, window, now)
 		}
 		return r
 	}
 }
+
+// ctInside, as touch's i0: the call is touchCT's.
+const ctInside = -2
 
 // AutoPad as Config.ConstantTime pads each operation to a running estimate
 // of its own work's 99.5th-percentile latency instead of a fixed duration.
@@ -1376,69 +1435,6 @@ func (f *Filter) bgPlace() {
 	}
 }
 
-// hit counts a touch in slot i, which held the key when it was found. ok is
-// false if the slot changed hands meanwhile and the caller must look again.
-//
-// A register keeps 4 bits of its unit and is read against the slot's last
-// touch (word0), so word0 must never run 8 units or more ahead of it where
-// a touch or a read can see the pair. A touch that moves word0 first and
-// the register after keeps that only for a jump of under 8 units from the
-// register's own unit: it then moves word0 lock-free and counts with bump,
-// which reads the register against word0 as it is then. A touch 8 or more
-// units past the register's unit (a key idle a third of the horizon, or
-// past it) moves word0 and the register together under word1 busy
-// (realign). Before realign, such a touch moved word0 first: a second touch
-// of the key between its two writes read the old register as the new
-// unit's, and the first then aged that touch's event by the gap, or, past
-// the horizon, reset it away (claims A21). A hot entry keeps its own full
-// unit: its key's touches count lock-free, except one that finds the slot
-// past the horizon, whose reset goes through realign too. Before, it moved
-// word0, then reset word1 by a CAS from the hot pointer; a touch after its
-// word0 found the key live and added to the entry, which leaves word1 as it
-// was, and the reset dropped that event (claims A30).
-//
-// fpd is the fingerprint and displaced bit the lookup matched in slot i
-// (slotWords). touch has an inline copy of this function, for speed.
-func (f *Filter) hit(h uint64, i int, fpd, tg, window, now uint64, wantCount bool) (Result, bool) {
-	w0 := atomic.LoadUint64(&f.words[i])
-	if w0>>47 != fpd {
-		return Result{}, false // slot was reclaimed, or handed to another key, between find and load
-	}
-	last := w0 & tsMask
-	stale := age(now, last) > f.horizon
-	var w1, ref uint64
-	var over, ok bool
-	nu, lu := f.unitOf(now), f.unitOf(last)
-	if old, far, wait := f.farAhead(i, nu, lu, stale); wait {
-		return Result{}, false
-	} else if far {
-		w1, over, ok = f.realign(h, i, w0, old, tg, now)
-		ref = now
-	} else {
-		if now > last && !atomic.CompareAndSwapUint64(&f.words[i], w0, w0&^tsMask|now) {
-			return Result{}, false
-		}
-		if nu > lu && testHookStamped != nil {
-			testHookStamped()
-		}
-		w1, ref, over, ok = f.bump(i, w0>>47, tg, now, nu, last, lu, stale)
-	}
-	if !ok {
-		return Result{}, false // the slot was handed to another key, or moved on, meanwhile
-	}
-	sat := w0&satBit != 0
-	if over != sat {
-		sat = f.markSat(i, w0>>47, over)
-	}
-	seen := !stale && age(now, last) <= window
-	if !wantCount {
-		return Result{Seen: seen}, true
-	}
-	r := f.estimateAt(h, w1, max(now, ref), now, window, sat)
-	r.Seen = seen
-	return r, true
-}
-
 // farAhead: a touch in unit nu would move slot i's last touch (in unit lu)
 // 8 or more units past its register's unit (old: the register read, or a
 // hot entry's word1, which counts lock-free whatever the gap). wait: word1
@@ -1458,7 +1454,7 @@ func (f *Filter) farAhead(i int, nu, lu int64, stale bool) (old uint64, far, wai
 	return old, nu-regEpoch(old, lu) > epochMask/2, false
 }
 
-// realign is hit's count of a touch at now 8 or more units past the unit of
+// realign is touch's count of a touch at now 8 or more units past the unit of
 // slot i's register (old, read against word0 w0), or past the horizon of
 // the slot of a hot key (old points to its entry, which it gives up and
 // starts afresh): word0 moves to now and word1 to the register, advanced to
@@ -1496,6 +1492,7 @@ func (f *Filter) realign(h uint64, i int, w0, old, tg, now uint64) (w1 uint64, o
 		}
 	}
 	atomic.StoreUint64(&f.words[i+1], w1)
+	f.slotDrop(f.slotID(uint64(i/wordsPerLine), w0, old), old) // a stale hot key's reset
 	return w1, over, true
 }
 
@@ -1525,51 +1522,23 @@ func (f *Filter) realign2(i int, w0, old, tg, now uint64) (w1 uint64, over, ok b
 	if idx != 0 {
 		f.promoted.Add(1)
 	}
+	f.slotDrop(f.slotID(uint64(i/wordsPerLine), w0, old), old) // a stale hot key's reset
 	if testHookStamped != nil {
 		testHookStamped()
 	}
 	return w1, over, true
 }
 
-// touchCT is touch in ConstantTime mode: under the key's stripe, the same
-// lookups whatever the key's state (both lines, stash, overflow), then the
-// hit or the insert.
+// touchCT is touch in ConstantTime mode: its work (touch with ctInside:
+// under the key's stripe, the same lookups whatever the key's state, then
+// the count or the insert, then the overflow table) padded.
 func (f *Filter) touchCT(h, window, now uint64, wantCount bool) Result {
 	checkTick(now) // before the stripe: realign's check would panic holding it
 	t0, pad := f.ctBegin(opTouch, now)
 	s := time.Now()
-	fp, tg := fingerprint(h), tag(h)
-	mu := &f.claimMu[h>>(64-claimStripeBits)]
-	var r Result
-	for {
-		// The stripe is released between attempts: a claim that fails on
-		// another stripe's TryLock must not hold its own while it retries.
-		mu.Lock()
-		var ok bool
-		r, ok = f.touchCTOnce(h, fp, tg, window, now, wantCount)
-		mu.Unlock()
-		if ok {
-			break
-		}
-	}
-	if f.sk.Load() != nil || f.gh.Load() != nil {
-		f.addSketch(&r, h, window, now)
-	}
+	r := f.touch(h, window, now, wantCount, ctInside)
 	f.ctEnd(opTouch, h, t0, s, pad)
 	return r
-}
-
-func (f *Filter) touchCTOnce(h, fp, tg, window, now uint64, wantCount bool) (Result, bool) {
-	i, w0, _ := f.lookupStable(h, fp, tg, true)
-	s0, s1, src := f.recall(h, fp, tg, now, true)
-	if i >= 0 {
-		if src == srcStash { // a stale copy: the table's entry is newer
-			f.stashPut(f.stashID(h, fp, tg), s0, s1, now)
-		}
-		return f.hit(h, i, w0>>47, tg, window, now, wantCount)
-	}
-	r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src)
-	return r, r.Count >= 0
 }
 
 // miss installs h, absent from the table, with this touch counted: a fresh
@@ -1759,7 +1728,10 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
 					if testHookOpenSeen != nil {
 						testHookOpenSeen(base + s)
 					}
-					if f.putOver(put, base+s, w0, atomic.LoadUint64(&f.words[base+s+1]), mine[li], w1) {
+					if o1 := atomic.LoadUint64(&f.words[base+s+1]); f.putOver(put, base+s, w0, o1, mine[li], w1) {
+						if w0 != 0 {
+							f.slotDrop(f.slotID(line, w0, o1), o1) // the expired occupant's
+						}
 						return base + s
 					}
 					return -1
@@ -1995,7 +1967,10 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
 			m.done.Add(1)
 			return false
 		}
-		if f.putOver(nil, base+s, d0, atomic.LoadUint64(&f.words[base+s+1]), moved, busy) {
+		if d1 := atomic.LoadUint64(&f.words[base+s+1]); f.putOver(nil, base+s, d0, d1, moved, busy) {
+			if d0 != 0 {
+				f.slotDrop(f.slotID(a, d0, d1), d1) // the expired occupant's
+			}
 			if testHookCopied != nil {
 				testHookCopied()
 			}
@@ -2100,6 +2075,7 @@ func (f *Filter) sweepLine(line, now uint64) {
 		}
 		if atomic.CompareAndSwapUint64(&f.words[base+s], w0, 0) {
 			atomic.StoreUint64(&f.words[base+s+1], 0)
+			f.slotDrop(f.slotID(line, w0, w1), w1)
 		} else {
 			atomic.StoreUint64(&f.words[base+s+1], w1) // touched since: put word1 back
 		}

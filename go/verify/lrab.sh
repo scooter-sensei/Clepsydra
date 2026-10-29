@@ -10,7 +10,7 @@
 # built at <layouts> layouts: never-run pad functions of 0 to 24 statements
 # (~0-450 bytes), sized independently by a hash of the layout's seed and the
 # pad's place, at the top of filter.go, hot.go and register.go and inside
-# filter.go before touch, hit and locate, kept in the binary by an init
+# filter.go before touch, miss and locate, kept in the binary by an init
 # behind an environment variable no run sets; layout k has the same pads in
 # every arm. Rounds alternate layouts and arms (in reverse order on even
 # rounds). Per benchmark it prints the first arm's median and its spread
@@ -55,9 +55,9 @@ padn() { # padn <seed> <point>: a pad of 0 to 24 statements, independent across 
 
 pad() { # pad <dir> <seed>: the layout's pad functions
 	local d=$1 seed=$2 i=0 p f fn calls=""
-	# The top of three files, and inside filter.go before three hot functions
+	# The top of three files, and inside filter.go before three functions of the call path
 	# (with their doc comments), so the hot code moves within files too.
-	for p in filter.go: hot.go: register.go: filter.go:touch filter.go:hit filter.go:locate; do
+	for p in filter.go: hot.go: register.go: filter.go:touch filter.go:miss filter.go:locate; do
 		i=$((i + 1)) f=${p%%:*} fn=${p#*:}
 		[ -f "$d/$f" ] || continue
 		awk -v n="$(padn "$seed" $i)" -v name="layoutPad$i" -v fn="$fn" '

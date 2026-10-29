@@ -90,7 +90,7 @@ func TestFuzzUpper(t *testing.T) {
 
 // fuzzResult tallies one case (or several).
 type fuzzResult struct {
-	ops, checks, sat, floored, lostLow                          uint64
+	ops, checks, sat, floored, lostLow, shared                  uint64
 	ct, bg, noStash, noOverflow, smallOverflow, noHot, smallHot uint64 // cases by configuration
 	evictions, folded, promoted, waited                         uint64
 	fail                                                        string
@@ -102,6 +102,7 @@ func (r *fuzzResult) add(o fuzzResult) {
 	r.sat += o.sat
 	r.floored += o.floored
 	r.lostLow += o.lostLow
+	r.shared += o.shared
 	r.ct += o.ct
 	r.bg += o.bg
 	r.noStash += o.noStash
@@ -116,19 +117,29 @@ func (r *fuzzResult) add(o fuzzResult) {
 }
 
 func (r *fuzzResult) summary() string {
-	return fmt.Sprintf("%d ops, %d answers checked (%d Saturated, %d low behind a live floor, %d low after a loss with the overflow off); "+
+	return fmt.Sprintf("%d ops, %d answers checked (%d Saturated, %d low behind a live floor, %d low after a loss with the overflow off, %d off for a key whose identity another shares); "+
 		"cases with ConstantTime %d, Background %d, no stash %d, no overflow %d, small overflow %d, no hot entries %d, few hot entries %d; "+
 		"evictions %d, folded %d, promoted %d, waited %d",
-		r.ops, r.checks, r.sat, r.floored, r.lostLow, r.ct, r.bg, r.noStash, r.noOverflow, r.smallOverflow, r.noHot, r.smallHot,
+		r.ops, r.checks, r.sat, r.floored, r.lostLow, r.shared, r.ct, r.bg, r.noStash, r.noOverflow, r.smallOverflow, r.noHot, r.smallHot,
 		r.evictions, r.folded, r.promoted, r.waited)
 }
 
 // fuzzTruth keeps every key's event times (sorted) within the horizon of
-// the newest clock any call has used.
+// the newest clock any call has used, and keep ticks more (for the checks
+// of answers that read high, which reach behind a window).
 type fuzzTruth struct {
 	ev      map[uint64][]uint64
 	horizon uint64
 	newest  uint64
+	keep    uint64
+}
+
+// since is the number of h's events at lo or later, later than any clock
+// included (a lagging caller's window holds them).
+func (tr *fuzzTruth) since(h, lo uint64) int {
+	l := tr.ev[h]
+	a, _ := slices.BinarySearch(l, lo)
+	return len(l) - a
 }
 
 func (tr *fuzzTruth) add(h, ts uint64) {
@@ -153,9 +164,10 @@ func (tr *fuzzTruth) count(h, window, now uint64) int {
 	return max(0, b-a)
 }
 
-// trim drops events past the horizon of the newest clock, from every key.
+// trim drops events past the horizon of the newest clock and keep, from
+// every key.
 func (tr *fuzzTruth) trim() {
-	lo := tr.newest - min(tr.newest, tr.horizon)
+	lo := tr.newest - min(tr.newest, tr.horizon+tr.keep)
 	for h, l := range tr.ev {
 		i, _ := slices.BinarySearch(l, lo)
 		if i == len(l) {
@@ -237,7 +249,13 @@ func fuzzCase(seed uint64) (res fuzzResult) {
 	for i := range heavy {
 		heavy[i] = key(1<<62 | uint64(i))
 	}
-	tr := &fuzzTruth{ev: map[uint64][]uint64{}, horizon: H, newest: T}
+	// An answer from a register (the table, the stash or the wait room)
+	// counts a bucket the window's edge cuts whole: buckets are at most 8
+	// units wide. A touch at a clock behind the register's unit counts in
+	// that unit, so an event can sit up to a unit and maxLag later than it
+	// happened. No answer counts an event further back than that.
+	reach := 9*unit + maxLag + 1
+	tr := &fuzzTruth{ev: map[uint64][]uint64{}, horizon: H, newest: T, keep: reach + maxLag}
 	pools := []float64{0.25, 0.5, 1, 2, 4, 8}
 	pool, phaseLeft := uint64(capacity), 0
 	trimAt := T + H
@@ -247,8 +265,60 @@ func fuzzCase(seed uint64) (res fuzzResult) {
 	desc := func() string {
 		return fmt.Sprintf("config %+v ct %v bg %v place 1/%d horizon %d ticks unit %d lag <= %d ops/horizon %.0f", cfg, f.ct, f.bg, placeEvery, H, unit, maxLag, perH)
 	}
+	// shared: another key of the case has h's identity (line, fingerprint
+	// and tag), so the filter can't tell their events apart.
+	shared := func(h uint64) bool {
+		id := f.stashID(h, fingerprint(h), tag(h))
+		for k := range tr.ev {
+			if k != h && f.stashID(k, fingerprint(k), tag(k)) == id {
+				return true
+			}
+		}
+		return false
+	}
+	// high checks the other direction, on what the register answers (the
+	// overflow table's part, which counts a dropped history's events whole
+	// and other keys' through floors and fingerprint matches, taken out):
+	// Upper counts no event from further back than the window reaches by
+	// reach, and Seen says whether the key has an event in the window
+	// (before this touch, for Touch). Events older than the newest clock's
+	// horizon may have been expired by a call at that clock, so they
+	// needn't be seen.
+	high := func(op string, h, window, now uint64, r Result) bool {
+		var s Result
+		if g := f.gh.Load(); g != nil {
+			s, _ = g.estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, H), now)
+		}
+		own := 0
+		if op == "Touch" {
+			own = 1 // the model has this touch already
+		}
+		w := min(window, H)
+		lo := now - min(now, w)
+		bad := ""
+		switch upper := r.Upper - s.Upper; {
+		case upper > tr.since(h, now-min(now, w+reach)):
+			bad = fmt.Sprintf("Upper %d (the overflow's %d) > %d events back to %d", r.Upper, s.Upper, tr.since(h, now-min(now, w+reach)), now-min(now, w+reach))
+		case r.Seen && !s.Seen && tr.since(h, lo) <= own:
+			bad = fmt.Sprintf("Seen with no event since %d", lo)
+		case !r.Seen && tr.since(h, max(lo, tr.newest-min(tr.newest, H))) > own && !f.floorLive(h, window, now) && !(cfg.Overflow < 0 && f.lostRecently(now)):
+			bad = fmt.Sprintf("not Seen with %d events since %d", tr.since(h, max(lo, tr.newest-min(tr.newest, H)))-own, max(lo, tr.newest-min(tr.newest, H)))
+		default:
+			return true
+		}
+		if shared(h) {
+			res.shared++
+			return true
+		}
+		res.fail = fmt.Sprintf("op %d %s: %s (result %+v); key %x window %d now %d newest %d; events %v; %s; %s",
+			res.ops, op, bad, r, h, window, now, tr.newest, tail(tr.ev[h], 12), f.whereIs(h, now), desc())
+		return false
+	}
 	check := func(op string, h, window, now uint64, r Result) bool {
 		res.checks++
+		if !high(op, h, window, now, r) {
+			return false
+		}
 		if r.Saturated {
 			res.sat++
 			return true

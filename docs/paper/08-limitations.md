@@ -29,8 +29,8 @@
 
 **Speed**
 
-- **Unseen-key insert tail without ConstantTime** (target 11): `Background` brings inserts over 2 µs to 0.16–0.19% at 85% load (S45). The host's own share is 0.05–0.15%, so p99.9 ≤ 2 µs needs a quieter host to show. What is left of the code's share is the waiting path (room write, shared counters; ~0.6 µs p50). Measure on bare metal.
-- **Miss-insert latency** (target 9): 429 ns against 150; it needs measuring on a host with a large L3.
+- **Unseen-key insert tail without ConstantTime** (target 11): `Background` brings inserts over 2 µs to 0.16–0.19% at 85% load (S45). The host's own share is 0.05–0.15%, so p99.9 ≤ 2 µs needs a quieter host to show. What is left of the code's share is the waiting path (room write, shared counters; ~0.6 µs p50) and the placer running beside the caller: about 60% of the share beyond the host's floor goes when the same placements run off the caller's timing on its own goroutine (S61). Even then p99.9 reads 1.9–3.0 µs on the Ryzen host (median ~2.1), so removing the placer's effect would bring the target to the host's floor, not under it. Which part of the placer it is is open (its memory traffic read both ways; spinning and the shared wait count are not it, E27). Measure on bare metal.
+- **Miss-insert latency** (target 9): 429 ns against 150; it needs measuring on a host with a large L3. On the Ryzen host one DRAM round trip is 189 ns, so a table past the cache can't meet it; inside the cache the insert path costs 340–377 ns (966–1,067 cycles), two-thirds of it the cuckoo search, which a third of steady-state inserts run (S62).
 - **Floods** (S63, S64): under the head-to-head's floods Clepsydra is 3.2–7.1x slower than `pingora-limits` and an exact sharded map on one thread. Once the overflow table holds histories every touch reads the key's own entries there (47% of the CPU in a 16x flood), though most keys never spilled: a per-line hint that no key homed there has spilled since its last clear would let their touches skip it. Every flood key is a saturated insert (~2 µs on the Ryzen host); a flood of one-event keys runs at 0.49 Mops/s, 4x below the exact map.
 - **Scaling** (target 10): 6 cores give 4.9x uniform and 3.4x Zipf (S37; 5.1x and 3.6x at 6 goroutines, 7.9x and 5.5x at 12, S53). Per-core cells for the hottest entries (LongAdder-style) would remove the last shared CAS, but on the Ryzen host they could give at most 1.47x at 6 goroutines and 1.23x at 12 (S53, under the 1.25x bar set before the reading), and every count of a hot key would sum its cells. The design is written and model-checked (experiment E23) for a host with more physical cores; 16 cores need another host.
 - **Placement** (S55, S58): a few percent of sd in cycles/op on the cached hits and the count paths, acting through the front end, in its severe form the op cache handing half the hit's ops to the legacy decoder. Neither 64-byte alignment, PGO nor contiguous hot code removes it (S57, E26). The op-cache set model (`opc3.py`, not committed) predicts the mild layouts, not the severe one: probe the op cache's per-line limit on immediates and displacements (the hit path's 64-bit constants: `mix64` in `alt`), or how long the front end stays on the decoder after a switch; for instance, counters on fa64's layout 15 with one hot function moved by 64 bytes at a time.
@@ -44,7 +44,7 @@
 
 **Accuracy**
 
-- **Velocity error** 0.0779 against a 0.05 target (target 7): the register's information allows ~0.058 at best (D18). Reaching 0.05 needs finer buckets near now (~1.25 s): more than 48 bits. Options: a wider register for keys whose short windows matter (like hot entries), or a target that weighs windows by use.
+- **Velocity error** 0.0779 against a 0.05 target (target 7): the register's information allows ~0.058 at best (D18). Side information a few more bits could carry reaches 0.058–0.070 (D19): the offset of each bucket's first event, or the exact times of the key's last 2 to 4 events. The 1 s window holds most of the gap, and 41% of its error is keys near 10 events/s, whose spread inside a 2.5 s bucket only finer counts remove. Reaching 0.05 takes about the exact times of the last 8 events, or resolution of 1.25 s or finer near now: tens of bits per key, where the slot has none free (identity and counter bits were kept by decision) and the memory targets leave about 7 bits per key under flood. Options: a wider register for keys whose short windows matter (like hot entries; a side table covers few keys of a full table), or a target that weighs windows by use.
 
 **Security**
 
@@ -64,5 +64,5 @@
 ## 8.4 Decisions left to the user
 
 - Whether `Background` becomes the default (it starts a goroutine, and its placements aren't deterministic).
-- Target 7's target, or a target that weighs windows by use.
+- Target 7's target, or a target that weighs windows by use: a few more bits per key can't meet 0.05 (D19).
 - PGO in deployments: 2–14% faster on the benchmarks with a profile of the deployment's own traffic (S57). A profile in the repository would have the benchmarks time a build users get only with their own profile, so the repository does not ship one.

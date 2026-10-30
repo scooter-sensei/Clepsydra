@@ -1,0 +1,183 @@
+--- a/filter.go
++++ b/filter.go
+@@ -254,6 +254,7 @@
+ 	_          [64]byte
+ 	room       atomic.Pointer[stashTable] // Background: keys waiting for a slot, nil until the first waits
+ 	roomN      uint64                     // sets of the wait room
++	_          [48]byte
+ 	roomMu     [stashStripes]paddedMutex
+ }
+ 
+@@ -1421,15 +1422,20 @@
+ func (f *Filter) bgPlace() {
+ 	for {
+ 		for idle := 0; idle < bgLinger; {
+-			if f.deferred.Load() > 0 && f.placeNext(f.room.Load(), 0) {
++			if (HackNoCount || f.deferred.Load() > 0) && f.placeNext(f.room.Load(), 0) {
+ 				idle = 0
+ 				continue
+ 			}
+ 			idle++
+-			time.Sleep(bgNap)
++			if HackSpin {
++				for t := time.Now(); time.Since(t) < bgNap; {
++				}
++			} else {
++				time.Sleep(bgNap)
++			}
+ 		}
+ 		f.placing.Store(false)
+-		if f.deferred.Load() == 0 || !f.placing.CompareAndSwap(false, true) {
++		if (HackNoCount && !f.anyWaitBit() || !HackNoCount && f.deferred.Load() == 0) || !f.placing.CompareAndSwap(false, true) {
+ 			return
+ 		}
+ 	}
+@@ -1583,7 +1589,7 @@
+ 		// it) or the wait room (Background; the placer goroutine places it).
+ 		// If more than one key per 16 wait-room entries waits, the placer
+ 		// isn't keeping up: search now.
+-		if (f.ct || f.deferred.Load() <= int64(f.roomN*stashWays/16)) && f.stashWait(f.stashID(h, fp, tg), fp<<48|sat|stamp, w1, now) {
++		if (f.ct || HackNoCount || f.deferred.Load() <= int64(f.roomN*stashWays/16)) && f.stashWait(f.stashID(h, fp, tg), fp<<48|sat|stamp, w1, now) {
+ 			// An evicted history that waits came back all the same: this
+ 			// touch is Restored (and counted once; the touch that installs
+ 			// it later recalls a waiting entry, which isn't).
+@@ -2393,11 +2399,13 @@
+ // stashWrite replaces entry e of table p (its set's lock held), keeping the
+ // count of entries that wait for a slot.
+ func (f *Filter) stashWrite(p *stashTable, e *stashEntry, ne stashEntry) {
+-	if e.id != 0 && e.w0&deferMark != 0 {
++	if e.id != 0 && e.w0&deferMark != 0 && (!HackNoCount || f.ct) {
+ 		f.deferred.Add(-1)
+ 	}
+ 	if ne.id != 0 && ne.w0&deferMark != 0 {
+-		f.deferred.Add(1)
++		if !HackNoCount || f.ct {
++			f.deferred.Add(1)
++		}
+ 		set := uint64((uintptr(unsafe.Pointer(e)) - uintptr(unsafe.Pointer(&p.e[0]))) / unsafe.Sizeof(stashEntry{}) / stashWays)
+ 		if w := &p.wait[set/64]; w.Load()&(1<<(set%64)) == 0 {
+ 			w.Or(1 << (set % 64))
+@@ -2446,3 +2454,19 @@
+ 		}
+ 	}
+ }
++
++// Factor switches (diagnostics, not for commit).
++var HackSpin, HackNoCount bool
++
++func (f *Filter) anyWaitBit() bool {
++	p := f.room.Load()
++	if p == nil {
++		return false
++	}
++	for i := range p.wait {
++		if p.wait[i].Load() != 0 {
++			return true
++		}
++	}
++	return false
++}
+--- /dev/null
++++ b/placer_factors_test.go
+@@ -0,0 +1,101 @@
++package temporalfilter
++
++import (
++	"math/rand/v2"
++	"os"
++	"slices"
++	"testing"
++	"time"
++)
++
++// TestPlacerFactors (TF_EXP=1; experiment placer-factors): unseen-key
++// inserts at 85% load with Background, each timed alone, under variants of
++// the placer, interleaved by table: as committed (base); the placer spinning
++// through its idle naps instead of sleeping (HackSpin: no halt and wake of
++// its core); callers not touching the shared deferred count, the placer
++// finding work by the wait bits alone (HackNoCount: no line the caller and
++// the placer both write per wait, but the room's); both; and the placer run
++// by hand between timed inserts (sync, TestPlacerInterference's). Claims S61.
++func TestPlacerFactors(t *testing.T) {
++	if os.Getenv("TF_EXP") == "" {
++		t.Skip()
++	}
++	const capacity, probes = 1 << 21, 40_000
++	type arm struct {
++		name            string
++		spin, nocount   bool
++		sync            bool
++	}
++	arms := []arm{{"base", false, false, false}, {"spin", true, false, false}, {"nocount", false, true, false}, {"spin+nocount", true, true, false}, {"sync", false, false, true}}
++	type cls struct{ all, waited, free, spin []float64 }
++	res := make([]cls, len(arms))
++	rounds := 4
++	for tb := range rounds {
++		for k := range arms {
++			a := (k + tb) % len(arms)
++			HackSpin, HackNoCount = arms[a].spin, arms[a].nocount
++			now := uint64(1)
++			f, _ := New(Config{Capacity: capacity, Horizon: time.Minute, Resolution: time.Millisecond,
++				Background: true, Clock: func() uint64 { return now }})
++			f.bgManual = arms[a].sync
++			rng := rand.New(rand.NewPCG(5+uint64(tb), 6))
++			for range int(float64(f.Slots()) * 0.85) {
++				f.TouchAt(f.HashUint64(rng.Uint64()), 0, now)
++				if arms[a].sync && f.deferred.Load() > 0 {
++					for f.placeNext(f.room.Load(), 0) {
++					}
++				}
++			}
++			for f.room.Load() != nil && f.placeNext(f.room.Load(), 0) {
++			}
++			time.Sleep(5 * time.Millisecond)
++			now += 1000
++			hs := make([]uint64, probes)
++			for i := range hs {
++				hs[i] = f.HashUint64(rng.Uint64())
++			}
++			r := &res[a]
++			for _, h := range hs {
++				w0 := f.Waited()
++				t0 := time.Now()
++				f.TouchAt(h, 60_000, now)
++				d := float64(time.Since(t0).Nanoseconds())
++				r.all = append(r.all, d)
++				if f.Waited() != w0 {
++					r.waited = append(r.waited, d)
++				} else {
++					r.free = append(r.free, d)
++				}
++				if arms[a].sync {
++					for f.deferred.Load() > 0 && f.placeNext(f.room.Load(), 0) {
++					}
++				}
++				s := time.Now()
++				for time.Since(s) < 500*time.Nanosecond {
++				}
++				r.spin = append(r.spin, float64(time.Since(s).Nanoseconds()))
++			}
++			for f.placing.Load() {
++				time.Sleep(time.Millisecond)
++			}
++		}
++	}
++	HackSpin, HackNoCount = false, false
++	over := func(x []float64) float64 {
++		slices.Sort(x)
++		i, _ := slices.BinarySearch(x, 2000)
++		return 100 * float64(len(x)-i) / float64(max(1, len(x)))
++	}
++	q := func(x []float64, p float64) float64 {
++		if len(x) == 0 {
++			return 0
++		}
++		slices.Sort(x)
++		return x[int(p*float64(len(x)-1))]
++	}
++	for a, am := range arms {
++		r := res[a]
++		t.Logf("%-12s all p50/p99.9 %4.0f/%6.0f over2 %.3f%% | waited p50 %4.0f over2 %.3f%% | not waited p50 %4.0f over2 %.3f%% | spin over2 %.3f%%",
++			am.name, q(r.all, .5), q(r.all, .999), over(r.all), q(r.waited, .5), over(r.waited), q(r.free, .5), over(r.free), over(r.spin))
++	}
++}

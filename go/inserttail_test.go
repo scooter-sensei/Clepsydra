@@ -5,6 +5,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -96,3 +97,130 @@ func TestInsertTail(t *testing.T) {
 
 //go:noinline
 func noop() {}
+
+// TestPlacerInterference (TF_EXP=1) asks how much of Background's unseen-key
+// tail is the placer goroutine's, by moving the same placements off the
+// caller's timing without moving them onto another core. Unseen-key inserts
+// at 85% load, each timed alone as TestInsertTail times them, in three arms
+// interleaved by table (TF_ROUNDS rounds, default 3, each a fresh 2M-key
+// table per arm):
+//
+//   - conc: Background as committed, the placer goroutine placing waiting
+//     keys while the caller inserts;
+//   - sync: the placer run by hand on the caller's goroutine after each
+//     timed insert, outside its timing (bgManual): the same placements,
+//     nothing running beside the caller;
+//   - sync+dram: sync, with another goroutine loading random lines of the
+//     same table in rounds of 8 independent loads, as the placer's search
+//     does: the placer's memory traffic without the placer.
+//
+// "spin 0.5us" is a 0.5 µs busy loop timed in the same loop: the host's own
+// share (claims S61).
+func TestPlacerInterference(t *testing.T) {
+	if os.Getenv("TF_EXP") == "" || forceCT {
+		t.Skip("set TF_EXP=1 (and not TF_CT)")
+	}
+	const capacity, probes = 1 << 21, 40_000
+	rounds := 3
+	fmt.Sscan(os.Getenv("TF_ROUNDS"), &rounds)
+	arms := []string{"conc", "sync", "sync+dram"}
+	type times struct{ all, waited, other, spin []float64 }
+	res := make([]times, len(arms))
+	for rd := range rounds {
+		for k := range arms {
+			a := (k + rd) % len(arms)
+			byHand := arms[a] != "conc"
+			now := uint64(1)
+			f, err := New(Config{Capacity: capacity, Horizon: time.Minute, Resolution: time.Millisecond,
+				Background: true, Clock: func() uint64 { return now }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.bgManual = byHand
+			drain := func() {
+				for f.room.Load() != nil && f.placeNext(f.room.Load(), 0) {
+				}
+			}
+			rng := rand.New(rand.NewPCG(5+uint64(rd), 6))
+			for range int(float64(f.Slots()) * 0.85) {
+				f.TouchAt(f.HashUint64(rng.Uint64()), 0, now)
+				if byHand {
+					drain()
+				}
+			}
+			for f.Waiting() > 0 {
+				time.Sleep(time.Millisecond)
+			}
+			now += 1000
+			hs := make([]uint64, probes)
+			for i := range hs {
+				hs[i] = f.HashUint64(rng.Uint64())
+			}
+			stop, done := make(chan struct{}), make(chan struct{})
+			if arms[a] == "sync+dram" {
+				go func() {
+					defer close(done)
+					ws, x, sink := f.words, uint64(7), uint64(0)
+					for {
+						for range 64 {
+							for j := range uint64(8) {
+								x = x*0x9E3779B97F4A7C15 + j
+								sink += atomic.LoadUint64(&ws[(x>>20)%uint64(len(ws))&^7])
+							}
+							x += sink & 1
+						}
+						select {
+						case <-stop:
+							return
+						default:
+						}
+					}
+				}()
+			} else {
+				close(done)
+			}
+			r := &res[a]
+			for _, h := range hs {
+				w0 := f.Waited()
+				t0 := time.Now()
+				f.TouchAt(h, 60_000, now)
+				d := float64(time.Since(t0).Nanoseconds())
+				r.all = append(r.all, d)
+				if f.Waited() != w0 {
+					r.waited = append(r.waited, d)
+				} else {
+					r.other = append(r.other, d)
+				}
+				if byHand {
+					drain()
+				}
+				t0 = time.Now()
+				for time.Since(t0) < 500*time.Nanosecond {
+				}
+				r.spin = append(r.spin, float64(time.Since(t0).Nanoseconds()))
+			}
+			close(stop)
+			<-done
+			for f.placing.Load() {
+				time.Sleep(time.Millisecond)
+			}
+		}
+	}
+	q := func(x []float64, p float64) float64 {
+		if len(x) == 0 {
+			return 0
+		}
+		slices.Sort(x)
+		return x[int(p*float64(len(x)-1))]
+	}
+	over := func(x []float64) float64 { // share over 2 µs, %
+		slices.Sort(x)
+		i, _ := slices.BinarySearch(x, 2000)
+		return 100 * float64(len(x)-i) / float64(max(1, len(x)))
+	}
+	for a, name := range arms {
+		r := res[a]
+		t.Logf("%-9s %d inserts: p50/p99/p99.9 %4.0f/%5.0f/%6.0f ns, over 2 us %.3f%% | waited p50 %4.0f, over 2 us %.3f%% | others p50 %4.0f, over 2 us %.3f%% | spin 0.5us over 2 us %.3f%%",
+			name, len(r.all), q(r.all, .5), q(r.all, .99), q(r.all, .999), over(r.all), q(r.waited, .5), over(r.waited), q(r.other, .5), over(r.other), over(r.spin))
+	}
+}

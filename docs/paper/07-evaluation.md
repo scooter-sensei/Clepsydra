@@ -11,7 +11,7 @@
 - **Evictions at 97.8%** [D8, D10]: not the layout. The load threshold for 2 choices × 4 slots is 98.04%, and an exact placement oracle on the same stream places every key (0 forced drops). The filter's ~4,575 evictions come from its bounded search: the oracle's shortest paths needed 5 moves for 3,406 inserts, past the filter's 4. The stash gives every evicted key that returns its history back.
 - **False positives** [D2, D3]: 0 of 723,513 negatives on the churn workload; 18 in 1e9 never-inserted probes at capacity (1.8e-8; Poisson 95% interval 1.07e-8–2.84e-8; model 1.27e-8). At 1M absent-key lookups/s, 1.8e-8 is about one false hit per minute [D16].
 - **Memory** [D6, D17, A14]: 18.8 B per key at design load; 31.1 B per key under a heavy flood.
-- **Velocity error** [D5]: 0.078, averaged over 1–60 s windows and 5 traffic shapes (0.214 at 1 s, 0.024 at 60 s). The original 6×8 linear register scored 0.129 on the same harness [R3]. Most of what remains is the register's information: under a uniform model of events within a bucket no estimator reading it gets below ~0.058 on this workload, and 0.05 would need about 1.25 s resolution near now [D18].
+- **Velocity error** [D5]: 0.078, averaged over 1–60 s windows and 5 traffic shapes (0.214 at 1 s, 0.024 at 60 s). The original 6×8 linear register scored 0.129 on the same harness [R3]. Most of what remains is the register's information: under a uniform model of events within a bucket no estimator reading it gets below ~0.058 on this workload, and 0.05 would need about 1.25 s resolution near now [D18]. Side information a few more bits could carry doesn't close it: the offset of the newest bucket's first event reads 0.067–0.070, every bucket's 0.065, the exact times of the key's last 4 events 0.058; only the last 8 events' times (0.041) reach 0.05 [D19].
 - **Spray**: 100 of 100 offenders keep exact counts after 20× capacity of one-off keys [D4].
 - **Counts** [D7, A15]: exact from 10 to 5,000 events/s per key at 5–60 s windows ([3 Design](03-design.md#count-limits)).
 - **Floods** [A14]: a strict limit of 20 turns away 0.12% / 0.17% / 0.29% of new keys after heavy floods of 2x / 3x / 4x the table's slots, and every offender keeps its full `Count` ([6 Security](06-security.md)).
@@ -28,11 +28,11 @@ Thirteen targets were set for the structure (a targets spreadsheet, `temporal-fi
 | 4 | False-positive rate | ≤1e-7 | 1.8e-8 [D3] | Met |
 | 5 | Memory, steady state | ≤20 B/key | 18.8 [D6] | Met |
 | 6 | Memory under flood | ≤32 B/key | 31.1 [A14] | Met |
-| 7 | Velocity error | ≤0.05 | 0.0779 (0.0807 at 9be2f39); this register's floor ~0.058 [D18] | Gap |
+| 7 | Velocity error | ≤0.05 | 0.0779 (0.0807 at 9be2f39); this register's floor ~0.058 [D18]; with a few more bits of side information 0.058–0.070 [D19] | Gap: needs tens of bits per key |
 | 8 | Batched throughput at ≥90% load | ≥10 M/s per core | 11.53 M keys/s (ccf23af; 9.0–10.2 before) [S47, S48] | Met |
-| 9 | Miss-insert latency | ≤150 ns | 429 ns (steady-state insert; the Xeon host read 491 at 0597649) | Gap |
+| 9 | Miss-insert latency | ≤150 ns | 429 ns (steady-state insert; the Xeon host read 491 at 0597649). On the Ryzen host one DRAM round trip is 189 ns; with the table inside the cache the insert costs 340–377 ns, two-thirds of it the cuckoo search [S62] | Gap; not reachable on the Ryzen host |
 | 10 | Scaling to 16 cores | ≥12x | 6 cores: uniform 4.9x, Zipf 3.4x (5.1x and 3.6x at 6 goroutines, 7.9x and 5.5x at 12, at ee5996c) [S37, S53] | Gap; 16 cores untestable on the Ryzen host |
-| 11 | Unseen Touch p99.9, no ConstantTime | ≤2 µs | default 3.9–6.6 µs at 85% load, 1.3–3.1% of inserts over 2 µs; with `Background` 3.3–3.9 µs, 0.16–0.19% over 2 µs (p99 1.0–1.1 µs). The host's floor: a 0.5 µs busy loop is over 2 µs in 0.05–0.15% of calls [S43, S45] | Gap on this host (code share ~0.1%) |
+| 11 | Unseen Touch p99.9, no ConstantTime | ≤2 µs | default 3.9–6.6 µs at 85% load, 1.3–3.1% of inserts over 2 µs; with `Background` 3.3–3.9 µs, 0.16–0.19% over 2 µs (p99 1.0–1.1 µs). The host's floor: a 0.5 µs busy loop is over 2 µs in 0.05–0.15% of calls [S43, S45]. About 60% of the rest is the placer goroutine's; with its placements moved off the caller's timing, p99.9 reads 1.9–3.0 µs, median ~2.1 [S61] | Gap on this host, at its floor |
 | 12 | ConstantTime pad | ≤1 µs | 1 µs fixed (end dithered over 128 ns), or AutoPad 0.9–1.2 µs [S36, S41] | Met |
 | 13 | Distinguisher | ≤52% | Touch at 1 µs with the dithered pad: 50.9, 50.4, 50.6% (51.1–52.8% in five runs before) [S41] | Met |
 
@@ -72,7 +72,7 @@ With and without `Background` (interleaved, three runs each) [S45]:
 | 90% load, inserts over 2 µs | 9.2–11.0% | 0.21–0.33% |
 | 95% load, inserts over 2 µs | 52–54% | 16.0–16.4% |
 
-The Ryzen host takes the CPU away ~1,070 times a second (S43): a 0.5 µs busy loop timed the same way runs past 2 µs in 0.05–0.15% of calls, and a 1 µs loop in 0.12–0.16% (`TestHostFloor`). So p99.9 ≤ 2 µs can't be shown on that host for an operation near 1 µs; with Background the code's own share over 2 µs is ~0.1% at 85% and 90% load. Costs (S46): with Background off the default paths read 0.94–1.02 of 385d67f; with it on, absent-key lookups 1.08–1.12 (the wait-room bit), the caller's inserts 0.52–0.94. What is left of the code's share is the waiting path (room write, shared counters; ~0.6 µs p50).
+The Ryzen host takes the CPU away ~1,070 times a second (S43): a 0.5 µs busy loop timed the same way runs past 2 µs in 0.05–0.15% of calls, and a 1 µs loop in 0.12–0.16% (`TestHostFloor`). So p99.9 ≤ 2 µs can't be shown on that host for an operation near 1 µs; with Background the code's own share over 2 µs is ~0.1% at 85% and 90% load. Costs (S46): with Background off the default paths read 0.94–1.02 of 385d67f; with it on, absent-key lookups 1.08–1.12 (the wait-room bit), the caller's inserts 0.52–0.94. What is left of the code's share is the waiting path (room write, shared counters; ~0.6 µs p50) and the placer beside it: the same placements run by hand on the caller's goroutine between timed inserts cut inserts over 2 µs from ~0.19% to ~0.12% (eight paired readings) and p50 by 30–50 ns, and leave p99.9 at 1.9–3.0 µs, median ~2.1 [S61]. Which part of the placer it is wasn't found: its memory traffic, replayed by another goroutine, read both ways; spinning through its naps made the tail worse, and leaving the shared wait count alone changed nothing measurable [E27].
 
 ### Throughput and scaling
 

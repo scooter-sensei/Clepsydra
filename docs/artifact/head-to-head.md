@@ -62,6 +62,15 @@ Every event is inside the window at the probe, so a key's true count is its numb
 
 **Estimates.** Clepsydra: `VelocityCountAt` (its `Count`). ECM: the paper's point estimate (minimum over rows of each histogram's sum of buckets inside the range plus half the oldest bucket that the range cuts, §3). Both upper bounds are reported beside: Clepsydra's `Upper`, and the histograms' sum of every bucket the range reaches.
 
+## Supplement: the ECM-sketch under the floods
+
+Declared after part 1's and part 2's readings, before this one: the study's goal names the ECM-sketch among the structures to run under the same floods, and part 1 did not include it.
+
+- **Arm:** `go/internal/ecm` in `h2h run -arm ecm`, on part 1's six traces. Op: `Add(key, tick)` then the point query for the 60 s window, as a limiter checks and records. Probes: the point estimate (count error) and the strict decision **upper bound ≥ L** (its histograms' upper bound is never below the truth, so it fails closed like the other arms; the point estimate can read below).
+- **Shape:** ε_sw = 0.5 (part 2's best; the coarsest histograms leave the most bytes for width). Depth d ∈ {1, 2, 3, 4}: the one with the lowest false-deny on the 1x heavy flood (seed 1), ties to the smaller d.
+- **Memory:** for each trace, the widest sketch whose peak `Bytes` on that trace fits Clepsydra's peak bytes (8,139,136 B; binary search, seed 1). Sized per flood, which favours the sketch: a deployment must size for its worst flood.
+- **Passes:** acc, t1 and lat1 as part 1's; t12 and lat12 with one mutex around the sketch (it is not safe for concurrent use; a mutex is how a deployer would share it). Five rounds, hash seed = the round. Rules 1–4 as above (rule 1: its upper bound never below the truth); its speed was read in a run of its own, so it is compared with part 1's medians, not round by round.
+
 ## Rules, written before the readings
 
 1. **Validity first.** Before any reading: the exact map must match the generator's truth on every probe; `pingora-limits` must never read below the truth (a count-min property); the ECM histograms must stay within ε_sw of the exact count on every range of a randomized stream (`go/internal/ecm` tests); Clepsydra's `Upper` must never read below the truth for keys with at least `SpillMin` (4) events. A failing arm is fixed or dropped before readings, and the failure is recorded. *Amended before any reading:* the rule as first committed asked this of every key. A validation run (N = 4,096, two rounds, accuracy passes only) found 190,559 of 732,000 Clepsydra probes with `Upper` below the truth, every one a key with fewer than 4 events: floods evict one-event keys and the stash sheds histories under `SpillMin`, as [paper §6.4](../paper/06-security.md#64-what-is-left) documents (*Shed light histories*). The report counts both groups.

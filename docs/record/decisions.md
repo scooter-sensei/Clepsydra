@@ -30,6 +30,7 @@ What was decided, what was tried and not adopted, and why. Patches for the exper
 - **Piecewise-linear density in the cut velocity bucket** (`piecewise-linear.patch`): slightly worse than uniform (vel MAE 0.0834 vs 0.0809). Reverted (E12).
 - **Pure dyadic register** (H/32, widths to 32 units; `dyadic-h32.patch`): same mean MAE as the H/24 geometry but 60s error 0.040 vs 0.024. Re-run on today's estimator: mean 0.0817 vs 0.0809, 60s 0.038 vs 0.024 (E15).
 - **The Laplace register** (a negative result) and the linear 6×8 register: [paper §3.7](../paper/03-design.md#the-register-alternatives-explored).
+- **Side information near now for target 7** (not built; scored on exact event times by `TestVelocityInformation`, D19): the offset of the newest bucket's first event (2–4 bits) 0.067–0.070, every bucket's (21 bits) 0.065, the exact times of the last 4 events 0.058, the last 8 0.041; wider geometries (H/48 in 8 buckets, 50 bits; H/24 in 9 buckets, 57 bits) 0.064 and 0.070. A few more bits can't reach 0.05, the slot has none free, and the memory targets leave about 7 bits per key under flood, so the next step is the target's own (left to the user).
 
 ## Overflow
 
@@ -112,6 +113,7 @@ How `Config.Background` reached its design (claims E17–E19, A19):
 - **One move inline** (E18, `background-one-move-inline.patch`): it pays for an 8-line search before deciding to wait. Not adopted.
 - **One room lock per set** (E19, `background-room-lock-per-set.patch`): within noise, for 256 KB of locks. Not adopted.
 - **Background by default**: left to the user (below).
+- **Placer variants** (E27, `placer-factors.patch`), to find which part of the placer slows callers (S61): spinning through its idle naps (the tail much worse: p99.9 18 µs), and callers leaving the shared wait count alone, the placer finding work and deciding to exit by the wait bits (within the base's run-to-run spread). Neither recovers what running the placements on the caller's goroutine between calls does (0.10–0.11% over 2 µs against 0.17–0.20%). Not adopted.
 
 ## Batches
 
@@ -139,5 +141,5 @@ How `Config.Background` reached its design (claims E17–E19, A19):
 ## Left to the user
 
 - Whether `Background` becomes the default: it starts a goroutine, and its placements aren't deterministic, so the harness and the conformance vectors keep it off.
-- Target 7's target (velocity error 0.05), or a target that weighs windows by use.
+- Target 7's target (velocity error 0.05), or a target that weighs windows by use: a few more bits per key can't meet it (D19).
 - PGO in deployments (S57: 2–14% on the Ryzen host, with a profile of the deployment's own traffic).

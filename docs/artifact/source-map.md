@@ -36,8 +36,8 @@ Every file of `go/`, by category. Go builds a package from one directory and req
 | Concurrency races on hooks | `gaprace_test.go` (A21), `roomrace_test.go` (A20, A24), `split_race_test.go` (971dc4a, 64ebd85, A23), `sweep_race_test.go` (A26), `install_race_test.go` (A27), `tagstripe_test.go` (A28–A30), `hotspill_test.go` (A32, A38), `stash_race_test.go` (A6), `cas2_amd64_test.go`, `cas2_other_test.go` (realign both ways, A33) |
 | Fuzzers and soak | `fuzz_test.go` (`TestFuzzUpper`), `fuzzconc_test.go` (`TestFuzzConcurrent`), `soak_test.go` (`TestStressSoak`), `tagamp_test.go` (the tag amplifier, `TF_CFUZZ_TAGS`, `TF_STRESS_TAGS`) |
 | Attacks | `attack_test.go` |
-| Deterministic experiments (`verify/expected/`) | `placement_test.go` (the placement oracle, D8–D11), `rate_test.go` (A15), `velbound_test.go` (D18), `secexp_test.go` (A9–A11), `floodexp_test.go` (A14) |
-| Speed and host probes | `bench_test.go` (the benchmarks), `cycles_linux_test.go`, `cycles_other_test.go` (`cycles/op`), `throughput_test.go` (S37, S53), `inserttail_test.go` (S38, S45), `timing_test.go` (S28, S41), `ctexp_test.go` (S33, S36), `hostprobe_test.go` (S42, S43) |
+| Deterministic experiments (`verify/expected/`) | `placement_test.go` (the placement oracle, D8–D11), `rate_test.go` (A15), `velbound_test.go` (D18), `velinfo_test.go` (D19), `secexp_test.go` (A9–A11), `floodexp_test.go` (A14) |
+| Speed and host probes | `bench_test.go` (the benchmarks), `cycles_linux_test.go`, `cycles_other_test.go` (`cycles/op`), `throughput_test.go` (S37, S53), `inserttail_test.go` (S38, S45, S61), `timing_test.go` (S28, S41), `ctexp_test.go` (S33, S36), `hostprobe_test.go` (S42, S43) |
 
 ## Scripts and verification: `go/test.sh`, `go/bench.sh`, `go/verify/`
 

@@ -16,8 +16,10 @@ All documentation is in [docs/](docs/README.md), organized the way a new data st
 ## Layout
 
 ```
+LICENSE        Apache License 2.0; NOTICE: the attribution it asks redistributors to keep
 docs/          the documentation (paper, specification, artifact, record)
 spec/vectors/  conformance vectors every implementation must reproduce
+bench/h2h/     the head-to-head's industry arms (Rust), docs/artifact/head-to-head.md
 go/            Go reference implementation
   *.go           the library and its white-box tests (one Go package)
   test.sh        test tiers; bench.sh: a scorecard row
@@ -38,3 +40,11 @@ cd go
 ./bench.sh "label"      # a scorecard row in docs/record/scorecard-history.md
 verify/run.sh           # every claim check (docs/artifact/claims.md)
 ```
+
+## License
+
+Copyright 2026 Priyasis Chakraborty. Licensed under the [Apache License, Version 2.0](LICENSE): you may use, modify and redistribute this work, including commercially, provided you keep the license and the [NOTICE](NOTICE) file with it and mark the files you change. The license grants a patent license from every contributor for their contributions (Section 3) and comes with no warranty (Section 7).
+
+The license covers the whole repository: the library, its tests and tools, the conformance vectors in `spec/vectors/`, and the documentation. A port to another language in this repository is under the same license. Contributions submitted for inclusion are licensed under it too, unless their author states otherwise (Section 5).
+
+`bench/h2h` builds against third-party crates (`pingora-limits`, `dashmap`, `sha2` and their dependencies) that Cargo fetches at build time under their own licenses; none of their code is in this repository.

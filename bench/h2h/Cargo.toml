@@ -3,6 +3,7 @@ name = "h2h"
 version = "0.1.0"
 edition = "2021"
 publish = false
+license = "Apache-2.0"
 description = "Head-to-head runner for the industry arms of docs/artifact/head-to-head.md"
 
 [dependencies]

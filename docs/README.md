@@ -40,6 +40,7 @@ On the Ryzen host the 1M-key "cold" benchmark table (20 MB) does not fit in L3, 
 
 ```
 README.md            entry point
+LICENSE, NOTICE      Apache License 2.0, and the attribution notice redistributions keep
 .githooks/           commit-msg and pre-push hooks that reject Co-authored-by trailers;
                      enable them once per clone: git config core.hooksPath .githooks
 docs/                this documentation (paper, specification, artifact, record)

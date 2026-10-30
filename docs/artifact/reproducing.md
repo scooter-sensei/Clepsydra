@@ -32,10 +32,10 @@ Deterministic results depend only on the code and the Go version: the workloads 
 [head-to-head.md](head-to-head.md) is the protocol. Part 1 (Clepsydra, `pingora-limits` and an exact sliding-window log in DashMap under 1x–16x floods) runs on one host:
 
 ```
-verify/h2h.sh [workdir]     # N=262144 ROUNDS=5 THREADS=12 by default; 56 minutes on the Ryzen host
+verify/h2h.sh [workdir]     # N=262144 ROUNDS=5 THREADS=12 by default; ~80 minutes on the Ryzen host
 ```
 
-It builds `go/cmd/h2h` and `bench/h2h` (Rust), writes six traces once (`h2h gen`), sizes the count-min estimator to Clepsydra's peak bytes, runs five passes per arm, trace and round with the arms' order rotating, then the 8x and 64x sizing runs, and ends with `h2h report` (validity, then the tables of paper §7.5). Its accuracy figures vary a little run to run (every arm draws its hash seeds per process); its speed figures are the host's. Part 2 (Clepsydra and the ECM-sketch at equal memory) is deterministic: `go run ./cmd/h2h ecm` (~3.5 minutes on 12 threads), checked against `verify/expected/h2h-ecm.txt` by `verify/run.sh` and `./test.sh regression --full`; `go run ./cmd/h2h velcheck` first shows that its workload is the scorecard's (D5's figures). The ECM-sketch's own checks: `go test ./internal/ecm`.
+It builds `go/cmd/h2h` and `bench/h2h` (Rust), writes six traces once (`h2h gen`), sizes the count-min estimator to Clepsydra's peak bytes, runs five passes per arm, trace and round with the arms' order rotating, then the 8x and 64x sizing runs and the ECM-sketch supplement (23 minutes more; `PARTS="main sizing ecm"` picks stages, on a workdir that has the traces and `sizing.txt`), and ends with `h2h report` (validity, then the tables of paper §7.5). Its accuracy figures vary a little run to run (every arm draws its hash seeds per process); its speed figures are the host's. Part 2 (Clepsydra and the ECM-sketch at equal memory) is deterministic: `go run ./cmd/h2h ecm` (~3.5 minutes on 12 threads), checked against `verify/expected/h2h-ecm.txt` by `verify/run.sh` and `./test.sh regression --full`; `go run ./cmd/h2h velcheck` first shows that its workload is the scorecard's (D5's figures). The ECM-sketch's own checks: `go test ./internal/ecm`.
 
 ## Replays
 

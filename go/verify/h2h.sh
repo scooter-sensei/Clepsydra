@@ -79,4 +79,38 @@ done | tee -a "$WORK/results.jsonl"
 	done
 done | tee -a "$WORK/results.jsonl"
 
+# The ECM-sketch supplement (head-to-head.md, Supplement): eps_sw 0.5; the
+# depth with the fewest false denies on the 1x heavy flood (seed 1, ties to
+# the smaller); per flood the widest sketch whose peak fits Clepsydra's peak
+# bytes; then ROUNDS rounds of every pass, hash seed = the round.
+if [[ $PARTS == *" ecm "* ]]; then
+	budget=$((SLOTS * 64))
+	ecm_w() { "$WORK/h2h-go" ecmsize -trace "$WORK/$1.trace" -budget "$budget" -ecm-d "$2" -ecm-eps 0.5 | tee -a "$WORK/sizing-ecm.txt" | sed 's/.* w=\([0-9]*\) .*/\1/'; }
+	best_d="" best_fd=""
+	for d in 1 2 3 4; do
+		w=$(ecm_w heavy1x "$d")
+		"$WORK/h2h-go" run -arm ecm -trace "$WORK/heavy1x.trace" -pass acc -round 1 -ecm-w "$w" -ecm-d "$d" -answers "$WORK/tune-ecm-d$d.bin" >/dev/null
+		fd=$("$WORK/h2h-go" falsedeny -trace "$WORK/heavy1x.trace" -answers "$WORK/tune-ecm-d$d.bin" | cut -d' ' -f1)
+		echo "depth $d: width $w, false denies on heavy1x $fd" | tee -a "$WORK/sizing-ecm.txt"
+		if [ -z "$best_fd" ] || [ "$fd" -lt "$best_fd" ]; then
+			best_d=$d best_fd=$fd
+		fi
+	done
+	echo "ECM depth $best_d" | tee -a "$WORK/sizing-ecm.txt"
+	declare -A ecmw
+	for fl in $FLOODS; do
+		ecmw[$fl]=$(ecm_w "$fl" "$best_d")
+	done
+	for r in $(seq 1 "$ROUNDS"); do
+		for fl in $FLOODS; do
+			for p in $PASSES; do
+				ans=""
+				[ "$p" = acc ] && ans="$WORK/ans-ecm-$fl-r$r.bin"
+				"$WORK/h2h-go" run -arm ecm -trace "$WORK/$fl.trace" -pass "$p" -round "$r" -threads "$THREADS" \
+					-ecm-w "${ecmw[$fl]}" -ecm-d "$best_d" ${ans:+-answers "$ans"}
+			done
+		done
+	done | tee -a "$WORK/results.jsonl"
+fi
+
 "$WORK/h2h-go" report -dir "$WORK" | tee "$WORK/report.md"

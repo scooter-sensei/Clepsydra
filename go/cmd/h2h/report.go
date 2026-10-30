@@ -108,6 +108,23 @@ func med(xs []float64, prec int) string {
 	return fmt.Sprintf("%.*f (%.*f–%.*f)", prec, m, prec, s[0], prec, s[len(s)-1])
 }
 
+// cmdFalseDeny prints the false-deny count and population of one answers
+// file (the ECM supplement's choice of depth).
+func cmdFalseDeny(tracePath, answersPath string) error {
+	t, err := readTrace(tracePath)
+	if err != nil {
+		return err
+	}
+	as, err := readAnswers(answersPath)
+	if err != nil {
+		return err
+	}
+	var s score
+	s.add(t, as)
+	fmt.Printf("%d %d\n", s.deny[0], s.deny[1])
+	return nil
+}
+
 func cmdReport(dir string) error {
 	traces := map[string]*trace{}
 	var names []string

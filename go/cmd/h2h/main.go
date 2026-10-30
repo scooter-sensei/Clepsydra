@@ -2,7 +2,8 @@
 // Clepsydra against industry structures on one host.
 //
 //	h2h gen -dir D [-n 262144]       write part 1's traces (one per flood)
-//	h2h run -trace F -pass P ...     one pass of the Clepsydra arm (JSON line)
+//	h2h run -trace F -pass P ...     one pass of the Clepsydra arm (JSON line), or -arm ecm
+//	h2h ecmsize -trace F -budget B   the widest ECM-sketch whose peak on F fits B bytes
 //	h2h report -dir D                score every arm's answers, summarize passes
 //	h2h ecm [-keys 2000]             part 2: Clepsydra and the ECM-sketch
 //	h2h velcheck                     the part 2 workload at the scorecard's settings (claim D5)
@@ -38,6 +39,11 @@ func main() {
 	capacity := fs.Int("capacity", 0, "part 2: Clepsydra's Capacity (default: the key count)")
 	mults := fs.String("mults", "1,2,4,8", "part 2: ECM budgets, as multiples of Clepsydra's bytes")
 	cpuprofile := fs.String("cpuprofile", "", "write a CPU profile of the command")
+	arm := fs.String("arm", "clepsydra", "run: clepsydra | ecm")
+	ecmW := fs.Int("ecm-w", 0, "ecm arm: width")
+	ecmD := fs.Int("ecm-d", 1, "ecm arm: depth")
+	ecmEps := fs.Float64("ecm-eps", 0.5, "ecm arm: eps_sw")
+	budget := fs.Int("budget", 0, "ecmsize: bytes the sketch's peak must fit")
 	fs.Parse(os.Args[2:])
 	if *cpuprofile != "" {
 		fh, perr := os.Create(*cpuprofile)
@@ -52,7 +58,15 @@ func main() {
 	case "gen":
 		err = cmdGen(*dir, *n, *seed)
 	case "run":
-		err = cmdRun(*tracePath, *pass, *round, *threads, *answers)
+		if *arm == "ecm" {
+			err = cmdRunECM(*tracePath, *pass, *round, *threads, *answers, *ecmW, *ecmD, *ecmEps)
+		} else {
+			err = cmdRun(*tracePath, *pass, *round, *threads, *answers)
+		}
+	case "ecmsize":
+		err = cmdECMSize(*tracePath, *budget, *ecmD, *ecmEps)
+	case "falsedeny":
+		err = cmdFalseDeny(*tracePath, *answers)
 	case "report":
 		err = cmdReport(*dir)
 	case "ecm":

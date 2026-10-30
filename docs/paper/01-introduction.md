@@ -30,7 +30,7 @@ Because the exact timestamp and the counter of a key share one line, a hit reads
 Judged against the prior art in [2 Related work](02-related-work.md), from a search that was not exhaustive:
 
 1. **A per-key velocity register in the same cache line as an exact last-touch time**, updated lock-free with CAS. The prior structures found either keep no counts, keep them in a separate table, or use global sketches.
-2. **The window is a query argument for both membership and count.** Every verifiable prior structure fixes the window when it is built (the Learned Cuckoo Filter is the possible exception).
+2. **The window is a query argument for a key's membership and its own count.** Exponential histograms and the ECM-sketch already take the range per query, but over one stream or a shared count-min array, so a key's count carries other keys' traffic (corrected, X38: this read "every verifiable prior structure fixes the window"). Here the key's own register and exact last touch answer it ([7.5](07-evaluation.md#75-head-to-head-against-industry-structures)).
 3. **The estimate is gated by the exact last touch.** The count is exactly 0 once `W < now − lastTouch` and at least 1 otherwise, and the newest bucket's events are known to end at `lastTouch`, which removes the worst boundary errors for free.
 4. **A clock-paced, bounded reclaimer** (`ContinuousDecay`): one table pass per horizon, at most 4 lines per step.
 5. **Velocity-aware eviction as an anti-evasion policy** (evict the slot with the fewest events in the horizon), which appears to be new; TinyLFU uses frequency for cache admission, not for this.

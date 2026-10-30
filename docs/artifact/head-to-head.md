@@ -71,6 +71,15 @@ Every event is inside the window at the probe, so a key's true count is its numb
 5. **Part 2.** Clepsydra is said to have the lower error at a window only when its error is below the lowest of every ECM configuration that fits the budget at that window (the best per window, not one configuration for all) and below all five seeds of the best configuration. The same rule decides the 2x–8x readings.
 6. **No re-runs to change an answer.** A void pass (the wall-clock interval, a host disturbance named before the reading) is re-run and the void run recorded; nothing else is re-run.
 
+## The readings
+
+The results are in [paper §7.5](../paper/07-evaluation.md#75-head-to-head-against-industry-structures) and claims A41, S63, S64 and D21; what was run, and what went wrong on the way, is recorded here.
+
+- **Part 1** ran on the Ryzen host as `verify/h2h.sh` (commit 073f9e0): 5 rounds, 450 passes and 60 sizing passes, no void pass, 56 minutes. The full report, with the trace hashes, toolchains and sizing, is [head-to-head-ryzen.md](head-to-head-ryzen.md); every pass's line is [head-to-head-ryzen.jsonl](head-to-head-ryzen.jsonl). The rule-3 table (rounds in which Clepsydra was faster) was added to `h2h report` after the run and computed from the same lines.
+- **Validity.** Rule 1 as amended held: 0 probes of keys with at least 4 events read `Upper` below the truth in any arm; Clepsydra's 477,756 low probes are all keys with fewer (shed); the exact map matched all 1,830,000 probes; `pingora-limits` never read below the truth.
+- **Part 2, a void first run.** The first run of `h2h ecm` read 1.0000 for every ECM configuration at every window: every estimate was 0. The harness passed `Sketch.Count` straight to the replay, which calls `(key, window, now)`, where `Count` takes `(key, now, range)`; with the time and the range swapped every range was empty. The package's own checks (rule 1, D20) call `Count` correctly and passed; nothing checked the wiring. The harness now queries `Count(key, now, window)` and first runs a **wiring check**: an ECM-sketch with no memory limit must read within its ε_sw (0.05) at every window on this workload, or the run stops (it reads 0.0001–0.0170; the swapped call fails it). The void output was kept outside the repository; the reading is the second run, and a third, identical apart from the wiring line's byte count, is `verify/expected/h2h-ecm.txt`.
+- **Not run:** part 2 at 20,000 keys (the ratio of memory to keys is what sets a sketch's collisions, and it is the same at any key count of equal bytes per key; not checked).
+
 ## What this does not measure
 
 - Distributed use: `pingora-limits` and DashMap are in-process, as Clepsydra is; Redis-backed limiters (network round trips) are a different comparison.

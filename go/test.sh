@@ -65,6 +65,7 @@ regression() {
 		check history - verify/replay.sh history
 		check harness verify/expected/harness.txt verify/replay.sh harness
 		check experiments verify/expected/experiments.txt verify/experiments.sh
+		check h2h-ecm verify/expected/h2h-ecm.txt go run ./cmd/h2h ecm
 	fi
 }
 

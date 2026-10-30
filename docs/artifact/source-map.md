@@ -21,6 +21,11 @@ Every file of `go/`, by category. Go builds a package from one directory and req
 | `siphash` | `siphash.go`, `siphash_test.go` | SipHash-2-4 behind `Config.Key`, and its reference vectors |
 | `workload` | `churn.go` | the scorecard's churn stream, shared by `cmd/tfbench` and the placement test |
 | `registersim` | `doc.go`, `registers_experiment_test.go` | the standalone simulation of the linear, dyadic and Laplace registers [D12] |
+| `ecm` | `ecm.go`, `ecm_test.go` | the ECM-sketch (Papapetrou et al. 2012), the head-to-head's competitor at equal memory: exponential histograms in a count-min array, level minima from the paper's invariant 1 for every range, checked against exact counts [D20] |
+
+## Command: `go/cmd/h2h/`
+
+The head-to-head harness ([head-to-head.md](head-to-head.md)): `trace.go` (part 1's flood traces, their format and generator), `clep.go` (the Clepsydra arm's five passes), `timing.go`, `tsc.go`, `tsc_amd64.s`, `tsc_other.go` (RDTSCP and the log-linear latency histogram, as `bench/h2h` has them), `report.go` (scores every arm's answers, summarizes the passes), `velocity.go` (part 2: the scorecard's velocity workload with the key count as a parameter, Clepsydra and the ECM-sketch at equal memory), `main.go`. The industry arms are the Rust crate `bench/h2h/` at the repository's root (`pingora-limits` and DashMap, pinned in its `Cargo.lock`).
 
 ## Command: `go/cmd/tfbench/`
 
@@ -47,6 +52,7 @@ Every file of `go/`, by category. Go builds a package from one directory and req
 | `bench.sh` | race tests, then a scorecard row |
 | `verify/run.sh`, `isolated.sh`, `replay.sh`, `experiments.sh`, `tla.sh` | every claim check, offline isolation, replays of recorded results, reverted experiments, model checks ([reproducing.md](reproducing.md)) |
 | `verify/ab.sh`, `lrab.sh`, `speed.sh` | speed A/B, placement-randomized A/B, the speed report ([measuring-speed.md](measuring-speed.md)) |
+| `verify/h2h.sh` | part 1 of the head-to-head: both runners, the traces, the rotated rounds, the report ([head-to-head.md](head-to-head.md)) |
 | `verify/lib/` | `lib.sh` (tree export, import rewriting) and `checks.sh` (the checks behind `run.sh` and `test.sh`), sourced by the scripts |
 | `verify/expected/` | the golden outputs the deterministic checks must match byte for byte |
 | `verify/experiments/` | reverted experiments as git patches ([experiments.md](experiments.md)) |

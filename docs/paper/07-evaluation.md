@@ -100,3 +100,53 @@ Every change on a hot path was measured as an A/B on one host; the results are c
 ### The scorecard's speed columns
 
 The scorecard's `hit hot` column (and `BenchmarkCheckAndTouchHitHot`) has timed refused hot-entry promotions since 964b518: its 4,096 keys come back ~4,000 times within one unit, every register fills, and with the hot entries taken each touch tries a promotion that is refused [X36]. `BenchmarkCheckAndTouchHitCached` (c0e32d1) times the cached hit. One 1M-key filter serves several of tfbench's columns in turn, so its registers fill as earlier columns' iterations add up, and how many there were depends on how fast those columns ran (not measured; [8 Limitations](08-limitations.md)).
+
+## 7.5 Head-to-head against industry structures
+
+What a deployer gives up or gains by putting Clepsydra in front of a per-key limit instead of the structures industry uses for it. The protocol ([artifact/head-to-head.md](../artifact/head-to-head.md)) was committed before any reading, with two amendments before any reading; the arms are published implementations run as released, or, where none exists, the published algorithm: Cloudflare's `pingora-limits` 0.9.0 (`Rate`, a count-min estimator, used as Pingora's own limiter example uses it), an exact sliding-window log per key in DashMap 6.2.1, and the ECM-sketch implemented from its paper (Papapetrou et al. 2012), which keeps the paper's ε on every range [D20]. Ryzen host; Go 1.24.7 and Rust 1.99.1.
+
+### Floods [A41, S63, S64]
+
+The flood protocol of [§6.5](06-security.md#65-evidence-floods) at N = 262,144 keys (Clepsydra: 308,408 slots, 85% load), so no table fits the cache: 1,000 offenders at a strict limit of 20 events per 60 s, then floods of 1x–16x the slots in keys of 21 events (one over the limit) and 16x in one-event keys, all within one window; one trace per flood, replayed by every arm; 5 rounds of 61,000 probes. A count-min sketch has no key count, only bytes, so `pingora-limits` gets Clepsydra's peak bytes (31.0 B per key, the overflow table allocated), and in a sizing run 8x and 64x those.
+
+Strict decisions (Clepsydra's fail-closed recipe, the count-min estimate, the exact count). False-allow, a key at or over the limit allowed, was **0 for every arm at every flood**. False-deny, an innocent key turned away (Wilson 95% intervals in A41):
+
+| flood | Clepsydra | `pingora-limits`, same bytes | at 8x the bytes | at 64x the bytes | exact map | exact map's bytes per key |
+|---|---|---|---|---|---|---|
+| 1x | 0.00% | 69.41% | 0.44% | 0.00% | 0 | 331 |
+| 2x | 0.07% | 96.99% | 4.32% | 0.00% | 0 | 482 |
+| 4x | 0.27% | 99.98% | 24.41% | 0.04% | 0 | 947 |
+| 8x | 98.99% | 100% | 69.12% | 0.47% | 0 | 1,877 |
+| 16x | 99.89% | 100% | 96.91% | 4.25% | 0 | 3,738 |
+| 16x light | 0.00% | 99.98% | 0.00% | 0.00% | 0 | 1,630 |
+
+Count error (mean |estimate − truth| over all probes): Clepsydra 0.29 / 0.34 / 0.38 / 3.91 / 5.75 / 0.62, `pingora-limits` 22.2 / 58.9 / 140.9 / 316.8 / 684.2 / 34.4, the exact map 0. Speed, medians of 5 rounds (Clepsydra was slower than both in every round, except the 12-thread p99.9 at 16x, where it beat the exact map in all 5):
+
+| flood | Mops/s, 1 / 12 threads: Clepsydra | `pingora-limits` | exact map | p99.9 µs, 1 / 12 threads: Clepsydra | `pingora-limits` | exact map |
+|---|---|---|---|---|---|---|
+| 1x | 3.06 / 19.9 | 9.84 / 84.6 | 13.27 / 49.7 | 8.6 / 19.7 | 0.84 / 0.56 | 2.1 / 12.8 |
+| 4x | 2.06 / 15.0 | 10.15 / 88.8 | 13.80 / 53.7 | 5.8 / 19.5 | 0.52 / 0.52 | 2.1 / 12.5 |
+| 16x | 1.73 / 12.1 | 10.16 / 86.7 | 12.29 / 42.6 | 5.8 / 22.6 | 0.51 / 0.51 | 2.1 / 23.6 |
+| 16x light | 0.49 / 2.28 | 6.28 / 45.7 | 2.01 / 4.68 | 23.6 / 230 | 0.55 / 0.72 | 7.8 / 282 |
+
+Every flood is in [artifact/head-to-head-ryzen.md](../artifact/head-to-head-ryzen.md).
+
+- **Decisions.** Up to 4x its slots, Clepsydra's decisions match the exact map's within 0.27% false denies, at 31 B per key against the exact map's 331–947. A count-min sketch of the same bytes turns away 69% of innocent keys at the first flood: its noise per counter is the flood's events over its width, and every key reads it. It needs 64x the bytes (1,987 B per key) to stay under 1% up to 8x. Past ~4.5x Clepsydra's overflow table overflows (§6.4) and it turns away ~99%, still failing closed; the exact map stays exact, with memory the attacker sizes (3.7 KB per key at 16x, 121x Clepsydra's).
+- **Counts.** Clepsydra's count error up to 4x is one-event keys the flood sheds (`SpillMin`: −0.89 to −0.98 per base key, never deciding wrongly at a limit of 20); offenders keep their exact `Count` to 4x and lose it from 8x, where `Upper` still covers them.
+- **Speed.** Clepsydra is 3.2–5.9x slower than `pingora-limits` and 4.3–7.1x slower than the exact map on one thread, with a p99.9 of 5.8–8.6 µs against 0.5–0.8 and 2.1 µs. Two causes, both in Clepsydra: every flood key is an insert into a full table (the scorecard's saturated insert, 1,963 ns on this host), and once the overflow table holds histories every touch reads the key's own entries there, 47% of the CPU in a 16x flood [S64]. The one-event flood is all inserts: 0.49 Mops/s. These are the implementations as shipped, in two languages (§8.2 has the open problem).
+
+### Windows at equal memory [D21]
+
+The scorecard's velocity workload (D5) with Clepsydra's `Capacity` equal to its 2,000 keys; the ECM-sketch gets Clepsydra's 38,912 B (19.5 B per key), counted generously (1 B per counter and per level, 4 B per bucket). Its depth, ε_sw and width were tuned on the test workload over 36 configurations (the widest that fits for each depth 1–5 and ε_sw 0.01–0.5, and the paper's own split); the table gives the best by mean error, which was also the best at every window. Normalized error Σ|estimate − exact| ÷ Σ exact:
+
+| arm | memory | 1 s | 5 s | 15 s | 30 s | 60 s | mean |
+|---|---|---|---|---|---|---|---|
+| Clepsydra `Count` | 38,912 B | **0.214** | **0.057** | **0.051** | **0.044** | **0.024** | **0.078** |
+| ECM, best (d=1, ε_sw 0.5, w 704) | 38,721 B | 2.850 | 2.933 | 2.955 | 2.951 | 2.872 | 2.912 |
+| ECM, the paper's split (d=3, w 37) | 38,484 B | 43.5 | 45.3 | 46.2 | 46.0 | 46.3 | 45.5 |
+| ECM at 2x the memory | 77,733 B | 0.512 | 0.534 | 0.526 | 0.518 | 0.495 | 0.517 |
+| ECM at 4x | 155,337 B | 0.112 | 0.132 | 0.133 | 0.132 | 0.122 | 0.126 |
+| ECM at 8x | 311,114 B | 0.029 | 0.053 | 0.055 | 0.056 | 0.053 | 0.049 |
+| ECM, no memory limit (a histogram per key) | 334,990 B of buckets | 0.0001 | 0.010 | 0.016 | 0.017 | 0.017 | 0.012 |
+
+At equal memory Clepsydra's error is 37x lower and lower at every window (rule 5: below every configuration and every seed). Every best ECM configuration has one row: its memory buys width, because the error left is other keys' traffic in a key's counter, which no ε_sw removes. ECM reads lower at 1 s from 4x the memory and at 5 s from 8x; at 8x Clepsydra still reads lower at 30 and 60 s (15 s is inside ECM's seed range). With a histogram per key, ECM's information is better than the 48-bit register's at every window (0.012 against 0.078, at 8.6x the bytes): the register's resolution near now is the limit D18 measured, not its sharing.

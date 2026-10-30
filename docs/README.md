@@ -44,6 +44,7 @@ README.md            entry point
                      enable them once per clone: git config core.hooksPath .githooks
 docs/                this documentation (paper, specification, artifact, record)
 spec/vectors/        conformance vectors: language-neutral traces every implementation must reproduce
+bench/h2h/           the head-to-head's industry arms (Rust: pingora-limits, DashMap), artifact/head-to-head.md
 go/                  Go reference implementation
   *.go                 package temporalfilter: the library (filter, register, hot, ghost, overflow) and its white-box tests
   test.sh              the five test tiers (smoke, sanity, regression, perf, stress)

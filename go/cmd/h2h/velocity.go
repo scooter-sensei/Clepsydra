@@ -150,7 +150,7 @@ func runECM(c ecmCfg, evs []velEv, hs []uint64, qs []velQuery, score bool) (*vel
 	s := ecm.New(c.w, c.d, c.eps, horizonMs, c.seed)
 	var count func(h, w, now uint64) (int, int)
 	if score {
-		count = s.Count
+		count = func(h, w, now uint64) (int, int) { return s.Count(h, now, w) }
 	}
 	e := replayVel(evs, hs, qs, s.Add, count)
 	return e, s.Peak()
@@ -247,6 +247,20 @@ func parallelDo(n int, fn func(i int)) {
 func cmdECM(nkeys, capacity int, mults []int) {
 	evs, hs, qs := velocityWorkload(nkeys)
 	fmt.Printf("velocity workload: %d keys, %d events, %d queries; windows 1, 5, 15, 30, 60 s\n", nkeys, len(evs), len(qs))
+	// Wiring check: with no memory limit (a column per key, on average many)
+	// the sketch's error is its histograms' alone, within eps_sw on every
+	// window. A harness that queries it wrongly fails here, before any
+	// reading (a first run swapped the query's time and range: every
+	// estimate read 0, error 1.0000).
+	const wireEps = 0.05
+	we, wpeak := runECM(ecmCfg{d: 1, eps: wireEps, w: 1 << 22, seed: 1}, evs, hs, qs, true)
+	for i := range velWins {
+		if we.per(i) > wireEps {
+			fail(fmt.Errorf("wiring check: an unconstrained ECM-sketch (eps_sw %.2f) reads %.4f at %ds", wireEps, we.per(i), velWins[i]/1000))
+		}
+	}
+	fmt.Printf("wiring check: ECM-sketch, d=1 w=%d eps_sw=%.2f (no memory limit; peak %d B, %d B without its empty counters): %s\n",
+		1<<22, wireEps, wpeak, wpeak-1<<22, fmtErr(we))
 	ce, budget := runClepVel(capacity, evs, hs, qs)
 	fmt.Printf("\nClepsydra, Capacity %d: %d bytes (%.1f B/key)\n\n", capacity, budget, float64(budget)/float64(nkeys))
 	fmt.Println("| arm | memory | 1 s | 5 s | 15 s | 30 s | 60 s | mean |")

@@ -265,6 +265,45 @@ func cmdReport(dir string) error {
 	}
 	fmt.Println()
 
+	// Rule 3: one arm is faster only when it is faster in every round.
+	fmt.Println("Rule 3, round by round: rounds in which Clepsydra is faster (more ops/s, or a lower p99.9) than each competitor, of the rounds both ran.")
+	fmt.Println()
+	fmt.Println("| flood | Mops/s, 1 thread | Mops/s, 12 threads | p99.9, 1 thread | p99.9, 12 threads |")
+	fmt.Println("|---|---|---|---|---|")
+	for _, n := range names {
+		var cells []string
+		for _, m := range []struct {
+			pass   string
+			better func(a, b result) bool
+		}{
+			{"t1", func(a, b result) bool { return a.Mops > b.Mops }},
+			{"t12", func(a, b result) bool { return a.Mops > b.Mops }},
+			{"lat1", func(a, b result) bool { return a.P999 < b.P999 }},
+			{"lat12", func(a, b result) bool { return a.P999 < b.P999 }},
+		} {
+			var vs []string
+			for _, c := range []string{"pingora", "dashmap"} {
+				byRound := map[int]result{}
+				for _, r := range runs[key{c, n, m.pass}] {
+					byRound[r.Round] = r
+				}
+				wins, both := 0, 0
+				for _, r := range runs[key{"clepsydra", n, m.pass}] {
+					if o, ok := byRound[r.Round]; ok {
+						both++
+						if m.better(r, o) {
+							wins++
+						}
+					}
+				}
+				vs = append(vs, fmt.Sprintf("%s %d/%d", c, wins, both))
+			}
+			cells = append(cells, strings.Join(vs, ", "))
+		}
+		fmt.Printf("| %s | %s |\n", n, strings.Join(cells, " | "))
+	}
+	fmt.Println()
+
 	fmt.Println("Latency detail, medians over rounds (ns): p50 / p99 / p99.9 / max; the timer's own p99.9 beside.")
 	fmt.Println()
 	fmt.Println("| flood | arm | 1 thread | 12 threads | timer p99.9 |")

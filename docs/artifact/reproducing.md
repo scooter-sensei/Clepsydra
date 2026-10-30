@@ -7,6 +7,7 @@ Every claim in these documents is listed in [the claims register](claims.md) wit
 - Go 1.24.7 (the version `verify/expected/` was produced with), bash, git with the full history (the replays build old commits).
 - For the model checks: Java 11 or later and `tla2tools.jar` (TLA+ tools 1.7.4).
 - For the speed tools: Linux (`cycles/op` needs `perf_event_open`); the DRAM benchmarks need about 2 GB of RAM.
+- For the head-to-head's industry arms: Rust (stable; the readings used 1.99.1) with a C linker, network access once to fetch the crates `bench/h2h/Cargo.lock` pins, and about 2 GB of RAM (the exact map holds ~1 GB after the 16x flood).
 
 ## Everything at once
 
@@ -16,7 +17,7 @@ verify/run.sh --speed   # also the speed suite (host-dependent: reported, not ch
 verify/isolated.sh      # verify/run.sh on a fresh copy of the committed history, offline
 ```
 
-`verify/run.sh` runs vet, the tests, the race detector (`-short`), the suite in ConstantTime mode, in Background mode (`TF_BG=1`) and with realign's hold (`TF_NOCAS2=1`), the accuracy scorecard (`go run ./cmd/tfbench -exact`), the placement limits, the register experiment, the velocity bound, the attacks, the sustained rates, the sketch experiments and the flood sizing (each compared with its file in `verify/expected/`), the bug replays, 300 runs of each racy regression test, the scorecard-history replay, the harness replay and the reverted experiments. `--speed` adds the scorecard's speed columns (three runs), the timing leak (`TF_TIMING=1 TestTimingLeak`) and the ConstantTime pads (`TF_CTEXP=1 TestCTPads|TestCTParallel`). Results go to `$OUT` (default `./verify-report`): `summary.txt` plus one log per check.
+`verify/run.sh` runs vet, the tests, the race detector (`-short`), the suite in ConstantTime mode, in Background mode (`TF_BG=1`) and with realign's hold (`TF_NOCAS2=1`), the accuracy scorecard (`go run ./cmd/tfbench -exact`), the placement limits, the register experiment, the velocity bound, the attacks, the sustained rates, the sketch experiments, the flood sizing and the head-to-head's part 2 (each compared with its file in `verify/expected/`), the bug replays, 300 runs of each racy regression test, the scorecard-history replay, the harness replay and the reverted experiments. `--speed` adds the scorecard's speed columns (three runs), the timing leak (`TF_TIMING=1 TestTimingLeak`) and the ConstantTime pads (`TF_CTEXP=1 TestCTPads|TestCTParallel`). Results go to `$OUT` (default `./verify-report`): `summary.txt` plus one log per check.
 
 Deterministic results depend only on the code and the Go version: the workloads are seeded and single-threaded, and the integer-key hash the harness uses is unkeyed. Expected files were produced on linux/amd64 with Go 1.24.7; other architectures may differ (Go may fuse floating-point multiply-adds there). linux/arm64 under qemu-user matched them (§Other architectures).
 
@@ -25,6 +26,16 @@ Deterministic results depend only on the code and the Go version: the workloads 
 ## The test tiers
 
 `./test.sh <tier>` with `smoke`, `sanity`, `regression` (`--full` for the replays), `perf [A]` or `stress` (and `all`): [specification/conformance.md](../specification/conformance.md#test-tiers) defines them. Environment knobs: `TF_STRESS`, `TF_STRESS_RACE`, `TF_FUZZ`, `TF_CFUZZ`, `STRESS_RUNS`, `PERF_MAX`, `PERF_ROUNDS`, `PERF_BENCH`, `OUT`.
+
+## The head-to-head
+
+[head-to-head.md](head-to-head.md) is the protocol. Part 1 (Clepsydra, `pingora-limits` and an exact sliding-window log in DashMap under 1x–16x floods) runs on one host:
+
+```
+verify/h2h.sh [workdir]     # N=262144 ROUNDS=5 THREADS=12 by default; 56 minutes on the Ryzen host
+```
+
+It builds `go/cmd/h2h` and `bench/h2h` (Rust), writes six traces once (`h2h gen`), sizes the count-min estimator to Clepsydra's peak bytes, runs five passes per arm, trace and round with the arms' order rotating, then the 8x and 64x sizing runs, and ends with `h2h report` (validity, then the tables of paper §7.5). Its accuracy figures vary a little run to run (every arm draws its hash seeds per process); its speed figures are the host's. Part 2 (Clepsydra and the ECM-sketch at equal memory) is deterministic: `go run ./cmd/h2h ecm` (~3.5 minutes on 12 threads), checked against `verify/expected/h2h-ecm.txt` by `verify/run.sh` and `./test.sh regression --full`; `go run ./cmd/h2h velcheck` first shows that its workload is the scorecard's (D5's figures). The ECM-sketch's own checks: `go test ./internal/ecm`.
 
 ## Replays
 

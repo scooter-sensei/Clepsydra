@@ -33,6 +33,7 @@ check attacks verify/expected/attacks.txt attacks
 check rates verify/expected/rates.txt rates
 check sketch-experiments verify/expected/sketch-experiments.txt sketch_experiments
 check flood-sizing verify/expected/flood-sizing.txt flood_sizing
+check h2h-ecm verify/expected/h2h-ecm.txt go run ./cmd/h2h ecm
 check fixes - verify/replay.sh fixes
 check stress - verify/replay.sh stress 300
 check history - verify/replay.sh history

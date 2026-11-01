@@ -351,13 +351,10 @@ func (g *ghost) estimate(id, window, now uint64) (r Result, ok bool) {
 		}
 		for k := 1; k < ghEntries; k++ {
 			e := line[bi][k/ghPerWord] >> (uint(k%ghPerWord) * ghEntryBits) & ghEntryMask
-			if e == 0 || !g.live(g.real(e, ep), window, now) {
+			if e == 0 || ghFP(e) != fp || !g.live(g.real(e, ep), window, now) {
 				continue
 			}
 			c := int(ghCnt(e))
-			if ghFP(e) != fp {
-				continue
-			}
 			r.Upper += c
 			r.Count += c
 			r.Saturated = r.Saturated || c == ghCntMax

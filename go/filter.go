@@ -1141,7 +1141,10 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 		if held != nil {
 			held.Unlock()
 		}
-		if f.sketchLive(now) { // ConstantTime: the overflow table is read whatever it holds
+		// CheckAndTouch asks only for Seen, which addSketch can set but never
+		// clear: a hit already Seen skips the overflow read. ConstantTime
+		// reads the overflow table whatever it holds.
+		if f.sketchLive(now) && (wantCount || !r.Seen || f.ct) {
 			f.addSketch(&r, h, window, now)
 		}
 		return r

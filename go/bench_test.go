@@ -358,6 +358,85 @@ func BenchmarkHitChurned(b *testing.B) {
 	}
 }
 
+// A filter with the overflow table live: 256k keys on a counter clock,
+// flooded with 8x its slots of one-off keys of 4 touches each, so the stash
+// drops histories into the overflow table, then 32k keys touched once. Each
+// benchmark builds its own once per process and mutates it; the setup takes
+// seconds, so neither is in PERF_BENCH.
+type overflowBench struct {
+	once sync.Once
+	f    *Filter
+	hs   []uint64 // the 32k keys inserted last
+	now  uint64
+}
+
+func (o *overflowBench) filter(b *testing.B) (*Filter, []uint64, uint64) {
+	o.once.Do(func() {
+		now := uint64(1)
+		f, err := New(Config{Capacity: 1 << 18, Horizon: time.Minute, Resolution: time.Millisecond, Clock: func() uint64 { return now }})
+		if err != nil {
+			b.Fatal(err)
+		}
+		n := 8 * f.Slots()
+		for i := range n {
+			h := f.HashUint64(uint64(i))
+			for range 4 {
+				f.TouchAt(h, 60_000, now)
+			}
+			if i%4096 == 0 {
+				now++
+			}
+		}
+		o.hs = make([]uint64, 1<<15)
+		for i := range o.hs {
+			o.hs[i] = f.HashUint64(uint64(n + i))
+			f.TouchAt(o.hs[i], 60_000, now)
+		}
+		if !f.sketchLive(now) || f.Folded() == 0 {
+			b.Fatalf("overflow table not live (folded %d)", f.Folded())
+		}
+		o.f, o.now = f, now
+	})
+	if o.f == nil {
+		b.Fatal("overflow filter not built")
+	}
+	return o.f, o.hs, o.now
+}
+
+var checkOverflow, touchOverflow overflowBench
+
+// CheckAndTouch on recent keys while the overflow table is live, all inside
+// one horizon; seen/op is the share answered Seen.
+func BenchmarkCheckAndTouchOverflowLive(b *testing.B) {
+	f, hs, now := checkOverflow.filter(b)
+	seen := 0
+	b.ResetTimer()
+	c := startCycles()
+	for i := 0; i < b.N; i++ {
+		if f.CheckAndTouchAt(hs[i&(len(hs)-1)], 60_000, now) {
+			seen++
+		}
+	}
+	c.report(b)
+	b.ReportMetric(float64(seen)/float64(b.N), "seen/op")
+}
+
+// Touch on the same keys, the control for CheckAndTouchOverflowLive: it asks
+// for the count, so it reads the overflow table on every call.
+func BenchmarkTouchOverflowLive(b *testing.B) {
+	f, hs, now := touchOverflow.filter(b)
+	seen := 0
+	b.ResetTimer()
+	c := startCycles()
+	for i := 0; i < b.N; i++ {
+		if f.TouchAt(hs[i&(len(hs)-1)], 60_000, now).Seen {
+			seen++
+		}
+	}
+	c.report(b)
+	b.ReportMetric(float64(seen)/float64(b.N), "seen/op")
+}
+
 // A table far larger than any cache (32M keys, ~600 MB; this host's L3 is
 // 260 MB), so every lookup is a DRAM miss. Built once and shared.
 const hugeKeys = 1 << 25

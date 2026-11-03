@@ -328,6 +328,23 @@ func (f *Filter) estimate(id, w1, last, now, window uint64, sat bool) (r Result,
 	if age(now, last) > window {
 		return Result{}, true
 	}
+	// A register with only bucket 0 filled, whose window reaches back to
+	// bucket 0's start (or whose one event is now), counts bucket 0 whole,
+	// at least the last touch: the view's answer below, without the view.
+	if !isHot(w1) {
+		reg := w1 & regMask
+		if reg>>bucketBits0 == 0 {
+			c0 := reg & (1<<bucketBits0 - 1)
+			if c0 == 1 && now == last && window > 0 {
+				return Result{Count: 1, Upper: 1, Saturated: false}, true
+			}
+			e := regEpoch(w1, f.unitOf(last))
+			if int64(now-window) <= e*int64(f.unit) {
+				n := max(1, int(c0))
+				return Result{Count: n, Upper: n, Saturated: sat && c0 >= satPerUnit}, true
+			}
+		}
+	}
 	v, ok := f.viewOf(id, w1, last)
 	if !ok {
 		return Result{}, false

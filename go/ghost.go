@@ -312,8 +312,9 @@ func (g *ghost) advance(ns uint64) {
 var testHookGhostRead func()
 
 // estimate is id's dropped events within window: matching entries count in
-// Count and Upper, the floors in Upper only. It reads both candidate lines
-// whatever it finds, so its work doesn't depend on the key (ConstantTime).
+// Count and Upper, the floors in Upper only. It loads both candidate lines
+// whatever they hold, so its loads don't depend on the key (ConstantTime);
+// decoding them does, inside the pad.
 //
 // The lines are decoded against the epoch they were loaded under: if an add
 // moved it on meanwhile, they are loaded again. Against the new epoch, an
@@ -331,10 +332,20 @@ func (g *ghost) estimate(id, window, now uint64) (r Result, ok bool) {
 		if ep == 0 || now > g.until.Load() {
 			return Result{}, false
 		}
+		empty := true
 		for bi, base := range bases[:nb] {
 			for i := range line[bi] {
-				line[bi][i] = atomic.LoadUint64(&g.words[base+i])
+				w := atomic.LoadUint64(&g.words[base+i])
+				line[bi][i] = w
+				if w != 0 {
+					empty = false
+				}
 			}
+		}
+		// Both buckets empty: nothing to decode against the wrong epoch, so
+		// no re-check. Only advance's sweep clears an entry, and only a dead one.
+		if empty {
+			return Result{}, false
 		}
 		if testHookGhostRead != nil {
 			testHookGhostRead()
@@ -343,21 +354,56 @@ func (g *ghost) estimate(id, window, now uint64) (r Result, ok bool) {
 			break
 		}
 	}
+	// raiseFloor counts a floor before it writes it, and floored is loaded
+	// after the words: a load that holds a floor sees floored > 0.
+	// Entries 1 and 2 share word 0 with the floors; words 1-7 hold three
+	// each (TestGhostScanLayout).
+	hasFloor := g.floored.Load() > 0
 	for bi := range nb {
-		if e := line[bi][0] >> g.floorShift(fp) & ghSubMask; e != 0 && g.live(g.real(e, ep), window, now) {
-			c := int(ghCnt(e))
-			r.Upper += c
-			r.Saturated = r.Saturated || c == ghCntMax
+		if hasFloor {
+			if e := line[bi][0] >> g.floorShift(fp) & ghSubMask; e != 0 && g.live(g.real(e, ep), window, now) {
+				c := int(ghCnt(e))
+				r.Upper += c
+				r.Saturated = r.Saturated || c == ghCntMax
+			}
 		}
-		for k := 1; k < ghEntries; k++ {
-			e := line[bi][k/ghPerWord] >> (uint(k%ghPerWord) * ghEntryBits) & ghEntryMask
-			if e == 0 || ghFP(e) != fp || !g.live(g.real(e, ep), window, now) {
+		if w0 := line[bi][0]; w0>>ghEntryBits != 0 {
+			if e := (w0 >> ghEntryBits) & ghEntryMask; e != 0 && ghFP(e) == fp && g.live(g.real(e, ep), window, now) {
+				c := int(ghCnt(e))
+				r.Upper += c
+				r.Count += c
+				r.Saturated = r.Saturated || c == ghCntMax
+			}
+			if e := (w0 >> (2 * ghEntryBits)) & ghEntryMask; e != 0 && ghFP(e) == fp && g.live(g.real(e, ep), window, now) {
+				c := int(ghCnt(e))
+				r.Upper += c
+				r.Count += c
+				r.Saturated = r.Saturated || c == ghCntMax
+			}
+		}
+		for w := 1; w < ghWords; w++ {
+			lw := line[bi][w]
+			if lw == 0 {
 				continue
 			}
-			c := int(ghCnt(e))
-			r.Upper += c
-			r.Count += c
-			r.Saturated = r.Saturated || c == ghCntMax
+			if e := lw & ghEntryMask; e != 0 && ghFP(e) == fp && g.live(g.real(e, ep), window, now) {
+				c := int(ghCnt(e))
+				r.Upper += c
+				r.Count += c
+				r.Saturated = r.Saturated || c == ghCntMax
+			}
+			if e := (lw >> ghEntryBits) & ghEntryMask; e != 0 && ghFP(e) == fp && g.live(g.real(e, ep), window, now) {
+				c := int(ghCnt(e))
+				r.Upper += c
+				r.Count += c
+				r.Saturated = r.Saturated || c == ghCntMax
+			}
+			if e := (lw >> (2 * ghEntryBits)) & ghEntryMask; e != 0 && ghFP(e) == fp && g.live(g.real(e, ep), window, now) {
+				c := int(ghCnt(e))
+				r.Upper += c
+				r.Count += c
+				r.Saturated = r.Saturated || c == ghCntMax
+			}
 		}
 	}
 	if r.Upper == 0 {

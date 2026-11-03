@@ -44,18 +44,27 @@ var bucketBase = func() (b [48]uint8) {
 
 type register [nBuckets]uint64
 
+// unpack, pack, hot and viewOf write the layout of bucketBits and
+// bucketShift out in literals; TestRegisterLayoutLiterals holds them to it.
 func unpack(w1 uint64) (r register) {
-	for j := range r {
-		r[j] = w1 >> bucketShift[j] & (1<<bucketBits[j] - 1)
-	}
+	r[0] = w1 & 0x1F
+	r[1] = (w1 >> 5) & 0x1F
+	r[2] = (w1 >> 10) & 0x3F
+	r[3] = (w1 >> 16) & 0x7F
+	r[4] = (w1 >> 23) & 0xFF
+	r[5] = (w1 >> 31) & 0xFF
+	r[6] = (w1 >> 39) & 0x1FF
 	return r
 }
 
 func (r *register) pack() (w uint64) {
-	for j, c := range r {
-		w |= c << bucketShift[j]
-	}
-	return w
+	return r[0] |
+		r[1]<<5 |
+		r[2]<<10 |
+		r[3]<<16 |
+		r[4]<<23 |
+		r[5]<<31 |
+		r[6]<<39
 }
 
 // add puts n events into bucket j, spilling into older buckets when it is
@@ -168,12 +177,13 @@ func hot(w1 uint64) bool {
 	if isHot(w1) {
 		return false // a hot entry has no saturation of its own (its sat unit says what is missing)
 	}
-	for j := range nBuckets {
-		if w1>>bucketShift[j]&(1<<bucketBits[j]-1) >= satPerUnit {
-			return true
-		}
-	}
-	return false
+	return w1&0x1F >= satPerUnit ||
+		(w1>>5)&0x1F >= satPerUnit ||
+		(w1>>10)&0x3F >= satPerUnit ||
+		(w1>>16)&0x7F >= satPerUnit ||
+		(w1>>23)&0xFF >= satPerUnit ||
+		(w1>>31)&0xFF >= satPerUnit ||
+		(w1>>39)&0x1FF >= satPerUnit
 }
 
 // bump counts one event at now in the register of the slot at word index i,
@@ -280,6 +290,9 @@ func (f *Filter) strayed(i int, tg uint64) bool {
 // horizon (for eviction scoring).
 func (f *Filter) mass(id, w1, last, now uint64) uint64 {
 	if age(now, last) > f.horizon {
+		return 0
+	}
+	if !isHot(w1) && w1&regMask == 0 {
 		return 0
 	}
 	v, ok := f.viewOf(id, w1, last)

@@ -129,3 +129,59 @@ func TestCountsLastTouchWhole(t *testing.T) {
 		}
 	}
 }
+
+// TestRegisterLayoutLiterals: unpack, pack, hot and viewOf write the
+// register's layout out in literals; they must decode as bucketBits and
+// bucketShift say, on words with each bucket at its edges (0, 1,
+// satPerUnit-1, satPerUnit and its largest value, the others random) and
+// on 1,000,000 random registers.
+func TestRegisterLayoutLiterals(t *testing.T) {
+	f, err := New(Config{Capacity: 64, Horizon: time.Minute, Resolution: time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := func(w uint64) (r register) {
+		for j := range r {
+			r[j] = w >> bucketShift[j] & (1<<bucketBits[j] - 1)
+		}
+		return r
+	}
+	rng := rand.New(rand.NewPCG(9, 9))
+	var words []uint64
+	for j := range nBuckets {
+		for _, c := range []uint64{0, 1, satPerUnit - 1, satPerUnit, 1<<bucketBits[j] - 1} {
+			var w uint64
+			for k := range nBuckets {
+				if k != j {
+					w |= rng.Uint64N(1<<bucketBits[k]) << bucketShift[k]
+				}
+			}
+			words = append(words, w|c<<bucketShift[j])
+		}
+	}
+	for range 1_000_000 {
+		words = append(words, rng.Uint64()&regMask)
+	}
+	for _, w := range words {
+		r := ref(w)
+		if got := unpack(w); got != r {
+			t.Fatalf("unpack(%#x) = %v, want %v", w, got, r)
+		}
+		if got := r.pack(); got != w&regMask {
+			t.Fatalf("pack(%v) = %#x, want %#x", r, got, w&regMask)
+		}
+		want := false
+		for _, c := range r {
+			want = want || c >= satPerUnit
+		}
+		want = want && !isHot(w)
+		if got := hot(w); got != want {
+			t.Fatalf("hot(%#x) = %v, want %v", w, got, want)
+		}
+		if !isHot(w) {
+			if v, ok := f.viewOf(1, w, 1000); !ok || register(v.c) != r {
+				t.Fatalf("viewOf(%#x).c = %v (ok %v), want %v", w, v.c, ok, r)
+			}
+		}
+	}
+}

@@ -2,7 +2,9 @@ package temporalfilter
 
 import (
 	"fmt"
+	"math/rand/v2"
 	"runtime"
+	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -279,6 +281,41 @@ func BenchmarkVelocityCountHot(b *testing.B) {
 	c.report(b)
 }
 
+// VelocityCount on keys with history: 4,096 keys with 40 events each at
+// seeded random times over the horizon, touched in time order, so their
+// registers have several buckets filled and the estimate interpolates;
+// windows of 1, 5, 15, 30 and 60 s at the horizon's end. Its median moves
+// about 17% with placement alone: read it with verify/lrab.sh.
+func BenchmarkVelocityCountSpread(b *testing.B) {
+	const n = 1 << 12
+	key := [16]byte{3, 1, 4, 1, 5, 9, 2, 6}
+	f, err := New(Config{Capacity: 1 << 16, Horizon: time.Minute, Resolution: time.Millisecond, Key: &key})
+	if err != nil {
+		b.Fatal(err)
+	}
+	r := rand.New(rand.NewPCG(5, 5))
+	hs := make([]uint64, n)
+	type event struct{ at, h uint64 }
+	var evs []event
+	for i := range hs {
+		hs[i] = f.HashUint64(uint64(i) + 77)
+		for range 40 {
+			evs = append(evs, event{1 + r.Uint64N(60_000), hs[i]})
+		}
+	}
+	sort.Slice(evs, func(i, j int) bool { return evs[i].at < evs[j].at })
+	for _, e := range evs {
+		f.TouchAt(e.h, 60_000, e.at)
+	}
+	wins := []uint64{1_000, 5_000, 15_000, 30_000, 60_000}
+	b.ResetTimer()
+	c := startCycles()
+	for i := 0; i < b.N; i++ {
+		f.VelocityCountAt(hs[i&(n-1)], wins[i%5], 60_000)
+	}
+	c.report(b)
+}
+
 // Lookup of keys never inserted, on a cold table at 85% slot load.
 func BenchmarkContainsAbsent(b *testing.B) {
 	f, _ := benchFilter(b)
@@ -361,8 +398,8 @@ func BenchmarkHitChurned(b *testing.B) {
 // A filter with the overflow table live: 256k keys on a counter clock,
 // flooded with 8x its slots of one-off keys of 4 touches each, so the stash
 // drops histories into the overflow table, then 32k keys touched once. Each
-// benchmark builds its own once per process and mutates it; the setup takes
-// seconds, so neither is in PERF_BENCH.
+// benchmark builds its own once per process (two of them mutate it); the
+// setup takes seconds, so none is in PERF_BENCH.
 type overflowBench struct {
 	once sync.Once
 	f    *Filter
@@ -403,7 +440,7 @@ func (o *overflowBench) filter(b *testing.B) (*Filter, []uint64, uint64) {
 	return o.f, o.hs, o.now
 }
 
-var checkOverflow, touchOverflow overflowBench
+var checkOverflow, touchOverflow, countOverflow overflowBench
 
 // CheckAndTouch on recent keys while the overflow table is live, all inside
 // one horizon; seen/op is the share answered Seen.
@@ -435,6 +472,18 @@ func BenchmarkTouchOverflowLive(b *testing.B) {
 	}
 	c.report(b)
 	b.ReportMetric(float64(seen)/float64(b.N), "seen/op")
+}
+
+// CountAt on the same recent keys with the overflow table live: every call
+// reads the key's two buckets there.
+func BenchmarkCountOverflowLive(b *testing.B) {
+	f, hs, now := countOverflow.filter(b)
+	b.ResetTimer()
+	c := startCycles()
+	for i := 0; i < b.N; i++ {
+		f.CountAt(hs[i&(len(hs)-1)], 60_000, now)
+	}
+	c.report(b)
 }
 
 // A table far larger than any cache (32M keys, ~600 MB; this host's L3 is

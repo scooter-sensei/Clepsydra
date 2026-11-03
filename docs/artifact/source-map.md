@@ -6,7 +6,14 @@ Every file of `go/`, by category. Go builds a package from one directory and req
 
 | File | What it holds | Paper |
 |---|---|---|
-| `filter.go` | the table and slot words, placement and the cuckoo search, eviction, the stash, relocation, the wait room and Background placer, ConstantTime, the decay sweep, every public operation and counter | [§3](../paper/03-design.md), [§4](../paper/04-operations.md), [§5](../paper/05-concurrency.md) |
+| `filter.go` | `Config`, `Filter`, `New`, `Result`, the clock and the hashes, every public single-key operation and every counter | [§4.1](../paper/04-operations.md#41-operations) |
+| `slots.go` | the slot words' layout, the claim stripes and their move counts, lookups (`locate`, `find`), fingerprint, tag and line arithmetic | [§3.1](../paper/03-design.md#31-table-and-slot-layout), [§5](../paper/05-concurrency.md) |
+| `touch.go` | the touch and count paths: `touch`, `count`, the stable lookup, the overflow read (`addSketch`), realign and its 16-byte CAS | [§4.1](../paper/04-operations.md#41-operations), [§5.5](../paper/05-concurrency.md#55-sixteen-byte-cas) |
+| `cuckoo.go` | a first touch's placement: `miss`, the cuckoo search and the eviction policy (`claimAt`), install, relocation, abandon | [§3.3](../paper/03-design.md#33-placement) |
+| `stash.go` | the eviction stash and the wait room: put, wait, recall, the Background placer goroutine | [§3.3](../paper/03-design.md#33-placement), [§3.4](../paper/03-design.md#34-background-placement) |
+| `ct.go` | ConstantTime's pads, and the placement steps the pads and the Background placer both run | [§3.8](../paper/03-design.md#38-constant-time-mode), [§3.4](../paper/03-design.md#34-background-placement) |
+| `batch.go` | the batches: prefetched chunks of keys, each touched from the slot found | [§4.1](../paper/04-operations.md#41-operations) |
+| `decay.go` | the decay sweep: `ContinuousDecay` and its inline steps | [§3.9](../paper/03-design.md#39-reclaiming-slots) |
 | `register.go` | the velocity register: packing, advance, spill, the estimate | [§3.7](../paper/03-design.md#37-the-velocity-register) |
 | `hot.go` | hot entries: promotion, the lock-free add, demotion, reclaim | [§3.6](../paper/03-design.md#36-hot-entries) |
 | `ghost.go` | the overflow ghost table: two buckets, floors, epochs | [§3.5](../paper/03-design.md#35-the-overflow-table) |

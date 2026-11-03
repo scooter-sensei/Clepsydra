@@ -121,3 +121,12 @@ func TestGhostReadAcrossEpoch(t *testing.T) {
 		}
 	}
 }
+
+// TestGhostScanLayout: estimate's scan decodes three entries per word
+// (entries 1 and 2 beside the floors in word 0, three in each of words
+// 1-7), so the layout must keep three entries of ghEntryBits to a word.
+func TestGhostScanLayout(t *testing.T) {
+	if ghPerWord != 3 || 3*ghEntryBits > 64 {
+		t.Fatalf("ghPerWord %d, ghEntryBits %d: estimate's scan decodes three entries per word", ghPerWord, ghEntryBits)
+	}
+}

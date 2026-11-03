@@ -409,10 +409,13 @@ func (f *Filter) viewOf(id, w1, last uint64) (v view, ok bool) {
 		return view{}, false
 	}
 	v.e = regEpoch(w1, f.unitOf(last))
-	r := unpack(w1 & regMask)
-	for j := range r {
-		v.c[j] = r[j]
-	}
+	v.c[0] = w1 & 0x1F
+	v.c[1] = (w1 >> 5) & 0x1F
+	v.c[2] = (w1 >> 10) & 0x3F
+	v.c[3] = (w1 >> 16) & 0x7F
+	v.c[4] = (w1 >> 23) & 0xFF
+	v.c[5] = (w1 >> 31) & 0xFF
+	v.c[6] = (w1 >> 39) & 0x1FF
 	v.sat = satNone
 	return v, true
 }

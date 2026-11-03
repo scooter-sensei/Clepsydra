@@ -9,10 +9,13 @@
 # placement moves a benchmark by a few percent (S54, S55). Here every arm is
 # built at <layouts> layouts: never-run pad functions of 0 to 24 statements
 # (~0-450 bytes), sized independently by a hash of the layout's seed and the
-# pad's place, at the top of filter.go, hot.go and register.go and inside
-# filter.go before touch, miss and locate, kept in the binary by an init
-# behind an environment variable no run sets; layout k has the same pads in
-# every arm. Rounds alternate layouts and arms (in reverse order on even
+# pad's place, at the top of filter.go, hot.go and register.go and before
+# touch, miss and locate, in whichever file defines each, kept in the binary
+# by an init behind an environment variable no run sets; layout k has the
+# same pads in every arm. Each arm's first layout prints where its pads went;
+# a point no file holds (or that two files define) stops the run, and
+# LRAB_SKIP_MISSING=1 skips it instead (shown as -), for arms from before a
+# function existed. Rounds alternate layouts and arms (in reverse order on even
 # rounds). Per benchmark it prints the first arm's median and its spread
 # over the layouts (max/min of its per-layout medians), how much of the
 # readings' variation is the layouts' own (sd layout, the code's placement)
@@ -53,14 +56,23 @@ padn() { # padn <seed> <point>: a pad of 0 to 24 statements, independent across 
 	echo $((((x >> 16) ^ x) % 25 * ($1 > 0)))
 }
 
-pad() { # pad <dir> <seed>: the layout's pad functions
-	local d=$1 seed=$2 i=0 p f fn calls=""
-	# The top of three files, and inside filter.go before three functions of the call path
-	# (with their doc comments), so the hot code moves within files too.
-	for p in filter.go: hot.go: register.go: filter.go:touch filter.go:miss filter.go:locate; do
-		i=$((i + 1)) f=${p%%:*} fn=${p#*:}
-		[ -f "$d/$f" ] || continue
-		awk -v n="$(padn "$seed" $i)" -v name="layoutPad$i" -v fn="$fn" '
+pad() { # pad <dir> <seed>: the layout's pad functions; PADS says where each went
+	local d=$1 seed=$2 i=0 p f fn why calls=""
+	PADS=""
+	# The top of three files, and before three functions of the call path (with
+	# their doc comments) in whichever file defines each, so the hot code moves
+	# within files too.
+	for p in filter.go: hot.go: register.go: :touch :miss :locate; do
+		i=$((i + 1)) f=${p%%:*} fn=${p#*:} why=""
+		if [ -n "$fn" ]; then
+			f=$(cd "$d" && grep -l -- "^func (f \*Filter) $fn(" *.go | paste -sd ' ' -) || true
+			[ -n "$f" ] || why="no file defines $fn"
+			[ "${f#* }" = "$f" ] || why="more than one file defines $fn: $f"
+		elif [ ! -f "$d/$f" ]; then
+			why="no file $f"
+		fi
+		if [ -z "$why" ]; then
+			awk -v n="$(padn "$seed" $i)" -v name="layoutPad$i" -v fn="$fn" '
 			function padf() {
 				printf "\n// %s (verify/lrab.sh): %d statements, never run.\n//\n//go:noinline\nfunc %s(x uint64) uint64 {\n", name, n, name
 				for (j = 0; j < n; j++) printf "\tx = x*0x9e3779b97f4a7c15 ^ x>>%d\n", 7 + (j * 5) % 50
@@ -73,7 +85,18 @@ pad() { # pad <dir> <seed>: the layout's pad functions
 			fn != "" && !done && $0 ~ "^func \\(f \\*Filter\\) " fn "\\(" { padf(); done = 1 }
 			fn != "" { printf "%s", buf; buf = ""; print }
 			END { printf "%s", buf }' "$d/$f" >"$d/$f.lr" && mv "$d/$f.lr" "$d/$f"
-		if grep -q "^func layoutPad$i(" "$d/$f"; then calls="$calls\t\t_ = layoutPad$i(1)\n"; fi
+			grep -q "^func layoutPad$i(" "$d/$f" || why="$f has no import block to pad after"
+		fi
+		if [ -z "$why" ]; then
+			calls="$calls\t\t_ = layoutPad$i(1)\n"
+			PADS="$PADS $f${fn:+:$fn}"
+		elif [ "${LRAB_SKIP_MISSING:-0}" = 1 ]; then
+			PADS="$PADS -${fn:+:$fn}"
+			[ -n "$fn" ] || PADS="$PADS:$f"
+		else
+			echo "lrab.sh: $why" >&2
+			exit 1
+		fi
 	done
 	printf "package %s\n\nimport \"os\"\n\nfunc init() {\n\tif os.Getenv(\"LRAB_NEVER\") == \"never\" {\n$calls\t}\n}\n" \
 		"$(awk '/^package /{print $2; exit}' "$d/filter.go")" >"$d/zzlayout.go"
@@ -88,6 +111,7 @@ for a in "$@"; do
 	for k in $(seq $((${SEED0:-0} + 1)) $((${SEED0:-0} + K))); do
 		cp -r "$tmp/src-$n" "$tmp/t"
 		pad "$tmp/t" "$k"
+		[ "$k" != $((${SEED0:-0} + 1)) ] || echo "$n pads:$PADS"
 		(cd "$tmp/t" && go test -c -o "$tmp/$n-$k.test" .)
 		rm -rf "$tmp/t"
 	done

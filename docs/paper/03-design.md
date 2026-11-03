@@ -47,7 +47,7 @@ Evictions at 97.8% load are not forced by the layout: the load threshold for 2 c
 
 **The problem.** With oldest-first eviction, an attacker can spray fresh keys to overflow the table and **evict their own repeat key**: a fraud-evasion vector none of the prior structures discuss.
 
-**The policy** (implemented in `go/filter.go`). When both candidate lines are full, evict the slot with the fewest events in the horizon, oldest on ties. One-off keys churn among themselves.
+**The policy** (implemented in `go/cuckoo.go`, `claimAt`). When both candidate lines are full, evict the slot with the fewest events in the horizon, oldest on ties. One-off keys churn among themselves.
 
 **Evidence.** `TestSprayCannotEvictRepeatOffender` sprays 20× capacity of one-off keys. All 50 offender keys keep their exact count of 20. The same test **fails with oldest-first eviction** (`go/verify/experiments/oldest-first-eviction.patch`) [E1]. Insert latency was first reported as unchanged; re-measured, miss-insert went from 83 to 110 ns (`verify/ab.sh 564d865 eeb5521 'CheckAndTouchMissInsert$'`) [S6, X19].
 

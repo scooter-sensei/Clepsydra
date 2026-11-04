@@ -107,6 +107,42 @@ func (g *ghost) slot(id uint64) (base [2]int, nb int, fp uint64) {
 	return base, nb, fp
 }
 
+// SWAR match of a word's three entries against a fingerprint. ghLanes has
+// bit 0 of each lane; ghFPMask is the three fingerprint fields (bits 7-20,
+// 28-41, 49-62); ghFPLow is 0x3FFF in each field; ghCarry is the bit above
+// each field (21, 42, 63), which the mask clears.
+const (
+	ghLanes  = 1 | 1<<ghEntryBits | 1<<(2*ghEntryBits)
+	ghFPLow  = (1<<ghFPBits - 1) << (ghCntBits + ghSlBits) * ghLanes
+	ghFPMask = ghFPLow
+	ghCarry  = 1 << ghEntryBits * ghLanes
+)
+
+// ghMatch returns one bit per lane of w (bit 21k+21 for lane k) whose
+// fingerprint field equals the one replicated in fpRep. x keeps each lane's
+// fingerprint XOR the key's, 0 where they match; 0x3FFF added to a 14-bit
+// field carries into the masked bit above it iff the field is not 0, and
+// with 0x3FFF + 0x3FFF < 2^15 no carry reaches the next lane: exact. An
+// empty entry never matches (fingerprints are never 0).
+func ghMatch(w, fpRep uint64) uint64 {
+	x := (w ^ fpRep) & ghFPMask
+	return ^(x + ghFPLow) & ghCarry
+}
+
+// addMatches adds to r the live entries of word w in lanes m (ghMatch's
+// bits), against epoch ep.
+func (g *ghost) addMatches(r *Result, w, m, ep, window, now uint64) {
+	for ; m != 0; m &= m - 1 {
+		sh := uint(bits.TrailingZeros64(m)) - ghEntryBits // the lane's first bit
+		if e := w >> sh & ghEntryMask; g.live(g.real(e, ep), window, now) {
+			c := int(ghCnt(e))
+			r.Upper += c
+			r.Count += c
+			r.Saturated = r.Saturated || c == ghCntMax
+		}
+	}
+}
+
 // real decodes an entry's slice against epoch ep (newest slice + 1).
 func (g *ghost) real(e, ep uint64) uint64 {
 	cur := ep - 1
@@ -403,6 +439,76 @@ func (g *ghost) estimate(id, window, now uint64) (r Result, ok bool) {
 				r.Upper += c
 				r.Count += c
 				r.Saturated = r.Saturated || c == ghCntMax
+			}
+		}
+	}
+	if r.Upper == 0 {
+		return Result{}, false
+	}
+	r.Seen = r.Count > 0
+	return r, true
+}
+
+// estimateSWAR is estimate with each word's three entries matched at once
+// (ghMatch, addMatches): the same answer (TestGhostScansAgree), kept apart
+// so estimate's code for the touch paths stays as it was (claims S75).
+func (g *ghost) estimateSWAR(id, window, now uint64) (r Result, ok bool) {
+	bases, nb, fp := g.slot(id)
+	var line [2][ghWords]uint64
+	var ep uint64
+	for {
+		ep = g.epoch.Load()
+		if ep == 0 || now > g.until.Load() {
+			return Result{}, false
+		}
+		empty := true
+		for bi, base := range bases[:nb] {
+			for i := range line[bi] {
+				w := atomic.LoadUint64(&g.words[base+i])
+				line[bi][i] = w
+				if w != 0 {
+					empty = false
+				}
+			}
+		}
+		// Both buckets empty: nothing to decode against the wrong epoch, so
+		// no re-check. Only advance's sweep clears an entry, and only a dead one.
+		if empty {
+			return Result{}, false
+		}
+		if testHookGhostRead != nil {
+			testHookGhostRead()
+		}
+		if g.epoch.Load() == ep {
+			break
+		}
+	}
+	// raiseFloor counts a floor before it writes it, and floored is loaded
+	// after the words: a load that holds a floor sees floored > 0.
+	// Entries 1 and 2 share word 0 with the floors; words 1-7 hold three
+	// each (TestGhostScanLayout).
+	hasFloor := g.floored.Load() > 0
+	fpRep := fp * ghLanes << (ghCntBits + ghSlBits) // fp in each lane's fingerprint field
+	for bi := range nb {
+		if hasFloor {
+			if e := line[bi][0] >> g.floorShift(fp) & ghSubMask; e != 0 && g.live(g.real(e, ep), window, now) {
+				c := int(ghCnt(e))
+				r.Upper += c
+				r.Saturated = r.Saturated || c == ghCntMax
+			}
+		}
+		// Entries match by SWAR (ghMatch): word 0's lanes 1 and 2, then
+		// lanes 0-2 of words 1-7; only matching lanes are decoded.
+		if m := ghMatch(line[bi][0], fpRep) &^ (1 << ghEntryBits); m != 0 {
+			g.addMatches(&r, line[bi][0], m, ep, window, now)
+		}
+		for w := 1; w < ghWords; w++ {
+			lw := line[bi][w]
+			if lw == 0 {
+				continue
+			}
+			if m := ghMatch(lw, fpRep); m != 0 {
+				g.addMatches(&r, lw, m, ep, window, now)
 			}
 		}
 	}

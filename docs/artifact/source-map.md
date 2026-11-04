@@ -18,7 +18,8 @@ Every file of `go/`, by category. Go builds a package from one directory and req
 | `hot.go` | hot entries: promotion, the lock-free add, demotion, reclaim | [§3.6](../paper/03-design.md#36-hot-entries) |
 | `ghost.go` | the overflow ghost table: two buckets, floors, epochs | [§3.5](../paper/03-design.md#35-the-overflow-table) |
 | `overflow.go` | the count-min overflow sketch the ghost table replaced, kept for the experiments | [record/decisions.md](../record/decisions.md#overflow) |
-| `go.mod` | the module, `github.com/scooter-sensei/clepsydra/go` | — |
+| `merge.go` | `Merge`: one quiescent filter's keys added to another | [§4.1](../paper/04-operations.md#41-operations) |
+| `go.mod` | the module, `github.com/scooter-sensei/clepsydra/go`: Go 1.24.7 at least, toolchain go1.27.3 | — |
 
 ## Internal packages: `go/internal/`
 
@@ -42,7 +43,7 @@ The head-to-head harness ([head-to-head.md](head-to-head.md)): `trace.go` (part 
 
 | Category | Files |
 |---|---|
-| Smoke and unit | `smoke_test.go` (every public operation once, three configs), `filter_test.go`, `register_test.go`, `disp_test.go` (the displaced bit), `batch_test.go`, `ghost_test.go`, `hot_test.go`, `background_test.go`, `ctwait_test.go` (ConstantTime's waiting keys) |
+| Smoke and unit | `smoke_test.go` (every public operation once, three configs), `filter_test.go`, `register_test.go`, `disp_test.go` (the displaced bit), `batch_test.go`, `ghost_test.go`, `hot_test.go`, `background_test.go`, `ctwait_test.go` (ConstantTime's waiting keys), `merge_test.go` (`Merge`, D24) |
 | Conformance | `conformance_test.go` (`spec/vectors/`, `-update` regenerates them) |
 | Regression of fixed bugs | `regress_test.go`, `dup_test.go`, `reloc_race_test.go`, `abandon_test.go`, `read_race_test.go`, `restore_test.go`, `lost_test.go`, `movecopy_test.go`, `restorewait_test.go` (A37), `mirror_test.go` (A39), `hotdrop_test.go` (A40) |
 | Concurrency races on hooks | `gaprace_test.go` (A21), `roomrace_test.go` (A20, A24), `split_race_test.go` (971dc4a, 64ebd85, A23), `sweep_race_test.go` (A26), `install_race_test.go` (A27), `tagstripe_test.go` (A28–A30), `hotspill_test.go` (A32, A38), `stash_race_test.go` (A6), `cas2_amd64_test.go`, `cas2_other_test.go` (realign both ways, A33) |

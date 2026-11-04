@@ -12,6 +12,7 @@
 | `ContainsAt(h, W, now)` | Read-only freshness check | 1 line |
 | `Touch(key, W) Result`, `Count(key, W) Result` | TouchAndCount / VelocityCount plus the trust flags below | 1 line |
 | `ContinuousDecay()` | Bounded slot reclaimer, paced by the clock (one table pass per horizon, ≤ 4 lines per call; inline on 1/64 of touches, 1 line) | — |
+| `Merge(g) error` | Adds g's keys: a key in both gets the two registers re-bucketed to the newer epoch and summed, and the newer last touch; a key only g holds goes in as a first touch would. Both filters quiescent, same `Config`; g's stash and overflow table are not merged; ConstantTime, Background and hot entries in use are refused [D24] | a pass over both tables |
 
 `*At(hash, windowTicks, nowTicks)` variants take a pre-hashed key and a caller-cached clock (`TouchAt`, `CountAt`, `CheckAndTouchAt`, `TouchAndCountAt`, `VelocityCountAt`). The `*At` methods take a hash from the caller and can't check it: pass them only `Hash`/`HashUint64` values of the same filter.
 

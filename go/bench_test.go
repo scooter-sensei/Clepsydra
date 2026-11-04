@@ -486,6 +486,26 @@ func BenchmarkCountOverflowLive(b *testing.B) {
 	c.report(b)
 }
 
+// The overflow table's add alone: histories spilled straight into a live
+// table (1,024 buckets, two choices, three floors) filled first, then one
+// add a call of one of 65,536 histories (counts 1-4) at a fixed clock:
+// merges, free entries, and floors raised by the lightest when buckets are
+// full.
+func BenchmarkGhostAdd(b *testing.B) {
+	const horizon, now = 60_000, 100_000
+	g := newGhost(1024*ghWords*8, horizon, 2, 3)
+	for i := range uint64(1 << 16) {
+		g.add(mix64(i%(1<<16)+1<<40), 1+i%4, now, false, now)
+	}
+	b.ResetTimer()
+	c := startCycles()
+	for i := 0; i < b.N; i++ {
+		u := uint64(i)
+		g.add(mix64(u%(1<<16)+1<<40), 1+u%4, now, false, now)
+	}
+	c.report(b)
+}
+
 // A table far larger than any cache (32M keys, ~600 MB; this host's L3 is
 // 260 MB), so every lookup is a DRAM miss. Built once and shared.
 const hugeKeys = 1 << 25

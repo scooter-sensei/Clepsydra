@@ -413,6 +413,20 @@ func (f *Filter) HashUint64(k uint64) uint64 {
 	return maphash.Comparable(f.seed, k)
 }
 
+// HashUint64s sets out[i] = f.HashUint64(keys[i]) for every key (out must
+// be at least len(keys)). Under Config.Key it hashes 8 keys at once where
+// the CPU has AVX-512 (siphash.Key.HashUint64s).
+func (f *Filter) HashUint64s(keys, out []uint64) {
+	if f.keyed {
+		f.sip.HashUint64s(keys, out)
+		return
+	}
+	out = out[:len(keys)]
+	for i, k := range keys {
+		out[i] = maphash.Comparable(f.seed, k)
+	}
+}
+
 // Result is the full answer of Touch and Count, including how far it can be
 // trusted. A fail-closed caller (rate limit, abuse check) should treat
 // Saturated as "over any limit above Count" and, while Degraded, a key not

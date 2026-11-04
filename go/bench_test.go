@@ -609,6 +609,34 @@ func BenchmarkHashUint64(b *testing.B) {
 	}
 }
 
+// 64 keys a call under Config.Key, as one HashUint64s batch (8 lanes at a
+// time with AVX-512F, else the scalar hash) or through HashUint64 one at a
+// time.
+func BenchmarkHashUint64s(b *testing.B) {
+	key := [16]byte{1, 2, 3}
+	f, _ := New(Config{Capacity: 1, Horizon: time.Minute, Key: &key})
+	keys, out := make([]uint64, 64), make([]uint64, 64)
+	for i := range keys {
+		keys[i] = mix64(uint64(i))
+	}
+	b.Run("batch64", func(b *testing.B) {
+		for i := range b.N {
+			keys[0] = uint64(i)
+			f.HashUint64s(keys, out)
+			hashSink += out[63]
+		}
+	})
+	b.Run("scalar64", func(b *testing.B) {
+		for i := range b.N {
+			keys[0] = uint64(i)
+			for j, k := range keys {
+				out[j] = f.HashUint64(k)
+			}
+			hashSink += out[63]
+		}
+	})
+}
+
 func BenchmarkHashString(b *testing.B) {
 	key := [16]byte{1, 2, 3}
 	fm, _ := New(Config{Capacity: 1, Horizon: time.Minute})

@@ -215,29 +215,44 @@ outer:
 		var free, live [2]int
 		victim, vb := -1, 0
 		vc, vsl := uint64(ghCntMax+1), uint64(0)
+		// Word by word: one load per word, its entries decoded from it in
+		// order (word 0's first lane holds the floors); a word with every
+		// entry empty is skipped, its first entry free.
 		for bi, base := range bases[:nb] {
 			free[bi] = -1
-			for k := 1; k < ghEntries; k++ {
-				w, sh := g.at(base, k)
+			for wi := range ghWords {
+				w := &g.words[base+wi]
 				old := atomic.LoadUint64(w)
-				e := old >> sh & ghEntryMask
-				if e == 0 || !g.live(g.real(e, ep), g.horizon, now) {
+				k, sh := wi*ghPerWord, uint(0)
+				if wi == 0 {
+					k, sh = 1, ghEntryBits
+				}
+				if old>>sh == 0 {
 					if free[bi] < 0 {
 						free[bi] = k
 					}
 					continue
 				}
-				live[bi]++
-				if ghFP(e) == fp {
-					esl := max(g.real(e, ep), sl)
-					ne := ghEntry(fp, min(ghCntMax, ghCnt(e)+n), esl)
-					if g.epoch.Load() == ep && atomic.CompareAndSwapUint64(w, old, old&^(ghEntryMask<<sh)|ne<<sh) {
-						return
+				for ; sh < ghPerWord*ghEntryBits; k, sh = k+1, sh+ghEntryBits {
+					e := old >> sh & ghEntryMask
+					if e == 0 || !g.live(g.real(e, ep), g.horizon, now) {
+						if free[bi] < 0 {
+							free[bi] = k
+						}
+						continue
 					}
-					continue outer
-				}
-				if c := ghCnt(e); c < vc || c == vc && g.real(e, ep) < vsl {
-					victim, vb, vc, vsl = k, bi, c, g.real(e, ep)
+					live[bi]++
+					if ghFP(e) == fp {
+						esl := max(g.real(e, ep), sl)
+						ne := ghEntry(fp, min(ghCntMax, ghCnt(e)+n), esl)
+						if g.epoch.Load() == ep && atomic.CompareAndSwapUint64(w, old, old&^(ghEntryMask<<sh)|ne<<sh) {
+							return
+						}
+						continue outer
+					}
+					if c := ghCnt(e); c < vc || c == vc && g.real(e, ep) < vsl {
+						victim, vb, vc, vsl = k, bi, c, g.real(e, ep)
+					}
 				}
 			}
 		}

@@ -523,7 +523,7 @@ func (f *Filter) ContainsAt(h, window, now uint64) bool {
 		return false
 	}
 	var r Result
-	f.addSketch(&r, h, window, now, false)
+	f.addSketch(&r, h, window, now)
 	return r.Seen
 }
 

@@ -27,7 +27,7 @@ func (f *Filter) count(h, window, now uint64, i0 int) Result {
 		r.Degraded = f.lostRecently(now)
 	}
 	if f.sketchLive(now) {
-		f.addSketch(&r, h, window, now, true) // the count path: SWAR scan (claims S75)
+		f.addSketch(&r, h, window, now)
 	}
 	if f.ct {
 		f.ctEnd(opCount, h, t0, s, pad)
@@ -165,18 +165,11 @@ func (f *Filter) sketchLive(now uint64) bool {
 // same event. Upper takes the overflow's bound, Count the key's own entry
 // (the count-min sketch: the part that clears the noise), and Degraded is
 // set when there is one: the key likely has a dropped history.
-//
-// swar selects the overflow scan's SWAR match (ghost.estimateSWAR): count
-// passes it; the touch paths and ContainsAt keep estimate's per-entry scan.
-func (f *Filter) addSketch(r *Result, h, window, now uint64, swar bool) {
+func (f *Filter) addSketch(r *Result, h, window, now uint64) {
 	var s Result
 	var ok bool
 	if !f.cms {
-		if g := f.gh.Load(); swar {
-			s, ok = g.estimateSWAR(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now)
-		} else {
-			s, ok = g.estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now)
-		}
+		s, ok = f.gh.Load().estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now)
 	} else {
 		s, ok = f.sk.Load().estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now, f.ct)
 	}
@@ -248,7 +241,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 				}
 				held.Unlock()
 				if f.sketchLive(now) {
-					f.addSketch(&r, h, window, now, false)
+					f.addSketch(&r, h, window, now)
 				}
 				return r
 			}
@@ -289,7 +282,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 					continue
 				}
 				if f.sketchLive(now) {
-					f.addSketch(&r, h, window, now, false)
+					f.addSketch(&r, h, window, now)
 				}
 				return r
 			}
@@ -345,7 +338,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 		// clear: a hit already Seen skips the overflow read. ConstantTime
 		// reads the overflow table whatever it holds.
 		if f.sketchLive(now) && (wantCount || !r.Seen || f.ct) {
-			f.addSketch(&r, h, window, now, false)
+			f.addSketch(&r, h, window, now)
 		}
 		return r
 	}

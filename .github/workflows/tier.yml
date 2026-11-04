@@ -24,7 +24,7 @@ jobs:
           fetch-depth: 0 # regression --full and stress replay old commits
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24.7" # verify/expected/ was produced with it
+          go-version: "1.27.3" # go.mod's toolchain; verify/expected/ (made with 1.24.7) is byte-identical under it
           cache-dependency-path: go/go.mod
       - env:
           TIER: ${{ inputs.tier || 'stress' }}

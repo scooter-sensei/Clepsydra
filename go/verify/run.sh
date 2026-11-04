@@ -9,7 +9,8 @@
 #
 # Deterministic results depend only on the code and the Go version: the
 # workloads are seeded and single-threaded, and the integer-key hash is
-# unkeyed. Expected files were produced on linux/amd64 with Go 1.24.7; other
+# unkeyed. Expected files were produced on linux/amd64 with Go 1.24.7, and Go
+# 1.27.3 (go.mod's toolchain) reproduces them byte for byte; other
 # architectures may differ (Go may fuse floating-point multiply-adds there).
 # linux/arm64 under qemu-user matched them (GOARCH=arm64
 # GOFLAGS=-exec=qemu-aarch64 ./test.sh regression, at a6f7ea6).

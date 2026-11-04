@@ -71,12 +71,13 @@ func (f *Filter) slotWords(i int, fpd, tg uint64) (w0, w1 uint64, ok bool) {
 	if i < 0 {
 		return 0, 0, false
 	}
-	w0 = atomic.LoadUint64(&f.words[i])
-	w1 = atomic.LoadUint64(&f.words[i+1])
+	w := f.words[i : i+2 : i+2] // one bounds check for the three loads
+	w0 = atomic.LoadUint64(&w[0])
+	w1 = atomic.LoadUint64(&w[1])
 	if w0>>47 != fpd || w1>>tagShift != tg {
 		return w0, w1, false
 	}
-	if a := atomic.LoadUint64(&f.words[i]); a != w0 && f.unitOf(a&tsMask) != f.unitOf(w0&tsMask) {
+	if a := atomic.LoadUint64(&w[0]); a != w0 && f.unitOf(a&tsMask) != f.unitOf(w0&tsMask) {
 		return w0, w1, false
 	}
 	return w0, w1, true

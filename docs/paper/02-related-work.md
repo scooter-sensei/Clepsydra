@@ -38,6 +38,7 @@ The survey below was written at the first prototype (commits 564d865–eeb5521) 
 |---|---|
 | Cain–Sanders–Wormald and Fernholz–Ramachandran load thresholds; Walzer, [arXiv 2307.00644](https://arxiv.org/abs/2307.00644) §1.1.1 (0.89701, 0.95915, 0.98037 for 2, 3, 4 slots) | the 98.04% load threshold of 2 choices × 4 slots [D10] |
 | Storing which bucket choice was used (a known way to extend a fingerprint by a bit) | the displaced bit ([3 Design](03-design.md)) |
+| Morton filters' overflow tracking array (Breslow and Jayasena, [PVLDB 11(9), 2018](https://www.vldb.org/pvldb/vol11/p1041-breslow.pdf)): a bit per block recording that a fingerprint could not be placed by its first hash, so most negative lookups read one bucket | the displacement bitmap, a bit per line consulted by reads only and cleared by the decay sweep under counts, so a concurrent read can tell a clear it overlapped (experiment E46, held; A43) |
 | SALSA's counter merging | the escalating sketch idea, not run ([record/decisions.md](../record/decisions.md)) |
 | Resiliency of Sketch-based Security, [arXiv 2503.11777](https://arxiv.org/abs/2503.11777) (LSB sharing, late merging of saturated counters) | considered for the overflow sketch, not run |
 | Cold Filter, [Zhou et al., SIGMOD 2018](https://minlanyu.seas.harvard.edu/writeup/sigmod18.pdf) (a two-layer prefilter keeping cold items out of the counting sketch) | `SpillMin` is the cheap version of its idea |

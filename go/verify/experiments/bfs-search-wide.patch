@@ -1,0 +1,146 @@
+diff --git a/cuckoo.go b/cuckoo.go
+index b7db94b..3711657 100644
+--- a/cuckoo.go
++++ b/cuckoo.go
+@@ -2,6 +2,7 @@ package temporalfilter
+ 
+ import (
+ 	"runtime"
++	"sync"
+ 	"sync/atomic"
+ )
+ 
+@@ -156,18 +157,11 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
+ 		// budget shrinks as recent searches fail, so an overfull table falls
+ 		// back to cheap eviction instead of searching in vain.
+ 		p := f.pressure.Load()
+-		budget := 8 + int(uint64(relocBudget-8)*(pressureOne-uint64(p))>>pressureShift)
++		budget := 8 + int(uint64(bfsBudget-8)*(pressureOne-uint64(p))>>pressureShift)
+ 		f.warmAlts(lines)
+-		for depth := 0; depth <= relocDepth; depth++ {
+-			for li, line := range lines {
+-				base := int(line * wordsPerLine)
+-				for s := 0; s < wordsPerLine; s += 2 {
+-					if f.relocate(base+s, line, mine[li], w1, now, depth, &budget, nil, put) {
+-						f.pressure.Store(p - p>>3) // EWMA toward "searches succeed"
+-						return base + s
+-					}
+-				}
+-			}
++		if i := f.bfs(lines, mine, w1, now, &budget, put); i >= 0 {
++			f.pressure.Store(p - p>>3) // EWMA toward "searches succeed"
++			return i
+ 		}
+ 		f.pressure.Store(p - p>>3 + pressureOne>>3) // EWMA toward "searches fail"
+ 		victim, vli, victimScore, victimW0, victimW1 := -1, 0, uint64(1<<64-1), uint64(0), uint64(0)
+@@ -229,6 +223,80 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
+ 	}
+ }
+ 
++// bfsNode is a slot the BFS reached: its word index, the queue index of the
++// slot whose entry would move into its line (-1: a root), and its depth.
++type bfsNode struct {
++	i      int
++	parent int32
++	depth  int32
++}
++
++// bfsBudget and bfsDepth: the BFS's own budget (pressure-scaled as the
++// DFS's was) and depth bound (lab E5b).
++const (
++	bfsBudget = 2 * relocBudget
++	bfsDepth  = relocDepth + 1
++	bfsMax    = wordsPerLine + wordsPerLine/2*bfsBudget
++)
++
++var bfsPool = sync.Pool{New: func() any { return new([bfsMax]bfsNode) }}
++
++// bfs searches for a cuckoo path breadth-first (lab E5): each entry's
++// alternate line is scanned once, one budget unit per line, up to depth
++// relocDepth below the roots (lines' slots). The first line with a free or
++// expired slot ends the search, and the path is executed back to front by
++// relocate along it; if a slot on it changed meanwhile the search goes on.
++// It returns the root slot the new entry took, or -1.
++func (f *Filter) bfs(lines, mine [2]uint64, w1, now uint64, budget *int, put putFunc) int {
++	qp := bfsPool.Get().(*[bfsMax]bfsNode)
++	defer bfsPool.Put(qp)
++	q := qp[:0]
++	for _, line := range lines {
++		base := int(line * wordsPerLine)
++		for s := 0; s < wordsPerLine; s += 2 {
++			q = append(q, bfsNode{i: base + s, parent: -1})
++		}
++	}
++	var path [bfsDepth + 1]int
++	for h := 0; h < len(q) && *budget > 0; h++ {
++		n := q[h]
++		w0 := atomic.LoadUint64(&f.words[n.i])
++		if w0 == 0 {
++			continue
++		}
++		*budget--
++		a := f.alt(uint64(n.i/wordsPerLine), w0>>48)
++		base := int(a * wordsPerLine)
++		free := false
++		for s := 0; s < wordsPerLine; s += 2 {
++			if d0 := atomic.LoadUint64(&f.words[base+s]); d0 == 0 || age(now, d0&tsMask) > f.horizon {
++				free = true
++				break
++			}
++		}
++		if free {
++			k, x := int(n.depth), h
++			for j := k; j >= 0; j-- {
++				path[j] = q[x].i
++				if j > 0 {
++					x = int(q[x].parent)
++				}
++			}
++			root, li, big := path[0], x/(wordsPerLine/2), bfsBudget
++			if f.relocate(root, uint64(root/wordsPerLine), mine[li], w1, now, k, &big, nil, put, path[1:k+1]) {
++				return root
++			}
++			continue
++		}
++		if int(n.depth) < bfsDepth && len(q)+wordsPerLine/2 <= bfsMax {
++			for s := 0; s < wordsPerLine; s += 2 {
++				q = append(q, bfsNode{i: base + s, parent: int32(h), depth: n.depth + 1})
++			}
++		}
++	}
++	return -1
++}
++
+ // putFunc installs a new key's entry in slot i (word index) if the slot still
+ // holds w0/w1, as install does; a Background placement's put also takes the
+ // key out of the wait room as it goes in.
+@@ -327,7 +395,10 @@ func (f *Filter) install(i int, w0, w1, mine0, mine1 uint64) bool {
+ // matches) looks again, and an evictor leaves the source alone. parent is
+ // the move whose copy (mine0; mine1 is busy, the parent publishes it) this
+ // one installs, nil for a new key, which put installs.
+-func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budget *int, parent *moveCount, put putFunc) bool {
++//
++// path, if not nil, is the BFS's path below i (one slot per level): each
++// level tries the alternate line's free slots, then only the path's slot.
++func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budget *int, parent *moveCount, put putFunc, path []int) bool {
+ 	w0 := atomic.LoadUint64(&f.words[i])
+ 	if w0 == 0 {
+ 		return false
+@@ -389,10 +460,16 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
+ 		}
+ 		m.done.Add(1)
+ 	}
++	if depth > 0 && path != nil {
++		if d := path[0]; d >= base && d < base+wordsPerLine && f.relocate(d, a, moved, busy, now, depth-1, budget, m, nil, path[1:]) {
++			return replace(d)
++		}
++		return false
++	}
+ 	if depth > 0 {
+ 		f.warmLine(a) // the next lines of a's entries together, not one miss at a time
+ 		for s := 0; s < wordsPerLine; s += 2 {
+-			if f.relocate(base+s, a, moved, busy, now, depth-1, budget, m, nil) {
++			if f.relocate(base+s, a, moved, busy, now, depth-1, budget, m, nil, nil) {
+ 				return replace(base + s)
+ 			}
+ 		}

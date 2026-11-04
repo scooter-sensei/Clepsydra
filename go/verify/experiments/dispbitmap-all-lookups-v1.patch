@@ -1,0 +1,664 @@
+diff --git a/batch.go b/batch.go
+index f57a128..b6e27d1 100644
+--- a/batch.go
++++ b/batch.go
+@@ -87,7 +87,9 @@ func (f *Filter) warm(hs []uint64, at *[batchChunk]int) {
+ 	for k, h := range hs {
+ 		p, fp := lines[k], fingerprint(h)
+ 		if at[k] = f.find(p, fp<<1, tag(h)); at[k] < 0 {
+-			lines[m], m = f.alt(p, fp), m+1 // m <= k: the entries before k's are used
++			if a := f.alt(p, fp); f.mayDisp(a) { // else the touch's lookup skips it too
++				lines[m], m = a, m+1 // m <= k: the entries before k's are used
++			}
+ 		}
+ 	}
+ 	cpu.PrefetchLines(w, &lines[0], m)
+diff --git a/cuckoo.go b/cuckoo.go
+index b7db94b..d821e8f 100644
+--- a/cuckoo.go
++++ b/cuckoo.go
+@@ -301,6 +301,9 @@ func (f *Filter) install(i int, w0, w1, mine0, mine1 uint64) bool {
+ 		atomic.StoreUint64(&f.words[i+1], w1) // lost the slot; put word1 back
+ 		return false
+ 	}
++	if mine0&dispBit != 0 { // displaced: the line's disp bit before the entry is published (mayDisp)
++		f.setDisp(uint64(i / wordsPerLine))
++	}
+ 	atomic.StoreUint64(&f.words[i+1], mine1)
+ 	return true
+ }
+diff --git a/decay.go b/decay.go
+index d3751e6..76b6501 100644
+--- a/decay.go
++++ b/decay.go
+@@ -95,4 +95,5 @@ func (f *Filter) sweepLine(line, now uint64) {
+ 		}
+ 		m.done.Add(1)
+ 	}
++	f.sweepDisp(line)
+ }
+diff --git a/disp_bitmap_test.go b/disp_bitmap_test.go
+new file mode 100644
+index 0000000..e8e5996
+--- /dev/null
++++ b/disp_bitmap_test.go
+@@ -0,0 +1,216 @@
++package temporalfilter
++
++import (
++	"os"
++	"sync"
++	"sync/atomic"
++	"testing"
++	"time"
++)
++
++// dispBitsCover reports a line holding a published displaced entry whose
++// disp bit is clear (quiescent table), or -1.
++func dispBitsCover(f *Filter) int {
++	for l := uint64(0); l < f.lines; l++ {
++		base := int(l * wordsPerLine)
++		for s := 0; s < wordsPerLine; s += 2 {
++			w0, w1 := f.words[base+s], f.words[base+s+1]
++			if w0&dispBit != 0 && w1>>tagShift != tagBusy && f.disp[l>>6]&(1<<(l&63)) == 0 {
++				return int(l)
++			}
++		}
++	}
++	return -1
++}
++
++// TestDispBitsCoverDisplaced: after fills, relocations and evictions, every
++// line holding a displaced entry has its disp bit set, and sweeps keep it so.
++func TestDispBitsCoverDisplaced(t *testing.T) {
++	for _, load := range []float64{0.5, 0.9, 0.98, 1.2} {
++		f := newTest(t, 4000, time.Minute)
++		n := int(float64(f.Slots()) * load)
++		for i := range uint64(n) {
++			f.CheckAndTouchAt(mix64(i+1<<40), 0, 60_000)
++		}
++		if l := dispBitsCover(f); l >= 0 {
++			t.Fatalf("load %.2f: line %d holds a displaced entry with its bit clear", load, l)
++		}
++		for l := uint64(0); l < f.lines; l++ {
++			f.sweepLine(l, 60_000)
++		}
++		if l := dispBitsCover(f); l >= 0 {
++			t.Fatalf("load %.2f, after a sweep: line %d holds a displaced entry with its bit clear", load, l)
++		}
++	}
++}
++
++// TestDispClearRacingPlacement: a sweep finds line A's disp bit set and no
++// displaced entry in A (one held once is gone) and clears the bit. Before it
++// looks at A again, K's entry is in A, displaced and published, by a writer
++// whose setDisp found the bit still set (it ran before the clear), so the
++// bit is clear while K is there. A lookup of K in that window must read A
++// (the clear is under way: the sequence check), and the sweep must leave
++// the bit set.
++func TestDispClearRacingPlacement(t *testing.T) {
++	f := newTest(t, 1000, time.Minute)
++	const t0 = 60_000
++	var k, p, a uint64
++	for j := uint64(1); ; j++ {
++		h := mix64(j)
++		p = f.primary(h)
++		if a = f.alt(p, fingerprint(h)); a != p {
++			k = h
++			break
++		}
++	}
++	fp, tg := fingerprint(k), tag(k)
++	base := int(a * wordsPerLine)
++	// A held a displaced entry (some other key's) that has since gone.
++	if !f.install(base, 0, 0, 0x4321<<48|dispBit|t0, 0x321<<tagShift|1) {
++		t.Fatal("install failed")
++	}
++	f.abandon(base)
++	if !f.mayDisp(a) {
++		t.Fatal("A's bit not set by a displaced install")
++	}
++	kw1, _ := f.nextReg(0, tg, t0, t0, true)
++	fired, found := false, false
++	testHookDispCleared = func(line uint64) {
++		if line != a || fired {
++			return
++		}
++		fired = true
++		atomic.StoreUint64(&f.words[base+2], fp<<48|dispBit|t0) // install's word0, setDisp done before the clear,
++		atomic.StoreUint64(&f.words[base+3], kw1)               // then the publication
++		found = f.ContainsAt(k, f.horizon, t0)
++	}
++	defer func() { testHookDispCleared = nil }()
++	f.sweepDisp(a)
++	if !fired {
++		t.Fatal("the sweep did not clear A's bit")
++	}
++	if !found {
++		t.Error("a lookup during the clear missed K in A")
++	}
++	if !f.mayDisp(a) || !f.ContainsAt(k, f.horizon, t0) {
++		t.Error("the sweep left A's bit clear with K displaced in it")
++	}
++}
++
++// TestDispBitmapSweepRace: keys never touched again are read continuously
++// while inserts keep relocating them and a sweeper keeps clearing the disp
++// bits of lines with no displaced entry. The table is filled to 80% with
++// live keys, then churned (20 batches of 15% of the slots, keys at a clock
++// a horizon behind, which the sweeps' clock expires and clears, displaced
++// entries and all), then filled to 98%. No read may miss a key that is
++// there, and no line may be left with a displaced entry and a clear bit.
++func TestDispBitmapSweepRace(t *testing.T) {
++	rounds := 20
++	if testing.Short() {
++		rounds = 4
++	}
++	const capN, keys, readers = 4000, 256, 4
++	var bad, reads, clears, evs atomic.Int64
++	for round := range rounds {
++		f := newTest(t, capN, time.Minute)
++		at := 4 * f.horizon
++		salt := uint64(round) << 40
++		hs := make([]uint64, keys)
++		for i := range hs {
++			hs[i] = mix64(salt + uint64(i))
++			f.CheckAndTouchAt(hs[i], 0, at)
++		}
++		var stop atomic.Bool
++		var wg sync.WaitGroup
++		for w := range readers {
++			wg.Add(1)
++			go func() {
++				defer wg.Done()
++				for i := w; !stop.Load(); i++ {
++					h := hs[i%keys]
++					reads.Add(1)
++					if !f.ContainsAt(h, 60_000, at) {
++						if bad.Add(1) <= 5 {
++							t.Logf("round %d key %d read absent", round, i%keys)
++						}
++					}
++				}
++			}()
++		}
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			for !stop.Load() {
++				for l := uint64(0); l < f.lines && !stop.Load(); l++ {
++					f.sweepLine(l, at)
++				}
++			}
++		}()
++		c := uint64(0)
++		fill := func(n int, now uint64) {
++			for range n {
++				c++
++				f.CheckAndTouchAt(mix64(salt+1<<36+c), 0, now)
++			}
++		}
++		fill(int(float64(f.Slots())*0.80)-keys, at)
++		for range 20 {
++			fill(f.Slots()*15/100, at-f.horizon-1)
++			for l := uint64(0); l < f.lines; l++ {
++				f.sweepLine(l, at)
++			}
++		}
++		fill(int(float64(f.Slots())*0.18), at)
++		evs.Add(int64(f.evictions.Load()))
++		stop.Store(true)
++		wg.Wait()
++		for i := range f.dispClr {
++			clears.Add(int64(f.dispClr[i].begun.Load()))
++		}
++		if l := dispBitsCover(f); l >= 0 {
++			bad.Add(1)
++			t.Logf("round %d: line %d holds a displaced entry with its bit clear", round, l)
++		}
++	}
++	t.Logf("%d reads, %d clears, %d evictions, %d misses", reads.Load(), clears.Load(), evs.Load(), bad.Load())
++	if clears.Load() == 0 {
++		t.Fatal("no disp bit was cleared: the race was not run")
++	}
++	if bad.Load() > 0 {
++		t.Fatalf("%d reads missed a key that was there", bad.Load())
++	}
++}
++
++// TestDispBitmapSkipRate (TF_EXP=1): the share of absent keys whose
++// alternate line's disp bit is clear, at four slot loads, no sweeps.
++func TestDispBitmapSkipRate(t *testing.T) {
++	if os.Getenv("TF_EXP") == "" {
++		t.Skip("set TF_EXP=1")
++	}
++	const absent = 1 << 20
++	for _, load := range []float64{0.50, 0.85, 0.90, 0.94} {
++		f := newTest(t, 1<<20, time.Minute)
++		n := int(float64(f.Slots()) * load)
++		for i := range uint64(n) {
++			f.CheckAndTouchAt(mix64(i), 0, 1000)
++		}
++		skip, setLines := 0, 0
++		for l := uint64(0); l < f.lines; l++ {
++			if f.disp[l>>6]&(1<<(l&63)) != 0 {
++				setLines++
++			}
++		}
++		for i := range uint64(absent) {
++			h := mix64(1<<40 + i)
++			p := f.primary(h)
++			if f.find(p, fingerprint(h)<<1, tag(h)) >= 0 {
++				continue
++			}
++			if !f.mayDisp(f.alt(p, fingerprint(h))) {
++				skip++
++			}
++		}
++		t.Logf("skiprate load %.2f slots %d keys %d lines-with-bit %.4f absent-skip %d/%d = %.4f",
++			load, f.Slots(), n, float64(setLines)/float64(f.lines), skip, absent, float64(skip)/absent)
++	}
++}
+diff --git a/filter.go b/filter.go
+index 9fe1c40..c935bbf 100644
+--- a/filter.go
++++ b/filter.go
+@@ -138,11 +138,14 @@ type Config struct {
+ // Filter is safe for concurrent use. Hits never lock; first touches of a key
+ // serialize on a striped lock.
+ type Filter struct {
+-	words   []uint64 // 64-byte aligned, len = lines*wordsPerLine
+-	lines   uint64   // any size; indexed by multiply-shift, not masking
+-	horizon uint64   // ticks
+-	unit    uint64   // ticks per velocity register unit (Horizon/unitsPerHorizon)
+-	unitInv uint64   // floor(2^64 / unit) + 1, for unitOf
++	words []uint64 // 64-byte aligned, len = lines*wordsPerLine
++	lines uint64   // any size; indexed by multiply-shift, not masking
++	// disp has one bit per line: the line may hold a displaced entry
++	// (mayDisp). 32 KB per 1M slots (1M slots / 4 per line = 262,144 bits).
++	disp    []uint64
++	horizon uint64 // ticks
++	unit    uint64 // ticks per velocity register unit (Horizon/unitsPerHorizon)
++	unitInv uint64 // floor(2^64 / unit) + 1, for unitOf
+ 	res     time.Duration
+ 	clock   func() uint64
+ 	seed    maphash.Seed
+@@ -175,6 +178,10 @@ type Filter struct {
+ 	// lookup's miss is trusted only if none overlapped it (lookupStable),
+ 	// and an evictor leaves a key with one under way alone (claim).
+ 	moves [1 << claimStripeBits]moveCount
++	// dispClr counts, per stripe of lines, clears of a line's disp bit
++	// begun and done (sweepDisp): a lookup trusts a clear bit only if no
++	// clear overlapped its read (mayDisp).
++	dispClr [dispStripes]dispClear
+ 
+ 	sip    siphash.Key
+ 	keyed  bool                       // Config.Key set: hash with sip
+@@ -234,6 +241,11 @@ type Filter struct {
+ // word1, before its hold; testHookHotAdding after bump checks slot i's
+ // words and finds a hot pointer, before it adds to the entry.
+ var testHookCopied, testHookVictim, testHookTaken, testHookStamped, testHookPlacing, testHookSweeping func()
++
++// testHookDispCleared runs after a sweep clears a line's disp bit, before
++// it looks at the line again (sweepDisp).
++var testHookDispCleared func(line uint64)
++
+ var testHookPicked, testHookInstalling, testHookBumping, testHookBumped, testHookOpenSeen, testHookSweepSeen, testHookSweepRead, testHookHotAdding func(i int)
+ 
+ // forceCT turns ConstantTime on in every filter (tests: TF_CT=1).
+@@ -308,6 +320,7 @@ func New(cfg Config) (*Filter, error) {
+ 	}
+ 	f.unitInv = ^uint64(0)/f.unit + 1
+ 	f.words = alignedWords(int(lines * wordsPerLine))
++	f.disp = make([]uint64, (lines+63)/64)
+ 	if f.clock == nil {
+ 		base, res := time.Now(), cfg.Resolution
+ 		read := func() uint64 { return uint64(time.Since(base)/res) + 1 }
+@@ -551,7 +564,7 @@ func (f *Filter) Slots() int { return len(f.words) / 2 }
+ // Bytes is the memory the filter holds now: its table, and the stash,
+ // overflow table and hot entries once allocated (each on first use).
+ func (f *Filter) Bytes() int {
+-	n := 8 * len(f.words)
++	n := 8*len(f.words) + 8*len(f.disp) + int(unsafe.Sizeof(f.dispClr))
+ 	for _, s := range [2]*stashTable{f.stash.Load(), f.room.Load()} {
+ 		if s != nil {
+ 			n += len(s.e)*int(unsafe.Sizeof(stashEntry{})) + 8*len(s.wait)
+diff --git a/filter_test.go b/filter_test.go
+index 8787373..d24dcbc 100644
+--- a/filter_test.go
++++ b/filter_test.go
+@@ -405,7 +405,7 @@ func TestMemoryOnFirstUse(t *testing.T) {
+ 		t.Skip("ConstantTime and Background allocate the stash on the first insert that waits for a slot")
+ 	}
+ 	f := newTest(t, 4096, time.Minute)
+-	table := 16 * f.Slots()
++	table := 16*f.Slots() + 8*len(f.disp) + int(unsafe.Sizeof(f.dispClr)) // the table, its disp bits and their clear counts
+ 	for i := range uint64(f.Slots() * 85 / 100) {
+ 		f.TouchAt(mix64(i), 0, 1)
+ 	}
+diff --git a/mirror_test.go b/mirror_test.go
+index 3caf657..25b4179 100644
+--- a/mirror_test.go
++++ b/mirror_test.go
+@@ -40,6 +40,7 @@ func TestMirrorKeyInFoundSlotNotCounted(t *testing.T) {
+ 	// K's entry, displaced, in the slot H was found in.
+ 	kw1, _ := f.nextReg(0, tg, t0, t0, true)
+ 	f.words[i0], f.words[i0+1] = fp<<48|dispBit|t0, kw1
++	f.setDisp(p) // a displaced entry's line has its disp bit (install sets it)
+ 	if f.locate(k, fp, tg) != i0 {
+ 		t.Fatal("K not found in H's old slot")
+ 	}
+diff --git a/slots.go b/slots.go
+index 6d4b62a..8844df0 100644
+--- a/slots.go
++++ b/slots.go
+@@ -120,7 +120,83 @@ func (f *Filter) locateAt(h, fp, tg uint64) (int, uint64) {
+ 	if i := f.find(p, fp<<1, tg); i >= 0 {
+ 		return i, fp << 1
+ 	}
+-	return f.find(f.alt(p, fp), fp<<1|1, tg), fp<<1 | 1
++	if a := f.alt(p, fp); f.mayDisp(a) {
++		return f.find(a, fp<<1|1, tg), fp<<1 | 1
++	}
++	return -1, fp<<1 | 1
++}
++
++// dispStripes is how many stripes of lines dispClr counts clears in.
++const dispStripes = 16
++
++// dispClear: clears of the disp bits of a stripe's lines, begun and done.
++type dispClear struct {
++	begun, done atomic.Uint64
++	_           [48]byte
++}
++
++// mayDisp reports whether line may hold a displaced entry a lookup can
++// match: its disp bit is set, or a clear of its stripe overlapped the bit's
++// read. A writer sets the bit after a displaced word0 is in place and
++// before the entry is published (install), and a clear holds its stripe's
++// count from before it clears the bit until it has looked at the line again
++// and put the bit back if a displaced word0 is there (sweepDisp). So while a
++// published displaced entry is in line, the bit is set or such a clear is
++// under way: done read before the bit and begun read after it then differ.
++// A clear bit with no clear around its read means the line held no
++// published displaced entry at that read, as a scan of the line then would
++// have found.
++func (f *Filter) mayDisp(line uint64) bool {
++	c := &f.dispClr[line&(dispStripes-1)]
++	d := c.done.Load()
++	if atomic.LoadUint64(&f.disp[line>>6])&(1<<(line&63)) != 0 {
++		return true
++	}
++	return c.begun.Load() != d
++}
++
++// setDisp sets line's disp bit. The caller has put a displaced word0 in
++// line and not yet published its entry.
++func (f *Filter) setDisp(line uint64) {
++	p, b := &f.disp[line>>6], uint64(1)<<(line&63)
++	if atomic.LoadUint64(p)&b == 0 {
++		atomic.OrUint64(p, b)
++	}
++}
++
++// holdsDisp reports whether any slot of line has a displaced word0
++// (published or not).
++func (f *Filter) holdsDisp(line uint64) bool {
++	base := int(line * wordsPerLine)
++	w := f.words[base : base+wordsPerLine : base+wordsPerLine]
++	for s := 0; s < wordsPerLine; s += 2 {
++		if atomic.LoadUint64(&w[s])&dispBit != 0 {
++			return true
++		}
++	}
++	return false
++}
++
++// sweepDisp clears line's disp bit if no slot of line holds a displaced
++// word0. The clear is counted (dispClr) from before the bit is cleared
++// until the line has been looked at again, after the clear, and the bit set
++// again if a displaced word0 is there: one put in after the second look
++// sets the bit itself (setDisp follows the word0).
++func (f *Filter) sweepDisp(line uint64) {
++	p, b := &f.disp[line>>6], uint64(1)<<(line&63)
++	if atomic.LoadUint64(p)&b == 0 || f.holdsDisp(line) {
++		return
++	}
++	c := &f.dispClr[line&(dispStripes-1)]
++	c.begun.Add(1)
++	atomic.AndUint64(p, ^b)
++	if testHookDispCleared != nil {
++		testHookDispCleared(line)
++	}
++	if f.holdsDisp(line) {
++		atomic.OrUint64(p, b)
++	}
++	c.done.Add(1)
+ }
+ 
+ // locateBoth is locateAt reading both lines every time (ConstantTime).
+diff --git a/verify/tla.sh b/verify/tla.sh
+index a22d171..a5dbb6f 100755
+--- a/verify/tla.sh
++++ b/verify/tla.sh
+@@ -2,7 +2,7 @@
+ # Model checks of the slot protocol (verify/tla/*.tla) with TLC.
+ #
+ #   verify/tla.sh [model...]   WaitRoom, RegisterEpoch, Relocate, RoomWays, SlotHold,
+-#                              TagStripe, BumpABA, HotEntry
++#                              TagStripe, BumpABA, HotEntry, DispBitmap
+ #                              (default: all): the protocol as committed at
+ #                              a few sizes, then each guard undone (each
+ #                              must break an invariant)
+@@ -219,8 +219,26 @@ hotentry() {
+ 	run violation HotEntry "noClose, spill: KExact" KExact 'Variant = "noClose"' 'Writer = "spill"' "Adders = $(procs a 1)"
+ }
+ 
++# DispBitmap (speed-b1): the displacement bitmap's bit, set by writers
++# placing displaced entries and cleared by the sweep, against lookups that
++# skip a line whose bit is clear.
++dispbitmap() {
++	local inv="NoMiss Covered" sz w sw r n l v
++	for sz in '{"K"} 1 2 2 2' '{"K","X"} 1 2 2 1' '{"K"} 2 2 1 1' '{"K","X"} 2 1 1 1'; do
++		read -r w sw r n l <<<"$sz"
++		w=${w//,/, }
++		run ok DispBitmap "fixed, writers $w, sweepers $sw, rounds $r, sweeps $n, lookups $l" "$inv" 'Variant = "fixed"' "Writers = $w" "Sweepers = $(procs s "$sw")" "Rounds = $r" "Sweeps = $n" "Lookups = $l"
++	done
++	for r in NeverCleared NeverSkipped NeverRaced; do
++		run violation DispBitmap "fixed, reachable: $r" "$r" 'Variant = "fixed"' 'Writers = {"K"}' "Sweepers = $(procs s 1)" 'Rounds = 2' 'Sweeps = 2' 'Lookups = 1'
++	done
++	for v in noSetBefore noSeq noRescan; do
++		run violation DispBitmap "$v: NoMiss" NoMiss "Variant = \"$v\"" 'Writers = {"K"}' "Sweepers = $(procs s 1)" 'Rounds = 2' 'Sweeps = 2' 'Lookups = 1'
++	done
++}
++
+ models=("$@")
+-[ ${#models[@]} -gt 0 ] || models=(WaitRoom RegisterEpoch Relocate RoomWays SlotHold TagStripe BumpABA HotEntry)
++[ ${#models[@]} -gt 0 ] || models=(WaitRoom RegisterEpoch Relocate RoomWays SlotHold TagStripe BumpABA HotEntry DispBitmap)
+ for m in "${models[@]}"; do
+ 	case $m in
+ 	WaitRoom) waitroom ;;
+@@ -231,6 +249,7 @@ for m in "${models[@]}"; do
+ 	TagStripe) tagstripe ;;
+ 	BumpABA) bumpaba ;;
+ 	HotEntry) hotentry ;;
++	DispBitmap) dispbitmap ;;
+ 	*) echo "unknown model $m"; bad=1 ;;
+ 	esac
+ done
+diff --git a/verify/tla/DispBitmap.tla b/verify/tla/DispBitmap.tla
+new file mode 100644
+index 0000000..43f4c58
+--- /dev/null
++++ b/verify/tla/DispBitmap.tla
+@@ -0,0 +1,170 @@
++----------------------------- MODULE DispBitmap -----------------------------
++(***************************************************************************)
++(* The displacement bitmap (experiment speed-b1, go/slots.go: mayDisp,     *)
++(* setDisp, sweepDisp; go/cuckoo.go: install). One table line A, two       *)
++(* slots, and its disp bit: "A may hold a displaced entry". Every entry    *)
++(* modelled lives in A displaced (its primary line is elsewhere), so a     *)
++(* lookup of it that misses its primary line reads A only if mayDisp says  *)
++(* so.                                                                     *)
++(*                                                                         *)
++(* Writers place an entry (K, or another key X) in a free slot of A: word1 *)
++(* busy and word0 taken in one step (the entry is hidden), then the bit    *)
++(* (setDisp: read it, set it if clear), then either publish word1 or       *)
++(* abandon the hidden copy (a relocation whose source changed). A          *)
++(* published entry is later taken out (a relocation's hand-off, an         *)
++(* eviction, the sweep's expiry): word1 busy, then word0 cleared. A        *)
++(* sweeper reads the bit and, if set, scans A slot by slot; finding no     *)
++(* displaced word0 it clears: begun + 1, clear the bit, scan A again, set  *)
++(* the bit back if a displaced word0 is there, done + 1. A reader looks K  *)
++(* up: done, the bit, begun; it reads A (slot by slot) unless the bit is   *)
++(* clear and begun = done.                                                 *)
++(*                                                                         *)
++(* Variant: "fixed" is the protocol as in the patch. "noSetBefore": the    *)
++(* writer publishes before it sets the bit. "noSeq": the reader trusts a   *)
++(* clear bit without the clear counts. "noRescan": the sweeper does not    *)
++(* look at A again after clearing. Invariants: NoMiss (a lookup that       *)
++(* starts while K's entry is published and ends before it is taken out     *)
++(* finds it), Covered (a published entry in A has the bit set or a clear   *)
++(* under way). Reachable (each must be violated): NeverCleared (a sweep    *)
++(* clears the bit), NeverSkipped (a lookup skips A), NeverRaced (a lookup  *)
++(* reads A only because a clear overlapped its read of the bit).           *)
++(***************************************************************************)
++EXTENDS Integers, FiniteSets, TLC
++
++CONSTANTS Variant, Writers, Sweepers, Rounds, Sweeps, Lookups
++
++S == 1..2
++
++(* --algorithm DispBitmap
++variables
++  w0 = [j \in S |-> "free"],   \* word0: "free", or the key whose displaced word0 is there
++  pub = [j \in S |-> FALSE],   \* word1 published (not busy): a lookup can match the slot
++  bit = FALSE,                 \* A's disp bit
++  begun = 0, done = 0,         \* clears of the bits of A's stripe, begun and done
++  removals = 0,                \* K's published entries taken out (ghost)
++  missed = FALSE, cleared = FALSE, skipped = FALSE, raced = FALSE;
++
++define
++  KVisible == \E j \in S : w0[j] = "K" /\ pub[j]
++  NoMiss == ~missed
++  Covered == (\E j \in S : w0[j] /= "free" /\ pub[j]) => (bit \/ begun /= done)
++  NeverCleared == ~cleared
++  NeverSkipped == ~skipped
++  NeverRaced == ~raced
++end define;
++
++fair process writer \in Writers
++variables r = 0, slot = 1;
++begin
++w_top:
++  if r >= Rounds then goto w_end; end if;
++w_take:                         \* install: word1 busy, word0 CAS (hidden)
++  with s \in {x \in S : w0[x] = "free"} do
++    w0[s] := self;
++    slot := s;
++  end with;
++  if Variant = "noSetBefore" then goto n_pub; end if;
++w_load:                         \* setDisp
++  if bit then goto w_pub; end if;
++w_or:
++  bit := TRUE;
++w_pub:
++  either
++    pub[slot] := TRUE;
++    goto w_hold;
++  or
++    w0[slot] := "free";            \* abandon the hidden copy
++    goto w_next;
++  end either;
++n_pub:                          \* noSetBefore: publish, then the bit
++  either
++    pub[slot] := TRUE;
++  or
++    w0[slot] := "free";
++    goto w_next;
++  end either;
++n_load:
++  if bit then goto w_hold; end if;
++n_or:
++  bit := TRUE;
++w_hold:                         \* taken out: word1 busy...
++  pub[slot] := FALSE;
++  if self = "K" then removals := removals + 1; end if;
++w_free:                         \* ...then word0 cleared or replaced
++  w0[slot] := "free";
++w_next:
++  r := r + 1;
++  goto w_top;
++w_end:
++  skip;
++end process;
++
++fair process sweeper \in Sweepers
++variables n = 0, seen = FALSE;
++begin
++s_top:
++  if n >= Sweeps then goto s_end; end if;
++s_bit:
++  seen := FALSE;
++  if ~bit then goto s_next; end if;
++s_pre1:                         \* holdsDisp, a slot at a time
++  if w0[1] /= "free" then goto s_next; end if;
++s_pre2:
++  if w0[2] /= "free" then goto s_next; end if;
++s_begun:
++  begun := begun + 1;
++s_and:
++  bit := FALSE;
++  cleared := TRUE;
++  if Variant = "noRescan" then goto s_done; end if;
++s_re1:
++  if w0[1] /= "free" then seen := TRUE; end if;
++s_re2:
++  if w0[2] /= "free" then seen := TRUE; end if;
++s_or:
++  if seen then bit := TRUE; end if;
++s_done:
++  done := done + 1;
++s_next:
++  n := n + 1;
++  seen := FALSE;
++  goto s_top;
++s_end:
++  skip;
++end process;
++
++fair process reader = "reader"
++variables k = 0, vis = FALSE, rem = 0, d = 0, b = FALSE, g = 0, found = FALSE;
++begin
++r_top:
++  if k >= Lookups then goto r_end; end if;
++r_start:                        \* K's primary line missed
++  vis := KVisible;
++  rem := removals;
++  found := FALSE;
++r_done:                         \* mayDisp: done, the bit, begun
++  d := done;
++r_bit:
++  b := bit;
++r_begun:
++  g := begun;
++  if ~b /\ (Variant = "noSeq" \/ g = d) then
++    skipped := TRUE;
++    goto r_check;
++  end if;
++r_race:
++  if ~b then raced := TRUE; end if;
++r_s1:                           \* find, a slot at a time
++  if w0[1] = "K" /\ pub[1] then found := TRUE; end if;
++r_s2:
++  if w0[2] = "K" /\ pub[2] then found := TRUE; end if;
++r_check:
++  if vis /\ removals = rem /\ ~found then missed := TRUE; end if;
++  k := k + 1;
++  vis := FALSE || rem := 0 || d := 0 || b := FALSE || g := 0 || found := FALSE;  \* forget: fewer states
++  goto r_top;
++r_end:
++  skip;
++end process;
++end algorithm; *)
++=============================================================================

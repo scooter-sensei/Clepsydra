@@ -1,0 +1,41 @@
+diff --git a/cuckoo.go b/cuckoo.go
+index b7db94b..69cebf7 100644
+--- a/cuckoo.go
++++ b/cuckoo.go
+@@ -14,6 +14,11 @@ const (
+ 	relocBudget   = 500
+ 	pressureShift = 16
+ 	pressureOne   = 1 << pressureShift
++	// saturated: from this pressure on (about 21 failed searches in a row)
++	// an insert evicts without searching, except 1 in probeEvery, whose
++	// search tells when the table has room again (lab E6).
++	saturated  = pressureOne - pressureOne/16
++	probeEvery = 16
+ )
+ 
+ // noStripe, as claimAt's stripe: the caller holds no claim stripe.
+@@ -157,8 +162,11 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
+ 		// back to cheap eviction instead of searching in vain.
+ 		p := f.pressure.Load()
+ 		budget := 8 + int(uint64(relocBudget-8)*(pressureOne-uint64(p))>>pressureShift)
+-		f.warmAlts(lines)
+-		for depth := 0; depth <= relocDepth; depth++ {
++		search := p < saturated || mine[0]>>48%probeEvery == 0
++		if search {
++			f.warmAlts(lines)
++		}
++		for depth := 0; search && depth <= relocDepth; depth++ {
+ 			for li, line := range lines {
+ 				base := int(line * wordsPerLine)
+ 				for s := 0; s < wordsPerLine; s += 2 {
+@@ -169,7 +177,9 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
+ 				}
+ 			}
+ 		}
+-		f.pressure.Store(p - p>>3 + pressureOne>>3) // EWMA toward "searches fail"
++		if search {
++			f.pressure.Store(p - p>>3 + pressureOne>>3) // EWMA toward "searches fail"
++		}
+ 		victim, vli, victimScore, victimW0, victimW1 := -1, 0, uint64(1<<64-1), uint64(0), uint64(0)
+ 		for li, line := range lines {
+ 			base := int(line * wordsPerLine)

@@ -22,7 +22,7 @@ Ticks count from the filter's own start, not an epoch: a slot keeps 46 bits of t
 
 ### Hashing
 
-`Hash` and `HashUint64` are keyed: a random per-filter seed, or SipHash-2-4 under `Config.Key` ([6 Security](06-security.md)). Keyed hashing costs +3 ns per integer key with the seed and +15 ns with SipHash [S26].
+`Hash` and `HashUint64` are keyed: a random per-filter seed, or SipHash-2-4 under `Config.Key` ([6 Security](06-security.md)). Keyed hashing costs +3 ns per integer key with the seed and +15 ns with SipHash [S26]. `HashUint64s(keys, out)` hashes many integer keys, each `out[i]` equal to `HashUint64(keys[i])` [D25]; under `Config.Key` on a CPU with AVX-512F it runs SipHash on 8 keys at once [S74], for callers that hash a batch before `CheckAndTouchBatch`.
 
 ### Counters for operators
 

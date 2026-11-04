@@ -1,0 +1,134 @@
+diff --git a/lab_ttc_test.go b/lab_ttc_test.go
+new file mode 100644
+index 0000000..649140f
+--- /dev/null
++++ b/lab_ttc_test.go
+@@ -0,0 +1,60 @@
++package temporalfilter
++
++import (
++	"math"
++	"os"
++	"slices"
++	"testing"
++	"time"
++)
++
++// TestLabTimeToCount (lab E12; TF_LAB=1) scores TimeToCountAt against exact
++// event times on tfbench's velocity workload.
++func TestLabTimeToCount(t *testing.T) {
++	if os.Getenv("TF_LAB") == "" {
++		t.Skip("TF_LAB=1")
++	}
++	f, err := New(Config{Capacity: 4096, Horizon: time.Minute, Resolution: time.Millisecond})
++	if err != nil {
++		t.Fatal(err)
++	}
++	h := f.Ticks(time.Minute)
++	key := func(k int) uint64 { return mix64(uint64(k) + 1) }
++	ns := []int{2, 5, 10, 50}
++	errs := make([][]float64, len(ns))
++	miss := make([]int, len(ns))
++	velWorkload(func(k int, at uint64) { f.CheckAndTouchAt(key(k), 0, at) }, func(k int, ts []uint64, _ int, now uint64) {
++		for i, n := range ns {
++			if len(ts) < n || now-ts[len(ts)-n] > h {
++				continue
++			}
++			exact := ts[len(ts)-1] - ts[len(ts)-n]
++			if exact == 0 {
++				continue
++			}
++			est, ok := f.TimeToCountAt(key(k), n, now)
++			if !ok {
++				miss[i]++
++				continue
++			}
++			errs[i] = append(errs[i], math.Abs(float64(est)-float64(exact))/float64(exact))
++		}
++	})
++	for i, n := range ns {
++		e := errs[i]
++		slices.Sort(e)
++		if len(e) == 0 {
++			t.Logf("n=%d: no queries", n)
++			continue
++		}
++		t.Logf("n=%-3d queries %7d  median rel err %.4f  p90 %.4f  mean %.4f  not ok %d", n, len(e), e[len(e)/2], e[len(e)*9/10], mean(e), miss[i])
++	}
++}
++
++func mean(x []float64) float64 {
++	s := 0.0
++	for _, v := range x {
++		s += v
++	}
++	return s / float64(len(x))
++}
+diff --git a/timetocount.go b/timetocount.go
+new file mode 100644
+index 0000000..3c87c87
+--- /dev/null
++++ b/timetocount.go
+@@ -0,0 +1,62 @@
++package temporalfilter
++
++// TimeToCountAt estimates how long key h's last n events took: the ticks
++// from its n-th newest event within the horizon to its newest (its last
++// touch; 0 for n = 1). It scans the register at its own epoch, newest
++// bucket first, as estimate reads it: the newest bucket's first event is at
++// the last touch and its other events are spread uniformly back to the
++// bucket's start; in an older bucket [lo, hi) of c events the r-th newest
++// sits at its expected order statistic hi - r/(c+1)*(hi-lo). ok is false if
++// h is unseen or its register holds fewer than n events within the horizon.
++// The overflow table is not read, and ConstantTime does not pad it (lab E12).
++func (f *Filter) TimeToCountAt(h uint64, n int, now uint64) (ticks uint64, ok bool) {
++	if n < 1 {
++		return 0, false
++	}
++	w0, w1, src := f.read(h, now, -1)
++	last := w0 & tsMask
++	if src == 0 || age(now, last) > f.horizon {
++		return 0, false
++	}
++	if n == 1 {
++		return 0, true
++	}
++	v, ok := f.viewOf(f.stashID(h, fingerprint(h), tag(h)), w1, last)
++	if !ok {
++		return 0, false
++	}
++	unit := float64(f.unit)
++	oldest := float64(now) - float64(f.horizon)
++	top := float64(v.e+1) * unit
++	newest, need := true, n
++	for j := range nBuckets {
++		lo := float64(bucketStart(v.e, j)) * unit
++		c := int(v.c[j])
++		hi := top
++		top = lo
++		if c == 0 {
++			continue
++		}
++		var t float64
++		switch {
++		case newest:
++			newest = false
++			hi = max(lo, min(float64(last), hi))
++			if need > c {
++				need -= c
++				continue
++			}
++			t = hi - float64(need-1)/float64(c)*(hi-lo)
++		case need > c:
++			need -= c
++			continue
++		default:
++			t = hi - float64(need)/float64(c+1)*(hi-lo)
++		}
++		if t < oldest {
++			return 0, false
++		}
++		return uint64(max(0, float64(last)-t) + 0.5), true
++	}
++	return 0, false
++}

@@ -41,6 +41,12 @@ func (f *Filter) count(h, window, now uint64, i0 int) Result {
 // without its stripe (the caller may hold it). If it can't be found, the
 // answer fails closed.
 func (f *Filter) estimateAt(h, w1, last, now, window uint64, sat bool) Result {
+	if !isHot(w1) {
+		// A register's estimate never fails and reads no id (viewOf
+		// needs it only for a hot entry): the loop's first answer.
+		r, _ := f.estimate(0, w1, last, now, window, sat)
+		return r
+	}
 	fp, tg := fingerprint(h), tag(h)
 	id := f.stashID(h, fp, tg)
 	for range 8 {
@@ -244,7 +250,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 			}
 			fpd = w0 >> 47
 		}
-		if first && !ct {
+		if first && !ct && i0 >= 0 { // (slotWords of no slot is no match: skip the call)
 			if _, _, ok := f.slotWords(i0, fp<<1, tg); ok { // warm finds a key undisplaced in its primary line
 				i, fpd = i0, fp<<1
 			}
@@ -293,7 +299,12 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 		var w1, ref uint64
 		var over, ok bool
 		nu, lu := f.unitOf(now), f.unitOf(last)
-		if old, far, wait := f.farAhead(i, nu, lu, stale); wait {
+		var old uint64
+		var far, wait bool
+		if nu > lu { // else farAhead's answer is (0, false, false): skip the call
+			old, far, wait = f.farAhead(i, nu, lu, stale)
+		}
+		if wait {
 			runtime.Gosched()
 			continue // another touch is realigning the slot
 		} else if far {

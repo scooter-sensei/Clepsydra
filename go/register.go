@@ -292,14 +292,34 @@ func (f *Filter) mass(id, w1, last, now uint64) uint64 {
 	if age(now, last) > f.horizon {
 		return 0
 	}
-	if !isHot(w1) && w1&regMask == 0 {
+	if isHot(w1) {
+		v, ok := f.viewOf(id, w1, last)
+		if !ok {
+			return 0
+		}
+		return f.viewMass(&v, now)
+	}
+	// Not hot: viewMass's walk without the view, each counter read from
+	// word1 in place (viewOf's layout); with only bucket 0 filled, bucket 0
+	// alone (estimate's early case).
+	reg := w1 & regMask
+	if reg == 0 {
 		return 0
 	}
-	v, ok := f.viewOf(id, w1, last)
-	if !ok {
+	e := regEpoch(w1, f.unitOf(last))
+	oldest := int64(now-min(now, f.horizon)) / int64(f.unit) // as viewMass
+	if e+1 <= oldest {
 		return 0
 	}
-	return f.viewMass(&v, now)
+	if reg>>bucketBits0 == 0 {
+		return reg
+	}
+	n, top := reg&(1<<bucketBits0-1), bucketStart(e, 0)
+	for j := 1; j < nBuckets && top > oldest; j++ {
+		n += reg >> bucketShift[j] & (1<<bucketBits[j] - 1)
+		top = bucketStart(e, j)
+	}
+	return n
 }
 
 // viewMass is mass for a register state already read.

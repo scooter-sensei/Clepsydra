@@ -1,0 +1,89 @@
+diff --git a/batch.go b/batch.go
+index f57a128..b9b7c73 100644
+--- a/batch.go
++++ b/batch.go
+@@ -11,6 +11,12 @@ import (
+ // (see warm). out must be at least len(hs).
+ func (f *Filter) CheckAndTouchBatch(hs []uint64, window, now uint64, out []bool) {
+ 	out = out[:len(hs)]
++	if f.batchSmall() {
++		for i, h := range hs {
++			out[i] = f.touch(h, window, now, false, -1).Seen
++		}
++		return
++	}
+ 	var at [batchChunk]int
+ 	for lo := 0; lo < len(hs); lo += batchChunk {
+ 		hi := min(lo+batchChunk, len(hs))
+@@ -26,6 +32,13 @@ func (f *Filter) CheckAndTouchBatch(hs []uint64, window, now uint64, out []bool)
+ // len(hs).
+ func (f *Filter) TouchAndCountBatch(hs []uint64, window, now uint64, seen []bool, counts []int) {
+ 	seen, counts = seen[:len(hs)], counts[:len(hs)]
++	if f.batchSmall() {
++		for i, h := range hs {
++			r := f.touch(h, window, now, true, -1)
++			seen[i], counts[i] = r.Seen, r.Count
++		}
++		return
++	}
+ 	var at [batchChunk]int
+ 	for lo := 0; lo < len(hs); lo += batchChunk {
+ 		hi := min(lo+batchChunk, len(hs))
+@@ -41,6 +54,12 @@ func (f *Filter) TouchAndCountBatch(hs []uint64, window, now uint64, seen []bool
+ // overlapped misses of CheckAndTouchBatch. counts must be at least len(hs).
+ func (f *Filter) VelocityCountBatch(hs []uint64, window, now uint64, counts []int) {
+ 	counts = counts[:len(hs)]
++	if f.batchSmall() {
++		for i, h := range hs {
++			counts[i] = f.count(h, window, now, -1).Count
++		}
++		return
++	}
+ 	var at [batchChunk]int
+ 	for lo := 0; lo < len(hs); lo += batchChunk {
+ 		hi := min(lo+batchChunk, len(hs))
+@@ -51,6 +70,15 @@ func (f *Filter) VelocityCountBatch(hs []uint64, window, now uint64, counts []in
+ 	}
+ }
+ 
++// batchGateBytes: on tables this small or smaller the batches skip warm
++// (lab E3: on the lab host warm's lookup pass cost 1.13-1.31x a plain loop
++// on tables of 256 KiB-2 MiB, and saved 0.92-0.40x from 4 MiB up).
++const batchGateBytes = 2 << 20
++
++// batchSmall reports whether the table is small enough that a batch runs
++// its keys one by one, without warm (ConstantTime keeps warm).
++func (f *Filter) batchSmall() bool { return !f.ct && len(f.words)*8 <= batchGateBytes }
++
+ // batchChunk is how many keys warm overlaps (S48: 32 beat 64 on tables
+ // near the last-level cache's size and matched it past them).
+ const batchChunk = 32
+diff --git a/bench_test.go b/bench_test.go
+index 632d092..4291a7f 100644
+--- a/bench_test.go
++++ b/bench_test.go
+@@ -216,6 +216,24 @@ func BenchmarkCheckAndTouchBatch(b *testing.B) {
+ 	c.report(b)
+ }
+ 
++// CheckAndTouchBatch on a 1 MiB table, one that fits the cache (lab E3).
++func BenchmarkCheckAndTouchBatchSmall(b *testing.B) {
++	const keys = 1 << 20 / 16 * 85 / 100
++	f, _ := New(Config{Capacity: keys, Horizon: time.Minute})
++	hs := make([]uint64, 32768)
++	for i := range hs {
++		hs[i] = mix64(uint64(i) + 77)
++		f.CheckAndTouchAt(hs[i], 0, 1000)
++	}
++	w := f.Ticks(30 * time.Second)
++	out := make([]bool, 64)
++	b.ResetTimer()
++	for i := 0; i < b.N; i += 64 {
++		lo := i & (len(hs) - 1)
++		f.CheckAndTouchBatch(hs[lo:lo+64], w, 2000+uint64(i>>10), out)
++	}
++}
++
+ func BenchmarkTouchAndCountBatch(b *testing.B) {
+ 	f, hs := benchFilter(b)
+ 	w := f.Ticks(30 * time.Second)

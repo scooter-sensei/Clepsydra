@@ -138,11 +138,14 @@ type Config struct {
 // Filter is safe for concurrent use. Hits never lock; first touches of a key
 // serialize on a striped lock.
 type Filter struct {
-	words   []uint64 // 64-byte aligned, len = lines*wordsPerLine
-	lines   uint64   // any size; indexed by multiply-shift, not masking
-	horizon uint64   // ticks
-	unit    uint64   // ticks per velocity register unit (Horizon/unitsPerHorizon)
-	unitInv uint64   // floor(2^64 / unit) + 1, for unitOf
+	words []uint64 // 64-byte aligned, len = lines*wordsPerLine
+	lines uint64   // any size; indexed by multiply-shift, not masking
+	// disp has one bit per line: the line may hold a displaced entry
+	// (mayDisp). 32 KB per 1M slots (1M slots / 4 per line = 262,144 bits).
+	disp    []uint64
+	horizon uint64 // ticks
+	unit    uint64 // ticks per velocity register unit (Horizon/unitsPerHorizon)
+	unitInv uint64 // floor(2^64 / unit) + 1, for unitOf
 	res     time.Duration
 	clock   func() uint64
 	seed    maphash.Seed
@@ -175,6 +178,10 @@ type Filter struct {
 	// lookup's miss is trusted only if none overlapped it (lookupStable),
 	// and an evictor leaves a key with one under way alone (claim).
 	moves [1 << claimStripeBits]moveCount
+	// dispClr counts, per stripe of lines, clears of a line's disp bit
+	// begun and done (sweepDisp): a lookup trusts a clear bit only if no
+	// clear overlapped its read (mayDisp).
+	dispClr [dispStripes]dispClear
 
 	sip    siphash.Key
 	keyed  bool                       // Config.Key set: hash with sip
@@ -234,6 +241,11 @@ type Filter struct {
 // word1, before its hold; testHookHotAdding after bump checks slot i's
 // words and finds a hot pointer, before it adds to the entry.
 var testHookCopied, testHookVictim, testHookTaken, testHookStamped, testHookPlacing, testHookSweeping func()
+
+// testHookDispCleared runs after a sweep clears a line's disp bit, before
+// it looks at the line again (sweepDisp).
+var testHookDispCleared func(line uint64)
+
 var testHookPicked, testHookInstalling, testHookBumping, testHookBumped, testHookOpenSeen, testHookSweepSeen, testHookSweepRead, testHookHotAdding func(i int)
 
 // forceCT turns ConstantTime on in every filter (tests: TF_CT=1).
@@ -308,6 +320,7 @@ func New(cfg Config) (*Filter, error) {
 	}
 	f.unitInv = ^uint64(0)/f.unit + 1
 	f.words = alignedWords(int(lines * wordsPerLine))
+	f.disp = make([]uint64, (lines+63)/64)
 	if f.clock == nil {
 		base, res := time.Now(), cfg.Resolution
 		read := func() uint64 { return uint64(time.Since(base)/res) + 1 }
@@ -551,7 +564,7 @@ func (f *Filter) Slots() int { return len(f.words) / 2 }
 // Bytes is the memory the filter holds now: its table, and the stash,
 // overflow table and hot entries once allocated (each on first use).
 func (f *Filter) Bytes() int {
-	n := 8 * len(f.words)
+	n := 8*len(f.words) + 8*len(f.disp) + int(unsafe.Sizeof(f.dispClr))
 	for _, s := range [2]*stashTable{f.stash.Load(), f.room.Load()} {
 		if s != nil {
 			n += len(s.e)*int(unsafe.Sizeof(stashEntry{})) + 8*len(s.wait)

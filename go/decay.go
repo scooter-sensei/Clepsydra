@@ -95,4 +95,5 @@ func (f *Filter) sweepLine(line, now uint64) {
 		}
 		m.done.Add(1)
 	}
+	f.sweepDisp(line)
 }

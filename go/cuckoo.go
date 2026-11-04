@@ -301,6 +301,9 @@ func (f *Filter) install(i int, w0, w1, mine0, mine1 uint64) bool {
 		atomic.StoreUint64(&f.words[i+1], w1) // lost the slot; put word1 back
 		return false
 	}
+	if mine0&dispBit != 0 { // displaced: the line's disp bit before the entry is published (mayDisp)
+		f.setDisp(uint64(i) / wordsPerLine)
+	}
 	atomic.StoreUint64(&f.words[i+1], mine1)
 	return true
 }

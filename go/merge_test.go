@@ -14,6 +14,9 @@ import (
 // unless flagged Saturated (hot entries are off, so some buckets overflow,
 // in M and S alike).
 func TestMerge(t *testing.T) {
+	if forceCT || forceBG {
+		t.Skip("Merge refuses ConstantTime and Background filters (TestMergeRefuses)")
+	}
 	cfg := Config{Capacity: 4096, Horizon: time.Minute, Resolution: time.Millisecond, Hot: -1}
 	mk := func() *Filter {
 		f, err := New(cfg)

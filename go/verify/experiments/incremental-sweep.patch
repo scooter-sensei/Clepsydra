@@ -1,0 +1,186 @@
+diff --git a/ghost.go b/ghost.go
+index 4bb6d06..1cdff19 100644
+--- a/ghost.go
++++ b/ghost.go
+@@ -2,6 +2,7 @@ package temporalfilter
+ 
+ import (
+ 	"math/bits"
++	"runtime"
+ 	"sync"
+ 	"sync/atomic"
+ )
+@@ -67,6 +68,58 @@ type ghost struct {
+ 	until    atomic.Uint64 // tick before which an entry may be live
+ 	sat      atomic.Bool   // some entry saturated (count is a floor)
+ 	floored  atomic.Uint64 // histories that left to a bucket's floor
++	// The sweep trails the epoch (lab E11): during slice epoch-1 every add
++	// clears ghSweepStep buckets from cursor; swept counts buckets done.
++	cursor atomic.Uint64
++	swept  atomic.Uint64
++}
++
++// ghSweepStep is how many buckets each add sweeps.
++const ghSweepStep = 4
++
++// sweepWord clears word i's entries (and floors, in a bucket's first word)
++// decoded against ep as of a slice before ns-2: dead by slice ns. With
++// check, a write commits only while ep is the epoch.
++func (g *ghost) sweepWord(i int, ep, ns uint64, check bool) {
++	for {
++		old := atomic.LoadUint64(&g.words[i])
++		nw := old
++		for k := range ghPerWord {
++			sh, n, mask := uint(k)*ghEntryBits, 1, uint64(ghEntryMask)
++			if k == 0 && i%ghWords == 0 { // the floors, each with its own slice
++				n, mask = ghSubMax, ghSubMask
++			}
++			for range n {
++				if e := old >> sh & mask; e != 0 && g.real(e, ep)+2 < ns {
++					nw &^= mask << sh
++				}
++				sh += ghSubBits
++			}
++		}
++		if nw == old || check && g.epoch.Load() != ep {
++			return
++		}
++		if atomic.CompareAndSwapUint64(&g.words[i], old, nw) {
++			return
++		}
++	}
++}
++
++// sweepStep clears the next ghSweepStep buckets' entries that died when
++// this slice began. They decode as dead until the epoch moves on, and
++// advance finishes the slice's sweep before it does.
++func (g *ghost) sweepStep() {
++	c := g.cursor.Add(ghSweepStep) - ghSweepStep
++	if c >= g.nb {
++		return
++	}
++	end := min(c+ghSweepStep, g.nb)
++	if ep := g.epoch.Load(); ep != 0 {
++		for i := c * ghWords; i < end*ghWords; i++ {
++			g.sweepWord(int(i), ep, ep-1, true)
++		}
++	}
++	g.swept.Add(end - c)
+ }
+ 
+ // newGhost sizes the table to bytes (rounded down to whole buckets).
+@@ -154,6 +207,7 @@ func (g *ghost) add(id, n, last uint64, sat bool, now uint64) {
+ 		n, sat = ghCntMax, true
+ 		g.sat.Store(true)
+ 	}
++	g.sweepStep()
+ 	if u := sl*g.sliceLen + g.sliceLen - 1 + g.horizon; g.until.Load() < u {
+ 		for {
+ 			cur := g.until.Load()
+@@ -282,29 +336,29 @@ func (g *ghost) advance(ns uint64) {
+ 		return
+ 	}
+ 	if ep != 0 {
+-		for i := range g.words {
+-			for {
+-				old := atomic.LoadUint64(&g.words[i])
+-				nw := old
+-				for k := range ghPerWord {
+-					sh, n, mask := uint(k)*ghEntryBits, 1, uint64(ghEntryMask)
+-					if k == 0 && i%ghWords == 0 { // the floors, each with its own slice
+-						n, mask = ghSubMax, ghSubMask
+-					}
+-					for range n {
+-						if e := old >> sh & mask; e != 0 && g.real(e, ep)+2 < ns {
+-							nw &^= mask << sh
+-						}
+-						sh += ghSubBits
+-					}
+-				}
+-				if nw == old || atomic.CompareAndSwapUint64(&g.words[i], old, nw) {
+-					break
+-				}
++		// Finish this slice's sweep (what died when it began): the buckets
++		// no add has claimed, then wait for the adds still sweeping theirs.
++		cur := ep - 1
++		if c := g.cursor.Swap(g.nb); c < g.nb {
++			for i := c * ghWords; i < g.nb*ghWords; i++ {
++				g.sweepWord(int(i), ep, cur, false)
++			}
++			g.swept.Add(g.nb - c)
++		}
++		for g.swept.Load() < g.nb {
++			runtime.Gosched()
++		}
++		if ns > cur+1 { // more than one slice (an idle gap): everything dead by ns
++			for i := range g.words {
++				g.sweepWord(i, ep, ns, false)
+ 			}
+ 		}
+ 	}
++	// The epoch first: an add that claims a bucket of the new slice's sweep
++	// decodes against the new epoch.
+ 	g.epoch.Store(ns + 1)
++	g.swept.Store(0)
++	g.cursor.Store(0)
+ }
+ 
+ // testHookGhostRead, if set, runs after estimate loads its buckets, before
+diff --git a/lab_sweep_test.go b/lab_sweep_test.go
+new file mode 100644
+index 0000000..4ef13d7
+--- /dev/null
++++ b/lab_sweep_test.go
+@@ -0,0 +1,52 @@
++package temporalfilter
++
++import (
++	"os"
++	"slices"
++	"testing"
++	"time"
++)
++
++// TestLabSweepLatency (lab E11; TF_LAB=1) floods a filter of 256K keys'
++// capacity with 4-event keys across 7 slices of the overflow table and
++// times every TouchAt after the first slice (the tables allocated and full;
++// lab E11b), and logs the largest calls with their slice and offset in it.
++func TestLabSweepLatency(t *testing.T) {
++	if os.Getenv("TF_LAB") == "" {
++		t.Skip("TF_LAB=1")
++	}
++	f, err := New(Config{Capacity: 1 << 18, Horizon: time.Minute})
++	if err != nil {
++		t.Fatal(err)
++	}
++	h := f.Ticks(time.Minute)
++	const keys = 2 << 20
++	span := h * 7 / 2
++	lat := make([]uint32, 0, 4*keys)
++	at := make([]uint64, 0, 4*keys)
++	sl := (h + 1) / 2
++	for k := range uint64(keys) {
++		x := mix64(k + 1<<50)
++		now := 1 + span*k/keys
++		for range 4 {
++			t0 := time.Now()
++			f.TouchAt(x, h, now)
++			d := uint32(min(time.Since(t0), 1<<31))
++			if now >= sl {
++				lat, at = append(lat, d), append(at, now)
++			}
++		}
++	}
++	idx := make([]int, len(lat))
++	for i := range idx {
++		idx[i] = i
++	}
++	slices.SortFunc(idx, func(a, b int) int { return int(lat[b]) - int(lat[a]) })
++	for _, i := range idx[:10] {
++		t.Logf("top %d ns at slice %d +%.4f of a slice", lat[i], at[i]/sl, float64(at[i]%sl)/float64(sl))
++	}
++	slices.Sort(lat)
++	q := func(p float64) uint32 { return lat[int(p*float64(len(lat)-1))] }
++	t.Logf("calls %d max %d p99.99 %d p99.9 %d p50 %d ns; folded %d floored %d bytes %d",
++		len(lat), lat[len(lat)-1], q(0.9999), q(0.999), q(0.5), f.folded.Load(), f.Floored(), f.Bytes())
++}

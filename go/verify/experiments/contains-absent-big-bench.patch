@@ -1,0 +1,29 @@
+diff --git a/zz_lab_test.go b/zz_lab_test.go
+new file mode 100644
+index 0000000..270d305
+--- /dev/null
++++ b/zz_lab_test.go
+@@ -0,0 +1,23 @@
++package temporalfilter
++
++import (
++	"testing"
++	"time"
++)
++
++// BenchmarkLabContainsAbsentBig (speed lab, not committed): ContainsAbsent's
++// loop on a Capacity-4M table (~75 MiB), past a 32 MiB last level.
++func BenchmarkLabContainsAbsentBig(b *testing.B) {
++	f, err := New(Config{Capacity: 4 << 20, Horizon: time.Minute})
++	if err != nil {
++		b.Fatal(err)
++	}
++	for i := range uint64(4 << 20) {
++		f.CheckAndTouchAt(mix64(i), 0, 1000)
++	}
++	w := f.Ticks(30 * time.Second)
++	b.ResetTimer()
++	for i := 0; i < b.N; i++ {
++		f.ContainsAt(mix64(1<<40+uint64(i)), w, 2000)
++	}
++}

@@ -1,0 +1,155 @@
+diff --git a/batch.go b/batch.go
+index f57a128..f79eef1 100644
+--- a/batch.go
++++ b/batch.go
+@@ -14,7 +14,7 @@ func (f *Filter) CheckAndTouchBatch(hs []uint64, window, now uint64, out []bool)
+ 	var at [batchChunk]int
+ 	for lo := 0; lo < len(hs); lo += batchChunk {
+ 		hi := min(lo+batchChunk, len(hs))
+-		f.warm(hs[lo:hi], &at)
++		f.warm(hs[lo:hi], &at, nil)
+ 		for i := lo; i < hi; i++ {
+ 			out[i] = f.touch(hs[i], window, now, false, at[i-lo]).Seen
+ 		}
+@@ -29,7 +29,7 @@ func (f *Filter) TouchAndCountBatch(hs []uint64, window, now uint64, seen []bool
+ 	var at [batchChunk]int
+ 	for lo := 0; lo < len(hs); lo += batchChunk {
+ 		hi := min(lo+batchChunk, len(hs))
+-		f.warm(hs[lo:hi], &at)
++		f.warm(hs[lo:hi], &at, f.liveGhost(now))
+ 		for i := lo; i < hi; i++ {
+ 			r := f.touch(hs[i], window, now, true, at[i-lo])
+ 			seen[i], counts[i] = r.Seen, r.Count
+@@ -44,13 +44,25 @@ func (f *Filter) VelocityCountBatch(hs []uint64, window, now uint64, counts []in
+ 	var at [batchChunk]int
+ 	for lo := 0; lo < len(hs); lo += batchChunk {
+ 		hi := min(lo+batchChunk, len(hs))
+-		f.warm(hs[lo:hi], &at)
++		f.warm(hs[lo:hi], &at, f.liveGhost(now))
+ 		for i := lo; i < hi; i++ {
+ 			counts[i] = f.count(hs[i], window, now, at[i-lo]).Count
+ 		}
+ 	}
+ }
+ 
++// liveGhost is the ghost overflow table if it is live at now (a count
++// reads it: sketchLive), else nil.
++func (f *Filter) liveGhost(now uint64) *ghost {
++	if f.cms {
++		return nil
++	}
++	if g := f.gh.Load(); g != nil && (f.ct || now <= g.until.Load()) {
++		return g
++	}
++	return nil
++}
++
+ // batchChunk is how many keys warm overlaps (S48: 32 beat 64 on tables
+ // near the last-level cache's size and matched it past them).
+ const batchChunk = 32
+@@ -68,9 +80,22 @@ const batchChunk = 32
+ // In ConstantTime it looks nothing up and prefetches both lines of every
+ // key: its work, outside the calls' pads, doesn't depend on what the table
+ // holds (touchCT reads both lines anyway).
+-func (f *Filter) warm(hs []uint64, at *[batchChunk]int) {
++//
++// g, if not nil, is the live ghost overflow table of a batch that counts
++// (whose every key reads it): warm prefetches each key's buckets there too,
++// beside its primary line.
++func (f *Filter) warm(hs []uint64, at *[batchChunk]int, g *ghost) {
+ 	var lines [2 * batchChunk]uint64
+ 	w := unsafe.Pointer(&f.words[0])
++	if g != nil {
++		var gl [2 * batchChunk]uint64
++		n := 0
++		for _, h := range hs {
++			base, nb, _ := g.slot(f.stashID(h, fingerprint(h), tag(h)))
++			gl[n], gl[n+1], n = uint64(base[0]/ghWords), uint64(base[1]/ghWords), n+nb
++		}
++		cpu.PrefetchLines(unsafe.Pointer(&g.words[0]), &gl[0], n)
++	}
+ 	if f.ct {
+ 		for k, h := range hs {
+ 			p := f.primary(h)
+diff --git a/batch_test.go b/batch_test.go
+index 191bc45..391d050 100644
+--- a/batch_test.go
++++ b/batch_test.go
+@@ -108,7 +108,7 @@ func TestWarmConstantTime(t *testing.T) {
+ 			}
+ 		}
+ 		var at [batchChunk]int
+-		f.warm(hs, &at)
++		f.warm(hs, &at, nil)
+ 		for i, h := range hs {
+ 			want := -1
+ 			if !ct && i%2 == 0 {
+diff --git a/ghost.go b/ghost.go
+index 4bb6d06..56060eb 100644
+--- a/ghost.go
++++ b/ghost.go
+@@ -4,6 +4,9 @@ import (
+ 	"math/bits"
+ 	"sync"
+ 	"sync/atomic"
++	"unsafe"
++
++	"github.com/scooter-sensei/clepsydra/go/internal/cpu"
+ )
+ 
+ // Ghost table: an overflow store that keeps each dropped history as a
+@@ -107,6 +110,14 @@ func (g *ghost) slot(id uint64) (base [2]int, nb int, fp uint64) {
+ 	return base, nb, fp
+ }
+ 
++// prefetch starts the loads of id's buckets (one line each) without
++// waiting for them: a count that reads them next finds them on their way.
++func (g *ghost) prefetch(id uint64) {
++	base, nb, _ := g.slot(id)
++	lines := [2]uint64{uint64(base[0] / ghWords), uint64(base[1] / ghWords)}
++	cpu.PrefetchLines(unsafe.Pointer(&g.words[0]), &lines[0], nb)
++}
++
+ // real decodes an entry's slice against epoch ep (newest slice + 1).
+ func (g *ghost) real(e, ep uint64) uint64 {
+ 	cur := ep - 1
+diff --git a/touch.go b/touch.go
+index 937b762..2b66926 100644
+--- a/touch.go
++++ b/touch.go
+@@ -18,6 +18,7 @@ func (f *Filter) count(h, window, now uint64, i0 int) Result {
+ 		t0, pad = f.ctBegin(opCount, now)
+ 		s = time.Now()
+ 	}
++	f.prefetchOverflow(h, now) // a count reads it whenever it is live
+ 	w0, w1, src := f.read(h, now, i0)
+ 	var r Result
+ 	if src != 0 && age(now, w0&tsMask) <= f.horizon {
+@@ -153,6 +154,17 @@ func (f *Filter) sketchLive(now uint64) bool {
+ 	return sk != nil && (f.ct || now <= sk.until.Load())
+ }
+ 
++// prefetchOverflow prefetches h's buckets of the ghost overflow table if
++// it is live at now, for a caller that will read them (addSketch).
++func (f *Filter) prefetchOverflow(h, now uint64) {
++	if f.cms {
++		return
++	}
++	if g := f.gh.Load(); g != nil && (f.ct || now <= g.until.Load()) {
++		g.prefetch(f.stashID(h, fingerprint(h), tag(h)))
++	}
++}
++
+ // addSketch adds h's events in the overflow table to r, the answer from
+ // the table or stash. The overflow holds only histories the stash dropped,
+ // and a key that comes back starts a fresh slot, so the two never count the
+@@ -215,6 +227,9 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 		}
+ 	}
+ 	fp, tg := fingerprint(h), tag(h)
++	if wantCount || f.ct { // the overflow read is certain (a Seen hit of CheckAndTouch skips it)
++		f.prefetchOverflow(h, now)
++	}
+ 	var held *paddedMutex // ConstantTime: h's stripe, while held
+ 	for first := true; ; first = false {
+ 		if held != nil { // released between attempts: a claim that fails on another stripe's TryLock must not hold its own while it retries

@@ -1,0 +1,185 @@
+diff --git a/internal/registersim/registers_experiment_test.go b/internal/registersim/registers_experiment_test.go
+index 5f28af3..1acafeb 100644
+--- a/internal/registersim/registers_experiment_test.go
++++ b/internal/registersim/registers_experiment_test.go
+@@ -301,6 +301,8 @@ func TestRegisterExperiment(t *testing.T) {
+ 		func() velReg { return newDyadic(5, 5, 6, 6, 7, 8, 11) },
+ 		func() velReg { return newLaplace([]float64{expH / 16, expH / 4, expH}, 16) },
+ 		func() velReg { return newLaplace([]float64{expH / 32, expH / 8, expH / 3, expH}, 12) },
++		func() velReg { return shipped(1) },
++		func() velReg { return splitNow(1) },
+ 	}
+ 	var out strings.Builder
+ 	fmt.Fprintf(&out, "\nnormalized MAE (sum|est-exact| / sum exact), by window\n%-34s %-15s", "register", "traffic")
+@@ -357,3 +359,171 @@ func TestRegisterExperiment(t *testing.T) {
+ 	}
+ 	t.Log(out.String())
+ }
++
++// --- Aligned: register.go's geometry, in half-units (lab E9) ---
++//
++// Bucket j starts at (V &^ (step_j-1)) - off_j half-units (V: the half-unit
++// of the newest event); buckets are re-bucketed whole on advance and read at
++// the register's own epoch as estimate does (the newest bucket ends at last,
++// that event counted whole, the cut bucket uniform, rounded, at least 1).
++// fp buckets are 7-bit floating-point counters (5-bit mantissa, 2-bit
++// exponent: value (32+m)<<e - 32), merged with unbiased randomized rounding.
++type alignedReg struct {
++	nm        string
++	step, off []int64
++	cap       []float64
++	fp        []bool
++	c         []float64
++	x         []int
++	v         int64
++	init      bool
++	rng       *rand.Rand
++}
++
++const half = expH / 48
++
++func newAligned(nm string, step, off []int64, bits []int, fp []bool, seed uint64) *alignedReg {
++	r := &alignedReg{nm: nm, step: step, off: off, fp: fp, c: make([]float64, len(step)), x: make([]int, len(step)), rng: rand.New(rand.NewPCG(seed, 5))}
++	for _, b := range bits {
++		r.cap = append(r.cap, float64(int(1)<<b-1))
++	}
++	return r
++}
++func shipped(seed uint64) *alignedReg {
++	return newAligned("aligned 7 (shipped)", []int64{2, 2, 4, 8, 16, 16, 16}, []int64{0, 2, 4, 8, 16, 32, 48},
++		[]int{5, 5, 6, 7, 8, 8, 9}, make([]bool, 7), seed)
++}
++func splitNow(seed uint64) *alignedReg {
++	return newAligned("aligned 8 (split now, approx old)", []int64{2, 2, 2, 4, 8, 16, 16, 16}, []int64{-1, 0, 2, 4, 8, 16, 32, 48},
++		[]int{4, 4, 5, 6, 7, 8, 7, 7}, []bool{false, false, false, false, false, false, true, true}, seed)
++}
++func (r *alignedReg) name() string               { return r.nm }
++func (r *alignedReg) start(v int64, j int) int64 { return v&^(r.step[j]-1) - r.off[j] }
++func fpVal(x int) float64                        { return float64((32+x&31)<<(x>>5) - 32) }
++func (r *alignedReg) put(c []float64, x []int, k int, n float64) {
++	if !r.fp[k] {
++		c[k] = math.Min(r.cap[k], c[k]+n)
++		return
++	}
++	v := fpVal(x[k]) + n
++	y := x[k]
++	for y < 127 && fpVal(y+1) <= v {
++		y++
++	}
++	if y < 127 && r.rng.Float64() < (v-fpVal(y))/(fpVal(y+1)-fpVal(y)) {
++		y++
++	}
++	x[k], c[k] = y, fpVal(y)
++}
++func (r *alignedReg) advance(t float64) {
++	v1 := int64(t / half)
++	if !r.init || v1-r.v > 400 {
++		clear(r.c)
++		clear(r.x)
++		r.v, r.init = v1, true
++		return
++	}
++	if v1 <= r.v {
++		return
++	}
++	nc, nx := make([]float64, len(r.c)), make([]int, len(r.c))
++	for j := range r.c {
++		if r.c[j] == 0 {
++			continue
++		}
++		s := r.start(r.v, j)
++		for k := range r.c {
++			if r.start(v1, k) <= s {
++				r.put(nc, nx, k, r.c[j])
++				break
++			}
++		}
++	}
++	r.c, r.x, r.v = nc, nx, v1
++}
++func (r *alignedReg) add(t float64) {
++	r.advance(t)
++	v := int64(t / half)
++	for k := range r.c {
++		if r.start(r.v, k) <= v {
++			r.put(r.c, r.x, k, 1)
++			return
++		}
++	}
++}
++func (r *alignedReg) count(now, w, last float64) float64 {
++	if now-last > w {
++		return 0
++	}
++	from := now - w
++	top := float64(r.v&^1+2) * half
++	newest := true
++	est := 0.0
++	for j := range r.c {
++		lo := float64(r.start(r.v, j)) * half
++		c := r.c[j]
++		hi := top
++		top = lo
++		if c == 0 {
++			if from >= lo {
++				break
++			}
++			continue
++		}
++		a := 0.0
++		if newest {
++			hi = math.Max(lo, math.Min(last, hi))
++			newest = false
++			if from < hi {
++				a = 1
++			}
++		}
++		if from <= lo {
++			est += c
++			continue
++		}
++		if from < hi {
++			est += a + (c-a)*(hi-from)/(hi-lo)
++		}
++		break
++	}
++	return math.Max(1, math.Floor(est+0.5))
++}
++
++// TestAlignedSteady (lab E9): evenly spaced events at rates per horizon, the
++// 60 s count read every ~0.5 s: worst |reported/exact - 1| per register.
++func TestAlignedSteady(t *testing.T) {
++	var out strings.Builder
++	out.WriteString("\nsteady 60s count, worst |reported/exact - 1|\n")
++	for _, mk := range []func(uint64) *alignedReg{shipped, splitNow} {
++		fmt.Fprintf(&out, "%-34s", mk(0).name())
++		for _, rate := range []float64{100, 300, 500, 700} {
++			worst := 0.0
++			for trial := range 8 {
++				reg := mk(uint64(trial))
++				r := rand.New(rand.NewPCG(uint64(trial), 9))
++				gap, t0 := expH/rate, r.Float64()*1000
++				var ev []float64
++				for x := t0; x < 10*expH; x += gap {
++					ev = append(ev, x)
++				}
++				i, last := 0, 0.0
++				for q := 2 * expH; q < 10*expH; q += 400 + r.Float64()*200 {
++					for i < len(ev) && ev[i] <= q {
++						reg.add(ev[i])
++						last = ev[i]
++						i++
++					}
++					exact := 0
++					for k := i - 1; k >= 0 && ev[k] > q-expH; k-- {
++						exact++
++					}
++					worst = math.Max(worst, math.Abs(reg.count(q, expH, last)/float64(exact)-1))
++				}
++			}
++			fmt.Fprintf(&out, "  %4.0f/h %.4f", rate, worst)
++		}
++		out.WriteString("\n")
++	}
++	t.Log(out.String())
++}

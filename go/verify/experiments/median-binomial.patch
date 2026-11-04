@@ -1,0 +1,53 @@
+diff --git a/register.go b/register.go
+index 1936225..11e1f78 100644
+--- a/register.go
++++ b/register.go
+@@ -1,6 +1,7 @@
+ package temporalfilter
+ 
+ import (
++	"math"
+ 	"math/bits"
+ 	"runtime"
+ 	"sync/atomic"
+@@ -394,7 +395,7 @@ func (f *Filter) estimate(id, w1, last, now, window uint64, sat bool) (r Result,
+ 			continue
+ 		}
+ 		if from < hi {
+-			est += a + (float64(c)-a)*(hi-from)/(hi-lo)
++			est += a + cutShare(int(c)-int(a), (hi-from)/(hi-lo))
+ 		}
+ 		break
+ 	}
+@@ -406,6 +407,31 @@ func (f *Filter) estimate(id, w1, last, now, window uint64, sat bool) (r Result,
+ 	return r, true
+ }
+ 
++// cutShare is how many of the cut bucket's n spread events count inside the
++// window, which holds a share p of the bucket: the median of Binomial(n, p): the absolute-error optimum if the events are uniform in the bucket (lab E8). n*p past
++// 1000 events (hot entries).
++func cutShare(n int, p float64) float64 {
++	if n <= 0 || p <= 0 {
++		return 0
++	}
++	if p >= 1 {
++		return float64(n)
++	}
++	if n > 1000 {
++		return float64(n) * p
++	}
++	q := 0.5
++	lp, step := float64(n)*math.Log1p(-p), math.Log(p/(1-p))
++	cdf := 0.0
++	for k := 0; k < n; k++ {
++		if cdf += math.Exp(lp); cdf >= q {
++			return float64(k)
++		}
++		lp += math.Log(float64(n-k)/float64(k+1)) + step
++	}
++	return float64(n)
++}
++
+ // satPerUnit is the newest bucket's capacity: a unit with more events
+ // overflows, and every bucket that overflows holds at least this many.
+ const satPerUnit = 1<<bucketBits0 - 1

@@ -1,0 +1,71 @@
+diff --git a/zz_lab_s2_test.go b/zz_lab_s2_test.go
+new file mode 100644
+index 0000000..dda3eb1
+--- /dev/null
++++ b/zz_lab_s2_test.go
+@@ -0,0 +1,65 @@
++package temporalfilter
++
++import (
++	"sync"
++	"testing"
++	"time"
++)
++
++// Speed-lab copies of TouchOverflowLive and CountOverflowLive with
++// deterministic keys (mix64, not the per-process seeded HashUint64) and a
++// quarter of the table, so cachegrind's two-run difference cancels setup.
++type labOverflow struct {
++	once sync.Once
++	f    *Filter
++	hs   []uint64
++	now  uint64
++}
++
++func (o *labOverflow) filter(b *testing.B) (*Filter, []uint64, uint64) {
++	o.once.Do(func() {
++		now := uint64(1)
++		f, err := New(Config{Capacity: 1 << 16, Horizon: time.Minute, Resolution: time.Millisecond, Clock: func() uint64 { return now }})
++		if err != nil {
++			b.Fatal(err)
++		}
++		n := 8 * f.Slots()
++		for i := range n {
++			h := mix64(uint64(i) + 1<<50)
++			for range 4 {
++				f.TouchAt(h, 60_000, now)
++			}
++			if i%4096 == 0 {
++				now++
++			}
++		}
++		o.hs = make([]uint64, 1<<13)
++		for i := range o.hs {
++			o.hs[i] = mix64(uint64(n+i) + 1<<50)
++			f.TouchAt(o.hs[i], 60_000, now)
++		}
++		if !f.sketchLive(now) || f.Folded() == 0 {
++			b.Fatalf("overflow table not live (folded %d)", f.Folded())
++		}
++		o.f, o.now = f, now
++	})
++	return o.f, o.hs, o.now
++}
++
++var labTouchOverflow, labCountOverflow labOverflow
++
++func BenchmarkLabTouchOverflowLive(b *testing.B) {
++	f, hs, now := labTouchOverflow.filter(b)
++	b.ResetTimer()
++	for i := 0; i < b.N; i++ {
++		f.TouchAt(hs[i&(len(hs)-1)], 60_000, now)
++	}
++}
++
++func BenchmarkLabCountOverflowLive(b *testing.B) {
++	f, hs, now := labCountOverflow.filter(b)
++	b.ResetTimer()
++	for i := 0; i < b.N; i++ {
++		f.CountAt(hs[i&(len(hs)-1)], 60_000, now)
++	}
++}

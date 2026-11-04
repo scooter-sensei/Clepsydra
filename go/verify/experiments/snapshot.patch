@@ -1,0 +1,350 @@
+diff --git a/filter.go b/filter.go
+index 9fe1c40..7f3ab00 100644
+--- a/filter.go
++++ b/filter.go
+@@ -213,6 +213,8 @@ type Filter struct {
+ 	_          [64]byte
+ 	room       atomic.Pointer[stashTable] // Background: keys waiting for a slot, nil until the first waits
+ 	roomN      uint64                     // sets of the wait room
++	ownClock   bool                       // the built-in clock: ReadFrom re-anchors it (lab E14)
++	clockAdd   atomic.Uint64              // ticks the built-in clock is moved on by
+ 	roomMu     [stashStripes]paddedMutex
+ }
+ 
+@@ -310,7 +312,8 @@ func New(cfg Config) (*Filter, error) {
+ 	f.words = alignedWords(int(lines * wordsPerLine))
+ 	if f.clock == nil {
+ 		base, res := time.Now(), cfg.Resolution
+-		read := func() uint64 { return uint64(time.Since(base)/res) + 1 }
++		f.ownClock = true
++		read := func() uint64 { return uint64(time.Since(base)/res) + 1 + f.clockAdd.Load() }
+ 		f.clock = read
+ 		if cfg.CoarseClock > 0 {
+ 			f.coarse.Store(read())
+diff --git a/lab_snapshot_test.go b/lab_snapshot_test.go
+new file mode 100644
+index 0000000..645d2ed
+--- /dev/null
++++ b/lab_snapshot_test.go
+@@ -0,0 +1,71 @@
++package temporalfilter
++
++import (
++	"bytes"
++	"os"
++	"testing"
++	"time"
++)
++
++// TestLabSnapshot (lab E14; TF_LAB=1): tfbench's velocity workload run
++// once uninterrupted and once snapshotted at 150 s and restored into a new
++// filter; every answer compared.
++func TestLabSnapshot(t *testing.T) {
++	if os.Getenv("TF_LAB") == "" {
++		t.Skip("TF_LAB=1")
++	}
++	cfg := Config{Capacity: 512, Horizon: time.Minute, Resolution: time.Millisecond}
++	key := func(k int) uint64 { return mix64(uint64(k) + 1) }
++	wins := []uint64{1_000, 5_000, 15_000, 30_000, 60_000}
++	run := func(snapAt uint64) (ans []Result, f *Filter, size, bytesAt int) {
++		f, _ = New(cfg)
++		velWorkload(func(k int, at uint64) {
++			ans = append(ans, f.TouchAt(key(k), 60_000, at))
++		}, func(k int, _ []uint64, wi int, now uint64) {
++			if now == snapAt {
++				var buf bytes.Buffer
++				if _, err := f.WriteTo(&buf); err != nil {
++					t.Fatal(err)
++				}
++				size, bytesAt = buf.Len(), f.Bytes()
++				g, _ := New(cfg)
++				if _, err := g.ReadFrom(&buf); err != nil {
++					t.Fatal(err)
++				}
++				f = g
++			}
++			ans = append(ans, f.CountAt(key(k), wins[wi], now))
++		})
++		return ans, f, size, bytesAt
++	}
++	u, fu, _, _ := run(0)
++	r, fr, size, bytesAt := run(150_000)
++	diff, first := 0, -1
++	for i := range min(len(u), len(r)) {
++		if u[i] != r[i] {
++			diff++
++			if first < 0 {
++				first = i
++			}
++		}
++	}
++	t.Logf("answers %d / %d, differing %d (first at %d); end: evictions %d / %d, folded %d / %d, promoted %d / %d, floored %d / %d",
++		len(u), len(r), diff, first, fu.Evictions(), fr.Evictions(), fu.folded.Load(), fr.folded.Load(), fu.promoted.Load(), fr.promoted.Load(), fu.Floored(), fr.Floored())
++	t.Logf("snapshot %d bytes, Bytes() %d at the snapshot (%.3f%%)", size, bytesAt, 100*float64(size-bytesAt)/float64(bytesAt))
++	// The clock: the built-in one continues the old timeline.
++	c, _ := New(Config{Capacity: 512, Horizon: time.Minute})
++	c.TouchAt(1, 0, c.clock())
++	var buf bytes.Buffer
++	c.WriteTo(&buf)
++	old := c.clock()
++	time.Sleep(20 * time.Millisecond)
++	d, _ := New(Config{Capacity: 512, Horizon: time.Minute})
++	if _, err := d.ReadFrom(&buf); err != nil {
++		t.Fatal(err)
++	}
++	now := d.clock()
++	t.Logf("clock: old %d, restored %d (+%d ticks, want >= %d)", old, now, now-old, c.Ticks(20*time.Millisecond))
++	if diff != 0 || len(u) != len(r) || now < old+c.Ticks(20*time.Millisecond) {
++		t.Errorf("snapshot changed answers or the clock")
++	}
++}
+diff --git a/snapshot.go b/snapshot.go
+new file mode 100644
+index 0000000..fc1a188
+--- /dev/null
++++ b/snapshot.go
+@@ -0,0 +1,244 @@
++package temporalfilter
++
++import (
++	"bufio"
++	"encoding/binary"
++	"errors"
++	"io"
++	"time"
++)
++
++// Snapshots (lab E14): WriteTo and ReadFrom save and restore a quiescent
++// filter's state (the table, stash, hot entries and overflow table, the
++// decay cursor and counters) into a filter New made with the same Config.
++// With the built-in clock the restored filter's clock continues the old
++// timeline (the old tick plus the wall time since the snapshot), so stored
++// ticks stay valid; a caller's Clock must continue it itself. String keys
++// need Config.Key: the default seed is per process. ConstantTime,
++// Background and the count-min overflow are refused.
++
++const snapMagic = 0x31504e5350454c43 // "CLEPSNP1"
++
++var errSnapMode = errors.New("temporalfilter: snapshots of ConstantTime, Background or count-min filters are not supported")
++
++func (f *Filter) snapShape() []uint64 {
++	return []uint64{f.lines, f.horizon, f.unit, uint64(f.res), f.stashN, uint64(f.hotN), f.skW,
++		uint64(f.ghChoices), uint64(f.ghSub), f.spillMin, uint64(f.skShape.bytes(f.skW))}
++}
++
++type snapW struct {
++	w   *bufio.Writer
++	n   int64
++	err error
++}
++
++func (s *snapW) u(x uint64) {
++	if s.err == nil {
++		var b [8]byte
++		binary.LittleEndian.PutUint64(b[:], x)
++		m, err := s.w.Write(b[:])
++		s.n, s.err = s.n+int64(m), err
++	}
++}
++
++type snapR struct {
++	r   *bufio.Reader
++	n   int64
++	err error
++}
++
++func (s *snapR) u() uint64 {
++	if s.err != nil {
++		return 0
++	}
++	var b [8]byte
++	m, err := io.ReadFull(s.r, b[:])
++	s.n, s.err = s.n+int64(m), err
++	return binary.LittleEndian.Uint64(b[:])
++}
++
++func (s *snapR) fail(msg string) {
++	if s.err == nil {
++		s.err = errors.New("temporalfilter: snapshot: " + msg)
++	}
++}
++
++// WriteTo writes f's state to w. f must be quiescent.
++func (f *Filter) WriteTo(w io.Writer) (int64, error) {
++	if f.ct || f.bg || f.cms {
++		return 0, errSnapMode
++	}
++	bw := bufio.NewWriter(w)
++	s := &snapW{w: bw}
++	s.u(snapMagic)
++	for _, x := range f.snapShape() {
++		s.u(x)
++	}
++	s.u(f.clock())
++	s.u(uint64(time.Now().UnixNano()))
++	for i := range f.words {
++		s.u(f.words[i])
++	}
++	for _, x := range []uint64{f.cursor.Load(), f.evictions.Load(), f.relocations.Load(), uint64(f.pressure.Load()),
++		f.stashUntil.Load(), f.lostAt.Load(), f.lost.Load(), f.restored.Load(), f.folded.Load(), f.shed.Load(),
++		f.waited.Load(), f.promoted.Load(), f.hotRefused.Load()} {
++		s.u(x)
++	}
++	if st := f.stash.Load(); st != nil {
++		s.u(1)
++		for i := range st.e {
++			s.u(st.e[i].id)
++			s.u(st.e[i].w0)
++			s.u(st.e[i].w1)
++		}
++		for i := range st.wait {
++			s.u(st.wait[i].Load())
++		}
++		s.u(st.at.Load())
++	} else {
++		s.u(0)
++	}
++	if t := f.hot.Load(); t != nil {
++		s.u(1)
++		for i := range t.e {
++			e := &t.e[i]
++			s.u(e.ver.Load())
++			s.u(e.id.Load())
++			s.u(uint64(e.epoch.Load()))
++			s.u(uint64(e.sat.Load()))
++			s.u(e.c0.Load())
++			for j := 0; j < len(e.c); j += 2 {
++				s.u(uint64(e.c[j].Load()) | uint64(e.c[j+1].Load())<<32)
++			}
++		}
++		s.u(uint64(len(t.free)))
++		for _, x := range t.free {
++			s.u(uint64(x))
++		}
++		s.u(t.next)
++		s.u(t.hand)
++		s.u(uint64(t.full.Load()))
++		s.u(uint64(t.inUse.Load()))
++		s.u(t.demoted.Load())
++	} else {
++		s.u(0)
++	}
++	if g := f.gh.Load(); g != nil {
++		s.u(1)
++		for i := range g.words {
++			s.u(g.words[i])
++		}
++		s.u(g.epoch.Load())
++		s.u(g.until.Load())
++		sat := uint64(0)
++		if g.sat.Load() {
++			sat = 1
++		}
++		s.u(sat)
++		s.u(g.floored.Load())
++	} else {
++		s.u(0)
++	}
++	if s.err == nil {
++		s.err = bw.Flush()
++	}
++	return s.n, s.err
++}
++
++// ReadFrom restores a snapshot WriteTo wrote into f, which New made with the
++// same Config and nothing has used yet.
++func (f *Filter) ReadFrom(r io.Reader) (int64, error) {
++	if f.ct || f.bg || f.cms {
++		return 0, errSnapMode
++	}
++	s := &snapR{r: bufio.NewReader(r)}
++	if s.u() != snapMagic {
++		s.fail("bad magic")
++	}
++	for _, x := range f.snapShape() {
++		if s.u() != x {
++			s.fail("another Config")
++		}
++	}
++	oldNow, wall := s.u(), int64(s.u())
++	for i := range f.words {
++		f.words[i] = s.u()
++	}
++	f.cursor.Store(s.u())
++	f.evictions.Store(s.u())
++	f.relocations.Store(s.u())
++	f.pressure.Store(uint32(s.u()))
++	f.stashUntil.Store(s.u())
++	f.lostAt.Store(s.u())
++	f.lost.Store(s.u())
++	f.restored.Store(s.u())
++	f.folded.Store(s.u())
++	f.shed.Store(s.u())
++	f.waited.Store(s.u())
++	f.promoted.Store(s.u())
++	f.hotRefused.Store(s.u())
++	if s.u() == 1 {
++		st := newStashTable(f.stashN, &f.stashMu)
++		for i := range st.e {
++			st.e[i].id, st.e[i].w0, st.e[i].w1 = s.u(), s.u(), s.u()
++		}
++		for i := range st.wait {
++			st.wait[i].Store(s.u())
++		}
++		st.at.Store(s.u())
++		f.stash.Store(st)
++	}
++	if s.u() == 1 {
++		if f.hotN == 0 {
++			s.fail("hot entries in a filter without them")
++			return s.n, s.err
++		}
++		t := f.hotTable()
++		for i := range t.e {
++			e := &t.e[i]
++			e.ver.Store(s.u())
++			e.id.Store(s.u())
++			e.epoch.Store(int64(s.u()))
++			e.sat.Store(int64(s.u()))
++			e.c0.Store(s.u())
++			for j := 0; j < len(e.c); j += 2 {
++				x := s.u()
++				e.c[j].Store(uint32(x))
++				e.c[j+1].Store(uint32(x >> 32))
++			}
++		}
++		n := s.u()
++		if n > uint64(len(t.e)) {
++			s.fail("free list")
++			return s.n, s.err
++		}
++		t.free = make([]uint32, n)
++		for i := range t.free {
++			t.free[i] = uint32(s.u())
++		}
++		t.next, t.hand = s.u(), s.u()
++		t.full.Store(int64(s.u()))
++		t.inUse.Store(int64(s.u()))
++		t.demoted.Store(s.u())
++	}
++	if s.u() == 1 {
++		g := f.ghostTable()
++		for i := range g.words {
++			g.words[i] = s.u()
++		}
++		g.epoch.Store(s.u())
++		g.until.Store(s.u())
++		g.sat.Store(s.u() == 1)
++		g.floored.Store(s.u())
++	}
++	if s.err == nil && f.ownClock {
++		target := oldNow + uint64(max(0, time.Now().UnixNano()-wall))/uint64(f.res)
++		if cur := f.clock(); target > cur {
++			f.clockAdd.Add(target - cur)
++			if f.stop != nil { // CoarseClock: the cached tick moves on too
++				f.coarse.Add(target - cur)
++			}
++		}
++	}
++	return s.n, s.err
++}

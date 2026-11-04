@@ -26,7 +26,7 @@ Every file of `go/`, by category. Go builds a package from one directory and req
 | Package | Files | What it holds |
 |---|---|---|
 | `cpu` | `cas2_amd64.go`, `cas2_amd64.s`, `cas2_other.go`, `prefetch_asm.go`, `prefetch_amd64.s`, `prefetch_arm64.s`, `prefetch_other.go` | the platform primitives: `CAS2` (LOCK CMPXCHG16B, with a CPUID probe for CX16, `HasCAS2`; a stub elsewhere) for realign [A33], and `PrefetchLines` (`PREFETCHT0` on amd64, `PRFM` on arm64, plain loads elsewhere) for the batches [S48] |
-| `siphash` | `siphash.go`, `siphash_test.go` | SipHash-2-4 behind `Config.Key`, and its reference vectors |
+| `siphash` | `siphash.go`, `siphash_test.go`, `batch.go`, `batch_amd64.go`, `batch_amd64.s`, `batch_other.go`, `batch_test.go` | SipHash-2-4 behind `Config.Key`, and its reference vectors; `Key.HashUint64s`, 8 keys at once on AVX-512F (`hash8x`, `cpuHasAVX512F`), else the scalar hash [S74] |
 | `workload` | `churn.go` | the scorecard's churn stream, shared by `cmd/tfbench` and the placement test |
 | `registersim` | `doc.go`, `registers_experiment_test.go` | the standalone simulation of the linear, dyadic and Laplace registers [D12] |
 | `ecm` | `ecm.go`, `ecm_test.go` | the ECM-sketch (Papapetrou et al. 2012), the head-to-head's competitor at equal memory: exponential histograms in a count-min array, level minima from the paper's invariant 1 for every range, checked against exact counts [D20] |
@@ -43,7 +43,7 @@ The head-to-head harness ([head-to-head.md](head-to-head.md)): `trace.go` (part 
 
 | Category | Files |
 |---|---|
-| Smoke and unit | `smoke_test.go` (every public operation once, three configs), `filter_test.go`, `register_test.go`, `disp_test.go` (the displaced bit), `batch_test.go`, `ghost_test.go`, `hot_test.go`, `background_test.go`, `ctwait_test.go` (ConstantTime's waiting keys), `merge_test.go` (`Merge`, D24) |
+| Smoke and unit | `smoke_test.go` (every public operation once, three configs), `filter_test.go`, `register_test.go`, `disp_test.go` (the displaced bit), `batch_test.go`, `ghost_test.go`, `hot_test.go`, `background_test.go`, `ctwait_test.go` (ConstantTime's waiting keys), `merge_test.go` (`Merge`, D24), `hashbatch_test.go` (`HashUint64s` equals `HashUint64`, D25), `mass_exp_test.go` (`TF_EXP=1`: `mass` from word1 equals the view's, S76) |
 | Conformance | `conformance_test.go` (`spec/vectors/`, `-update` regenerates them) |
 | Regression of fixed bugs | `regress_test.go`, `dup_test.go`, `reloc_race_test.go`, `abandon_test.go`, `read_race_test.go`, `restore_test.go`, `lost_test.go`, `movecopy_test.go`, `restorewait_test.go` (A37), `mirror_test.go` (A39), `hotdrop_test.go` (A40) |
 | Concurrency races on hooks | `gaprace_test.go` (A21), `roomrace_test.go` (A20, A24), `split_race_test.go` (971dc4a, 64ebd85, A23), `sweep_race_test.go` (A26), `install_race_test.go` (A27), `tagstripe_test.go` (A28–A30), `hotspill_test.go` (A32, A38), `stash_race_test.go` (A6), `cas2_amd64_test.go`, `cas2_other_test.go` (realign both ways, A33) |
@@ -65,4 +65,4 @@ The head-to-head harness ([head-to-head.md](head-to-head.md)): `trace.go` (part 
 | `verify/expected/` | the golden outputs the deterministic checks must match byte for byte |
 | `verify/experiments/` | reverted experiments as git patches ([experiments.md](experiments.md)) |
 | `verify/testdata/` | older versions of `ghost_test.go` and `restore_test.go`, and `mirror_test.go` without its read check, that the bug replays need |
-| `verify/tla/` | the TLA+ models of the slot protocol; `verify/tla/experiments/` holds `HotCells.tla`, the model of an experiment not adopted |
+| `verify/tla/` | the TLA+ models of the slot protocol; `verify/tla/experiments/` holds `HotCells.tla` and `DispBitmap.tla`, models of experiments not adopted (E23, E46) |

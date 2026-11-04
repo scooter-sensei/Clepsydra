@@ -1,0 +1,318 @@
+diff --git a/filter.go b/filter.go
+index 9fe1c40..17f11d2 100644
+--- a/filter.go
++++ b/filter.go
+@@ -496,7 +496,7 @@ func (f *Filter) ContainsAt(h, window, now uint64) bool {
+ 		return false
+ 	}
+ 	var r Result
+-	f.addSketch(&r, h, window, now)
++	f.addSketch(&r, h, window, now, false)
+ 	return r.Seen
+ }
+ 
+diff --git a/fuzz_test.go b/fuzz_test.go
+index c22bcde..518f29f 100644
+--- a/fuzz_test.go
++++ b/fuzz_test.go
+@@ -287,7 +287,7 @@ func fuzzCase(seed uint64) (res fuzzResult) {
+ 	high := func(op string, h, window, now uint64, r Result) bool {
+ 		var s Result
+ 		if g := f.gh.Load(); g != nil {
+-			s, _ = g.estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, H), now)
++			s, _ = g.estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, H), now, false)
+ 		}
+ 		own := 0
+ 		if op == "Touch" {
+diff --git a/ghost.go b/ghost.go
+index 4bb6d06..bde0010 100644
+--- a/ghost.go
++++ b/ghost.go
+@@ -107,6 +107,42 @@ func (g *ghost) slot(id uint64) (base [2]int, nb int, fp uint64) {
+ 	return base, nb, fp
+ }
+ 
++// SWAR match of a word's three entries against a fingerprint. ghLanes has
++// bit 0 of each lane; ghFPMask is the three fingerprint fields (bits 7-20,
++// 28-41, 49-62); ghFPLow is 0x3FFF in each field; ghCarry is the bit above
++// each field (21, 42, 63), which the mask clears.
++const (
++	ghLanes  = 1 | 1<<ghEntryBits | 1<<(2*ghEntryBits)
++	ghFPLow  = (1<<ghFPBits - 1) << (ghCntBits + ghSlBits) * ghLanes
++	ghFPMask = ghFPLow
++	ghCarry  = 1 << ghEntryBits * ghLanes
++)
++
++// ghMatch returns one bit per lane of w (bit 21k+21 for lane k) whose
++// fingerprint field equals the one replicated in fpRep. x keeps each lane's
++// fingerprint XOR the key's, 0 where they match; 0x3FFF added to a 14-bit
++// field carries into the masked bit above it iff the field is not 0, and
++// with 0x3FFF + 0x3FFF < 2^15 no carry reaches the next lane: exact. An
++// empty entry never matches (fingerprints are never 0).
++func ghMatch(w, fpRep uint64) uint64 {
++	x := (w ^ fpRep) & ghFPMask
++	return ^(x + ghFPLow) & ghCarry
++}
++
++// addMatches adds to r the live entries of word w in lanes m (ghMatch's
++// bits), against epoch ep.
++func (g *ghost) addMatches(r *Result, w, m, ep, window, now uint64) {
++	for ; m != 0; m &= m - 1 {
++		sh := uint(bits.TrailingZeros64(m)) - ghEntryBits // the lane's first bit
++		if e := w >> sh & ghEntryMask; g.live(g.real(e, ep), window, now) {
++			c := int(ghCnt(e))
++			r.Upper += c
++			r.Count += c
++			r.Saturated = r.Saturated || c == ghCntMax
++		}
++	}
++}
++
+ // real decodes an entry's slice against epoch ep (newest slice + 1).
+ func (g *ghost) real(e, ep uint64) uint64 {
+ 	cur := ep - 1
+@@ -323,7 +359,10 @@ var testHookGhostRead func()
+ // written for the new epoch decodes as four slices older, dead
+ // (TestGhostReadAcrossEpoch). An add moves the epoch at most once per slice,
+ // so a read loads again at most once per slice.
+-func (g *ghost) estimate(id, window, now uint64) (r Result, ok bool) {
++// estimate's scan with swar matches each word's three entries at once
++// (ghMatch, addMatches); without it, one entry at a time. The two give the
++// same answer (TestGhostScansAgree).
++func (g *ghost) estimate(id, window, now uint64, swar bool) (r Result, ok bool) {
+ 	bases, nb, fp := g.slot(id)
+ 	var line [2][ghWords]uint64
+ 	var ep uint64
+@@ -359,6 +398,7 @@ func (g *ghost) estimate(id, window, now uint64) (r Result, ok bool) {
+ 	// Entries 1 and 2 share word 0 with the floors; words 1-7 hold three
+ 	// each (TestGhostScanLayout).
+ 	hasFloor := g.floored.Load() > 0
++	fpRep := fp * ghLanes << (ghCntBits + ghSlBits) // fp in each lane's fingerprint field
+ 	for bi := range nb {
+ 		if hasFloor {
+ 			if e := line[bi][0] >> g.floorShift(fp) & ghSubMask; e != 0 && g.live(g.real(e, ep), window, now) {
+@@ -367,6 +407,23 @@ func (g *ghost) estimate(id, window, now uint64) (r Result, ok bool) {
+ 				r.Saturated = r.Saturated || c == ghCntMax
+ 			}
+ 		}
++		if swar {
++			// Entries match by SWAR (ghMatch): word 0's lanes 1 and 2, then
++			// lanes 0-2 of words 1-7; only matching lanes are decoded.
++			if m := ghMatch(line[bi][0], fpRep) &^ (1 << ghEntryBits); m != 0 {
++				g.addMatches(&r, line[bi][0], m, ep, window, now)
++			}
++			for w := 1; w < ghWords; w++ {
++				lw := line[bi][w]
++				if lw == 0 {
++					continue
++				}
++				if m := ghMatch(lw, fpRep); m != 0 {
++					g.addMatches(&r, lw, m, ep, window, now)
++				}
++			}
++			continue
++		}
+ 		if w0 := line[bi][0]; w0>>ghEntryBits != 0 {
+ 			if e := (w0 >> ghEntryBits) & ghEntryMask; e != 0 && ghFP(e) == fp && g.live(g.real(e, ep), window, now) {
+ 				c := int(ghCnt(e))
+diff --git a/ghost_swar_test.go b/ghost_swar_test.go
+new file mode 100644
+index 0000000..ffc6c37
+--- /dev/null
++++ b/ghost_swar_test.go
+@@ -0,0 +1,74 @@
++package temporalfilter
++
++import "testing"
++
++// TestGhostMatchExact: ghMatch flags exactly the lanes whose entry is
++// non-empty with fingerprint fp, as the per-entry scan did, on random
++// words and on words built from fp's neighbours, all-ones and empty fields.
++func TestGhostMatchExact(t *testing.T) {
++	check := func(w, fp uint64) {
++		m := ghMatch(w, fp*ghLanes<<(ghCntBits+ghSlBits))
++		for k := range uint64(ghPerWord) {
++			e := w >> (k * ghEntryBits) & ghEntryMask
++			want := e != 0 && ghFP(e) == fp
++			if got := m>>((k+1)*ghEntryBits)&1 == 1; got != want {
++				t.Fatalf("w %#x fp %#x lane %d: match %v, want %v", w, fp, k, got, want)
++			}
++		}
++		if m&^ghCarry != 0 {
++			t.Fatalf("w %#x fp %#x: bits outside the lanes' %#x", w, fp, m)
++		}
++	}
++	x := uint64(1)
++	for range 4_000_000 {
++		x = mix64(x)
++		fp := x>>50 | 1 // 14 bits, never 0
++		w := mix64(x) &^ (1 << 63)
++		check(w, fp)
++		// Lanes holding fp, its neighbours and extremes, with random counts and slices.
++		var v uint64
++		for k := range uint64(ghPerWord) {
++			y := mix64(x + k)
++			f := [...]uint64{fp, fp ^ 1, fp ^ 1<<13, fp + 1, fp - 1, 0, 1<<ghFPBits - 1, y >> 50}[y%8] & (1<<ghFPBits - 1)
++			v |= (f<<(ghCntBits+ghSlBits) | y>>20&(1<<(ghCntBits+ghSlBits)-1)) << (k * ghEntryBits)
++		}
++		check(v, fp)
++		check(v, 1<<ghFPBits-1)
++		check(v, 1)
++	}
++}
++
++// TestGhostScansAgree: estimate's SWAR scan and its per-entry scan give the
++// same answer for keys in, near and out of tables filled past their
++// capacity (floors raised), across windows and clocks over several slices.
++func TestGhostScansAgree(t *testing.T) {
++	const horizon = 60_000
++	for _, shape := range [][2]int{{2, 3}, {1, 1}, {2, 1}} {
++		g := newGhost(64*ghWords*8, horizon, shape[0], shape[1])
++		now := uint64(100_000)
++		for i := range uint64(40_000) {
++			if i%1000 == 0 {
++				now += 7_000
++			}
++			g.add(mix64(i%3000+1<<40), 1+i%5, now-i%9_000, i%97 == 0, now)
++			if i%50 != 0 {
++				continue
++			}
++			for q := range uint64(40) {
++				id := mix64((i+q*131)%3500 + 1<<40)
++				for _, w := range []uint64{1, horizon / 4, horizon / 2, horizon} {
++					for _, at := range []uint64{now, now + 5_000, now + horizon} {
++						a, aok := g.estimate(id, w, at, true)
++						b, bok := g.estimate(id, w, at, false)
++						if a != b || aok != bok {
++							t.Fatalf("shape %v, id %#x, window %d, at %d: swar %+v %v, per entry %+v %v", shape, id, w, at, a, aok, b, bok)
++						}
++					}
++				}
++			}
++		}
++		if g.floored.Load() == 0 {
++			t.Fatalf("shape %v: no floor raised; the test misses the floors' path", shape)
++		}
++	}
++}
+diff --git a/ghost_test.go b/ghost_test.go
+index 1e5683e..c02bb9b 100644
+--- a/ghost_test.go
++++ b/ghost_test.go
+@@ -48,7 +48,7 @@ func TestGhostEpochRace(t *testing.T) {
+ 						if r.id == 0 || at-r.last > horizon-g.sliceLen {
+ 							continue
+ 						}
+-						e, _ := g.estimate(r.id, horizon, at)
++						e, _ := g.estimate(r.id, horizon, at, false)
+ 						// A slice's events are dead once an add has seen the slice
+ 						// three later: the clock may have got there during the read.
+ 						if after := clock.Load(); after/g.sliceLen >= r.last/g.sliceLen+3 {
+@@ -78,12 +78,12 @@ func TestGhostAddAheadOfClock(t *testing.T) {
+ 	g := newGhost(4*64, horizon, 2, 3)
+ 	g.add(1, 5, 80_008, false, 79_989) // last touch 80,008; the evictor's clock reads 79,989
+ 	for _, now := range []uint64{79_989, 80_008, 80_037} {
+-		if r, _ := g.estimate(1, horizon, now); r.Count != 5 {
++		if r, _ := g.estimate(1, horizon, now, false); r.Count != 5 {
+ 			t.Fatalf("at %d the history reads %+v, want 5 events", now, r)
+ 		}
+ 	}
+ 	g.add(2, 5, 85_000, false, 85_000) // a later slice: the epoch moves on, dead entries are swept
+-	if r, _ := g.estimate(1, horizon, 85_000); r.Count != 5 {
++	if r, _ := g.estimate(1, horizon, 85_000, false); r.Count != 5 {
+ 		t.Fatalf("after the next epoch the history reads %+v, want 5 events", r)
+ 	}
+ }
+@@ -104,19 +104,19 @@ func TestGhostReadAcrossEpoch(t *testing.T) {
+ 		// At 20,100 (slice 4) history 1's newest event is 19,100 old: dead.
+ 		// History 2's (slice 2) is live, so the read gets past g.until.
+ 		const now = 20_100
+-		if r, ok := g.estimate(1, horizon, now); ok || r != (Result{}) {
++		if r, ok := g.estimate(1, horizon, now, false); ok || r != (Result{}) {
+ 			t.Fatalf("choices %d: history 1 reads %+v before the add, want nothing", choices, r)
+ 		}
+ 		testHookGhostRead = func() {
+ 			testHookGhostRead = nil
+ 			g.add(3, 5, now-50, false, now-50) // slice 4: the epoch moves on two, slice 0 is swept
+ 		}
+-		r, ok := g.estimate(1, horizon, now)
++		r, ok := g.estimate(1, horizon, now, false)
+ 		testHookGhostRead = nil
+ 		if ok || r != (Result{}) {
+ 			t.Errorf("choices %d: history 1, dead, reads %+v across the epoch's move", choices, r)
+ 		}
+-		if r, ok := g.estimate(2, horizon, now); !ok || r.Count != 5 {
++		if r, ok := g.estimate(2, horizon, now, false); !ok || r.Count != 5 {
+ 			t.Errorf("choices %d: history 2, live, reads %+v", choices, r)
+ 		}
+ 	}
+diff --git a/soak_test.go b/soak_test.go
+index aa9c67f..40f5301 100644
+--- a/soak_test.go
++++ b/soak_test.go
+@@ -203,7 +203,7 @@ func (f *Filter) whereIs(h, now uint64) string {
+ 		}
+ 	}
+ 	if g := f.gh.Load(); g != nil {
+-		r, _ := g.estimate(id, f.horizon, now)
++		r, _ := g.estimate(id, f.horizon, now, false)
+ 		s += fmt.Sprintf("ghost %+v", r)
+ 	}
+ 	return s
+diff --git a/touch.go b/touch.go
+index 937b762..eda7efc 100644
+--- a/touch.go
++++ b/touch.go
+@@ -27,7 +27,7 @@ func (f *Filter) count(h, window, now uint64, i0 int) Result {
+ 		r.Degraded = f.lostRecently(now)
+ 	}
+ 	if f.sketchLive(now) {
+-		f.addSketch(&r, h, window, now)
++		f.addSketch(&r, h, window, now, true) // the count path: SWAR scan (speed-s2c)
+ 	}
+ 	if f.ct {
+ 		f.ctEnd(opCount, h, t0, s, pad)
+@@ -159,11 +159,14 @@ func (f *Filter) sketchLive(now uint64) bool {
+ // same event. Upper takes the overflow's bound, Count the key's own entry
+ // (the count-min sketch: the part that clears the noise), and Degraded is
+ // set when there is one: the key likely has a dropped history.
+-func (f *Filter) addSketch(r *Result, h, window, now uint64) {
++//
++// swar selects the overflow scan's SWAR match (ghost.estimate): count
++// passes it; the touch paths and ContainsAt keep the per-entry scan.
++func (f *Filter) addSketch(r *Result, h, window, now uint64, swar bool) {
+ 	var s Result
+ 	var ok bool
+ 	if !f.cms {
+-		s, ok = f.gh.Load().estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now)
++		s, ok = f.gh.Load().estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now, swar)
+ 	} else {
+ 		s, ok = f.sk.Load().estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now, f.ct)
+ 	}
+@@ -235,7 +238,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 				}
+ 				held.Unlock()
+ 				if f.sketchLive(now) {
+-					f.addSketch(&r, h, window, now)
++					f.addSketch(&r, h, window, now, false)
+ 				}
+ 				return r
+ 			}
+@@ -276,7 +279,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 					continue
+ 				}
+ 				if f.sketchLive(now) {
+-					f.addSketch(&r, h, window, now)
++					f.addSketch(&r, h, window, now, false)
+ 				}
+ 				return r
+ 			}
+@@ -327,7 +330,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 		// clear: a hit already Seen skips the overflow read. ConstantTime
+ 		// reads the overflow table whatever it holds.
+ 		if f.sketchLive(now) && (wantCount || !r.Seen || f.ct) {
+-			f.addSketch(&r, h, window, now)
++			f.addSketch(&r, h, window, now, false)
+ 		}
+ 		return r
+ 	}

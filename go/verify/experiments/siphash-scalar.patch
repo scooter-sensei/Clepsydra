@@ -1,0 +1,168 @@
+diff --git a/internal/siphash/siphash.go b/internal/siphash/siphash.go
+index ee3ed7c..23f7d84 100644
+--- a/internal/siphash/siphash.go
++++ b/internal/siphash/siphash.go
+@@ -34,23 +34,19 @@ func (k Key) init() (uint64, uint64, uint64, uint64) {
+ 	return k.k0 ^ 0x736f6d6570736575, k.k1 ^ 0x646f72616e646f6d, k.k0 ^ 0x6c7967656e657261, k.k1 ^ 0x7465646279746573
+ }
+ 
+-func sipFinish(v0, v1, v2, v3, last uint64) uint64 {
+-	v3 ^= last
+-	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
+-	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
+-	v0 ^= last
+-	v2 ^= 0xff
+-	for range 4 {
+-		v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
+-	}
+-	return v0 ^ v1 ^ v2 ^ v3
++// load64 reads 8 bytes at p+i, little-endian: one load where unaligned
++// loads are allowed, with no bounds check (the slice is built 8 long).
++func load64(p *byte, i int) uint64 {
++	return binary.LittleEndian.Uint64(unsafe.Slice((*byte)(unsafe.Add(unsafe.Pointer(p), i)), 8))
+ }
+ 
+-// HashString hashes s without copying it.
++// HashString is SipHash-2-4 of s. The finalization is written out here and
++// in HashUint64 (as a call it cost a call and its arguments' moves).
+ func (k Key) HashString(s string) uint64 {
+-	b := unsafe.Slice(unsafe.StringData(s), len(s))
++	n := len(s)
++	p := unsafe.StringData(s)
++	b := unsafe.Slice(p, n)
+ 	v0, v1, v2, v3 := k.init()
+-	n := len(b)
+ 	for ; len(b) >= 8; b = b[8:] {
+ 		m := binary.LittleEndian.Uint64(b)
+ 		v3 ^= m
+@@ -59,18 +55,44 @@ func (k Key) HashString(s string) uint64 {
+ 		v0 ^= m
+ 	}
+ 	last := uint64(n) << 56
+-	for i, c := range b {
+-		last |= uint64(c) << (8 * i)
++	if r := len(b); r > 0 {
++		if n >= 8 { // the tail's r bytes are the top of the 8 ending the string
++			last |= load64(p, n-8) >> (64 - 8*uint(r))
++		} else {
++			for j, c := range b {
++				last |= uint64(c) << (8 * uint(j))
++			}
++		}
+ 	}
+-	return sipFinish(v0, v1, v2, v3, last)
++	v3 ^= last
++	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++	v0 ^= last
++	v2 ^= 0xff
++	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++	return v0 ^ v1 ^ v2 ^ v3
+ }
+ 
+-// HashUint64 hashes x's 8 little-endian bytes.
++// HashUint64 is SipHash-2-4 of x's 8 little-endian bytes: one message
++// word, then the length block 8<<56 and the finalization.
+ func (k Key) HashUint64(x uint64) uint64 {
++	const last = 8 << 56
+ 	v0, v1, v2, v3 := k.init()
+ 	v3 ^= x
+ 	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
+ 	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
+ 	v0 ^= x
+-	return sipFinish(v0, v1, v2, v3, 8<<56)
++	v3 ^= last
++	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++	v0 ^= last
++	v2 ^= 0xff
++	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++	return v0 ^ v1 ^ v2 ^ v3
+ }
+diff --git a/internal/siphash/siphash_old_test.go b/internal/siphash/siphash_old_test.go
+new file mode 100644
+index 0000000..d7bb1a5
+--- /dev/null
++++ b/internal/siphash/siphash_old_test.go
+@@ -0,0 +1,75 @@
++package siphash
++
++import (
++	"encoding/binary"
++	"testing"
++	"unsafe"
++)
++
++// The SipHash code before speed-s6, kept to compare against.
++
++func oldSipFinish(v0, v1, v2, v3, last uint64) uint64 {
++	v3 ^= last
++	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++	v0 ^= last
++	v2 ^= 0xff
++	for range 4 {
++		v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++	}
++	return v0 ^ v1 ^ v2 ^ v3
++}
++
++func (k Key) oldHashString(s string) uint64 {
++	b := unsafe.Slice(unsafe.StringData(s), len(s))
++	v0, v1, v2, v3 := k.init()
++	n := len(b)
++	for ; len(b) >= 8; b = b[8:] {
++		m := binary.LittleEndian.Uint64(b)
++		v3 ^= m
++		v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++		v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++		v0 ^= m
++	}
++	last := uint64(n) << 56
++	for i, c := range b {
++		last |= uint64(c) << (8 * i)
++	}
++	return oldSipFinish(v0, v1, v2, v3, last)
++}
++
++func (k Key) oldHashUint64(x uint64) uint64 {
++	v0, v1, v2, v3 := k.init()
++	v3 ^= x
++	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
++	v0 ^= x
++	return oldSipFinish(v0, v1, v2, v3, 8<<56)
++}
++
++// TestSipHashMatchesOld: HashUint64 and HashString give the old code's
++// outputs on 1M random inputs each (strings of every length 0-64), under
++// random keys.
++func TestSipHashMatchesOld(t *testing.T) {
++	x := uint64(0x243f6a8885a308d3)
++	next := func() uint64 { x ^= x << 13; x ^= x >> 7; x ^= x << 17; return x }
++	buf := make([]byte, 64)
++	for i := range 1_000_000 {
++		var kb [16]byte
++		binary.LittleEndian.PutUint64(kb[:8], next())
++		binary.LittleEndian.PutUint64(kb[8:], next())
++		k := NewKey(&kb)
++		v := next()
++		if got, want := k.HashUint64(v), k.oldHashUint64(v); got != want {
++			t.Fatalf("case %d: HashUint64(%#x) = %#x, old %#x", i, v, got, want)
++		}
++		for j := range buf {
++			buf[j] = byte(next())
++		}
++		n := i % 65
++		s := string(buf[:n])
++		if got, want := k.HashString(s), k.oldHashString(s); got != want {
++			t.Fatalf("case %d: HashString(%d bytes) = %#x, old %#x", i, n, got, want)
++		}
++	}
++}

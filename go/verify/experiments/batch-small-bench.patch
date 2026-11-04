@@ -1,0 +1,29 @@
+diff --git a/bench_test.go b/bench_test.go
+index 632d092..4291a7f 100644
+--- a/bench_test.go
++++ b/bench_test.go
+@@ -216,6 +216,24 @@ func BenchmarkCheckAndTouchBatch(b *testing.B) {
+ 	c.report(b)
+ }
+ 
++// CheckAndTouchBatch on a 1 MiB table, one that fits the cache (lab E3).
++func BenchmarkCheckAndTouchBatchSmall(b *testing.B) {
++	const keys = 1 << 20 / 16 * 85 / 100
++	f, _ := New(Config{Capacity: keys, Horizon: time.Minute})
++	hs := make([]uint64, 32768)
++	for i := range hs {
++		hs[i] = mix64(uint64(i) + 77)
++		f.CheckAndTouchAt(hs[i], 0, 1000)
++	}
++	w := f.Ticks(30 * time.Second)
++	out := make([]bool, 64)
++	b.ResetTimer()
++	for i := 0; i < b.N; i += 64 {
++		lo := i & (len(hs) - 1)
++		f.CheckAndTouchBatch(hs[lo:lo+64], w, 2000+uint64(i>>10), out)
++	}
++}
++
+ func BenchmarkTouchAndCountBatch(b *testing.B) {
+ 	f, hs := benchFilter(b)
+ 	w := f.Ticks(30 * time.Second)

@@ -1,0 +1,210 @@
+diff --git a/doorkeeper.go b/doorkeeper.go
+new file mode 100644
+index 0000000..d18dc98
+--- /dev/null
++++ b/doorkeeper.go
+@@ -0,0 +1,124 @@
++package temporalfilter
++
++import (
++	"math/bits"
++	"sync/atomic"
++)
++
++// Doorkeeper (lab E7): while the table is saturated, a key's first touch is
++// kept out of it, as an entry here (24-bit fingerprint, 8-bit Horizon/2
++// slice), and only its second goes in. Buckets are 16 words: word 0 the
++// floor (1<<8 | slice of the newest entry overwritten there), then 15
++// entries. Seen is never answered from it; Upper is (+1 for a live entry or
++// floor).
++type doorkeeper struct {
++	w        []uint32
++	nb       uint64
++	sliceLen uint64
++	horizon  uint64
++}
++
++// dkSaturated: the search pressure at which first touches are kept out.
++const dkSaturated = pressureOne - pressureOne/16
++
++func (f *Filter) doorKeeper() *doorkeeper {
++	if d := f.dk.Load(); d != nil {
++		return d
++	}
++	f.skMu.Lock()
++	defer f.skMu.Unlock()
++	if d := f.dk.Load(); d != nil {
++		return d
++	}
++	nb := max(1, f.lines*slotsPerLine/32)
++	d := &doorkeeper{w: make([]uint32, nb*16), nb: nb, sliceLen: (f.horizon + 1) / 2, horizon: f.horizon}
++	f.dk.Store(d)
++	return d
++}
++
++func (d *doorkeeper) slot(h uint64) (base int, fp uint32) {
++	x := mix64(h ^ 0x6a09e667f3bcc909)
++	b, _ := bits.Mul64(x, d.nb)
++	if fp = uint32(x>>40) & 0xFFFFFF; fp == 0 {
++		fp = 1
++	}
++	return int(b * 16), fp
++}
++
++// real is the slice a stamp names, the latest at or before now's.
++func (d *doorkeeper) real(st, now uint64) uint64 {
++	cur := now / d.sliceLen
++	return cur - (cur-st)&0xFF
++}
++
++func (d *doorkeeper) live(st, now uint64) bool {
++	end := d.real(st, now)*d.sliceLen + d.sliceLen - 1
++	return age(now, end) <= d.horizon
++}
++
++func (d *doorkeeper) floorLive(base int, now uint64) bool {
++	fl := atomic.LoadUint32(&d.w[base])
++	return fl != 0 && d.live(uint64(fl&0xFF), now)
++}
++
++// find: the word index of h's live entry, or -1; and whether its floor is live.
++func (d *doorkeeper) find(h, now uint64) (int, bool) {
++	base, fp := d.slot(h)
++	for k := 1; k < 16; k++ {
++		if e := atomic.LoadUint32(&d.w[base+k]); e != 0 && e>>8 == fp && d.live(uint64(e&0xFF), now) {
++			return base + k, d.floorLive(base, now)
++		}
++	}
++	return -1, d.floorLive(base, now)
++}
++
++// keep writes h's entry (h has none): a free or dead way, else over the
++// oldest, whose slice the floor takes first.
++func (d *doorkeeper) keep(h, now uint64) {
++	base, fp := d.slot(h)
++	e := fp<<8 | uint32(now/d.sliceLen&0xFF)
++	for {
++		free, victim, vsl, vold := -1, -1, uint64(1<<64-1), uint32(0)
++		for k := 1; k < 16; k++ {
++			o := atomic.LoadUint32(&d.w[base+k])
++			if o == 0 || !d.live(uint64(o&0xFF), now) {
++				free, vold = base+k, o
++				break
++			}
++			if sl := d.real(uint64(o&0xFF), now); sl < vsl {
++				victim, vsl, vold = base+k, sl, o
++			}
++		}
++		if free >= 0 {
++			if atomic.CompareAndSwapUint32(&d.w[free], vold, e) {
++				return
++			}
++			continue
++		}
++		for { // the floor first: no reader sees the entry in neither place
++			fl := atomic.LoadUint32(&d.w[base])
++			sl := vsl
++			if fl != 0 && d.live(uint64(fl&0xFF), now) {
++				sl = max(sl, d.real(uint64(fl&0xFF), now))
++			}
++			if nf := 1<<8 | uint32(sl&0xFF); nf == fl || atomic.CompareAndSwapUint32(&d.w[base], fl, nf) {
++				break
++			}
++		}
++		if atomic.CompareAndSwapUint32(&d.w[victim], vold, e) {
++			return
++		}
++	}
++}
++
++// dkUpper is what the doorkeeper adds to Upper for h, absent from the table.
++func (f *Filter) dkUpper(h, now uint64) int {
++	d := f.dk.Load()
++	if d == nil {
++		return 0
++	}
++	if i, fl := d.find(h, now); i >= 0 || fl {
++		return 1
++	}
++	return 0
++}
+diff --git a/filter.go b/filter.go
+index 9fe1c40..2a746d5 100644
+--- a/filter.go
++++ b/filter.go
+@@ -213,6 +213,7 @@ type Filter struct {
+ 	_          [64]byte
+ 	room       atomic.Pointer[stashTable] // Background: keys waiting for a slot, nil until the first waits
+ 	roomN      uint64                     // sets of the wait room
++	dk         atomic.Pointer[doorkeeper] // lab E7: first touches kept out while saturated, nil until used
+ 	roomMu     [stashStripes]paddedMutex
+ }
+ 
+@@ -566,5 +567,8 @@ func (f *Filter) Bytes() int {
+ 	if t := f.hot.Load(); t != nil {
+ 		n += len(t.e) * int(unsafe.Sizeof(hotEntry{}))
+ 	}
++	if d := f.dk.Load(); d != nil {
++		n += 4 * len(d.w)
++	}
+ 	return n
+ }
+diff --git a/touch.go b/touch.go
+index 937b762..6603bfe 100644
+--- a/touch.go
++++ b/touch.go
+@@ -25,6 +25,9 @@ func (f *Filter) count(h, window, now uint64, i0 int) Result {
+ 		r.Seen = r.Count > 0
+ 	} else {
+ 		r.Degraded = f.lostRecently(now)
++		if !f.ct {
++			r.Upper += f.dkUpper(h, now)
++		}
+ 	}
+ 	if f.sketchLive(now) {
+ 		f.addSketch(&r, h, window, now)
+@@ -270,11 +273,44 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 					mu.Unlock()
+ 					continue
+ 				}
++				extra, dki, dke := 0, -1, uint32(0)
++				if src == 0 && !f.bg && f.pressure.Load() >= dkSaturated {
++					d := f.doorKeeper()
++					var fl bool
++					if dki, fl = d.find(h, now); dki < 0 { // kept out; a live floor may cover a forgotten touch of h
++						d.keep(h, now)
++						mu.Unlock()
++						r := Result{Count: 1, Upper: 1}
++						if fl {
++							r.Upper, r.Degraded = 2, true
++						}
++						if f.sketchLive(now) {
++							f.addSketch(&r, h, window, now)
++						}
++						return r
++					}
++					dke = atomic.LoadUint32(&d.w[dki])
++					extra = 1
++					if fl {
++						extra = 2
++					}
++				}
+ 				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src)
+ 				mu.Unlock()
+ 				if r.Count < 0 {
+ 					continue
+ 				}
++				if extra > 0 { // the doorkeeper's earlier event(s), counted at now; Seen stays false
++					var r2 Result
++					for range extra {
++						r2 = f.touch(h, window, now, wantCount, -1)
++					}
++					if d := f.dk.Load(); d != nil {
++						atomic.CompareAndSwapUint32(&d.w[dki], dke, 0) // h is in: its entry goes, unless another key took the way
++					}
++					r.Count, r.Upper, r.Saturated, r.Degraded = r2.Count, r2.Upper, r2.Saturated, true
++					return r
++				}
+ 				if f.sketchLive(now) {
+ 					f.addSketch(&r, h, window, now)
+ 				}

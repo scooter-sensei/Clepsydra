@@ -1,0 +1,142 @@
+diff --git a/filter.go b/filter.go
+index 9fe1c40..1f7a783 100644
+--- a/filter.go
++++ b/filter.go
+@@ -558,7 +558,7 @@ func (f *Filter) Bytes() int {
+ 		}
+ 	}
+ 	if g := f.gh.Load(); g != nil {
+-		n += 8 * len(g.words)
++		n += 8 * (len(g.words) + len(g.hint))
+ 	}
+ 	if sk := f.sk.Load(); sk != nil {
+ 		n += 4 * len(sk.cells)
+diff --git a/ghost.go b/ghost.go
+index 4bb6d06..6edc4ef 100644
+--- a/ghost.go
++++ b/ghost.go
+@@ -67,6 +67,12 @@ type ghost struct {
+ 	until    atomic.Uint64 // tick before which an entry may be live
+ 	sat      atomic.Bool   // some entry saturated (count is a floor)
+ 	floored  atomic.Uint64 // histories that left to a bucket's floor
++	// hint holds a 2-bit stamp per primary line of the table (32 to a
++	// word): 0, or the newest slice (mod 3, + 1) of a history homed at that
++	// line written here. add sets it before the history's entry or floor;
++	// advance clears it once dead, with the entries. A read that finds it
++	// 0 or dead skips the table (lab E4).
++	hint []uint64
+ }
+ 
+ // newGhost sizes the table to bytes (rounded down to whole buckets).
+@@ -84,6 +90,53 @@ func newGhost(bytes, horizon uint64, choices, sub int) *ghost {
+ 	}
+ }
+ 
++// real3 decodes a line stamp against epoch ep: live stamps are of slices
++// cur-2..cur.
++func (g *ghost) real3(e, ep uint64) uint64 {
++	cur := ep - 1
++	return cur - (cur%3+3-(e-1))%3
++}
++
++// markLine raises line's stamp to slice sl (the epoch already covers it).
++func (g *ghost) markLine(line, sl uint64) {
++	if g.hint == nil {
++		return
++	}
++	w, sh := &g.hint[line/32], uint(line%32)*2
++	for {
++		ep := g.epoch.Load()
++		old := atomic.LoadUint64(w)
++		s := sl
++		if e := old >> sh & 3; e != 0 {
++			s = max(s, g.real3(e, ep))
++		}
++		ne := s%3 + 1
++		if ne == old>>sh&3 || g.epoch.Load() == ep && atomic.CompareAndSwapUint64(w, old, old&^(3<<sh)|ne<<sh) {
++			return
++		}
++	}
++}
++
++// mayHold: a history homed at line may be live here at now. False only
++// when no history homed there was written, or every one is dead.
++func (g *ghost) mayHold(line, now uint64) bool {
++	if g.hint == nil {
++		return true
++	}
++	w, sh := &g.hint[line/32], uint(line%32)*2
++	for {
++		ep := g.epoch.Load()
++		if ep == 0 {
++			return false
++		}
++		e := atomic.LoadUint64(w) >> sh & 3
++		if g.epoch.Load() != ep {
++			continue
++		}
++		return e != 0 && g.live(g.real3(e, ep), g.horizon, now)
++	}
++}
++
+ func ghEntry(fp, cnt, sl uint64) uint64 { return fp<<(ghCntBits+ghSlBits) | cnt<<ghSlBits | sl&3 }
+ func ghFP(e uint64) uint64              { return e >> (ghCntBits + ghSlBits) }
+ func ghCnt(e uint64) uint64             { return e >> ghSlBits & ghCntMax }
+@@ -162,6 +215,7 @@ func (g *ghost) add(id, n, last uint64, sat bool, now uint64) {
+ 			}
+ 		}
+ 	}
++	g.markLine(id>>28, sl)
+ 	bases, nb, fp := g.slot(id)
+ outer:
+ 	for {
+@@ -303,6 +357,20 @@ func (g *ghost) advance(ns uint64) {
+ 				}
+ 			}
+ 		}
++		for i := range g.hint {
++			for {
++				old := atomic.LoadUint64(&g.hint[i])
++				nw := old
++				for k := range 32 {
++					if e := old >> (2 * k) & 3; e != 0 && g.real3(e, ep)+2 < ns {
++						nw &^= 3 << (2 * k)
++					}
++				}
++				if nw == old || atomic.CompareAndSwapUint64(&g.hint[i], old, nw) {
++					break
++				}
++			}
++		}
+ 	}
+ 	g.epoch.Store(ns + 1)
+ }
+diff --git a/overflow.go b/overflow.go
+index b04ebd5..f0b946b 100644
+--- a/overflow.go
++++ b/overflow.go
+@@ -328,6 +328,7 @@ func (f *Filter) ghostTable() *ghost {
+ 		return g
+ 	}
+ 	g := newGhost(f.skShape.bytes(f.skW), f.horizon, f.ghChoices, f.ghSub)
++	g.hint = make([]uint64, (f.lines+31)/32)
+ 	f.gh.Store(g)
+ 	return g
+ }
+diff --git a/touch.go b/touch.go
+index 937b762..4cfe437 100644
+--- a/touch.go
++++ b/touch.go
+@@ -163,7 +163,11 @@ func (f *Filter) addSketch(r *Result, h, window, now uint64) {
+ 	var s Result
+ 	var ok bool
+ 	if !f.cms {
+-		s, ok = f.gh.Load().estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now)
++		g, id := f.gh.Load(), f.stashID(h, fingerprint(h), tag(h))
++		if !f.ct && !g.mayHold(id>>28, now) {
++			return
++		}
++		s, ok = g.estimate(id, min(window, f.horizon), now)
+ 	} else {
+ 		s, ok = f.sk.Load().estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now, f.ct)
+ 	}

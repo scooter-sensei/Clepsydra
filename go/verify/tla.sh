@@ -2,7 +2,7 @@
 # Model checks of the slot protocol (verify/tla/*.tla) with TLC.
 #
 #   verify/tla.sh [model...]   WaitRoom, RegisterEpoch, Relocate, RoomWays, SlotHold,
-#                              TagStripe, BumpABA, HotEntry, DispBitmap
+#                              TagStripe, BumpABA, HotEntry
 #                              (default: all): the protocol as committed at
 #                              a few sizes, then each guard undone (each
 #                              must break an invariant)
@@ -219,26 +219,8 @@ hotentry() {
 	run violation HotEntry "noClose, spill: KExact" KExact 'Variant = "noClose"' 'Writer = "spill"' "Adders = $(procs a 1)"
 }
 
-# DispBitmap (claims A43): the displacement bitmap's bit, set by writers
-# placing displaced entries and cleared by the sweep, against lookups that
-# skip a line whose bit is clear.
-dispbitmap() {
-	local inv="NoMiss Covered" sz w sw r n l v
-	for sz in '{"K"} 1 2 2 2' '{"K","X"} 1 2 2 1' '{"K"} 2 2 1 1' '{"K","X"} 2 1 1 1'; do
-		read -r w sw r n l <<<"$sz"
-		w=${w//,/, }
-		run ok DispBitmap "fixed, writers $w, sweepers $sw, rounds $r, sweeps $n, lookups $l" "$inv" 'Variant = "fixed"' "Writers = $w" "Sweepers = $(procs s "$sw")" "Rounds = $r" "Sweeps = $n" "Lookups = $l"
-	done
-	for r in NeverCleared NeverSkipped NeverRaced; do
-		run violation DispBitmap "fixed, reachable: $r" "$r" 'Variant = "fixed"' 'Writers = {"K"}' "Sweepers = $(procs s 1)" 'Rounds = 2' 'Sweeps = 2' 'Lookups = 1'
-	done
-	for v in noSetBefore noSeq noRescan; do
-		run violation DispBitmap "$v: NoMiss" NoMiss "Variant = \"$v\"" 'Writers = {"K"}' "Sweepers = $(procs s 1)" 'Rounds = 2' 'Sweeps = 2' 'Lookups = 1'
-	done
-}
-
 models=("$@")
-[ ${#models[@]} -gt 0 ] || models=(WaitRoom RegisterEpoch Relocate RoomWays SlotHold TagStripe BumpABA HotEntry DispBitmap)
+[ ${#models[@]} -gt 0 ] || models=(WaitRoom RegisterEpoch Relocate RoomWays SlotHold TagStripe BumpABA HotEntry)
 for m in "${models[@]}"; do
 	case $m in
 	WaitRoom) waitroom ;;
@@ -249,7 +231,6 @@ for m in "${models[@]}"; do
 	TagStripe) tagstripe ;;
 	BumpABA) bumpaba ;;
 	HotEntry) hotentry ;;
-	DispBitmap) dispbitmap ;;
 	*) echo "unknown model $m"; bad=1 ;;
 	esac
 done

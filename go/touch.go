@@ -79,7 +79,7 @@ func (f *Filter) read(h, now uint64, i0 int) (w0, w1 uint64, src int) {
 			b, d := m.begun.Load(), m.done.Load()
 			i, fpd := i0, fp<<1 // warm finds a key undisplaced in its primary line
 			if try > 0 || i < 0 {
-				i, fpd = f.locateRead(h, fp, tg)
+				i, fpd = f.locateAt(h, fp, tg)
 			}
 			if w0, w1, ok := f.slotWords(i, fpd, tg); ok {
 				return w0, w1, srcTable

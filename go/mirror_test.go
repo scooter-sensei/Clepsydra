@@ -40,7 +40,6 @@ func TestMirrorKeyInFoundSlotNotCounted(t *testing.T) {
 	// K's entry, displaced, in the slot H was found in.
 	kw1, _ := f.nextReg(0, tg, t0, t0, true)
 	f.words[i0], f.words[i0+1] = fp<<48|dispBit|t0, kw1
-	f.setDisp(p) // a displaced entry's line has its disp bit (install sets it)
 	if f.locate(k, fp, tg) != i0 {
 		t.Fatal("K not found in H's old slot")
 	}

@@ -405,7 +405,7 @@ func TestMemoryOnFirstUse(t *testing.T) {
 		t.Skip("ConstantTime and Background allocate the stash on the first insert that waits for a slot")
 	}
 	f := newTest(t, 4096, time.Minute)
-	table := 16*f.Slots() + 8*len(f.disp) + int(unsafe.Sizeof(f.dispClr)) // the table, its disp bits and their clear counts
+	table := 16 * f.Slots()
 	for i := range uint64(f.Slots() * 85 / 100) {
 		f.TouchAt(mix64(i), 0, 1)
 	}

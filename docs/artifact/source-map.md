@@ -19,6 +19,9 @@ Every file of `go/`, by category. Go builds a package from one directory and req
 | `ghost.go` | the overflow ghost table: two buckets, floors, epochs | [§3.5](../paper/03-design.md#35-the-overflow-table) |
 | `overflow.go` | the count-min overflow sketch the ghost table replaced, kept for the experiments | [record/decisions.md](../record/decisions.md#overflow) |
 | `merge.go` | `Merge`: one quiescent filter's keys added to another | [§4.1](../paper/04-operations.md#41-operations) |
+| `snapshot.go` | snapshots: `WriteTo` and `ReadFrom`, the format's six sections and their CRC32C check words, the built-in clock's re-anchoring | [§4.1](../paper/04-operations.md#41-operations) |
+| `resize.go` | `Resizable`: a filter whose Capacity changes, the old filter read beside the new for a horizon, keys moved on their next touch | [§4.1](../paper/04-operations.md#41-operations) |
+| `touchif.go` | `TouchIfUnder`, `TouchIfUnderAt`: a touch only while the key is under a limit, serialized per key by 64 stripes | [§4.2](../paper/04-operations.md#using-the-trust-flags) |
 | `go.mod` | the module, `github.com/scooter-sensei/clepsydra/go`: Go 1.24.7 at least, toolchain go1.27.3 | — |
 
 ## Internal packages: `go/internal/`
@@ -43,14 +46,14 @@ The head-to-head harness ([head-to-head.md](head-to-head.md)): `trace.go` (part 
 
 | Category | Files |
 |---|---|
-| Smoke and unit | `smoke_test.go` (every public operation once, three configs), `filter_test.go`, `register_test.go`, `disp_test.go` (the displaced bit), `batch_test.go`, `ghost_test.go`, `hot_test.go`, `background_test.go`, `ctwait_test.go` (ConstantTime's waiting keys), `merge_test.go` (`Merge`, D24), `hashbatch_test.go` (`HashUint64s` equals `HashUint64`, D25), `mass_exp_test.go` (`TF_EXP=1`: `mass` from word1 equals the view's, S76) |
+| Smoke and unit | `smoke_test.go` (every public operation once, three configs), `filter_test.go`, `register_test.go`, `disp_test.go` (the displaced bit), `batch_test.go`, `ghost_test.go`, `hot_test.go`, `background_test.go`, `ctwait_test.go` (ConstantTime's waiting keys), `merge_test.go` (`Merge`, D24), `snapshot_test.go` (D27; `TestSnapshotCross` with `SNAP_OUT`/`SNAP_IN` across builds), `resize_test.go` (D28), `touchif_test.go` (A45), `hashbatch_test.go` (`HashUint64s` equals `HashUint64`, D25), `mass_exp_test.go` (`TF_EXP=1`: `mass` from word1 equals the view's, S76) |
 | Conformance | `conformance_test.go` (`spec/vectors/`, `-update` regenerates them) |
-| Regression of fixed bugs | `regress_test.go`, `dup_test.go`, `reloc_race_test.go`, `abandon_test.go`, `read_race_test.go`, `restore_test.go`, `lost_test.go`, `movecopy_test.go`, `restorewait_test.go` (A37), `mirror_test.go` (A39), `hotdrop_test.go` (A40) |
+| Regression of fixed bugs | `regress_test.go`, `dup_test.go`, `reloc_race_test.go`, `abandon_test.go`, `read_race_test.go`, `restore_test.go`, `lost_test.go`, `movecopy_test.go`, `restorewait_test.go` (A37), `mirror_test.go` (A39), `hotdrop_test.go` (A40), `merge_stash_test.go` (D26) |
 | Concurrency races on hooks | `gaprace_test.go` (A21), `roomrace_test.go` (A20, A24), `split_race_test.go` (971dc4a, 64ebd85, A23), `sweep_race_test.go` (A26), `install_race_test.go` (A27), `tagstripe_test.go` (A28–A30), `hotspill_test.go` (A32, A38), `stash_race_test.go` (A6), `cas2_amd64_test.go`, `cas2_other_test.go` (realign both ways, A33) |
 | Fuzzers and soak | `fuzz_test.go` (`TestFuzzUpper`), `fuzzconc_test.go` (`TestFuzzConcurrent`), `soak_test.go` (`TestStressSoak`), `tagamp_test.go` (the tag amplifier, `TF_CFUZZ_TAGS`, `TF_STRESS_TAGS`) |
 | Attacks | `attack_test.go` |
 | Deterministic experiments (`verify/expected/`) | `placement_test.go` (the placement oracle, D8–D11), `rate_test.go` (A15), `velbound_test.go` (D18), `velinfo_test.go` (D19), `secexp_test.go` (A9–A11), `floodexp_test.go` (A14) |
-| Speed and host probes | `bench_test.go` (the benchmarks), `cycles_linux_test.go`, `cycles_other_test.go` (`cycles/op`), `throughput_test.go` (S37, S53), `inserttail_test.go` (S38, S45, S61), `timing_test.go` (S28, S41), `ctexp_test.go` (S33, S36), `hostprobe_test.go` (S42, S43) |
+| Speed and host probes | `bench_test.go` (the benchmarks), `cycles_linux_test.go`, `cycles_other_test.go` (`cycles/op`), `throughput_test.go` (S37, S53), `inserttail_test.go` (S38, S45, S61), `timing_test.go` (S28, S41), `ctexp_test.go` (S33, S36), `hostprobe_test.go` (S42, S43), `sweeplat_test.go` (`TF_EXP=1`: the overflow sweep's stalls, call by call; S79, E36) |
 
 ## Scripts and verification: `go/test.sh`, `go/bench.sh`, `go/verify/`
 
@@ -65,4 +68,4 @@ The head-to-head harness ([head-to-head.md](head-to-head.md)): `trace.go` (part 
 | `verify/expected/` | the golden outputs the deterministic checks must match byte for byte |
 | `verify/experiments/` | reverted experiments as git patches ([experiments.md](experiments.md)) |
 | `verify/testdata/` | older versions of `ghost_test.go` and `restore_test.go`, and `mirror_test.go` without its read check, that the bug replays need |
-| `verify/tla/` | the TLA+ models of the slot protocol; `verify/tla/experiments/` holds `HotCells.tla` and `DispBitmap.tla`, models of experiments not adopted (E23, E46) |
+| `verify/tla/` | the TLA+ models of the slot protocol and of a stash set (`StashSet.tla`, A44); `verify/tla/experiments/` holds `HotCells.tla`, `DispBitmap.tla` and `SpilledBit.tla`, models of experiments not adopted (E23, E46, E53) |

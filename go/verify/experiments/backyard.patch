@@ -1,0 +1,279 @@
+diff --git a/backyard_test.go b/backyard_test.go
+new file mode 100644
+index 0000000..c7b1255
+--- /dev/null
++++ b/backyard_test.go
+@@ -0,0 +1,273 @@
++//go:build tfwork
++
++package temporalfilter
++
++import (
++	"fmt"
++	"math"
++	"math/bits"
++	"os"
++	"slices"
++	"testing"
++	"time"
++
++	"github.com/scooter-sensei/clepsydra/go/internal/workload"
++)
++
++// TestBackyard (TF_EXP=1, -tags tfwork; NEXT-RESULTS.md N8) replays
++// tfbench's churn stream into a model with no moves: the key's two lines
++// are a front yard, a backyard of 8-slot buckets (two choices) takes what
++// they can't, and a per-line bit sends lookups there; and into HEAD with
++// N7's work counters, for line reads per unseen insert and per absent
++// lookup.
++func TestBackyard(t *testing.T) {
++	if os.Getenv("TF_EXP") == "" {
++		t.Skip("set TF_EXP=1")
++	}
++	const capacity, H = 200_000, 60_000
++	const probes = 1_000_000
++	loads := []struct {
++		load float64
++		seed uint64
++	}{{1.0, 2}, {1.1, 3}, {1.15, 4}}
++	q := func(x []uint32, p float64) uint32 {
++		s := slices.Clone(x)
++		slices.Sort(s)
++		return s[int(p*float64(len(s)-1))]
++	}
++	mean := func(x []uint32) float64 {
++		s := 0.0
++		for _, v := range x {
++			s += float64(v)
++		}
++		return s / float64(len(x))
++	}
++	probeKey := func(i int) uint64 { return mix64(uint64(i) + 1<<55) }
++	var headLines uint64
++	for _, c := range loads {
++		f, _ := New(Config{Capacity: capacity, Horizon: time.Minute, Resolution: time.Millisecond})
++		headLines = f.lines
++		last := map[uint64]uint64{}
++		var ins []uint32
++		var end uint64
++		workload.Churn(c.load, c.seed, capacity, H, mix64, func(h, w, now uint64) {
++			lt, ok := last[h]
++			unseen := !ok || now-lt > H
++			b := work[workLines]
++			f.CheckAndTouchAt(h, w, now)
++			if unseen {
++				ins = append(ins, uint32(work[workLines]-b))
++			}
++			last[h], end = now, now
++		})
++		b := work[workLines]
++		for i := range probes {
++			f.ContainsAt(probeKey(i), H, end)
++		}
++		t.Logf("HEAD      load %.2f: unseen inserts %d, lines mean %.3f p99 %d; absent lookup lines %.4f; evictions %d; %.2f B/key",
++			c.load, len(ins), mean(ins), q(ins, 0.99), float64(work[workLines]-b)/probes, f.Evictions(), float64(f.Bytes())/capacity)
++	}
++	for _, carved := range []bool{false, true} {
++		for _, frac := range []float64{0.05, 0.10, 0.15} {
++			lf := headLines
++			nb := uint64(math.Round(frac * float64(lf) * slotsPerLine / 8))
++			if carved {
++				lf = uint64(math.Round(float64(headLines) / (1 + frac)))
++				nb = (headLines - lf) * slotsPerLine / 8
++			}
++			name := fmt.Sprintf("added %2.0f%%", 100*frac)
++			if carved {
++				name = fmt.Sprintf("carved %2.0f%%", 100*frac)
++			}
++			bkey := (float64(lf*slotsPerLine+nb*8)*16 + float64(lf)/8) / capacity
++			for _, c := range loads {
++				m := newBackyard(lf, nb, H)
++				var ins []uint32
++				var end uint64
++				peak := 0.0
++				next := uint64(H)
++				workload.Churn(c.load, c.seed, capacity, H, mix64, func(h, w, now uint64) {
++					if now >= next {
++						peak = max(peak, m.fill(now))
++						next += 1000
++					}
++					lines, inserted := m.touch(h, now)
++					if inserted {
++						ins = append(ins, uint32(lines))
++					}
++					end = now
++				})
++				var al, cmp uint64
++				for i := range probes {
++					l, k := m.absent(probeKey(i), end)
++					al += l
++					cmp += k
++				}
++				cpl := float64(cmp) / probes
++				t.Logf("%-10s load %.2f: unseen inserts %d, lines mean %.3f p99 %d; absent lookup lines %.4f, compared %.3f, FPR %.2e; backyard peak fill %.3f; forced evictions %d; in backyard %d; %.2f B/key",
++					name, c.load, len(ins), mean(ins), q(ins, 0.99), float64(al)/probes, cpl, cpl*math.Pow(2, -28), peak, m.forced, m.toBack, bkey)
++			}
++		}
++	}
++}
++
++type backyard struct {
++	f              *Filter // primary and alt over the front's lines
++	key, last      []uint64
++	disp           []bool
++	bkey, blast    []uint64
++	home           [][]uint32 // per front line: backyard slots placed from it
++	nb, h          uint64
++	forced, toBack int
++}
++
++func newBackyard(lines, nb, h uint64) *backyard {
++	n := lines * slotsPerLine
++	return &backyard{f: &Filter{lines: lines}, key: make([]uint64, n), last: make([]uint64, n), disp: make([]bool, n),
++		bkey: make([]uint64, nb*8), blast: make([]uint64, nb*8), home: make([][]uint32, lines), nb: nb, h: h}
++}
++
++func (b *backyard) live(last, now uint64) bool { return now-last <= b.h }
++
++// bit is line p's overflow bit: some live backyard entry was placed from p.
++func (b *backyard) bit(p, now uint64) bool {
++	l := b.home[p][:0]
++	for _, s := range b.home[p] {
++		if b.bkey[s] != 0 && b.live(b.blast[s], now) && b.f.primary(b.bkey[s]) == p {
++			l = append(l, s)
++		}
++	}
++	b.home[p] = l
++	return len(l) > 0
++}
++
++func (b *backyard) buckets(h uint64) [2]uint64 {
++	x := mix64(h ^ 0x6a09e667f3bcc909)
++	b1, _ := mulHi(x, b.nb)
++	b2, _ := mulHi(mix64(x), b.nb)
++	return [2]uint64{b1, b2}
++}
++
++func mulHi(x, n uint64) (uint64, uint64) {
++	hi, lo := bits.Mul64(x, n)
++	return hi, lo
++}
++
++// touch is one CheckAndTouch of h at now: the line reads, and whether it
++// was an unseen insert.
++func (b *backyard) touch(h, now uint64) (lines int, inserted bool) {
++	p := b.f.primary(h)
++	a := b.f.alt(p, fingerprint(h))
++	lines = 1
++	for s := p * slotsPerLine; s < (p+1)*slotsPerLine; s++ {
++		if b.key[s] == h && !b.disp[s] && b.live(b.last[s], now) {
++			b.last[s] = now
++			return lines, false
++		}
++	}
++	lines++
++	for s := a * slotsPerLine; s < (a+1)*slotsPerLine; s++ {
++		if b.key[s] == h && b.disp[s] && b.live(b.last[s], now) {
++			b.last[s] = now
++			return lines, false
++		}
++	}
++	bk := b.buckets(h)
++	bit := b.bit(p, now)
++	if bit {
++		lines += 4
++		for _, k := range bk {
++			for s := k * 8; s < k*8+8; s++ {
++				if b.bkey[s] == h && b.live(b.blast[s], now) {
++					b.blast[s] = now
++					return lines, false
++				}
++			}
++		}
++	}
++	lines += 2 // the placement pass reads both lines again, as claimAt does
++	for i, l := range [2]uint64{p, a} {
++		for s := l * slotsPerLine; s < (l+1)*slotsPerLine; s++ {
++			if b.key[s] == 0 || !b.live(b.last[s], now) {
++				b.key[s], b.last[s], b.disp[s] = h, now, i == 1
++				return lines, true
++			}
++		}
++	}
++	if !bit {
++		lines += 4
++	}
++	best, bestLive := uint64(0), 9
++	for _, k := range bk {
++		n := 0
++		for s := k * 8; s < k*8+8; s++ {
++			if b.bkey[s] != 0 && b.live(b.blast[s], now) {
++				n++
++			}
++		}
++		if n < bestLive {
++			best, bestLive = k, n
++		}
++	}
++	b.toBack++
++	if bestLive < 8 {
++		for s := best * 8; s < best*8+8; s++ {
++			if b.bkey[s] == 0 || !b.live(b.blast[s], now) {
++				b.bkey[s], b.blast[s] = h, now
++				b.home[p] = append(b.home[p], uint32(s))
++				return lines, true
++			}
++		}
++	}
++	b.forced++ // both buckets full of live entries: the least recently touched of the 16 goes
++	vs, vt := uint64(0), uint64(math.MaxUint64)
++	for _, k := range bk {
++		for s := k * 8; s < k*8+8; s++ {
++			if b.blast[s] < vt {
++				vs, vt = s, b.blast[s]
++			}
++		}
++	}
++	b.bkey[vs], b.blast[vs] = h, now
++	b.home[p] = append(b.home[p], uint32(vs))
++	return lines, true
++}
++
++// absent is a lookup of a never-inserted h: line reads and the entries its
++// identity would be compared with.
++func (b *backyard) absent(h, now uint64) (lines, cmp uint64) {
++	p := b.f.primary(h)
++	a := b.f.alt(p, fingerprint(h))
++	for s := p * slotsPerLine; s < (p+1)*slotsPerLine; s++ {
++		if b.key[s] != 0 && !b.disp[s] {
++			cmp++
++		}
++	}
++	for s := a * slotsPerLine; s < (a+1)*slotsPerLine; s++ {
++		if b.key[s] != 0 && b.disp[s] {
++			cmp++
++		}
++	}
++	lines = 2
++	if b.bit(p, now) {
++		lines += 4
++		for _, k := range b.buckets(h) {
++			for s := k * 8; s < k*8+8; s++ {
++				if b.bkey[s] != 0 {
++					cmp++
++				}
++			}
++		}
++	}
++	return lines, cmp
++}
++
++func (b *backyard) fill(now uint64) float64 {
++	n := 0
++	for s := range b.bkey {
++		if b.bkey[s] != 0 && b.live(b.blast[s], now) {
++			n++
++		}
++	}
++	return float64(n) / float64(len(b.bkey))
++}

@@ -1,0 +1,495 @@
+diff --git a/cas2_amd64_test.go b/cas2_amd64_test.go
+index fedf2ef..c86e242 100644
+--- a/cas2_amd64_test.go
++++ b/cas2_amd64_test.go
+@@ -77,7 +77,7 @@ func TestRealignCAS2(t *testing.T) {
+ 		}
+ 		m := f.moveOf(tg)
+ 		begun := m.begun.Load()
+-		w1, over, ok := f.realign2(i, w0, full, tg, sweepT0+10*f.unit)
++		w1, over, ok := f.realign2(i, w0, full, tg, sweepT0+10*f.unit, 1)
+ 		n0, n1 := atomic.LoadUint64(&f.words[i]), atomic.LoadUint64(&f.words[i+1])
+ 		switch {
+ 		case m.begun.Load() != begun:
+diff --git a/ct.go b/ct.go
+index 5950ba7..0980211 100644
+--- a/ct.go
++++ b/ct.go
+@@ -208,11 +208,11 @@ func (f *Filter) placeRoomSet(p *stashTable, i uint64) {
+ // touchCT is touch in ConstantTime mode: its work (touch with ctInside:
+ // under the key's stripe, the same lookups whatever the key's state, then
+ // the count or the insert, then the overflow table) padded.
+-func (f *Filter) touchCT(h, window, now uint64, wantCount bool) Result {
++func (f *Filter) touchCT(h, window, now uint64, wantCount bool, n uint64) Result {
+ 	checkTick(now) // before the stripe: realign's check would panic holding it
+ 	t0, pad := f.ctBegin(opTouch, now)
+ 	s := time.Now()
+-	r := f.touch(h, window, now, wantCount, ctInside)
++	r := f.touchN(h, n, window, now, wantCount, ctInside)
+ 	f.ctEnd(opTouch, h, t0, s, pad)
+ 	return r
+ }
+diff --git a/cuckoo.go b/cuckoo.go
+index b7db94b..795dff6 100644
+--- a/cuckoo.go
++++ b/cuckoo.go
+@@ -27,7 +27,7 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
+ 	var r Result
+ 	// Taken out of the wait room (srcRoom): its move ends once it is placed.
+ 	room := src == srcRoom
+-	w1, _ := f.nextReg(0, tg, now, now, true) // first event, published with the key
++	w1, _ := f.nextReg(0, tg, now, now, true, 1) // first event, published with the key
+ 	last, sat := now, uint64(0)
+ 	hotRestore := false
+ 	if src != 0 && age(now, s0&tsMask) <= f.horizon && !f.hotGone(f.stashID(h, fp, tg), s1) {
+@@ -36,7 +36,7 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
+ 			w1, hotRestore = s1, true
+ 		} else {
+ 			var over bool
+-			w1, over = f.nextReg(s1, tg, last, now, false)
++			w1, over = f.nextReg(s1, tg, last, now, false, 1)
+ 			if over || s0&satBit != 0 && hot(w1) {
+ 				sat = satBit
+ 			}
+@@ -82,7 +82,7 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
+ 	if ci == -1 {
+ 		return Result{Count: -1}
+ 	}
+-	if hotRestore && !f.hotAdd(w1, f.stashID(h, fp, tg), now, nil) {
++	if hotRestore && !f.hotAdd(w1, f.stashID(h, fp, tg), now, nil, 1) {
+ 		// The entry was reclaimed since hotGone: look again. The key's slot
+ 		// (or wait) now points to another key's entry; the next look finds
+ 		// that and counts this touch afresh (bump's reset, or hotGone).
+diff --git a/filter.go b/filter.go
+index 486e15a..dd71a69 100644
+--- a/filter.go
++++ b/filter.go
+@@ -452,6 +452,17 @@ func (f *Filter) Touch(key string, window time.Duration) Result {
+ // TouchAt is Touch on a pre-hashed key, in ticks.
+ func (f *Filter) TouchAt(h, window, now uint64) Result { return f.touch(h, window, now, true, -1) }
+ 
++// TouchNAt is TouchAt for n events of h at now, counted at once: weights
++// such as bytes, query cost or tokens. The answer counts all n (Seen is
++// whether h was seen before them). n = 0 records nothing and reads as
++// CountAt. (NEXT-RESULTS.md N10.)
++func (f *Filter) TouchNAt(h, n, window, now uint64) Result {
++	if n == 0 {
++		return f.CountAt(h, window, now)
++	}
++	return f.touchN(h, n, window, now, true, -1)
++}
++
+ // Count is VelocityCount with the trust flags of Touch. It does not record an
+ // occurrence.
+ func (f *Filter) Count(key string, window time.Duration) Result {
+diff --git a/hot.go b/hot.go
+index 8fa3cfb..1eddee9 100644
+--- a/hot.go
++++ b/hot.go
+@@ -331,8 +331,8 @@ func (f *Filter) hotClose(idx, id uint64) (v view, ok bool) {
+ // this touch counted, instead of letting the touch spill. It returns the
+ // slot's new word1, or ok false if no entry is free, word1 changed
+ // meanwhile, or the slot is another key's (claims A29).
+-func (f *Filter) promote(i int, w0, old, tg, last, now uint64) (w1 uint64, ok bool) {
+-	w1, idx, id := f.hotEntryFor(i, w0, old, tg, last, now)
++func (f *Filter) promote(i int, w0, old, tg, last, now, n uint64) (w1 uint64, ok bool) {
++	w1, idx, id := f.hotEntryFor(i, w0, old, tg, last, now, n)
+ 	if w1 == 0 {
+ 		return 0, false
+ 	}
+@@ -359,8 +359,8 @@ func (f *Filter) promote(i int, w0, old, tg, last, now uint64) (w1 uint64, ok bo
+ 
+ // promoteHeld is promote for a touch that holds slot i's word1 busy
+ // (realign), which publishes w1 itself.
+-func (f *Filter) promoteHeld(i int, w0, old, tg, last, now uint64) (w1 uint64, ok bool) {
+-	if w1, _, _ = f.hotEntryFor(i, w0, old, tg, last, now); w1 == 0 {
++func (f *Filter) promoteHeld(i int, w0, old, tg, last, now, n uint64) (w1 uint64, ok bool) {
++	if w1, _, _ = f.hotEntryFor(i, w0, old, tg, last, now, n); w1 == 0 {
+ 		return 0, false
+ 	}
+ 	f.promoted.Add(1)
+@@ -370,7 +370,7 @@ func (f *Filter) promoteHeld(i int, w0, old, tg, last, now uint64) (w1 uint64, o
+ // hotEntryFor takes a free hot entry for the key in slot i (word0 w0, its
+ // register old, last touched at last) holding old's counts and one event at
+ // now: word1 pointing to it (0 if none is free), its index and identity.
+-func (f *Filter) hotEntryFor(i int, w0, old, tg, last, now uint64) (w1, idx, id uint64) {
++func (f *Filter) hotEntryFor(i int, w0, old, tg, last, now, n uint64) (w1, idx, id uint64) {
+ 	if f.hotN == 0 {
+ 		return 0, 0, 0
+ 	}
+@@ -391,7 +391,7 @@ func (f *Filter) hotEntryFor(i int, w0, old, tg, last, now uint64) (w1, idx, id
+ 		advanceWide(&v.c, v.e, u)
+ 		v.e = u
+ 	}
+-	v.c[0]++
++	v.c[0] += n
+ 	if idx = f.hotAlloc(id, &v, now); idx == 0 {
+ 		return 0, 0, 0
+ 	}
+@@ -454,9 +454,9 @@ func (f *Filter) slotDrop(id, w1 uint64) {
+ // hotAdd counts one event at now into the entry word1 points to. slot, if
+ // not nil, is the word1 (holding w1) the touch found the key by: the entry
+ // may then be handed back to it as a register (demote).
+-func (f *Filter) hotAdd(w1, id, now uint64, slot *uint64) bool {
++func (f *Filter) hotAdd(w1, id, now uint64, slot *uint64, n uint64) bool {
+ 	t := f.hot.Load()
+-	return t != nil && t.add(hotIdx(w1), id, 1, f.unitOf(now), slot, w1)
++	return t != nil && t.add(hotIdx(w1), id, n, f.unitOf(now), slot, w1)
+ }
+ 
+ // advanceWide is register.advance for a hot entry's uncapped counts.
+diff --git a/hotdrop_test.go b/hotdrop_test.go
+index ad79b5a..d0d015b 100644
+--- a/hotdrop_test.go
++++ b/hotdrop_test.go
+@@ -113,7 +113,7 @@ func TestExpiredStashWayKeepsSharedEntry(t *testing.T) {
+ 		if s, _ := f.stashSet(oid); &s[0] != &set[0] || oid == id {
+ 			continue
+ 		}
+-		w1, _ := f.nextReg(0, tag(h), tL, tL, true)
++		w1, _ := f.nextReg(0, tag(h), tL, tL, true, 1)
+ 		f.stashPut(oid, fingerprint(h)<<48|tL, w1, tL)
+ 		break
+ 	}
+diff --git a/hotspill_test.go b/hotspill_test.go
+index db1bebe..569c748 100644
+--- a/hotspill_test.go
++++ b/hotspill_test.go
+@@ -161,7 +161,7 @@ func TestSpillOfForeignHotEntryIsNotLost(t *testing.T) {
+ 	if f.Lost() != 0 || f.lostRecently(now) {
+ 		t.Fatalf("a drop whose hot entry is another's: Lost %d, lost recently %v; want 0, false", f.Lost(), f.lostRecently(now))
+ 	}
+-	own, _ := f.nextReg(0, tg, now, now, true)
++	own, _ := f.nextReg(0, tg, now, now, true, 1)
+ 	f.spill(id, w0, own, now)
+ 	if f.Lost() != 1 || !f.lostRecently(now) {
+ 		t.Fatalf("a drop of a history with one event: Lost %d, lost recently %v; want 1, true", f.Lost(), f.lostRecently(now))
+diff --git a/lost_test.go b/lost_test.go
+index a7161b5..f1cb117 100644
+--- a/lost_test.go
++++ b/lost_test.go
+@@ -17,7 +17,7 @@ func TestLostAtNewestEvent(t *testing.T) {
+ 	}
+ 	h := mix64(1)
+ 	fp, tg := fingerprint(h), tag(h)
+-	w1, _ := f.nextReg(0, tg, 1000, 1000, true)
++	w1, _ := f.nextReg(0, tg, 1000, 1000, true, 1)
+ 	f.spill(f.stashID(h, fp, tg), fp<<48|1000, w1, 990) // dropped by a clock 10 ticks behind its last touch
+ 	if f.Lost() != 1 {
+ 		t.Fatalf("Lost() %d, want 1", f.Lost())
+diff --git a/mirror_test.go b/mirror_test.go
+index 3caf657..7eb7c49 100644
+--- a/mirror_test.go
++++ b/mirror_test.go
+@@ -38,7 +38,7 @@ func TestMirrorKeyInFoundSlotNotCounted(t *testing.T) {
+ 		t.Fatalf("H not in its primary line (slot %d)", i0)
+ 	}
+ 	// K's entry, displaced, in the slot H was found in.
+-	kw1, _ := f.nextReg(0, tg, t0, t0, true)
++	kw1, _ := f.nextReg(0, tg, t0, t0, true, 1)
+ 	f.words[i0], f.words[i0+1] = fp<<48|dispBit|t0, kw1
+ 	if f.locate(k, fp, tg) != i0 {
+ 		t.Fatal("K not found in H's old slot")
+diff --git a/register.go b/register.go
+index b66451c..3f6bf79 100644
+--- a/register.go
++++ b/register.go
+@@ -137,13 +137,13 @@ func regEpoch(w1 uint64, ref int64) int64 {
+ // a fresh register. A full register in the current unit comes back as is.
+ // overflow reports that an event spilled out of its bucket or was dropped
+ // (the slot's saturated bit must then be set).
+-func (f *Filter) nextReg(old, tg, last, now uint64, reset bool) (w1 uint64, overflow bool) {
+-	return f.nextRegU(old, tg, f.unitOf(last), f.unitOf(now), reset)
++func (f *Filter) nextReg(old, tg, last, now uint64, reset bool, n uint64) (w1 uint64, overflow bool) {
++	return f.nextRegU(old, tg, f.unitOf(last), f.unitOf(now), reset, n)
+ }
+ 
+ // nextRegU is nextReg with last's and now's units.
+-func (f *Filter) nextRegU(old, tg uint64, lastU, nowU int64, reset bool) (w1 uint64, overflow bool) {
+-	if !reset && old>>tagShift == tg && old>>48&epochMask == uint64(nowU)&epochMask &&
++func (f *Filter) nextRegU(old, tg uint64, lastU, nowU int64, reset bool, n uint64) (w1 uint64, overflow bool) {
++	if n == 1 && !reset && old>>tagShift == tg && old>>48&epochMask == uint64(nowU)&epochMask &&
+ 		regEpoch(old, lastU) == nowU {
+ 		// Fast path, same unit: increment the first bucket with room in
+ 		// place (spilling as add does). Buckets are contiguous from bit 0,
+@@ -165,7 +165,7 @@ func (f *Filter) nextRegU(old, tg uint64, lastU, nowU int64, reset bool) (w1 uin
+ 			e = nowU
+ 		} // else a caller with a slightly stale clock: count at e
+ 	}
+-	overflow = r.add(0, 1) || overflow
++	overflow = r.add(0, n) || overflow // n events (TouchNAt; NEXT-RESULTS.md N10)
+ 	return tg<<tagShift | uint64(e)&epochMask<<48 | r.pack(), overflow
+ }
+ 
+@@ -208,7 +208,7 @@ func hot(w1 uint64) bool {
+ // now's unit is at most ref's (a later unit goes through realign). nu is
+ // now's unit, last and lu the caller's last touch and its unit: ref is
+ // usually one of the two.
+-func (f *Filter) bump(i int, fpd, tg, now uint64, nu int64, last uint64, lu int64, reset bool) (w1, ref uint64, overflow, ok bool) {
++func (f *Filter) bump(i int, fpd, tg, now uint64, nu int64, last uint64, lu int64, reset bool, n uint64) (w1, ref uint64, overflow, ok bool) {
+ 	for {
+ 		old := atomic.LoadUint64(&f.words[i+1])
+ 		w0 := atomic.LoadUint64(&f.words[i])
+@@ -220,7 +220,7 @@ func (f *Filter) bump(i int, fpd, tg, now uint64, nu int64, last uint64, lu int6
+ 			if testHookHotAdding != nil {
+ 				testHookHotAdding(i)
+ 			}
+-			if f.hotAdd(old, f.slotID(uint64(i/wordsPerLine), w0, old), now, &f.words[i+1]) {
++			if f.hotAdd(old, f.slotID(uint64(i/wordsPerLine), w0, old), now, &f.words[i+1], n) {
+ 				return old, ref, false, true
+ 			}
+ 			if atomic.LoadUint64(&f.words[i+1]) != old {
+@@ -236,9 +236,9 @@ func (f *Filter) bump(i int, fpd, tg, now uint64, nu int64, last uint64, lu int6
+ 		default:
+ 			refU = f.unitOf(ref)
+ 		}
+-		nw, over := f.nextRegU(old, tg, refU, nu, reset)
++		nw, over := f.nextRegU(old, tg, refU, nu, reset, n)
+ 		if over {
+-			if pw, ok := f.promote(i, w0, old, tg, ref, now); ok {
++			if pw, ok := f.promote(i, w0, old, tg, ref, now, n); ok {
+ 				return pw, ref, false, true
+ 			}
+ 		}
+diff --git a/touch.go b/touch.go
+index a0620c0..dac2fcb 100644
+--- a/touch.go
++++ b/touch.go
+@@ -211,15 +211,25 @@ func (f *Filter) addSketch(r *Result, h, window, now uint64) {
+ // word0 found the key live and added to the entry, which leaves word1 as it
+ // was, and the reset dropped that event (claims A30).
+ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
++	return f.touchN(h, 1, window, now, wantCount, i0)
++}
++
++// touchN is touch for n >= 1 events of h at now (TouchNAt; NEXT-RESULTS.md
++// N10). A hit counts all n in one register or hot-entry update; a first
++// touch installs the key with one event and counts the other n-1 as a hit
++// (looking the key up again: wherever it went meanwhile, the events follow).
++// The answer's Seen, Restored and Degraded are the first touch's.
++func (f *Filter) touchN(h, n, window, now uint64, wantCount bool, i0 int) Result {
+ 	ct := i0 == ctInside
+ 	if !ct {
+ 		if h&decayEvery == 0 {
+ 			f.decayStep(now, 1)
+ 		}
+ 		if f.ct {
+-			return f.touchCT(h, window, now, wantCount)
++			return f.touchCT(h, window, now, wantCount, n)
+ 		}
+ 	}
++	var pend *Result // a first touch's answer, n-1 events still to count
+ 	fp, tg := fingerprint(h), tag(h)
+ 	var held *paddedMutex // ConstantTime: h's stripe, while held
+ 	for first := true; ; first = false {
+@@ -240,10 +250,17 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 					continue
+ 				}
+ 				held.Unlock()
++				if n > 1 {
++					held, n = nil, n-1
++					if pend == nil {
++						pend = &Result{Seen: r.Seen, Restored: r.Restored, Degraded: r.Degraded}
++					}
++					continue
++				}
+ 				if f.sketchLive(now) {
+ 					f.addSketch(&r, h, window, now)
+ 				}
+-				return r
++				return pend.merge(r)
+ 			}
+ 			if src == srcStash { // a stale copy: the table's entry is newer
+ 				f.stashPut(f.stashID(h, fp, tg), s0, s1, now)
+@@ -281,10 +298,17 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 				if r.Count < 0 {
+ 					continue
+ 				}
++				if n > 1 {
++					n--
++					if pend == nil {
++						pend = &Result{Seen: r.Seen, Restored: r.Restored, Degraded: r.Degraded}
++					}
++					continue
++				}
+ 				if f.sketchLive(now) {
+ 					f.addSketch(&r, h, window, now)
+ 				}
+-				return r
++				return pend.merge(r)
+ 			}
+ 			mu.Unlock() // another first touch got there first: count as a hit
+ 			fpd = w0 >> 47
+@@ -308,7 +332,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 			runtime.Gosched()
+ 			continue // another touch is realigning the slot
+ 		} else if far {
+-			w1, over, ok = f.realign(h, i, w0, old, tg, now)
++			w1, over, ok = f.realign(h, i, w0, old, tg, now, n)
+ 			ref = now
+ 		} else {
+ 			if now > last && !atomic.CompareAndSwapUint64(&f.words[i], w0, w0&^tsMask|now) {
+@@ -317,7 +341,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 			if nu > lu && testHookStamped != nil {
+ 				testHookStamped()
+ 			}
+-			w1, ref, over, ok = f.bump(i, fpd, tg, now, nu, last, lu, stale)
++			w1, ref, over, ok = f.bump(i, fpd, tg, now, nu, last, lu, stale, n)
+ 		}
+ 		if !ok {
+ 			continue // the slot was handed to another key, or moved on, meanwhile; look again
+@@ -340,10 +364,20 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 		if f.sketchLive(now) && (wantCount || !r.Seen || f.ct) {
+ 			f.addSketch(&r, h, window, now)
+ 		}
+-		return r
++		return pend.merge(r)
+ 	}
+ }
+ 
++// merge is r with a weighted first touch's flags (p, if not nil).
++func (p *Result) merge(r Result) Result {
++	if p != nil {
++		r.Seen = p.Seen
++		r.Restored = r.Restored || p.Restored
++		r.Degraded = r.Degraded || p.Degraded
++	}
++	return r
++}
++
+ // ctInside, as touch's i0: the call is touchCT's.
+ const ctInside = -2
+ 
+@@ -375,13 +409,13 @@ func (f *Filter) farAhead(i int, nu, lu int64, stale bool) (old uint64, far, wai
+ // published; while word1 is busy, a lookup that misses the slot looks
+ // again: the hold counts as a move of the key's stripe. ok is false if the
+ // slot changed meanwhile.
+-func (f *Filter) realign(h uint64, i int, w0, old, tg, now uint64) (w1 uint64, over, ok bool) {
++func (f *Filter) realign(h uint64, i int, w0, old, tg, now, n uint64) (w1 uint64, over, ok bool) {
+ 	checkTick(now)
+ 	if old>>tagShift != tg || isHot(old) && age(now, w0&tsMask) <= f.horizon {
+ 		return 0, false, false
+ 	}
+ 	if cpu.HasCAS2 {
+-		return f.realign2(i, w0, old, tg, now)
++		return f.realign2(i, w0, old, tg, now, n)
+ 	}
+ 	m := f.moveOf(tg)
+ 	m.begun.Add(1)
+@@ -397,9 +431,9 @@ func (f *Filter) realign(h uint64, i int, w0, old, tg, now uint64) (w1 uint64, o
+ 		testHookStamped()
+ 	}
+ 	last := w0 & tsMask
+-	w1, over = f.nextReg(old, tg, last, now, age(now, last) > f.horizon)
++	w1, over = f.nextReg(old, tg, last, now, age(now, last) > f.horizon, n)
+ 	if over {
+-		if pw, ok := f.promoteHeld(i, w0, old, tg, last, now); ok {
++		if pw, ok := f.promoteHeld(i, w0, old, tg, last, now, n); ok {
+ 			w1, over = pw, false
+ 		}
+ 	}
+@@ -415,13 +449,13 @@ func (f *Filter) realign(h uint64, i int, w0, old, tg, now uint64) (w1 uint64, o
+ // a key of old's tag can hold old bit for bit (promote). A promotion takes
+ // its entry first and publishes it by the same CAS, and closes it again if
+ // the CAS fails.
+-func (f *Filter) realign2(i int, w0, old, tg, now uint64) (w1 uint64, over, ok bool) {
++func (f *Filter) realign2(i int, w0, old, tg, now, n uint64) (w1 uint64, over, ok bool) {
+ 	last := w0 & tsMask
+ 	n0 := w0&^tsMask | now
+-	w1, over = f.nextReg(old, tg, last, now, age(now, last) > f.horizon)
++	w1, over = f.nextReg(old, tg, last, now, age(now, last) > f.horizon, n)
+ 	var idx, id uint64
+ 	if over {
+-		if pw, x, y := f.hotEntryFor(i, w0, old, tg, last, now); pw != 0 {
++		if pw, x, y := f.hotEntryFor(i, w0, old, tg, last, now, n); pw != 0 {
+ 			w1, over, idx, id = pw, false, x, y
+ 		}
+ 	}
+diff --git a/weightedrate_test.go b/weightedrate_test.go
+new file mode 100644
+index 0000000..13b2f83
+--- /dev/null
++++ b/weightedrate_test.go
+@@ -0,0 +1,82 @@
++package temporalfilter
++
++import (
++	"math"
++	"os"
++	"testing"
++	"time"
++)
++
++// TestWeightedRate (TF_EXP=1; NEXT-RESULTS.md N10) is TestSustainedRate
++// (claims A15) with weighted touches: n events per TouchNAt, at event
++// rates 10-5,000/s, with hot entries available and exhausted.
++func TestWeightedRate(t *testing.T) {
++	if os.Getenv("TF_EXP") == "" {
++		t.Skip("set TF_EXP=1")
++	}
++	const hTicks = 60_000
++	windows := []uint64{1_000, 5_000, 15_000, 30_000, 60_000}
++	bad5, badLow := 0, 0
++	for _, hot := range []int{0, -1} {
++		for _, n := range []uint64{1, 7, 100, 1000} {
++			for _, rate := range []uint64{10, 50, 200, 1000, 5000} {
++				every := max(1, 1000*n/rate) // ticks between sends
++				per := max(1, rate/(1000*n)) // sends per tick
++				f, err := New(Config{Capacity: 1000, Horizon: time.Minute, Resolution: time.Millisecond, Hot: hot})
++				if err != nil {
++					t.Fatal(err)
++				}
++				h := mix64(rate*7919 + n)
++				type acc struct {
++					lo, hi      float64
++					sat, k, bad int
++				}
++				st := make([]acc, len(windows))
++				for i := range st {
++					st[i].lo = math.Inf(1)
++				}
++				var sends []uint64 // tick of each send
++				for now := uint64(1); now < 3*hTicks; now += every {
++					for range per {
++						f.TouchNAt(h, n, 0, now)
++						sends = append(sends, now)
++					}
++					if now < 2*hTicks {
++						continue
++					}
++					for wi, w := range windows {
++						exact := 0
++						for j := len(sends) - 1; j >= 0 && sends[j]+w >= now; j-- {
++							exact += int(n)
++						}
++						r := f.CountAt(h, w, now)
++						a := &st[wi]
++						a.k++
++						if r.Saturated {
++							a.sat++
++						} else if r.Upper < exact {
++							a.bad++
++						}
++						q := float64(r.Count) / float64(exact)
++						a.lo, a.hi = min(a.lo, q), max(a.hi, q)
++					}
++				}
++				name := "hot entries"
++				if hot < 0 {
++					name = "register only"
++				}
++				actual := float64(per*n) * 1000 / float64(every)
++				for wi, w := range windows {
++					a := st[wi]
++					badLow += a.bad
++					if hot == 0 && w >= 5_000 && (a.lo != 1 || a.hi != 1) {
++						bad5++
++					}
++					t.Logf("%-13s n=%-4d rate=%d/s (actual %.0f) W=%2ds count/exact min=%.3f max=%.3f saturated=%.1f%% unflagged_upper_low=%d",
++						name, n, rate, actual, w/1000, a.lo, a.hi, 100*float64(a.sat)/float64(a.k), a.bad)
++				}
++			}
++		}
++	}
++	t.Logf("rule (1) cells with Count != exact (hot entries, W >= 5 s): %d; rule (2) unflagged Upper < exact: %d", bad5, badLow)
++}

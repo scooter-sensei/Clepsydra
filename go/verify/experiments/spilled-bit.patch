@@ -1,0 +1,219 @@
+diff --git a/cuckoo.go b/cuckoo.go
+index b7db94b..0354d3a 100644
+--- a/cuckoo.go
++++ b/cuckoo.go
+@@ -23,7 +23,7 @@ const noStripe = 1 << claimStripeBits
+ // register, or its evicted history from the stash. Count < 0 means it lost a
+ // race for a slot and the caller should look again. The caller holds h's
+ // claim stripe, so no other first touch of h runs meanwhile.
+-func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint64, src int) Result {
++func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint64, src int, sp uint64) Result {
+ 	var r Result
+ 	// Taken out of the wait room (srcRoom): its move ends once it is placed.
+ 	room := src == srcRoom
+@@ -55,13 +55,13 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
+ 	if f.ct || f.bg {
+ 		mode = claimDefer
+ 	}
+-	ci := f.claim(h, fp, w1, now, stamp, sat, mode)
++	ci := f.claim(h, fp, w1, now, stamp, sat|sp, mode)
+ 	if ci == claimWait {
+ 		// No free slot: wait for one, in the stash (ConstantTime; pads place
+ 		// it) or the wait room (Background; the placer goroutine places it).
+ 		// If more than one key per 16 wait-room entries waits, the placer
+ 		// isn't keeping up: search now.
+-		if (f.ct || f.deferred.Load() <= int64(f.roomN*stashWays/16)) && f.stashWait(f.stashID(h, fp, tg), fp<<48|sat|stamp, w1, now) {
++		if (f.ct || f.deferred.Load() <= int64(f.roomN*stashWays/16)) && f.stashWait(f.stashID(h, fp, tg), fp<<48|sat|sp|stamp, w1, now) {
+ 			// An evicted history that waits came back all the same: this
+ 			// touch is Restored (and counted once; the touch that installs
+ 			// it later recalls a waiting entry, which isn't).
+@@ -70,7 +70,7 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
+ 				f.bgKick()
+ 			}
+ 		} else { // its set is full: search (and evict) now rather than drop a history
+-			ci = f.claim(h, fp, w1, now, stamp, sat, claimFull)
++			ci = f.claim(h, fp, w1, now, stamp, sat|sp, claimFull)
+ 		}
+ 	}
+ 	if ci == -1 && (src == srcStash || room) { // put it back for the retry
+diff --git a/filter.go b/filter.go
+index 486e15a..39e1257 100644
+--- a/filter.go
++++ b/filter.go
+@@ -7,7 +7,7 @@
+ // Memory layout: the table is an array of 64-byte cache lines. Each line holds
+ // four 2-word slots:
+ //
+-//	word0: fp(16) | displaced(1) | saturated(1) | lastTouch(46) // freshness, CheckAndTouch
++//	word0: fp(16) | displaced(1) | saturated(1) | spilled(1) | lastTouch(45) // freshness, CheckAndTouch
+ //	word1: tag(12) | epoch(4) | b0..b6 (7 buckets, 48 bits)    // velocity register
+ //
+ // The velocity register keeps 7 buckets whose widths grow with age (1, 1,
+@@ -37,7 +37,7 @@ type Config struct {
+ 	// Horizon is the largest window any query may use.
+ 	Horizon time.Duration
+ 	// Resolution is the clock tick. Default 1µs. A slot keeps its last touch
+-	// in 46 bits, so ticks must stay at most MaxTick (2^46-1): 2.2 years of
++	// in 45 bits, so ticks must stay at most MaxTick (2^45-1): 2.2 years of
+ 	// the built-in clock at 1µs, 19.5 hours at 1ns. An insert at a later
+ 	// tick panics (MaxTick).
+ 	Resolution time.Duration
+@@ -360,7 +360,7 @@ func (f *Filter) Close() {
+ func (f *Filter) Now() uint64 { return f.clock() }
+ 
+ // MaxTick is the latest tick a filter can record: a slot keeps its last
+-// touch in 46 bits, and a later tick would run into the slot's flag and
++// touch in 45 bits, and a later tick would run into the slot's flag and
+ // fingerprint bits (its key would read unseen from then on). New rejects a
+ // Clock already past it, and a first touch (an insert), a touch that
+ // realigns its register (8 or more units after the last) and
+@@ -369,7 +369,7 @@ func (f *Filter) Now() uint64 { return f.clock() }
+ // inserted gets wrong answers for them until the next insert panics.
+ const MaxTick = tsMask
+ 
+-var errTick = errors.New("temporalfilter: tick past MaxTick (2^46-1): see Config.Resolution")
++var errTick = errors.New("temporalfilter: tick past MaxTick (2^45-1): see Config.Resolution")
+ 
+ // checkTick panics if now is past MaxTick.
+ func checkTick(now uint64) {
+@@ -506,7 +506,7 @@ func (f *Filter) ContainsAt(h, window, now uint64) bool {
+ 	if src != 0 && age(now, w0&tsMask) <= min(window, f.horizon) {
+ 		return true
+ 	}
+-	if !f.sketchLive(now) {
++	if src != 0 && w0&spillBit == 0 || !f.sketchLive(now) { // found, never spilled: nothing of its in the overflow table
+ 		return false
+ 	}
+ 	var r Result
+diff --git a/merge.go b/merge.go
+index d5d6a7b..f4785df 100644
+--- a/merge.go
++++ b/merge.go
+@@ -69,8 +69,12 @@ func (f *Filter) Merge(g *Filter) error {
+ 			atomic.StoreUint64(&f.words[j], fw0&^(tsMask|satBit)|sat|max(last, fw0&tsMask))
+ 		} else {
+ 			placed := false
++			ms := uint64(0) // N9: f's overflow table may hold this key's history
++			if f.gh.Load() != nil || f.sk.Load() != nil {
++				ms = spillBit
++			}
+ 			for range 8 {
+-				if f.claim(h, fp, w1, now, last, w0&satBit, claimFull) >= 0 {
++				if f.claim(h, fp, w1, now, last, w0&satBit|ms, claimFull) >= 0 {
+ 					placed = true
+ 					break
+ 				}
+diff --git a/slots.go b/slots.go
+index d6ed43e..b6fc40d 100644
+--- a/slots.go
++++ b/slots.go
+@@ -15,8 +15,14 @@ const (
+ 	dispBit = 1 << 47
+ 	// satBit marks a slot whose register overflowed (an event spilled to an
+ 	// older bucket or was dropped) within its span; see estimate.
+-	satBit    = 1 << 46
+-	tsMask    = satBit - 1
++	satBit = 1 << 46
++	// spillBit (NEXT-RESULTS.md N9) marks a key whose history may be in the
++	// overflow table: set when it was installed by a first touch that found
++	// a stash or wait-room history, or anything of its in the overflow table
++	// within the horizon (and always under ConstantTime). While it is clear,
++	// touches and reads of the key skip the overflow table.
++	spillBit  = 1 << 45
++	tsMask    = spillBit - 1
+ 	tagBits   = 12
+ 	tagShift  = 64 - tagBits
+ 	epochMask = 0xf
+diff --git a/touch.go b/touch.go
+index a0620c0..edb287a 100644
+--- a/touch.go
++++ b/touch.go
+@@ -26,7 +26,7 @@ func (f *Filter) count(h, window, now uint64, i0 int) Result {
+ 	} else {
+ 		r.Degraded = f.lostRecently(now)
+ 	}
+-	if f.sketchLive(now) {
++	if (f.ct || src == 0 || w0&spillBit != 0) && f.sketchLive(now) {
+ 		f.addSketch(&r, h, window, now)
+ 	}
+ 	if f.ct {
+@@ -166,16 +166,22 @@ func (f *Filter) sketchLive(now uint64) bool {
+ // (the count-min sketch: the part that clears the noise), and Degraded is
+ // set when there is one: the key likely has a dropped history.
+ func (f *Filter) addSketch(r *Result, h, window, now uint64) {
+-	var s Result
+-	var ok bool
+-	if !f.cms {
+-		s, ok = f.gh.Load().estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now)
+-	} else {
+-		s, ok = f.sk.Load().estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now, f.ct)
++	if s, ok := f.sketchEstimate(h, window, now); ok {
++		mergeSketch(r, s)
+ 	}
+-	if !ok {
+-		return
++}
++
++// sketchEstimate is h's events in the overflow table within window (ok:
++// any).
++func (f *Filter) sketchEstimate(h, window, now uint64) (Result, bool) {
++	if !f.cms {
++		return f.gh.Load().estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now)
+ 	}
++	return f.sk.Load().estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now, f.ct)
++}
++
++// mergeSketch adds an overflow-table answer s to r (addSketch).
++func mergeSketch(r *Result, s Result) {
+ 	r.Count += s.Count
+ 	r.Upper += s.Upper
+ 	r.Saturated = r.Saturated || s.Saturated
+@@ -235,7 +241,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 			i, w0, _ = f.lookupStable(h, fp, tg, true)
+ 			s0, s1, src := f.recall(h, fp, tg, now, true)
+ 			if i < 0 {
+-				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src)
++				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src, spillBit)
+ 				if r.Count < 0 {
+ 					continue
+ 				}
+@@ -276,13 +282,28 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 					mu.Unlock()
+ 					continue
+ 				}
+-				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src)
++				// The spilled bit (N9): read the overflow table over the whole
++				// horizon before the install, under the stripe and after
++				// recall, so a history that left the table (stash, then the
++				// overflow table: SpilledBit.tla) is seen by one of the two.
++				sp, pre, preOK := uint64(0), Result{}, false
++				if src != 0 {
++					sp = spillBit
++				}
++				if f.sketchLive(now) {
++					if pre, preOK = f.sketchEstimate(h, f.horizon, now); preOK {
++						sp = spillBit
++					}
++				}
++				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src, sp)
+ 				mu.Unlock()
+ 				if r.Count < 0 {
+ 					continue
+ 				}
+-				if f.sketchLive(now) {
++				if preOK && window < f.horizon {
+ 					f.addSketch(&r, h, window, now)
++				} else if preOK {
++					mergeSketch(&r, pre)
+ 				}
+ 				return r
+ 			}
+@@ -337,7 +358,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 		// CheckAndTouch asks only for Seen, which addSketch can set but never
+ 		// clear: a hit already Seen skips the overflow read. ConstantTime
+ 		// reads the overflow table whatever it holds.
+-		if f.sketchLive(now) && (wantCount || !r.Seen || f.ct) {
++		if (f.ct || w0&spillBit != 0) && f.sketchLive(now) && (wantCount || !r.Seen || f.ct) {
+ 			f.addSketch(&r, h, window, now)
+ 		}
+ 		return r

@@ -1,0 +1,34 @@
+--- a/merge.go
++++ b/merge.go
+@@ -103,16 +103,28 @@
+ 		atomic.StoreUint64(&f.words[j], fw0&^(tsMask|satBit)|sat|max(last, fw0&tsMask))
+ 		return nil
+ 	}
+-	nw1, over := f.viewWord(id, tg, &vg, 0, now)
+-	sat := w0 & satBit
++	// N15b (NEXT-RESULTS.md): f's own stashed history of the key, if f
++	// evicted it, is recalled and summed in, as M1's fix does on main.
++	v, old, sat, stamp := vg, uint64(0), w0&satBit, last
++	s0, s1, src := f.recall(h, fp, tg, now, true)
++	if src == srcStash {
++		if vf, ok := f.viewOf(id, s1, s0&tsMask); ok {
++			v = sumViews(vf, vg)
++		}
++		old, sat, stamp = s1, (s0|w0)&satBit, max(last, s0&tsMask)
++	}
++	nw1, over := f.viewWord(id, tg, &v, old, now)
+ 	if over {
+ 		sat = satBit
+ 	}
+ 	for range 8 {
+-		if f.claim(h, fp, nw1, now, last, sat, claimFull) >= 0 {
++		if f.claim(h, fp, nw1, now, stamp, sat, claimFull) >= 0 {
+ 			return nil
+ 		}
+ 	}
++	if src == srcStash {
++		f.putBack(f.stashID(h, fp, tg), s0, s1, now)
++	}
+ 	return errors.New("temporalfilter: Merge: a key found no slot in 8 tries (both filters must be quiescent)")
+ }
+ 

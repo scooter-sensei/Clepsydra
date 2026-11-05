@@ -1,0 +1,109 @@
+diff --git a/decayed.go b/decayed.go
+new file mode 100644
+index 0000000..2ee7a04
+--- /dev/null
++++ b/decayed.go
+@@ -0,0 +1,49 @@
++package temporalfilter
++
++import "math"
++
++// DecayedRateAt is h's exponentially decayed event count at now,
++// sum over its events of exp(-(now-t)/tau), tau in ticks, read from its
++// register's buckets: each bucket's events spread uniformly over its span,
++// the newest bucket ending at the last touch, whose event counts whole.
++// Events older than the register's oldest bucket are not seen; nor is the
++// overflow table. (NEXT-RESULTS.md N19.)
++func (f *Filter) DecayedRateAt(h uint64, tau float64, now uint64) float64 {
++	w0, w1, src := f.read(h, now, -1)
++	if src == 0 {
++		return 0
++	}
++	last := w0 & tsMask
++	if age(now, last) > f.horizon {
++		return 0
++	}
++	v, ok := f.viewOf(f.stashID(h, fingerprint(h), tag(h)), w1, last)
++	if !ok {
++		return 0
++	}
++	decay := func(t float64) float64 { return math.Exp(-(float64(now) - t) / tau) }
++	sum, newest := 0.0, true
++	hi := float64(int64(v.e+1) * int64(f.unit))
++	for j := range nBuckets {
++		lo := float64(bucketStart(v.e, j) * int64(f.unit))
++		c := float64(v.c[j])
++		if c > 0 {
++			top := hi
++			if newest {
++				newest = false
++				top = math.Max(lo, math.Min(float64(last), hi))
++				sum += decay(float64(last)) // the event at last, whole
++				c--
++			}
++			if c > 0 {
++				if top > lo {
++					sum += c * tau / (top - lo) * (decay(top) - decay(lo))
++				} else {
++					sum += c * decay(lo)
++				}
++			}
++		}
++		hi = lo
++	}
++	return sum
++}
+diff --git a/decayed_test.go b/decayed_test.go
+new file mode 100644
+index 0000000..dfa2ad9
+--- /dev/null
++++ b/decayed_test.go
+@@ -0,0 +1,48 @@
++package temporalfilter
++
++import (
++	"math"
++	"math/rand/v2"
++	"os"
++	"testing"
++	"time"
++)
++
++// TestDecayedRate (TF_EXP=1; NEXT-RESULTS.md N19): DecayedRateAt against
++// the exact EWMA on tfbench's velocity workload.
++func TestDecayedRate(t *testing.T) {
++	if os.Getenv("TF_EXP") == "" {
++		t.Skip("set TF_EXP=1")
++	}
++	taus := []float64{1_000, 5_000, 15_000, 60_000}
++	f, _ := New(Config{Capacity: 200_000, Horizon: time.Minute, Resolution: time.Millisecond})
++	hs := make([]uint64, 2000)
++	for k := range hs {
++		hs[k] = mix64(uint64(k) + 1<<50)
++	}
++	r := rand.New(rand.NewPCG(19, 19))
++	var errAll, exAll, errH, exH [4]float64
++	velWorkload(func(k int, tk uint64) { f.TouchAt(hs[k], 0, tk) }, func(k int, ts []uint64, _ int, now uint64) {
++		ti := r.IntN(len(taus))
++		tau := taus[ti]
++		all, hor := 0.0, 0.0
++		for i := len(ts) - 1; i >= 0; i-- {
++			d := math.Exp(-float64(now-ts[i]) / tau)
++			if d < 1e-12 {
++				break
++			}
++			all += d
++			if now-ts[i] <= 60_000 {
++				hor += d
++			}
++		}
++		est := f.DecayedRateAt(hs[k], tau, now)
++		errAll[ti] += math.Abs(est - all)
++		exAll[ti] += all
++		errH[ti] += math.Abs(est - hor)
++		exH[ti] += hor
++	})
++	for i, tau := range taus {
++		t.Logf("tau %2.0fs: normalized MAE vs the true EWMA %.4f; vs the EWMA of the last horizon %.4f", tau/1000, errAll[i]/exAll[i], errH[i]/exH[i])
++	}
++}

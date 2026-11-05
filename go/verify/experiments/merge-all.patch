@@ -1,0 +1,377 @@
+diff --git a/ghost.go b/ghost.go
+index d36f581..8c94cff 100644
+--- a/ghost.go
++++ b/ghost.go
+@@ -427,3 +427,52 @@ func (g *ghost) estimate(id, window, now uint64) (r Result, ok bool) {
+ 	r.Seen = r.Count > 0
+ 	return r, true
+ }
++
++// mergeFrom adds o's live entries and floors to g, at the same buckets (o
++// has g's geometry: Merge checks the Config). Quiescent tables only.
++// (NEXT-RESULTS.md N15.)
++func (g *ghost) mergeFrom(o *ghost, now uint64) {
++	oep := o.epoch.Load()
++	if oep == 0 {
++		return
++	}
++	if g.epoch.Load() < oep {
++		g.advance(oep - 1)
++	}
++	if o.sat.Load() {
++		g.sat.Store(true)
++	}
++	if u := o.until.Load(); g.until.Load() < u {
++		g.until.Store(u)
++	}
++	for b := uint64(0); b < o.nb; b++ {
++		base := int(b * ghWords)
++		for s := 0; s < o.sub; s++ {
++			e := o.words[base] >> (uint(s) * ghSubBits) & ghSubMask
++			if sl := o.real(e, oep); e != 0 && o.live(sl, o.horizon, now) {
++				g.raiseFloor(base, uint64(s), ghCnt(e), sl, now)
++			}
++		}
++	next:
++		for k := 1; k < ghEntries; k++ {
++			w, sh := o.at(base, k)
++			e := *w >> sh & ghEntryMask
++			if e == 0 {
++				continue
++			}
++			sl := o.real(e, oep)
++			if !o.live(sl, o.horizon, now) {
++				continue
++			}
++			ep := g.epoch.Load()
++			for kk := 1; kk < ghEntries; kk++ {
++				gw, gsh := g.at(base, kk)
++				if ge := *gw >> gsh & ghEntryMask; ge == 0 || !g.live(g.real(ge, ep), g.horizon, now) {
++					*gw = *gw&^(ghEntryMask<<gsh) | ghEntry(ghFP(e), ghCnt(e), sl)<<gsh
++					continue next
++				}
++			}
++			g.raiseFloor(base, ghFP(e), ghCnt(e), sl, now) // no room: the bucket's floor keeps it
++		}
++	}
++}
+diff --git a/merge.go b/merge.go
+index d5d6a7b..0c01668 100644
+--- a/merge.go
++++ b/merge.go
+@@ -6,15 +6,19 @@ import (
+ 	"sync/atomic"
+ )
+ 
+-// Merge adds g's keys to f: for a key in both, the two registers are
+-// re-bucketed to the newer one's epoch and summed bucket by bucket (an
+-// overflow sets the saturated bit), and the last touch is the newer one; a
+-// key only g holds goes in as a first touch would (which may evict). Both
+-// filters must be quiescent and built with the same Config (and Key). g's
+-// stash and overflow table (evicted histories) are not merged. ConstantTime,
+-// Background and hot entries in use are refused with an error, f unchanged.
+-// A key that can't get a slot (a writer racing the merge) stops it with an
+-// error, the keys before it merged.
++// Merge adds g's keys to f: for a key in both, the two histories (registers
++// or hot entries) are re-bucketed to the newer one's epoch and summed bucket
++// by bucket, and the last touch is the newer one; a key only g holds goes in
++// as a first touch would (which may evict). g's stash entries (histories it
++// evicted) are merged the same way, and g's overflow table's live entries
++// and floors go into f's overflow table at the same buckets. A merged
++// history that doesn't fit a register takes a hot entry of f, or, with
++// none free, spills into older buckets with the saturated bit set. Both
++// filters must be quiescent and built with the same Config (and Key).
++// ConstantTime, Background and the count-min overflow are refused with an
++// error, f unchanged. A key that can't get a slot (a writer racing the
++// merge) stops it with an error, the keys before it merged.
++// (NEXT-RESULTS.md N15: hot entries, the stash and the overflow table.)
+ func (f *Filter) Merge(g *Filter) error {
+ 	switch {
+ 	case f == g:
+@@ -23,64 +27,135 @@ func (f *Filter) Merge(g *Filter) error {
+ 		return errors.New("temporalfilter: Merge needs the same Config")
+ 	case f.ct || g.ct || f.bg || g.bg:
+ 		return errors.New("temporalfilter: Merge of ConstantTime or Background filters")
+-	case f.hot.Load() != nil || g.hot.Load() != nil:
+-		return errors.New("temporalfilter: Merge with hot entries in use")
++	case f.cms || g.cms:
++		return errors.New("temporalfilter: Merge with the count-min overflow")
+ 	}
+ 	now := uint64(0)
+ 	for _, x := range [2]*Filter{f, g} {
+ 		for i := 0; i < len(x.words); i += 2 {
+ 			now = max(now, atomic.LoadUint64(&x.words[i])&tsMask)
+ 		}
++		if p := x.stash.Load(); p != nil {
++			for _, e := range p.e {
++				if e.id != 0 {
++					now = max(now, e.w0&tsMask)
++				}
++			}
++		}
+ 	}
+ 	for i := 0; i < len(g.words); i += 2 {
+ 		w0, w1 := atomic.LoadUint64(&g.words[i]), atomic.LoadUint64(&g.words[i+1])
+-		last := w0 & tsMask
+-		if w0 == 0 || w1>>tagShift == tagBusy || age(now, last) > g.horizon {
++		if w0 == 0 || w1>>tagShift == tagBusy || age(now, w0&tsMask) > g.horizon {
+ 			continue
+ 		}
+-		id := g.slotID(uint64(i/wordsPerLine), w0, w1)
+-		line, fp, tg := id>>28, w0>>48, w1>>tagShift
+-		lo, _ := bits.Div64(line>>28, line<<36, f.lines) // ceil(line * 2^36 / lines): f.primary(h) == line
+-		if lo*f.lines < line<<36 {
+-			lo++
++		if err := f.mergeKey(g, g.slotID(uint64(i/wordsPerLine), w0, w1), w0, w1, now); err != nil {
++			return err
+ 		}
+-		h := fp<<48 | tg<<36 | lo
+-		if f.primary(h) != line || fingerprint(h) != fp || tag(h) != tg {
+-			return errors.New("temporalfilter: Merge: identity does not round-trip")
+-		}
+-		vg, _ := g.viewOf(id, w1, last)
+-		mu := &f.claimMu[h>>(64-claimStripeBits)]
+-		mu.Lock()
+-		j, fw0, fw1 := f.lookupStable(h, fp, tg, false)
+-		if j >= 0 {
+-			vf, _ := f.viewOf(id, fw1, fw0&tsMask)
+-			e := max(vf.e, vg.e)
+-			rf, rg := register(vf.c), register(vg.c)
+-			over := rf.advance(vf.e, e)
+-			over = rg.advance(vg.e, e) || over
+-			for b := range nBuckets {
+-				over = rf.add(b, rg[b]) || over
+-			}
+-			sat := (fw0 | w0) & satBit
+-			if over {
+-				sat = satBit
+-			}
+-			atomic.StoreUint64(&f.words[j+1], tg<<tagShift|uint64(e)&epochMask<<48|rf.pack())
+-			atomic.StoreUint64(&f.words[j], fw0&^(tsMask|satBit)|sat|max(last, fw0&tsMask))
+-		} else {
+-			placed := false
+-			for range 8 {
+-				if f.claim(h, fp, w1, now, last, w0&satBit, claimFull) >= 0 {
+-					placed = true
+-					break
+-				}
++	}
++	if p := g.stash.Load(); p != nil {
++		for _, e := range p.e {
++			if e.id == 0 || e.w0&deferMark != 0 || age(now, e.w0&tsMask) > g.horizon {
++				continue
+ 			}
+-			if !placed {
+-				mu.Unlock()
+-				return errors.New("temporalfilter: Merge: a key found no slot in 8 tries (both filters must be quiescent)")
++			if err := f.mergeKey(g, e.id, e.w0, e.w1, now); err != nil {
++				return err
+ 			}
+ 		}
+-		mu.Unlock()
++	}
++	if og := g.gh.Load(); og != nil {
++		f.ghostTable().mergeFrom(og, now)
+ 	}
+ 	return nil
+ }
++
++// mergeKey adds the history of the key with identity id (g's words w0, w1:
++// a table slot or a stash entry) to f.
++func (f *Filter) mergeKey(g *Filter, id, w0, w1, now uint64) error {
++	last := w0 & tsMask
++	line, fp, tg := id>>28, w0>>48, w1>>tagShift
++	lo, _ := bits.Div64(line>>28, line<<36, f.lines) // ceil(line * 2^36 / lines): f.primary(h) == line
++	if lo*f.lines < line<<36 {
++		lo++
++	}
++	h := fp<<48 | tg<<36 | lo
++	if f.primary(h) != line || fingerprint(h) != fp || tag(h) != tg {
++		return errors.New("temporalfilter: Merge: identity does not round-trip")
++	}
++	vg, ok := g.viewOf(id, w1, last)
++	if !ok {
++		return nil // a hot entry that is no longer the key's
++	}
++	mu := &f.claimMu[h>>(64-claimStripeBits)]
++	mu.Lock()
++	defer mu.Unlock()
++	j, fw0, fw1 := f.lookupStable(h, fp, tg, false)
++	if j >= 0 {
++		v := vg
++		if vf, ok := f.viewOf(id, fw1, fw0&tsMask); ok {
++			v = sumViews(vf, vg)
++		}
++		nw1, over := f.viewWord(id, tg, &v, fw1, now)
++		sat := (fw0 | w0) & satBit
++		if over {
++			sat = satBit
++		}
++		atomic.StoreUint64(&f.words[j+1], nw1)
++		atomic.StoreUint64(&f.words[j], fw0&^(tsMask|satBit)|sat|max(last, fw0&tsMask))
++		return nil
++	}
++	nw1, over := f.viewWord(id, tg, &vg, 0, now)
++	sat := w0 & satBit
++	if over {
++		sat = satBit
++	}
++	for range 8 {
++		if f.claim(h, fp, nw1, now, last, sat, claimFull) >= 0 {
++			return nil
++		}
++	}
++	return errors.New("temporalfilter: Merge: a key found no slot in 8 tries (both filters must be quiescent)")
++}
++
++// sumViews is a's and b's counts at the newer epoch.
++func sumViews(a, b view) view {
++	e := max(a.e, b.e)
++	advanceWide(&a.c, a.e, e)
++	advanceWide(&b.c, b.e, e)
++	for j := range a.c {
++		a.c[j] += b.c[j]
++	}
++	a.e, a.sat, a.hot = e, max(a.sat, b.sat), a.hot || b.hot
++	return a
++}
++
++// viewWord is f's word1 for key id's history v: a register if v fits one,
++// else a hot entry of f, else a register with the excess spilled into older
++// buckets (over). A hot entry old pointed to is closed first.
++func (f *Filter) viewWord(id, tg uint64, v *view, old, now uint64) (w1 uint64, over bool) {
++	if isHot(old) {
++		f.hotClose(hotIdx(old), id)
++	}
++	var r register
++	fits := v.sat == satNone
++	for j := range r {
++		if v.c[j] > 1<<bucketBits[j]-1 {
++			fits = false
++		}
++	}
++	if fits {
++		for j := range r {
++			r[j] = v.c[j]
++		}
++		return tg<<tagShift | uint64(v.e)&epochMask<<48 | r.pack(), false
++	}
++	if f.hotN > 0 {
++		v.hot = true
++		if idx := f.hotAlloc(id, v, now); idx != 0 {
++			return tg<<tagShift | idx<<hotIdxShift, false
++		}
++	}
++	for j := range r {
++		over = r.add(j, v.c[j]) || over
++	}
++	return tg<<tagShift | uint64(v.e)&epochMask<<48 | r.pack(), true
++}
+diff --git a/mergeall_test.go b/mergeall_test.go
+new file mode 100644
+index 0000000..da93065
+--- /dev/null
++++ b/mergeall_test.go
+@@ -0,0 +1,102 @@
++package temporalfilter
++
++import (
++	"math"
++	"math/rand/v2"
++	"os"
++	"sort"
++	"testing"
++	"time"
++)
++
++// TestMergeAll (TF_EXP=1; NEXT-RESULTS.md N15): lab E13's harness at
++// Capacity 512 with hot entries on, so the stash, the overflow table and
++// hot entries are all in use; M = Merge(A) then Merge(B) against S.
++func TestMergeAll(t *testing.T) {
++	if os.Getenv("TF_EXP") == "" {
++		t.Skip("set TF_EXP=1")
++	}
++	const H = 60_000
++	cfg := Config{Capacity: 512, Horizon: time.Minute, Resolution: time.Millisecond}
++	a, _ := New(cfg)
++	b, _ := New(cfg)
++	s, _ := New(cfg)
++	hs := make([]uint64, 2000)
++	for k := range hs {
++		hs[k] = mix64(uint64(k) + 1<<50)
++	}
++	r := rand.New(rand.NewPCG(13, 13))
++	times := make([][]uint64, len(hs))
++	var errM, errS, ex [5]float64
++	seenDiff, seenCmp, cmp, lowM, lowMflag, lowS, checkpoints, mergeErr := 0, 0, 0, 0, 0, 0, 0, 0
++	var mEv, mPromo, mFolded uint64
++	velWorkload(func(k int, tk uint64) {
++		if r.IntN(2) == 0 {
++			a.TouchAt(hs[k], 0, tk)
++		} else {
++			b.TouchAt(hs[k], 0, tk)
++		}
++		s.TouchAt(hs[k], 0, tk)
++		times[k] = append(times[k], tk)
++	}, func(_ int, _ []uint64, _ int, now uint64) {
++		if now < H || now%5000 != 0 {
++			return
++		}
++		checkpoints++
++		m, _ := New(cfg)
++		if err := m.Merge(a); err != nil {
++			mergeErr++
++			t.Logf("merge A at %d: %v", now, err)
++		}
++		if err := m.Merge(b); err != nil {
++			mergeErr++
++			t.Logf("merge B at %d: %v", now, err)
++		}
++		mEv, mPromo, mFolded = m.Evictions(), m.Promoted(), m.Folded()
++		noEvict := m.Evictions() == 0 && s.Evictions() == 0
++		for k, h := range hs {
++			ts := times[k]
++			for wi, w := range velWins {
++				exact := len(ts) - sort.Search(len(ts), func(j int) bool { return ts[j]+w >= now })
++				rm, rs := m.CountAt(h, w, now), s.CountAt(h, w, now)
++				cmp++
++				if noEvict {
++					seenCmp++
++					if rm.Seen != rs.Seen {
++						seenDiff++
++					}
++				}
++				errM[wi] += math.Abs(float64(rm.Count - exact))
++				errS[wi] += math.Abs(float64(rs.Count - exact))
++				ex[wi] += float64(exact)
++				if rm.Upper < exact {
++					if rm.Saturated {
++						lowMflag++
++					} else {
++						lowM++
++						if lowM <= 3 {
++							t.Logf("low: key %d W=%d now=%d exact %d merged %+v single %+v", k, w, now, exact, rm, rs)
++						}
++					}
++				}
++				if rs.Upper < exact && !rs.Saturated {
++					lowS++
++				}
++			}
++		}
++	})
++	for _, x := range []struct {
++		n string
++		f *Filter
++	}{{"A", a}, {"B", b}, {"S", s}} {
++		t.Logf("%s: evictions %d, restored %d, folded to overflow %d, floored %d, promoted %d, stash %v, overflow %v",
++			x.n, x.f.Evictions(), x.f.restored.Load(), x.f.Folded(), x.f.Floored(), x.f.Promoted(), x.f.stash.Load() != nil, x.f.gh.Load() != nil)
++	}
++	t.Logf("checkpoints %d, comparisons %d, merge errors %d; last M: evictions %d, promoted %d, folded %d", checkpoints, cmp, mergeErr, mEv, mPromo, mFolded)
++	line := ""
++	for wi := range 5 {
++		line += " " + pad7(errM[wi]/ex[wi]) + "/" + pad7(errS[wi]/ex[wi]) + " (" + pad7(errM[wi]/errS[wi]) + ")"
++	}
++	t.Logf("count MAE merged/single (ratio) 1s 5s 15s 30s 60s:%s", line)
++	t.Logf("Seen compared %d (neither evicted), differs %d; Upper < exact: merged unflagged %d (flagged %d), single unflagged %d", seenCmp, seenDiff, lowM, lowMflag, lowS)
++}

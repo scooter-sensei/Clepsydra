@@ -1,0 +1,406 @@
+diff --git a/velinfo_test.go b/velinfo_test.go
+index a7935aa..d8420a2 100644
+--- a/velinfo_test.go
++++ b/velinfo_test.go
+@@ -14,8 +14,13 @@ import (
+ // query with the key's event times so far (sorted), the query's window
+ // index and now; touch once per event, before the queries that see it.
+ func velWorkload(touch func(k int, t uint64), visit func(k int, ts []uint64, wi int, now uint64)) {
++	velWorkloadSeed(9, touch, visit)
++}
++
++// velWorkloadSeed is velWorkload with another seed (9 is tfbench's).
++func velWorkloadSeed(seed uint64, touch func(k int, t uint64), visit func(k int, ts []uint64, wi int, now uint64)) {
+ 	const hTicks = 60_000
+-	r := rand.New(rand.NewPCG(9, 9))
++	r := rand.New(rand.NewPCG(seed, seed))
+ 	const nkeys, end = 2000, 5 * hTicks
+ 	type ev struct {
+ 		t uint64
+diff --git a/widereg_test.go b/widereg_test.go
+new file mode 100644
+index 0000000..8566775
+--- /dev/null
++++ b/widereg_test.go
+@@ -0,0 +1,381 @@
++package temporalfilter
++
++import (
++	"fmt"
++	"math"
++	"os"
++	"sort"
++	"sync"
++	"testing"
++	"time"
++)
++
++// TestWideRegisters (TF_EXP=1; NEXT-RESULTS.md N4) scores wider registers
++// of register.go's aligned family, as if 14 bits freed from lastTouch were
++// split between the register and the slot identity. Every geometry with a
++// unit of H/U (U in wideUs), nondecreasing power-of-two steps (offsets as
++// register.go derives them), the fewest buckets that cover U-1 units, and
++// 49-62 bits of counters sized as D19 sizes them, is scored on tfbench's
++// velocity workload with uncapped counters (N4b; WIDE_CAPPED=1 drops a
++// unit's events past 2^b0-1, N4's model, whose gate failed). HEAD's
++// geometry must reproduce the filter's errors exactly.
++var wideUs = []int{24, 30, 32, 40, 48, 60, 96, 120}
++
++const wideH = 60_000
++
++var wideCapped = os.Getenv("WIDE_CAPPED") != ""
++
++type wgeom struct {
++	name string
++	u    int // units per horizon
++	b0   int // newest counter's bits
++	bits int // register bits
++	g    geom
++}
++
++func (w wgeom) unitCap() int { return 1<<w.b0 - 1 }
++
++func newWgeom(u, b0 int, ls []uint, bits int) wgeom {
++	off := make([]int64, len(ls))
++	for j := 1; j < len(ls); j++ {
++		off[j] = off[j-1] + 1<<ls[j-1]
++	}
++	name := fmt.Sprintf("H/%d", u)
++	for _, l := range ls {
++		name += fmt.Sprintf(" %d", 1<<l)
++	}
++	return wgeom{name, u, b0, bits, geom{uint64(wideH / u), append([]uint(nil), ls...), off}}
++}
++
++func wideGeoms() []wgeom {
++	var out []wgeom
++	for _, u := range wideUs {
++		b0 := 1
++		for float64(int(1)<<b0-1) < 12*60/float64(u)-1e-9 {
++			b0++
++		}
++		var rec func(ls []uint, next int64)
++		rec = func(ls []uint, next int64) {
++			last := len(ls) - 1
++			if next-int64(1)<<ls[last] >= int64(u-1) {
++				bits := 0
++				for _, l := range ls {
++					bits += b0 + int(l)
++				}
++				if bits >= 49 && bits <= 62 {
++					out = append(out, newWgeom(u, b0, ls, bits))
++				}
++				return
++			}
++			if len(ls) >= 16 {
++				return
++			}
++			for l := ls[last]; int(1)<<l <= u/2; l++ {
++				rec(append(append([]uint(nil), ls...), l), next+int64(1)<<l)
++			}
++		}
++		rec([]uint{0}, 1)
++	}
++	return out
++}
++
++// wideBuckets lays ts (sorted, the key's events up to last) into w's
++// buckets at the epoch of last's unit, a unit's events capped at 2^b0-1.
++// It returns the buckets and how many events were past their unit's cap
++// (dropped only under WIDE_CAPPED=1, N4's model; N4b counts them, as a hot
++// entry does in the filter).
++func (w wgeom) buckets(ts []uint64, bs []simBucket) ([]simBucket, int) {
++	g := w.g
++	last := ts[len(ts)-1]
++	e := int64(last / g.unit)
++	bs = bs[:0]
++	top := float64(e+1) * float64(g.unit)
++	for j := range g.logStep {
++		lo := float64(g.start(e, j)) * float64(g.unit)
++		bs = append(bs, simBucket{lo: lo, hi: top})
++		top = lo
++	}
++	cp, dropped := w.unitCap(), 0
++	cu, cn := int64(-1), 0
++	j := len(bs) - 1
++	for _, t := range ts {
++		uu := int64(t / g.unit)
++		if uu != cu {
++			cu, cn = uu, 0
++		}
++		cn++
++		if cn > cp {
++			dropped++
++			if wideCapped {
++				continue
++			}
++		}
++		ft := float64(t)
++		if ft < bs[len(bs)-1].lo {
++			continue
++		}
++		for j > 0 && ft >= bs[j-1].lo {
++			j--
++		}
++		bs[j].c++
++	}
++	return bs, dropped
++}
++
++type wideQuery struct {
++	ts  []uint64 // the key's events within two horizons of its last, after bump's reset
++	wi  int
++	now uint64
++	ex  float64
++}
++
++func wideQueries(seed uint64, f *Filter, hs []uint64, filterErr *[5]float64) []wideQuery {
++	var qs []wideQuery
++	velWorkloadSeed(seed, func(k int, tk uint64) {
++		if f != nil {
++			f.CheckAndTouchAt(hs[k], 0, tk)
++		}
++	}, func(k int, ts []uint64, wi int, now uint64) {
++		w := velWins[wi]
++		exact := float64(len(ts) - sort.Search(len(ts), func(j int) bool { return ts[j]+w >= now }))
++		if f != nil {
++			filterErr[wi] += math.Abs(float64(f.VelocityCountAt(hs[k], w, now)) - exact)
++		}
++		if len(ts) == 0 {
++			qs = append(qs, wideQuery{nil, wi, now, exact})
++			return
++		}
++		last := ts[len(ts)-1]
++		lo := sort.Search(len(ts), func(j int) bool { return ts[j]+2*wideH >= last })
++		tr := ts[lo:]
++		for i := len(tr) - 1; i > 0; i-- {
++			if tr[i]-tr[i-1] > wideH {
++				tr = tr[i:]
++				break
++			}
++		}
++		qs = append(qs, wideQuery{tr, wi, now, exact})
++	})
++	return qs
++}
++
++type wideScore struct {
++	err, ex [5]float64
++	dropped int
++	steady  float64 // worst |est/exact-1|, -1 if not run
++}
++
++func (s wideScore) mae(wi int) float64 { return s.err[wi] / s.ex[wi] }
++func (s wideScore) mean() float64 {
++	m := 0.0
++	for wi := range 5 {
++		m += s.mae(wi) / 5
++	}
++	return m
++}
++
++func scoreWide(w wgeom, qs []wideQuery) (s wideScore) {
++	var bs []simBucket
++	var d int
++	for _, q := range qs {
++		s.ex[q.wi] += q.ex
++		est := 0.0
++		if len(q.ts) > 0 {
++			bs, d = w.buckets(q.ts, bs)
++			s.dropped += d
++			last := q.ts[len(q.ts)-1]
++			w := velWins[q.wi]
++			est = simRound(simEstimate(bs, last, q.now, w, nil, nil, 0), q.now-last <= w)
++		}
++		s.err[q.wi] += math.Abs(est - q.ex)
++	}
++	s.steady = -1
++	return s
++}
++
++// steadyWide is lab E9's steady check: evenly spaced events at 100, 300,
++// 500 and 700 per horizon, the 60 s count every 500 ms over 8 horizons, 8
++// phases; the worst |est/exact - 1|.
++func steadyWide(w wgeom) float64 {
++	worst := 0.0
++	var bs []simBucket
++	for _, rate := range []int{100, 300, 500, 700} {
++		per := float64(wideH) / float64(rate)
++		for ph := range 8 {
++			var ts []uint64
++			for t := float64(ph) * per / 8; t < 9*wideH; t += per {
++				ts = append(ts, uint64(t)+1)
++			}
++			i := 0
++			for now := uint64(wideH); now < 9*wideH; now += 500 {
++				for i < len(ts) && ts[i] <= now {
++					i++
++				}
++				cur := ts[:i]
++				ex := float64(len(cur) - sort.Search(len(cur), func(j int) bool { return cur[j]+wideH >= now }))
++				last := cur[len(cur)-1]
++				lo := sort.Search(len(cur), func(j int) bool { return cur[j]+2*wideH >= last })
++				bs, _ = w.buckets(cur[lo:], bs)
++				est := simRound(simEstimate(bs, last, now, wideH, nil, nil, 0), now-last <= wideH)
++				worst = max(worst, math.Abs(est/ex-1))
++			}
++		}
++	}
++	return worst
++}
++
++func TestWideRegisters(t *testing.T) {
++	if os.Getenv("TF_EXP") == "" {
++		t.Skip("set TF_EXP=1")
++	}
++	f, err := New(Config{Capacity: 200_000, Horizon: time.Minute, Resolution: time.Millisecond})
++	if err != nil {
++		t.Fatal(err)
++	}
++	hs := make([]uint64, 2000)
++	for k := range hs {
++		hs[k] = mix64(uint64(k) + 1<<50)
++	}
++	var ferr [5]float64
++	qs := wideQueries(9, f, hs, &ferr)
++	head := wgeom{"HEAD H/24 1 1 2 4 8 8 8", 24, 5, 48, geom{2500, []uint{0, 0, 1, 2, 3, 3, 3}, []int64{0, 1, 2, 4, 8, 16, 24}}}
++	hsc := scoreWide(head, qs)
++	hsc.steady = steadyWide(head)
++	for wi := range 5 {
++		if hsc.err[wi] != ferr[wi] {
++			t.Fatalf("validity: HEAD's capped model differs from the filter at window %d: %v vs %v", wi, hsc.err[wi], ferr[wi])
++		}
++	}
++	gs := wideGeoms()
++	scores := make([]wideScore, len(gs))
++	var wg sync.WaitGroup
++	next := make(chan int)
++	for range 4 {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			for i := range next {
++				scores[i] = scoreWide(gs[i], qs)
++			}
++		}()
++	}
++	for i := range gs {
++		next <- i
++	}
++	close(next)
++	wg.Wait()
++	ok := func(s wideScore) bool { // per-window criteria: no window more than 5% worse than HEAD
++		for wi := range 5 {
++			if s.mae(wi) > 1.05*hsc.mae(wi) {
++				return false
++			}
++		}
++		return true
++	}
++	// best mean per bit count (any), best mean per bit count among those meeting the windows
++	bestAny, bestOK := map[int]int{}, map[int]int{}
++	for i, s := range scores {
++		b := gs[i].bits
++		if j, has := bestAny[b]; !has || s.mean() < scores[j].mean() {
++			bestAny[b] = i
++		}
++		if ok(s) {
++			if j, has := bestOK[b]; !has || s.mean() < scores[j].mean() {
++				bestOK[b] = i
++			}
++		}
++	}
++	nOK, nPass := 0, 0
++	for i, s := range scores {
++		if ok(s) {
++			nOK++
++			if s.mean() <= 0.068 {
++				scores[i].steady = steadyWide(gs[i])
++				if scores[i].steady <= 0.01+1e-9 { // "within 1%" includes 1 count in 100 (HEAD's own)
++					nPass++
++				}
++			}
++		}
++	}
++	for _, m := range []map[int]int{bestAny, bestOK} {
++		for _, i := range m {
++			if scores[i].steady < 0 {
++				scores[i].steady = steadyWide(gs[i])
++			}
++		}
++	}
++	fpr := func(bits int) float64 { return 3.40 * math.Pow(2, -float64(90-bits)) }
++	row := func(tag string, w wgeom, s wideScore) {
++		line := fmt.Sprintf("%-6s %2d %2d %-40s", tag, w.bits, 90-w.bits, w.name)
++		for wi := range 5 {
++			line += " " + pad7(s.mae(wi))
++		}
++		t.Logf("%s %s  steady %.4f  fpr %.2e  over %d", line, pad7(s.mean()), s.steady, fpr(w.bits), s.dropped)
++	}
++	t.Logf("%d geometries; %d meet every window (<= 1.05 x HEAD); %d of those have mean <= 0.068 and steady <= 1%%", len(gs), nOK, nPass)
++	t.Logf("%-6s %2s %2s %-40s %7s %7s %7s %7s %7s %7s", "", "rb", "id", "geometry", "1s", "5s", "15s", "30s", "60s", "mean")
++	row("HEAD", head, hsc)
++	for b := 49; b <= 62; b++ {
++		if i, has := bestAny[b]; has {
++			row("any", gs[i], scores[i])
++		}
++		if i, has := bestOK[b]; has {
++			row("ok", gs[i], scores[i])
++		}
++	}
++	// Pareto front over (bits, mean) among geometries meeting the windows and steady
++	t.Logf("front (meets windows; steady shown):")
++	best := math.Inf(1)
++	for b := 49; b <= 62; b++ {
++		if i, has := bestOK[b]; has && scores[i].mean() < best {
++			best = scores[i].mean()
++			row("front", gs[i], scores[i])
++		}
++	}
++	// events past their unit's cap over the whole stream (distinct, not per
++	// query): the traffic a geometry would send to hot entries
++	over := func(w wgeom) string {
++		per := map[[2]int64]int{}
++		keys := map[int]bool{}
++		n, past := 0, 0
++		velWorkloadSeed(9, func(k int, tk uint64) {
++			n++
++			u := [2]int64{int64(k), int64(tk / w.g.unit)}
++			per[u]++
++			if per[u] > w.unitCap() {
++				past++
++				keys[k] = true
++			}
++		}, func(int, []uint64, int, uint64) {})
++		return fmt.Sprintf("events %d, past cap %d (%.2f%%), keys %d", n, past, 100*float64(past)/float64(n), len(keys))
++	}
++	t.Logf("distinct events past the unit cap (seed 9): HEAD %s", over(head))
++	best = math.Inf(1)
++	for b := 49; b <= 62; b++ {
++		if i, has := bestOK[b]; has && scores[i].mean() < best {
++			best = scores[i].mean()
++			t.Logf("  %2d bits %-36s %s", b, gs[i].name, over(gs[i]))
++		}
++	}
++	// held-out: another seed, HEAD and the front
++	qh := wideQueries(10, nil, nil, nil)
++	hh := scoreWide(head, qh)
++	hh.steady = hsc.steady
++	t.Logf("held-out (seed 10):")
++	row("HEAD", head, hh)
++	best = math.Inf(1)
++	for b := 49; b <= 62; b++ {
++		if i, has := bestOK[b]; has && scores[i].mean() < best {
++			best = scores[i].mean()
++			s := scoreWide(gs[i], qh)
++			s.steady = scores[i].steady
++			row("front", gs[i], s)
++		}
++	}
++	if os.Getenv("WIDE_ALL") != "" {
++		for i := range gs {
++			row("all", gs[i], scores[i])
++		}
++	}
++}
++

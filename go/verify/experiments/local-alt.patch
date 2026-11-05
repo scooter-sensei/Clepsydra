@@ -1,0 +1,228 @@
+diff --git a/altchunk.go b/altchunk.go
+new file mode 100644
+index 0000000..ced813d
+--- /dev/null
++++ b/altchunk.go
+@@ -0,0 +1,72 @@
++package temporalfilter
++
++import (
++	"math"
++	"math/bits"
++	"os"
++	"strconv"
++)
++
++// NEXT-RESULTS.md N5: alternate lines restricted to a chunk of L lines.
++// TF_ALT (read at New) picks the arm: unset, HEAD's alt over the whole
++// table; a number L, chunks of L lines for every fingerprint; "vacuum",
++// four fingerprint groups (low two bits) with Vacuum filters' range
++// selection (Wang et al., PVLDB 2019, Algorithms 1-3: alpha 0.95, the
++// smallest range doubled). The last full chunk takes the table's remainder,
++// so every chunk has at least L lines and alt stays its own inverse.
++func altChunks(lines uint64) (l [4]uint64) {
++	v := os.Getenv("TF_ALT")
++	if v == "" {
++		return l
++	}
++	if v == "vacuum" {
++		for i := range 4 {
++			l[i] = rangeSelection(lines, 0.95, 1-float64(i)/4)
++		}
++		l[3] *= 2
++		return l
++	}
++	n, err := strconv.ParseUint(v, 10, 64)
++	if err != nil || n == 0 {
++		panic("TF_ALT: a line count or vacuum")
++	}
++	return [4]uint64{n, n, n, n}
++}
++
++// rangeSelection is Vacuum filters' Algorithm 2 over Algorithm 1 with
++// slotsPerLine slots per line: the smallest power of two L for which
++// N = slots*r*m*alpha items over m/L chunks have an estimated maximum load
++// below 0.97 of a chunk's slots (L >= m: the whole table).
++func rangeSelection(m uint64, alpha, r float64) uint64 {
++	for l := uint64(1); ; l *= 2 {
++		c := float64(m / l)
++		if c <= 1 {
++			return l
++		}
++		n := slotsPerLine * r * float64(m) * alpha / c
++		if n+1.5*math.Sqrt(2*n*math.Log(c)) < 0.97*slotsPerLine*float64(l) {
++			return l
++		}
++	}
++}
++
++// altChunk is alt within line's chunk of l lines (the last full chunk
++// holding the remainder): (x - i) mod size from the chunk's start.
++func (f *Filter) altChunk(line, fp, l uint64) uint64 {
++	nfull := f.lines / l
++	c := min(line/l, nfull-1)
++	base, size := c*l, l
++	if c == nfull-1 {
++		size = f.lines - base
++	}
++	i := line - base
++	x, _ := bits.Mul64(mix64(fp*0x9e3779b97f4a7c15), size)
++	if x >= i {
++		return base + x - i
++	}
++	return base + x + size - i
++}
++
++// testHookSearch, if set, sees each cuckoo search (start: the two candidate
++// lines) and every alternate line relocate computes.
++var testHookSearch func(line uint64, start bool)
+diff --git a/altchunk_test.go b/altchunk_test.go
+new file mode 100644
+index 0000000..3a4b2b2
+--- /dev/null
++++ b/altchunk_test.go
+@@ -0,0 +1,75 @@
++package temporalfilter
++
++import (
++	"os"
++	"sort"
++	"testing"
++	"time"
++
++	"github.com/scooter-sensei/clepsydra/go/internal/workload"
++)
++
++// TestAltChunkInvolution: every arm's alt is its own inverse and stays in
++// the table, on table sizes that are and aren't multiples of the chunk.
++func TestAltChunkInvolution(t *testing.T) {
++	for _, lines := range []uint64{2, 63, 64, 65, 127, 1000, 58824} {
++		for _, l := range [][4]uint64{{64, 64, 64, 64}, {32768, 32768, 32768, 32768}, {0, 128, 32, 16}, {lines, 7, 3, 2}} {
++			f := &Filter{lines: lines, altL: l}
++			for line := range lines {
++				for fp := uint64(1); fp < 200; fp++ {
++					a := f.alt(line, fp)
++					if a >= lines || f.alt(a, fp) != line {
++						t.Fatalf("lines %d L %v: alt(%d, %d) = %d, back %d", lines, l, line, fp, a, f.alt(a, fp))
++					}
++				}
++			}
++		}
++	}
++}
++
++// TestLocalAltPages (TF_EXP=1; N5): distinct 4 KiB groups of table lines
++// (line >> 6) per cuckoo search on tfbench's churn stream at the three
++// loads, under the arm TF_ALT selects.
++func TestLocalAltPages(t *testing.T) {
++	if os.Getenv("TF_EXP") == "" {
++		t.Skip("set TF_EXP=1")
++	}
++	const capacity, hTicks = 200_000, 60_000
++	defer func() { testHookSearch = nil }()
++	for _, c := range []struct {
++		load float64
++		seed uint64
++	}{{1.0, 2}, {1.1, 3}, {1.15, 4}} {
++		f, _ := New(Config{Capacity: capacity, Horizon: time.Minute, Resolution: time.Millisecond})
++		var per []int
++		pages := map[uint64]bool{}
++		flush := func() {
++			if len(pages) > 0 {
++				per = append(per, len(pages))
++				clear(pages)
++			}
++		}
++		testHookSearch = func(line uint64, start bool) {
++			if start {
++				flush()
++			}
++			pages[line>>6] = true
++		}
++		workload.Churn(c.load, c.seed, capacity, hTicks, mix64, func(h, w, now uint64) { f.CheckAndTouchAt(h, w, now) })
++		flush()
++		sort.Ints(per)
++		sum := 0
++		for _, v := range per {
++			sum += v
++		}
++		mean := float64(sum) / float64(max(1, len(per)))
++		q := func(p float64) int {
++			if len(per) == 0 {
++				return 0
++			}
++			return per[min(len(per)-1, int(p*float64(len(per))))]
++		}
++		t.Logf("TF_ALT=%q altL=%v load %.2f: searches %d, pages per search mean %.3f p50 %d p99 %d max %d; evictions %d relocations %d",
++			os.Getenv("TF_ALT"), f.altL, c.load, len(per), mean, q(0.5), q(0.99), q(1), f.Evictions(), f.Relocations())
++	}
++}
+diff --git a/cuckoo.go b/cuckoo.go
+index b7db94b..51595da 100644
+--- a/cuckoo.go
++++ b/cuckoo.go
+@@ -157,6 +157,10 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
+ 		// back to cheap eviction instead of searching in vain.
+ 		p := f.pressure.Load()
+ 		budget := 8 + int(uint64(relocBudget-8)*(pressureOne-uint64(p))>>pressureShift)
++		if testHookSearch != nil {
++			testHookSearch(lines[0], true)
++			testHookSearch(lines[1], false)
++		}
+ 		f.warmAlts(lines)
+ 		for depth := 0; depth <= relocDepth; depth++ {
+ 			for li, line := range lines {
+@@ -344,6 +348,9 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
+ 		testHookPicked(i)
+ 	}
+ 	a := f.alt(line, w0>>48)
++	if testHookSearch != nil {
++		testHookSearch(a, false)
++	}
+ 	base := int(a * wordsPerLine)
+ 	moved := w0 ^ dispBit         // displaced iff it wasn't
+ 	m := f.moveOf(w1 >> tagShift) // the entry's key's stripe
+diff --git a/filter.go b/filter.go
+index 486e15a..e2f3122 100644
+--- a/filter.go
++++ b/filter.go
+@@ -138,11 +138,12 @@ type Config struct {
+ // Filter is safe for concurrent use. Hits never lock; first touches of a key
+ // serialize on a striped lock.
+ type Filter struct {
+-	words   []uint64 // 64-byte aligned, len = lines*wordsPerLine
+-	lines   uint64   // any size; indexed by multiply-shift, not masking
+-	horizon uint64   // ticks
+-	unit    uint64   // ticks per velocity register unit (Horizon/unitsPerHorizon)
+-	unitInv uint64   // floor(2^64 / unit) + 1, for unitOf
++	words   []uint64  // 64-byte aligned, len = lines*wordsPerLine
++	lines   uint64    // any size; indexed by multiply-shift, not masking
++	altL    [4]uint64 // NEXT-RESULTS.md N5: chunk lines per fingerprint group (0: the whole table)
++	horizon uint64    // ticks
++	unit    uint64    // ticks per velocity register unit (Horizon/unitsPerHorizon)
++	unitInv uint64    // floor(2^64 / unit) + 1, for unitOf
+ 	res     time.Duration
+ 	clock   func() uint64
+ 	seed    maphash.Seed
+@@ -268,6 +269,7 @@ func New(cfg Config) (*Filter, error) {
+ 	}
+ 	lines := max(2, uint64(math.Ceil(float64(cfg.Capacity)/(cfg.Load*slotsPerLine))))
+ 	f := &Filter{
++		altL:    altChunks(lines),
+ 		lines:   lines,
+ 		horizon: horizon,
+ 		unit:    (horizon + unitsPerHorizon - 1) / unitsPerHorizon,
+diff --git a/slots.go b/slots.go
+index d6ed43e..1557f69 100644
+--- a/slots.go
++++ b/slots.go
+@@ -163,6 +163,9 @@ func (f *Filter) primary(h uint64) uint64 {
+ // without knowing its key: alt(l) = (x - l) mod lines is its own inverse.
+ // For one or two lines per fp, alt(l) == l; those keys get one line.
+ func (f *Filter) alt(line, fp uint64) uint64 {
++	if l := f.altL[fp&3]; l != 0 && l < f.lines {
++		return f.altChunk(line, fp, l)
++	}
+ 	x, _ := bits.Mul64(mix64(fp*0x9e3779b97f4a7c15), f.lines)
+ 	if x >= line {
+ 		return x - line

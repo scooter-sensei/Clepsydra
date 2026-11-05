@@ -1,0 +1,226 @@
+diff --git a/activekeys.go b/activekeys.go
+new file mode 100644
+index 0000000..0951863
+--- /dev/null
++++ b/activekeys.go
+@@ -0,0 +1,56 @@
++package temporalfilter
++
++import "sync/atomic"
++
++// ActiveKeysAt counts the keys last touched within min(window, Horizon) of
++// now: table slots, then stash and wait-room entries (keys evicted to the
++// stash, or waiting for a slot). Keys whose history spilled to the overflow
++// table are not counted: it keeps per-bucket floors, not keys. With
++// sampleLines <= 0 (or at least the table's lines) every line and entry is
++// read; otherwise sampleLines lines at an even stride, and the same share
++// of stash and wait-room sets, and the count is scaled up. It takes no
++// lock on the table (as Occupancy), so under concurrent touches it reads a
++// moving table. (NEXT-RESULTS.md N6.)
++func (f *Filter) ActiveKeysAt(window, now uint64, sampleLines int) int {
++	w := min(window, f.horizon)
++	lines := f.lines
++	k := lines
++	if sampleLines > 0 && uint64(sampleLines) < lines {
++		k = uint64(sampleLines)
++	}
++	n := 0
++	for j := range k {
++		base := int(j * lines / k * wordsPerLine)
++		for s := 0; s < wordsPerLine; s += 2 {
++			w0 := atomic.LoadUint64(&f.words[base+s])
++			if w0 != 0 && age(now, w0&tsMask) <= w {
++				n++
++			}
++		}
++	}
++	for _, p := range [2]*stashTable{f.stash.Load(), f.room.Load()} {
++		if p == nil {
++			continue
++		}
++		sets := p.n
++		ks := sets
++		if k < lines {
++			ks = max(1, sets*k/lines)
++		}
++		for j := range ks {
++			i := j * sets / ks
++			mu := &p.mu[i%stashStripes]
++			mu.Lock()
++			for _, e := range p.e[i*stashWays : (i+1)*stashWays] {
++				if e.id != 0 && age(now, e.w0&tsMask) <= w {
++					n++
++				}
++			}
++			mu.Unlock()
++		}
++	}
++	if k == lines {
++		return n
++	}
++	return int(float64(n)*float64(lines)/float64(k) + 0.5)
++}
+diff --git a/activekeys_test.go b/activekeys_test.go
+new file mode 100644
+index 0000000..5b39427
+--- /dev/null
++++ b/activekeys_test.go
+@@ -0,0 +1,158 @@
++package temporalfilter
++
++import (
++	"fmt"
++	"math"
++	"os"
++	"sort"
++	"testing"
++	"time"
++
++	"github.com/scooter-sensei/clepsydra/go/internal/workload"
++)
++
++// TestActiveKeys (TF_EXP=1; NEXT-RESULTS.md N6): ActiveKeysAt against an
++// exact map of last touches, on tfbench's churn stream at three loads and
++// its velocity workload; full scan and 0.1%, 1%, 10% line samples.
++func TestActiveKeys(t *testing.T) {
++	if os.Getenv("TF_EXP") == "" {
++		t.Skip("set TF_EXP=1")
++	}
++	const capacity, hTicks = 200_000, 60_000
++	wins := []uint64{1_000, 5_000, 15_000, 30_000, 60_000}
++	fracs := []float64{0, 0.001, 0.01, 0.1}
++	type acc struct {
++		rel             []float64
++		big             []float64 // queries with >= 10,000 active
++		neqPre, neqPost int
++		nPre, nPost     int
++		lowPost         int // full scan below exact after an eviction
++	}
++	run := func(name string, f *Filter, feed func(op func(h, now uint64))) {
++		last := map[uint64]uint64{}
++		res := make([][]acc, len(wins))
++		for i := range res {
++			res[i] = make([]acc, len(fracs))
++		}
++		next := uint64(hTicks)
++		query := func(now uint64) {
++			for h, lt := range last { // only the last horizon can be active
++				if lt+hTicks < now {
++					delete(last, h)
++				}
++			}
++			ev := f.Evictions() > 0
++			for wi, w := range wins {
++				exact := 0
++				for _, lt := range last {
++					if lt <= now && now-lt <= w {
++						exact++
++					}
++				}
++				for fi, fr := range fracs {
++					s := int(fr * float64(f.lines))
++					est := f.ActiveKeysAt(w, now, s)
++					a := &res[wi][fi]
++					if fr == 0 {
++						if ev {
++							a.nPost++
++							if est != exact {
++								a.neqPost++
++							}
++							if est < exact {
++								a.lowPost++
++							}
++						} else {
++							a.nPre++
++							if est != exact {
++								a.neqPre++
++								if a.neqPre <= 3 {
++									t.Logf("%s W=%d now=%d: full %d exact %d", name, w, now, est, exact)
++								}
++							}
++						}
++					}
++					if exact > 0 {
++						r := math.Abs(float64(est-exact)) / float64(exact)
++						a.rel = append(a.rel, r)
++						if exact >= 10_000 {
++							a.big = append(a.big, r)
++						}
++					}
++				}
++			}
++		}
++		feed(func(h, now uint64) {
++			for now >= next {
++				query(next - 1)
++				next += 1000
++			}
++			f.CheckAndTouchAt(h, 0, now)
++			last[h] = now
++		})
++		for wi, w := range wins {
++			for fi, fr := range fracs {
++				a := res[wi][fi]
++				line := fmt.Sprintf("%-14s W=%2ds sample %5.1f%%: mean %.4f p95 %.4f (n %d)", name, w/1000, 100*fr, mean(a.rel), p95(a.rel), len(a.rel))
++				if len(a.big) > 0 {
++					line += fmt.Sprintf("; >=10k active: p95 %.4f (n %d)", p95(a.big), len(a.big))
++				}
++				if fr == 0 {
++					line += fmt.Sprintf("; full != exact: %d/%d before an eviction, %d/%d after (%d low)", a.neqPre, a.nPre, a.neqPost, a.nPost, a.lowPost)
++				}
++				t.Log(line)
++			}
++		}
++	}
++	for _, c := range []struct {
++		load float64
++		seed uint64
++	}{{1.0, 2}, {1.1, 3}, {1.15, 4}} {
++		f, _ := New(Config{Capacity: capacity, Horizon: time.Minute, Resolution: time.Millisecond})
++		run(fmt.Sprintf("churn %.2f", c.load), f, func(op func(h, now uint64)) {
++			workload.Churn(c.load, c.seed, capacity, hTicks, mix64, func(h, w, now uint64) { op(h, now) })
++		})
++	}
++	f, _ := New(Config{Capacity: capacity, Horizon: time.Minute, Resolution: time.Millisecond})
++	hs := make([]uint64, 2000)
++	for k := range hs {
++		hs[k] = mix64(uint64(k) + 1<<50)
++	}
++	run("velocity", f, func(op func(h, now uint64)) {
++		velWorkload(func(k int, tk uint64) { op(hs[k], tk) }, func(int, []uint64, int, uint64) {})
++	})
++}
++
++func mean(x []float64) float64 {
++	s := 0.0
++	for _, v := range x {
++		s += v
++	}
++	return s / float64(max(1, len(x)))
++}
++
++func p95(x []float64) float64 {
++	if len(x) == 0 {
++		return 0
++	}
++	y := append([]float64(nil), x...)
++	sort.Float64s(y)
++	return y[min(len(y)-1, int(0.95*float64(len(y))))]
++}
++
++func BenchmarkActiveKeys(b *testing.B) {
++	f, _ := benchFilter(b)
++	for _, c := range []struct {
++		name string
++		frac float64
++	}{{"full", 0}, {"1pct", 0.01}} {
++		b.Run(c.name, func(b *testing.B) {
++			s := int(c.frac * float64(f.lines))
++			n := 0
++			for i := 0; i < b.N; i++ {
++				n += f.ActiveKeysAt(60_000_000_000, 1000+uint64(i), s)
++			}
++			_ = n
++		})
++	}
++}

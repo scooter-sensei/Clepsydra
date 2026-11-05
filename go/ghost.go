@@ -2,6 +2,7 @@ package temporalfilter
 
 import (
 	"math/bits"
+	"runtime"
 	"sync"
 	"sync/atomic"
 )
@@ -67,6 +68,58 @@ type ghost struct {
 	until    atomic.Uint64 // tick before which an entry may be live
 	sat      atomic.Bool   // some entry saturated (count is a floor)
 	floored  atomic.Uint64 // histories that left to a bucket's floor
+	// The sweep trails the epoch (claims S79): during slice epoch-1 every
+	// add clears ghSweepStep buckets from cursor; swept counts buckets done.
+	cursor atomic.Uint64
+	swept  atomic.Uint64
+}
+
+// ghSweepStep is how many buckets each add sweeps.
+const ghSweepStep = 4
+
+// sweepWord clears word i's entries (and floors, in a bucket's first word)
+// decoded against ep as of a slice before ns-2: dead by slice ns. With
+// check, a write commits only while ep is the epoch.
+func (g *ghost) sweepWord(i int, ep, ns uint64, check bool) {
+	for {
+		old := atomic.LoadUint64(&g.words[i])
+		nw := old
+		for k := range ghPerWord {
+			sh, n, mask := uint(k)*ghEntryBits, 1, uint64(ghEntryMask)
+			if k == 0 && i%ghWords == 0 { // the floors, each with its own slice
+				n, mask = ghSubMax, ghSubMask
+			}
+			for range n {
+				if e := old >> sh & mask; e != 0 && g.real(e, ep)+2 < ns {
+					nw &^= mask << sh
+				}
+				sh += ghSubBits
+			}
+		}
+		if nw == old || check && g.epoch.Load() != ep {
+			return
+		}
+		if atomic.CompareAndSwapUint64(&g.words[i], old, nw) {
+			return
+		}
+	}
+}
+
+// sweepStep clears the next ghSweepStep buckets' entries that died when
+// this slice began. They decode as dead until the epoch moves on, and
+// advance finishes the slice's sweep before it does.
+func (g *ghost) sweepStep() {
+	c := g.cursor.Add(ghSweepStep) - ghSweepStep
+	if c >= g.nb {
+		return
+	}
+	end := min(c+ghSweepStep, g.nb)
+	if ep := g.epoch.Load(); ep != 0 {
+		for i := c * ghWords; i < end*ghWords; i++ {
+			g.sweepWord(int(i), ep, ep-1, true)
+		}
+	}
+	g.swept.Add(end - c)
 }
 
 // newGhost sizes the table to bytes (rounded down to whole buckets).
@@ -154,6 +207,7 @@ func (g *ghost) add(id, n, last uint64, sat bool, now uint64) {
 		n, sat = ghCntMax, true
 		g.sat.Store(true)
 	}
+	g.sweepStep()
 	if u := sl*g.sliceLen + g.sliceLen - 1 + g.horizon; g.until.Load() < u {
 		for {
 			cur := g.until.Load()
@@ -288,7 +342,10 @@ func (g *ghost) raiseFloor(base int, fp, n, sl, now uint64) {
 }
 
 // advance moves the epoch to slice ns, first clearing every entry that is
-// dead by then (so the 2-bit slices of the rest decode unambiguously).
+// dead by then (so the 2-bit slices of the rest decode unambiguously). The
+// adds of the slice ending have swept part of the table already: advance
+// sweeps the rest, so a call that moves the epoch no longer stalls for the
+// whole table (claims S79).
 func (g *ghost) advance(ns uint64) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -297,29 +354,29 @@ func (g *ghost) advance(ns uint64) {
 		return
 	}
 	if ep != 0 {
-		for i := range g.words {
-			for {
-				old := atomic.LoadUint64(&g.words[i])
-				nw := old
-				for k := range ghPerWord {
-					sh, n, mask := uint(k)*ghEntryBits, 1, uint64(ghEntryMask)
-					if k == 0 && i%ghWords == 0 { // the floors, each with its own slice
-						n, mask = ghSubMax, ghSubMask
-					}
-					for range n {
-						if e := old >> sh & mask; e != 0 && g.real(e, ep)+2 < ns {
-							nw &^= mask << sh
-						}
-						sh += ghSubBits
-					}
-				}
-				if nw == old || atomic.CompareAndSwapUint64(&g.words[i], old, nw) {
-					break
-				}
+		// Finish this slice's sweep (what died when it began): the buckets
+		// no add has claimed, then wait for the adds still sweeping theirs.
+		cur := ep - 1
+		if c := g.cursor.Swap(g.nb); c < g.nb {
+			for i := c * ghWords; i < g.nb*ghWords; i++ {
+				g.sweepWord(int(i), ep, cur, false)
+			}
+			g.swept.Add(g.nb - c)
+		}
+		for g.swept.Load() < g.nb {
+			runtime.Gosched()
+		}
+		if ns > cur+1 { // more than one slice (an idle gap): everything dead by ns
+			for i := range g.words {
+				g.sweepWord(i, ep, ns, false)
 			}
 		}
 	}
+	// The epoch first: an add that claims a bucket of the new slice's sweep
+	// decodes against the new epoch.
 	g.epoch.Store(ns + 1)
+	g.swept.Store(0)
+	g.cursor.Store(0)
 }
 
 // testHookGhostRead, if set, runs after estimate loads its buckets, before

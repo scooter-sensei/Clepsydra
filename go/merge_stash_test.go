@@ -11,6 +11,9 @@ import (
 // (it installed the key from g without recalling f's stash; found by the
 // StashSet model, NEXT-RESULTS.md N18 on the lab branch).
 func TestMergeKeepsOwnStash(t *testing.T) {
+	if forceCT || forceBG {
+		t.Skip("Merge refuses ConstantTime and Background filters (TestMergeRefuses)")
+	}
 	cfg := Config{Capacity: 1000, Horizon: time.Minute, Resolution: time.Millisecond}
 	f, _ := New(cfg)
 	g, _ := New(cfg)

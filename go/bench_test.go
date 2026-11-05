@@ -61,6 +61,19 @@ func BenchmarkTouchAndCount(b *testing.B) {
 	c.report(b)
 }
 
+// TouchIfUnderAt on TouchAndCount's keys, under a limit no key reaches: a
+// stripe lock, a count and a touch per call (claims A45).
+func BenchmarkTouchIfUnder(b *testing.B) {
+	f, hs := benchFilter(b)
+	w := f.Ticks(30 * time.Second)
+	b.ResetTimer()
+	c := startCycles()
+	for i := 0; i < b.N; i++ {
+		f.TouchIfUnderAt(hs[i&(benchKeys-1)], w, 1<<30, 2000+uint64(i>>10))
+	}
+	c.report(b)
+}
+
 func BenchmarkVelocityCount(b *testing.B) {
 	f, hs := benchFilter(b)
 	w := f.Ticks(30 * time.Second)

@@ -105,6 +105,7 @@ fixes() {
 	spill-foreign-hot-entry|30cd90d|d6dbe56|hotspill_test.go|^TestSpillOfForeignHotEntryIsNotLost$|3
 	mirror-key-in-found-slot|30cd90d|d6dbe56|verify/testdata/mirror_test.go|^TestMirrorKeyInFoundSlotNotCounted$|3
 	slot-exit-frees-hot-entry|d6dbe56|fbf63fd|hotdrop_test.go|^TestSlotExitFreesHotEntry$|3
+	merge-own-stash|2ca617b|1cb3c35|merge_stash_test.go|^TestMergeKeepsOwnStash$|3
 	LIST
 }
 

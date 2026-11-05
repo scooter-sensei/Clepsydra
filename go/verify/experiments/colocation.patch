@@ -1,0 +1,133 @@
+diff --git a/colocation_test.go b/colocation_test.go
+new file mode 100644
+index 0000000..bf28fb3
+--- /dev/null
++++ b/colocation_test.go
+@@ -0,0 +1,127 @@
++package temporalfilter
++
++import (
++	"math/bits"
++	"os"
++	"testing"
++	"time"
++)
++
++// TestColocation (TF_EXP=1; NEXT-RESULTS.md N17): the damage of a flood of
++// keys co-located with victims' lines, found by a perfect oracle (the
++// filter's own hash), against a control flood of random keys.
++func TestColocation(t *testing.T) {
++	if os.Getenv("TF_EXP") == "" {
++		t.Skip("set TF_EXP=1")
++	}
++	const (
++		capacity  = 200_000
++		H         = 60_000
++		nVictims  = 100
++		perVictim = 16
++		limit     = 100
++	)
++	for _, mode := range []string{"one line", "control", "both lines"} {
++		targeted := mode == "one line"
++		f, _ := New(Config{Capacity: capacity, Horizon: time.Minute, Resolution: time.Millisecond})
++		victims := make([]uint64, nVictims)
++		for i := range victims {
++			victims[i] = f.HashUint64(uint64(1<<40 + i))
++		}
++		var attack []uint64
++		probes := 0
++		next := uint64(1 << 50)
++		if targeted {
++			for _, v := range victims {
++				pv := f.primary(v)
++				av := f.alt(pv, fingerprint(v))
++				found := 0
++				for found < perVictim {
++					h := f.HashUint64(next)
++					next++
++					probes++
++					p := f.primary(h)
++					a := f.alt(p, fingerprint(h))
++					if p == pv || p == av || a == pv || a == av {
++						attack = append(attack, h)
++						found++
++					}
++				}
++			}
++		} else if mode == "both lines" {
++			// keys with the victim's fingerprint and primary line (or its
++			// alternate): both their lines are the victim's. A random key
++			// is one with probability 2^-16 x 2/lines: built here directly.
++			for _, v := range victims {
++				pv := f.primary(v)
++				av := f.alt(pv, fingerprint(v))
++				for j := range perVictim {
++					line := pv
++					if j%2 == 1 {
++						line = av
++					}
++					lo, _ := bits.Div64(line>>28, line<<36, f.lines) // ceil(line * 2^36 / lines)
++					if lo*f.lines < line<<36 {
++						lo++
++					}
++					tg := (tag(v) + 1 + uint64(j)) % (1<<tagBits - 1)
++					h := fingerprint(v)<<48 | tg<<36 | lo
++					if f.primary(h) != line || fingerprint(h) != fingerprint(v) {
++						t.Fatal("construction")
++					}
++					attack = append(attack, h)
++				}
++			}
++			probes = -1
++		} else {
++			for range nVictims * perVictim {
++				attack = append(attack, f.HashUint64(next))
++				next++
++			}
++		}
++		truth := make([][]uint64, nVictims)
++		low, deny, degraded, notFound, reads := 0, 0, 0, 0, 0
++		for now := uint64(1); now <= 3*H; now++ {
++			// background: key b touched at tick b*H/capacity of every minute
++			for b := (now - 1) % H * capacity / H; b < now%H*capacity/H || now%H == 0 && b < capacity; b++ {
++				f.TouchAt(f.HashUint64(uint64(b)), 0, now)
++			}
++			if now%1000 == 0 {
++				for i, v := range victims {
++					f.TouchAt(v, 0, now)
++					truth[i] = append(truth[i], now)
++				}
++			}
++			if now >= 90_000 && now < 150_000 && now%100 == 0 { // 10 per second per attack key
++				for _, h := range attack {
++					f.TouchAt(h, 0, now)
++				}
++			}
++			if now >= 90_000 && now%100 == 0 {
++				for i, v := range victims {
++					ex := 0
++					for j := len(truth[i]) - 1; j >= 0 && truth[i][j]+H >= now; j-- {
++						ex++
++					}
++					r := f.CountAt(v, H, now)
++					reads++
++					if r.Upper < ex && !r.Saturated {
++						low++
++					}
++					if ex < limit && (r.Count >= limit || r.Saturated || r.Upper >= limit) {
++						deny++
++					}
++					if r.Degraded {
++						degraded++
++					}
++					if i0, _, _ := f.lookupStable(v, fingerprint(v), tag(v), false); i0 < 0 {
++						notFound++
++					}
++				}
++			}
++		}
++		name := mode
++		t.Logf("%s: attack keys %d, probes %d (%.0f per co-located key); victim reads %d: Upper < truth unflagged %d, strict false denies %d (%.3f%%), Degraded %d, victim not in the table %d; evictions %d, folded %d, floored %d, promoted %d",
++			name, len(attack), probes, float64(probes)/float64(max(1, len(attack))), reads, low, deny, 100*float64(deny)/float64(reads), degraded, notFound, f.Evictions(), f.Folded(), f.Floored(), f.Promoted())
++	}
++}

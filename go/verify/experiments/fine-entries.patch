@@ -1,0 +1,157 @@
+diff --git a/fineentry_test.go b/fineentry_test.go
+new file mode 100644
+index 0000000..0147aca
+--- /dev/null
++++ b/fineentry_test.go
+@@ -0,0 +1,151 @@
++package temporalfilter
++
++import (
++	"fmt"
++	"math"
++	"os"
++	"sort"
++	"testing"
++)
++
++// TestFineEntries (TF_EXP=1; NEXT-RESULTS.md N12) models a side table of
++// 64-byte fine entries (a key's last 8 exact events and a 250 ms register,
++// from its promotion on) under three promotion policies and three sizes,
++// on tfbench's velocity workload, against HEAD's register.
++func TestFineEntries(t *testing.T) {
++	if os.Getenv("TF_EXP") == "" {
++		t.Skip("set TF_EXP=1")
++	}
++	const H = 60_000
++	base := geom{2500, []uint{0, 0, 1, 2, 3, 3, 3}, []int64{0, 1, 2, 4, 8, 16, 24}}
++	fineLS := []uint{0, 0, 1, 2, 3, 4, 5, 6, 6, 6, 6}
++	fineOff := make([]int64, len(fineLS))
++	for j := 1; j < len(fineLS); j++ {
++		fineOff[j] = fineOff[j-1] + 1<<fineLS[j-1]
++	}
++	fine := geom{250, fineLS, fineOff}
++	type entry struct {
++		tp               uint64
++		incl             bool // the promoting tick's events count
++		lastTouch, lastQ uint64
++	}
++	type arm struct {
++		name    string
++		size    int // 0: every key, from its first event
++		policy  byte
++		ents    map[int]*entry
++		promos  int
++		err, ex [5]float64
++	}
++	var arms []*arm
++	arms = append(arms, &arm{name: "every key", policy: 'x', ents: map[int]*entry{}})
++	for _, sz := range []int{18, 37, 74} {
++		for _, p := range []byte{'a', 'b', 'c'} {
++			arms = append(arms, &arm{name: fmt.Sprintf("%d entries (%c)", sz, p), size: sz, policy: p, ents: map[int]*entry{}})
++		}
++	}
++	promote := func(a *arm, k int, now uint64, incl bool) {
++		if _, ok := a.ents[k]; ok {
++			return
++		}
++		if a.size > 0 && len(a.ents) >= a.size {
++			victim, best := -1, uint64(math.MaxUint64)
++			for kk, e := range a.ents {
++				v := e.lastTouch
++				if a.policy == 'c' {
++					v = e.lastQ
++				}
++				if v < best || v == best && kk < victim {
++					victim, best = kk, v
++				}
++			}
++			delete(a.ents, victim)
++		}
++		a.ents[k] = &entry{tp: now, incl: incl, lastTouch: now, lastQ: now}
++		a.promos++
++	}
++	trim := func(ts []uint64) []uint64 { // the key's events within two horizons of its last, after bump's reset
++		last := ts[len(ts)-1]
++		lo := sort.Search(len(ts), func(j int) bool { return ts[j]+2*H >= last })
++		tr := ts[lo:]
++		for i := len(tr) - 1; i > 0; i-- {
++			if tr[i]-tr[i-1] > H {
++				return tr[i:]
++			}
++		}
++		return tr
++	}
++	var baseErr, baseEx [5]float64
++	unitOf := map[int][2]uint64{} // key -> {base unit, events in it}
++	velWorkload(func(k int, tk uint64) {
++		u := tk / base.unit
++		c := unitOf[k]
++		if c[0] != u {
++			c = [2]uint64{u, 0}
++		}
++		c[1]++
++		unitOf[k] = c
++		for _, a := range arms {
++			if e, ok := a.ents[k]; ok {
++				e.lastTouch = tk
++			}
++			switch {
++			case a.policy == 'x':
++				promote(a, k, tk, true)
++			case a.policy == 'b' && c[1] >= 3:
++				promote(a, k, tk, true)
++			}
++		}
++	}, func(k int, ts []uint64, wi int, now uint64) {
++		w := velWins[wi]
++		exact := float64(len(ts) - sort.Search(len(ts), func(j int) bool { return ts[j]+w >= now }))
++		baseEx[wi] += exact
++		est := 0.0
++		var tr []uint64
++		if len(ts) > 0 {
++			tr = trim(ts)
++			last := tr[len(tr)-1]
++			est = simRound(simEstimate(base.buckets(tr), last, now, w, nil, nil, 0), now-last <= w)
++		}
++		baseErr[wi] += math.Abs(est - exact)
++		for _, a := range arms {
++			a.ex[wi] += exact
++			ae := est
++			if e, ok := a.ents[k]; ok && e.tp+w <= now {
++				i := sort.Search(len(ts), func(j int) bool { return ts[j] > e.tp || e.incl && ts[j] == e.tp })
++				fs := ts[i:]
++				ae = 0
++				if len(fs) > 0 {
++					last := fs[len(fs)-1]
++					var known []uint64
++					for j := len(fs) - 1; j >= 0 && len(known) < 8; j-- {
++						known = append(known, fs[j])
++					}
++					ae = simRound(simEstimate(fine.buckets(trim(fs)), last, now, w, known, nil, 0), now-last <= w)
++				}
++			}
++			a.err[wi] += math.Abs(ae - exact)
++			if wi == 0 && (a.policy == 'a' || a.policy == 'c') {
++				promote(a, k, now, false)
++			}
++			if wi == 0 {
++				if e, ok := a.ents[k]; ok {
++					e.lastQ = now
++				}
++			}
++		}
++	})
++	row := func(name string, bkey float64, err, ex [5]float64, promos int) {
++		line, mean := "", 0.0
++		for wi := range 5 {
++			line += " " + pad7(err[wi]/ex[wi])
++			mean += err[wi] / ex[wi] / 5
++		}
++		t.Logf("%-20s %+5.2f B/key%s %s  promotions/s %.1f", name, bkey, line, pad7(mean), float64(promos)/240)
++	}
++	t.Logf("%-20s %10s %7s %7s %7s %7s %7s %7s", "arm", "", "1s", "5s", "15s", "30s", "60s", "mean")
++	row("HEAD", 0, baseErr, baseEx, 0)
++	for _, a := range arms {
++		row(a.name, 64*float64(a.size)/2000, a.err, a.ex, a.promos)
++	}
++}

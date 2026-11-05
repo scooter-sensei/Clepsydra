@@ -62,6 +62,15 @@ word1: tag(12) | epoch(4) | 7 velocity buckets (48)        or, for a hot key: ta
 
 Every touch and count returns `Seen`, `Count`, `Upper`, `Saturated`, `Restored` and `Degraded`, with the meanings and the contract given in [the paper, §4.2](../paper/04-operations.md#42-trust-flags). An implementation MUST keep the contract: unless `Saturated`, `Upper` is never below the true count, outside the two documented exceptions (a key floored more than once in the same floor; with the overflow table off, a key back after a lost history).
 
+## Optional operations
+
+An implementation MAY offer these; one that does MUST keep what each says.
+
+- **Merge** of quiescent filters with the same configuration: a key in both gets the two registers re-bucketed to the newer epoch and summed (an overflowing bucket sets the saturated bit) and the newer last touch; a key only the other table holds MUST be installed with the receiving filter's own stashed history of it summed in, as a first touch restores it [D24, D26].
+- **Snapshots** of a quiescent filter: a restore into a filter of the same configuration MUST answer every later call as the uninterrupted filter would, and MUST refuse a snapshot of another configuration, a truncated one, and one whose bytes were damaged (the reference ends each section with its CRC32C). A restored built-in clock MUST continue the old timeline. The byte layout is the reference implementation's (`go/snapshot.go`, version 2); a port need not read another implementation's [D27].
+- **Resizing**: until a horizon after a resize, a read MUST add the old filter's answer to the new one's, and a key MUST leave the old table only by moving its slot words whole to the new one [D28].
+- **Conditional touch** (`TouchIfUnder`): the event MUST be recorded only when `Upper` within the window is below the limit and the answer is not `Saturated` (with the overflow table off, also not when an unseen key reads `Degraded`), and the read and the touch of one key MUST be atomic with respect to other conditional touches of it [A45].
+
 ## Defaults at a glance
 
 | Parameter | Default |

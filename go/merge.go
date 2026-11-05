@@ -9,7 +9,10 @@ import (
 // Merge adds g's keys to f: for a key in both, the two registers are
 // re-bucketed to the newer one's epoch and summed bucket by bucket (an
 // overflow sets the saturated bit), and the last touch is the newer one; a
-// key only g holds goes in as a first touch would (which may evict). Both
+// key only g's table holds goes in as a first touch would (which may evict),
+// with f's own stashed history of it, if f evicted it, summed in the same
+// way (as a first touch restores it: installed without it, f's reads would
+// find the key in the table and skip the stashed history). Both
 // filters must be quiescent and built with the same Config (and Key). g's
 // stash and overflow table (evicted histories) are not merged. ConstantTime,
 // Background and hot entries in use are refused with an error, f unchanged.
@@ -54,28 +57,41 @@ func (f *Filter) Merge(g *Filter) error {
 		j, fw0, fw1 := f.lookupStable(h, fp, tg, false)
 		if j >= 0 {
 			vf, _ := f.viewOf(id, fw1, fw0&tsMask)
-			e := max(vf.e, vg.e)
-			rf, rg := register(vf.c), register(vg.c)
-			over := rf.advance(vf.e, e)
-			over = rg.advance(vg.e, e) || over
-			for b := range nBuckets {
-				over = rf.add(b, rg[b]) || over
-			}
+			nw1, over := sumRegisters(vf, vg, tg)
 			sat := (fw0 | w0) & satBit
 			if over {
 				sat = satBit
 			}
-			atomic.StoreUint64(&f.words[j+1], tg<<tagShift|uint64(e)&epochMask<<48|rf.pack())
+			atomic.StoreUint64(&f.words[j+1], nw1)
 			atomic.StoreUint64(&f.words[j], fw0&^(tsMask|satBit)|sat|max(last, fw0&tsMask))
 		} else {
+			// f may hold the key's evicted history in its stash: take it and
+			// sum it in. Background is refused, so recall finds nothing or
+			// the stash (srcStash), and with hot entries refused its word1
+			// is a register.
+			nw1, sat, stamp := w1, w0&satBit, last
+			s0, s1, src := f.recall(h, fp, tg, now, true)
+			if src == srcStash {
+				vf, _ := f.viewOf(id, s1, s0&tsMask)
+				var over bool
+				nw1, over = sumRegisters(vf, vg, tg)
+				sat = (s0 | w0) & satBit
+				if over {
+					sat = satBit
+				}
+				stamp = max(last, s0&tsMask)
+			}
 			placed := false
 			for range 8 {
-				if f.claim(h, fp, w1, now, last, w0&satBit, claimFull) >= 0 {
+				if f.claim(h, fp, nw1, now, stamp, sat, claimFull) >= 0 {
 					placed = true
 					break
 				}
 			}
 			if !placed {
+				if src == srcStash { // put it back, as miss does for its retry
+					f.putBack(f.stashID(h, fp, tg), s0, s1, now)
+				}
 				mu.Unlock()
 				return errors.New("temporalfilter: Merge: a key found no slot in 8 tries (both filters must be quiescent)")
 			}
@@ -83,4 +99,18 @@ func (f *Filter) Merge(g *Filter) error {
 		mu.Unlock()
 	}
 	return nil
+}
+
+// sumRegisters re-buckets views a and b to the newer epoch and adds them
+// bucket by bucket: the merged register word for tag tg, and whether a
+// bucket overflowed (the caller sets the saturated bit).
+func sumRegisters(a, b view, tg uint64) (w1 uint64, over bool) {
+	e := max(a.e, b.e)
+	ra, rb := register(a.c), register(b.c)
+	over = ra.advance(a.e, e)
+	over = rb.advance(b.e, e) || over
+	for i := range nBuckets {
+		over = ra.add(i, rb[i]) || over
+	}
+	return tg<<tagShift | uint64(e)&epochMask<<48 | ra.pack(), over
 }

@@ -2,7 +2,7 @@
 # Model checks of the slot protocol (verify/tla/*.tla) with TLC.
 #
 #   verify/tla.sh [model...]   WaitRoom, RegisterEpoch, Relocate, RoomWays, SlotHold,
-#                              TagStripe, BumpABA, HotEntry
+#                              TagStripe, BumpABA, HotEntry, StashSet
 #                              (default: all): the protocol as committed at
 #                              a few sizes, then each guard undone (each
 #                              must break an invariant)
@@ -219,8 +219,20 @@ hotentry() {
 	run violation HotEntry "noClose, spill: KExact" KExact 'Variant = "noClose"' 'Writer = "spill"' "Adders = $(procs a 1)"
 }
 
+# StashSet (claims A44, D26): can a live pair of one identity form in a
+# stash set? Merge's install without a recall (before D26) makes one.
+stashset() {
+	local o='Others = {"X", "Y"}' w
+	for w in 2 3; do
+		run ok StashSet "plain, W = $w: no live pair" NoLivePair "W = $w" 'H = 2' 'Tmax = 6' "$o" 'Variant = "plain"'
+		run violation StashSet "plain, W = $w: a pair (the probe's)" NoPair "W = $w" 'H = 2' 'Tmax = 6' "$o" 'Variant = "plain"'
+		run violation StashSet "merge, W = $w: a live pair (Merge installs without recall)" NoLivePair "W = $w" 'H = 2' 'Tmax = 6' "$o" 'Variant = "merge"'
+		run ok StashSet "mergefix, W = $w: no live pair (Merge recalls, D26)" NoLivePair "W = $w" 'H = 2' 'Tmax = 6' "$o" 'Variant = "mergefix"'
+	done
+}
+
 models=("$@")
-[ ${#models[@]} -gt 0 ] || models=(WaitRoom RegisterEpoch Relocate RoomWays SlotHold TagStripe BumpABA HotEntry)
+[ ${#models[@]} -gt 0 ] || models=(WaitRoom RegisterEpoch Relocate RoomWays SlotHold TagStripe BumpABA HotEntry StashSet)
 for m in "${models[@]}"; do
 	case $m in
 	WaitRoom) waitroom ;;
@@ -231,6 +243,7 @@ for m in "${models[@]}"; do
 	TagStripe) tagstripe ;;
 	BumpABA) bumpaba ;;
 	HotEntry) hotentry ;;
+	StashSet) stashset ;;
 	*) echo "unknown model $m"; bad=1 ;;
 	esac
 done

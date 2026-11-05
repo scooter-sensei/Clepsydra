@@ -213,6 +213,8 @@ type Filter struct {
 	_          [64]byte
 	room       atomic.Pointer[stashTable] // Background: keys waiting for a slot, nil until the first waits
 	roomN      uint64                     // sets of the wait room
+	ownClock   bool                       // the built-in clock: ReadFrom re-anchors it (claims D27)
+	clockAdd   atomic.Uint64              // ticks the built-in clock is moved on by
 	roomMu     [stashStripes]paddedMutex
 }
 
@@ -310,7 +312,8 @@ func New(cfg Config) (*Filter, error) {
 	f.words = alignedWords(int(lines * wordsPerLine))
 	if f.clock == nil {
 		base, res := time.Now(), cfg.Resolution
-		read := func() uint64 { return uint64(time.Since(base)/res) + 1 }
+		f.ownClock = true
+		read := func() uint64 { return uint64(time.Since(base)/res) + 1 + f.clockAdd.Load() }
 		f.clock = read
 		if cfg.CoarseClock > 0 {
 			f.coarse.Store(read())

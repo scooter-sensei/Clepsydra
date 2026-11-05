@@ -1,0 +1,238 @@
+diff --git a/fittedcut_test.go b/fittedcut_test.go
+new file mode 100644
+index 0000000..4263830
+--- /dev/null
++++ b/fittedcut_test.go
+@@ -0,0 +1,213 @@
++package temporalfilter
++
++import (
++	"encoding/binary"
++	"fmt"
++	"math"
++	"os"
++	"sort"
++	"testing"
++)
++
++// TestFittedCut (TF_EXP=1, N20_MAWI=<records>; NEXT-RESULTS.md N20): the
++// cut bucket's fraction learned from MAWI's first half plus synthetic
++// shapes (velocity generator, seed 3), judged on MAWI's second half and
++// tfbench's velocity workload (seed 9).
++type cutRec struct {
++	now, w, exact, last, e uint64
++	c                      [nBuckets]uint64
++}
++
++const cutCells = nBuckets * 5 * 8 * 2
++
++// cutAdditive (N20b): a cell holds a correction added to the uniform
++// fraction rather than the fraction itself (N20). cutUni is the last
++// cutEst's uniform fraction.
++var (
++	cutAdditive bool
++	cutUni      float64
++)
++
++// cutEst is estimate's interpolation over rec's register, with the cut
++// bucket's fraction from frac (nil: uniform). It also returns the cut's
++// context cell (-1: none) and, for training, the cut bucket's events inside
++// the window (from exact) and its spread events.
++func cutEst(r cutRec, frac []float64) (est float64, cell int, inside, spread float64) {
++	var uni float64
++	defer func() { cutUni = uni }()
++	cell = -1
++	if r.c == ([nBuckets]uint64{}) || r.now-r.last > r.w {
++		return 0, -1, 0, 0
++	}
++	from := float64(r.now) - float64(r.w)
++	unit := float64(cutGeom.unit)
++	hi := float64(r.e+1) * unit
++	newest := true
++	full := 0.0
++	for j := range nBuckets {
++		lo := float64(cutGeom.start(int64(r.e), j)) * unit
++		c := float64(r.c[j])
++		if c == 0 {
++			if from >= lo {
++				break
++			}
++			hi = lo
++			continue
++		}
++		top, a := hi, 0.0
++		if newest {
++			newest = false
++			top = math.Max(lo, math.Min(float64(r.last), hi))
++			if from < top || from <= float64(r.last) {
++				a = 1
++			}
++		}
++		if from <= lo {
++			est += c
++			full += c
++			hi = lo
++			continue
++		}
++		if from < top && c-a > 0 {
++			cb := min(4, bits4(uint64(c-a)))
++			pos := min(7, int(8*(from-lo)/math.Max(1, top-lo)))
++			ne := 0
++			if j > 0 && r.c[j-1] == 0 {
++				ne = 1
++			}
++			cell = ((j*5+cb)*8+pos)*2 + ne
++			f := (top - from) / (top - lo)
++			uni = f
++			if frac != nil && !math.IsNaN(frac[cell]) {
++				if cutAdditive {
++					f = min(1, max(0, f+frac[cell]))
++				} else {
++					f = frac[cell]
++				}
++			}
++			est += a + (c-a)*f
++			inside, spread = float64(r.exact)-full-a, c-a
++		} else {
++			est += a
++		}
++		break
++	}
++	return simRound(est, r.now-r.last <= r.w), cell, inside, spread
++}
++
++func bits4(x uint64) int { // count class: 1, 2-3, 4-7, 8-15, 16+
++	switch {
++	case x <= 1:
++		return 0
++	case x <= 3:
++		return 1
++	case x <= 7:
++		return 2
++	case x <= 15:
++		return 3
++	}
++	return 4
++}
++
++var cutGeom = geom{2500, []uint{0, 0, 1, 2, 3, 3, 3}, []int64{0, 1, 2, 4, 8, 16, 24}}
++
++func velRecords(seed uint64) []cutRec {
++	var out []cutRec
++	velWorkloadSeed(seed, func(int, uint64) {}, func(k int, ts []uint64, wi int, now uint64) {
++		w := velWins[wi]
++		exact := uint64(len(ts) - sort.Search(len(ts), func(j int) bool { return ts[j]+w >= now }))
++		r := cutRec{now: now, w: w, exact: exact}
++		if len(ts) > 0 {
++			bs := cutGeom.buckets(ts)
++			r.last = ts[len(ts)-1]
++			r.e = r.last / cutGeom.unit
++			for j := range bs {
++				r.c[j] = uint64(bs[j].c)
++			}
++		}
++		out = append(out, r)
++	})
++	return out
++}
++
++func TestFittedCut(t *testing.T) {
++	if os.Getenv("TF_EXP") == "" || os.Getenv("N20_MAWI") == "" {
++		t.Skip("set TF_EXP=1 and N20_MAWI=<records>")
++	}
++	data, err := os.ReadFile(os.Getenv("N20_MAWI"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	var mawi []cutRec
++	for i := 0; i+96 <= len(data); i += 96 {
++		u := func(k int) uint64 { return binary.LittleEndian.Uint64(data[i+8*k:]) }
++		r := cutRec{now: u(0), w: u(1), exact: u(2), last: u(3), e: u(4)}
++		for j := range nBuckets {
++			r.c[j] = u(5 + j)
++		}
++		mawi = append(mawi, r)
++	}
++	mid := (mawi[0].now + mawi[len(mawi)-1].now) / 2
++	var trainM, testM []cutRec
++	for _, r := range mawi {
++		if r.now < mid {
++			trainM = append(trainM, r)
++		} else {
++			testM = append(testM, r)
++		}
++	}
++	train := append(trainM, velRecords(3)...)
++	testV := velRecords(9)
++	cutAdditive = os.Getenv("N20_ADDITIVE") != ""
++	var in, sp, uin [cutCells]float64
++	var n [cutCells]int
++	for _, r := range train {
++		if _, cell, a, b := cutEst(r, nil); cell >= 0 {
++			in[cell] += a
++			sp[cell] += b
++			uin[cell] += cutUni * b
++			n[cell]++
++		}
++	}
++	frac := make([]float64, cutCells)
++	used := 0
++	for i := range frac {
++		frac[i] = math.NaN()
++		if n[i] >= 50 && sp[i] > 0 {
++			if cutAdditive {
++				frac[i] = (in[i] - uin[i]) / sp[i]
++			} else {
++				frac[i] = min(1, max(0, in[i]/sp[i]))
++			}
++			used++
++		}
++	}
++	t.Logf("additive (N20b): %v", cutAdditive)
++	score := func(rs []cutRec, fr []float64) (m [5]float64, mean float64) {
++		var e, x [5]float64
++		for _, r := range rs {
++			wi := sort.Search(5, func(i int) bool { return velWins[i] >= r.w })
++			est, _, _, _ := cutEst(r, fr)
++			e[wi] += math.Abs(est - float64(r.exact))
++			x[wi] += float64(r.exact)
++		}
++		for wi := range 5 {
++			m[wi] = e[wi] / x[wi]
++			mean += m[wi] / 5
++		}
++		return
++	}
++	t.Logf("training: MAWI first half %d queries + velocity seed 3; cells fitted %d of %d (>= 50 queries)", len(trainM), used, cutCells)
++	for _, set := range []struct {
++		name string
++		rs   []cutRec
++	}{{"MAWI second half", testM}, {"velocity (seed 9)", testV}, {"MAWI first half (training)", trainM}} {
++		u, um := score(set.rs, nil)
++		f, fm := score(set.rs, frac)
++		line := ""
++		for wi := range 5 {
++			line += fmt.Sprintf(" %s/%s", pad7(u[wi]), pad7(f[wi]))
++		}
++		t.Logf("%-27s uniform/fitted 1s 5s 15s 30s 60s:%s  mean %s/%s (%+.4f)", set.name, line, pad7(um), pad7(fm), fm-um)
++	}
++}
+diff --git a/velinfo_test.go b/velinfo_test.go
+index a7935aa..d8420a2 100644
+--- a/velinfo_test.go
++++ b/velinfo_test.go
+@@ -14,8 +14,13 @@ import (
+ // query with the key's event times so far (sorted), the query's window
+ // index and now; touch once per event, before the queries that see it.
+ func velWorkload(touch func(k int, t uint64), visit func(k int, ts []uint64, wi int, now uint64)) {
++	velWorkloadSeed(9, touch, visit)
++}
++
++// velWorkloadSeed is velWorkload with another seed (9 is tfbench's).
++func velWorkloadSeed(seed uint64, touch func(k int, t uint64), visit func(k int, ts []uint64, wi int, now uint64)) {
+ 	const hTicks = 60_000
+-	r := rand.New(rand.NewPCG(9, 9))
++	r := rand.New(rand.NewPCG(seed, seed))
+ 	const nkeys, end = 2000, 5 * hTicks
+ 	type ev struct {
+ 		t uint64

@@ -1,0 +1,348 @@
+diff --git a/cuckoo.go b/cuckoo.go
+index b7db94b..918194c 100644
+--- a/cuckoo.go
++++ b/cuckoo.go
+@@ -132,6 +132,7 @@ const (
+ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int, put putFunc) int {
+ 	for {
+ 		for li, line := range lines {
++			workAdd(workLines, 1)
+ 			base := int(line * wordsPerLine)
+ 			for s := 0; s < wordsPerLine; s += 2 {
+ 				w0 := atomic.LoadUint64(&f.words[base+s])
+@@ -160,6 +161,7 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
+ 		f.warmAlts(lines)
+ 		for depth := 0; depth <= relocDepth; depth++ {
+ 			for li, line := range lines {
++				workAdd(workLines, 1)
+ 				base := int(line * wordsPerLine)
+ 				for s := 0; s < wordsPerLine; s += 2 {
+ 					if f.relocate(base+s, line, mine[li], w1, now, depth, &budget, nil, put) {
+@@ -172,6 +174,7 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
+ 		f.pressure.Store(p - p>>3 + pressureOne>>3) // EWMA toward "searches fail"
+ 		victim, vli, victimScore, victimW0, victimW1 := -1, 0, uint64(1<<64-1), uint64(0), uint64(0)
+ 		for li, line := range lines {
++			workAdd(workLines, 1)
+ 			base := int(line * wordsPerLine)
+ 			for s := 0; s < wordsPerLine; s += 2 {
+ 				w0 := atomic.LoadUint64(&f.words[base+s])
+@@ -279,6 +282,7 @@ func (f *Filter) warmLine(line uint64) {
+ 	base := int(line * wordsPerLine)
+ 	for s := 0; s < wordsPerLine; s += 2 {
+ 		if w0 := atomic.LoadUint64(&f.words[base+s]); w0 != 0 {
++			workAdd(workLines, 1)
+ 			sink += atomic.LoadUint64(&f.words[f.alt(line, w0>>48)*wordsPerLine])
+ 		}
+ 	}
+@@ -344,6 +348,7 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
+ 		testHookPicked(i)
+ 	}
+ 	a := f.alt(line, w0>>48)
++	workAdd(workLines, 1)
+ 	base := int(a * wordsPerLine)
+ 	moved := w0 ^ dispBit         // displaced iff it wasn't
+ 	m := f.moveOf(w1 >> tagShift) // the entry's key's stripe
+diff --git a/decay.go b/decay.go
+index d3751e6..048662b 100644
+--- a/decay.go
++++ b/decay.go
+@@ -62,6 +62,7 @@ func (f *Filter) decayStep(now uint64, budget uint64) int {
+ // its count, finding word1 busy, looks the key up again. That lookup must
+ // not miss the slot and put the key in a second one.
+ func (f *Filter) sweepLine(line, now uint64) {
++	workAdd(workDecay, 1)
+ 	base := int(line * wordsPerLine)
+ 	for s := 0; s < wordsPerLine; s += 2 {
+ 		w0 := atomic.LoadUint64(&f.words[base+s])
+diff --git a/ghost.go b/ghost.go
+index d36f581..7e52f31 100644
+--- a/ghost.go
++++ b/ghost.go
+@@ -104,6 +104,7 @@ func (g *ghost) slot(id uint64) (base [2]int, nb int, fp uint64) {
+ 			base[1], nb = int(b2*ghWords), 2
+ 		}
+ 	}
++	workAdd(workGhost, nb)
+ 	return base, nb, fp
+ }
+ 
+@@ -297,6 +298,7 @@ func (g *ghost) advance(ns uint64) {
+ 		return
+ 	}
+ 	if ep != 0 {
++		workAdd(workSweep, len(g.words))
+ 		for i := range g.words {
+ 			for {
+ 				old := atomic.LoadUint64(&g.words[i])
+diff --git a/hot.go b/hot.go
+index 8fa3cfb..38fd9af 100644
+--- a/hot.go
++++ b/hot.go
+@@ -144,6 +144,7 @@ func (e *hotEntry) store(v *view) {
+ 
+ // read returns entry idx's state if it belongs to id.
+ func (t *hotTable) read(idx, id uint64) (view, bool) {
++	workAdd(workHot, 1)
+ 	e := &t.e[idx]
+ 	for spins := 0; ; spins++ {
+ 		if v1 := e.ver.Load(); v1&1 == 0 {
+@@ -165,6 +166,7 @@ func (t *hotTable) read(idx, id uint64) (view, bool) {
+ // every bucket at most half the register's width hands the counts back to
+ // the slot as a register and frees the entry (demote).
+ func (t *hotTable) add(idx, id, n uint64, u int64, slot *uint64, old uint64) bool {
++	workAdd(workHot, 1)
+ 	e := &t.e[idx]
+ 	for { // the usual case, a touch in the entry's own unit: one CAS
+ 		c := e.c0.Load()
+@@ -246,6 +248,7 @@ func (t *hotTable) putFree(idx uint64) {
+ // hotAlloc takes a free entry for id, holding v, or returns 0 if none is
+ // free.
+ func (f *Filter) hotAlloc(id uint64, v *view, now uint64) uint64 {
++	workAdd(workHot, 1)
+ 	t := f.hotTable()
+ 	u := f.unitOf(now)
+ 	if t.full.Load() == u { // found none in this unit already: don't search again
+@@ -289,6 +292,7 @@ func (t *hotTable) reclaim(u int64) uint64 {
+ 	for range min(n, 256) {
+ 		t.hand = t.hand%n + 1
+ 		e := &t.e[t.hand]
++		workAdd(workHot, 1)
+ 		if e.id.Load() == 0 || e.epoch.Load() >= dead {
+ 			continue // free ones are on the free list
+ 		}
+@@ -309,6 +313,7 @@ func (t *hotTable) reclaim(u int64) uint64 {
+ // hotClose gives up entry idx if it belongs to id and returns its last
+ // state. A writer that loses the race finds the id changed and looks again.
+ func (f *Filter) hotClose(idx, id uint64) (v view, ok bool) {
++	workAdd(workHot, 1)
+ 	t := f.hot.Load()
+ 	if t == nil {
+ 		return view{}, false
+diff --git a/slots.go b/slots.go
+index d6ed43e..e63515f 100644
+--- a/slots.go
++++ b/slots.go
+@@ -71,6 +71,9 @@ func (f *Filter) slotWords(i int, fpd, tg uint64) (w0, w1 uint64, ok bool) {
+ 	if i < 0 {
+ 		return 0, 0, false
+ 	}
++	if workOn {
++		workAdd(workLines, 1)
++	}
+ 	w := f.words[i : i+2 : i+2] // one bounds check for the three loads
+ 	w0 = atomic.LoadUint64(&w[0])
+ 	w1 = atomic.LoadUint64(&w[1])
+@@ -140,6 +143,7 @@ func (f *Filter) locateBoth(h, fp, tg uint64) (int, uint64) {
+ // of the same cache line, so identity is effectively 28 bits at no extra
+ // memory traffic.
+ func (f *Filter) find(line, fpd, tg uint64) int {
++	workAdd(workLines, 1)
+ 	base := int(line * wordsPerLine)
+ 	w := f.words[base : base+wordsPerLine : base+wordsPerLine]
+ 	for s := 0; s < wordsPerLine; s += 2 {
+diff --git a/stash.go b/stash.go
+index 11d3731..f3521ac 100644
+--- a/stash.go
++++ b/stash.go
+@@ -249,6 +249,7 @@ func newStashTable(sets uint64, mu *[stashStripes]paddedMutex) *stashTable {
+ 
+ // set returns id's set and its lock.
+ func (p *stashTable) set(id uint64) ([]stashEntry, *paddedMutex) {
++	workAdd(workStash, 1)
+ 	i, _ := bits.Mul64(mix64(id), p.n)
+ 	return p.e[i*stashWays : (i+1)*stashWays : (i+1)*stashWays], &p.mu[i%stashStripes]
+ }
+diff --git a/work.go b/work.go
+new file mode 100644
+index 0000000..31336a2
+--- /dev/null
++++ b/work.go
+@@ -0,0 +1,12 @@
++package temporalfilter
++
++// Kinds of work (work_on.go counts them under the tfwork build tag).
++const (
++	workLines = iota // table lines read
++	workStash        // stash and wait-room sets read
++	workGhost        // overflow-table buckets read or written
++	workHot          // hot entries read or written
++	workSweep        // words the overflow table's advance visits
++	workDecay        // lines decay's sweep visits
++	nWork
++)
+diff --git a/work_off.go b/work_off.go
+new file mode 100644
+index 0000000..bfcc78c
+--- /dev/null
++++ b/work_off.go
+@@ -0,0 +1,9 @@
++//go:build !tfwork
++
++package temporalfilter
++
++// Work counters (NEXT-RESULTS.md N7) are compiled away without the tfwork
++// build tag: workAdd is empty and workOn false.
++const workOn = false
++
++func workAdd(kind, n int) {}
+diff --git a/work_on.go b/work_on.go
+new file mode 100644
+index 0000000..94ec204
+--- /dev/null
++++ b/work_on.go
+@@ -0,0 +1,12 @@
++//go:build tfwork
++
++package temporalfilter
++
++// Work counters (NEXT-RESULTS.md N7), with the tfwork build tag: what each
++// call does, counted where it does it. Plain counters: single-goroutine
++// measurements only.
++const workOn = true
++
++var work [nWork]uint64
++
++func workAdd(kind, n int) { work[kind] += uint64(n) }
+diff --git a/work_test.go b/work_test.go
+new file mode 100644
+index 0000000..5d6abae
+--- /dev/null
++++ b/work_test.go
+@@ -0,0 +1,137 @@
++//go:build tfwork
++
++package temporalfilter
++
++import (
++	"encoding/binary"
++	"fmt"
++	"os"
++	"slices"
++	"testing"
++	"time"
++
++	"github.com/scooter-sensei/clepsydra/go/internal/workload"
++)
++
++// workCalls collects each call's work (NEXT-RESULTS.md N7).
++type workCalls struct {
++	tot        []uint32
++	kmax, ksum [nWork]uint64
++}
++
++func workTotal(d [nWork]uint64) uint64 {
++	return d[workLines] + d[workStash] + d[workGhost] + d[workHot] + (d[workSweep]+7)/8 + d[workDecay]
++}
++
++func (c *workCalls) do(keep bool, fn func()) {
++	before := work
++	fn()
++	if !keep {
++		return
++	}
++	var d [nWork]uint64
++	for k := range d {
++		d[k] = work[k] - before[k]
++		c.kmax[k] = max(c.kmax[k], d[k])
++		c.ksum[k] += d[k]
++	}
++	c.tot = append(c.tot, uint32(min(workTotal(d), 1<<32-1)))
++}
++
++var workKinds = []string{"lines", "stash", "ghost", "hot", "sweep", "decay"}
++
++func (c *workCalls) report(t *testing.T, name string) {
++	s := slices.Clone(c.tot)
++	slices.Sort(s)
++	q := func(p float64) uint32 { return s[int(p*float64(len(s)-1))] }
++	t.Logf("%-22s calls %9d  work p50 %d p99 %d p99.9 %d max %d", name, len(s), q(0.5), q(0.99), q(0.999), s[len(s)-1])
++	line := ""
++	for k, n := range workKinds {
++		line += fmt.Sprintf(" %s %d/%.3f", n, c.kmax[k], float64(c.ksum[k])/float64(len(s)))
++	}
++	t.Logf("%-22s max/mean per kind:%s", "", line)
++}
++
++// TestWork (TF_EXP=1, -tags tfwork) reads every workload of N7's design;
++// -run 'TestWork/<name>' picks one.
++func TestWork(t *testing.T) {
++	if os.Getenv("TF_EXP") == "" {
++		t.Skip("set TF_EXP=1")
++	}
++	for _, c := range []struct {
++		load float64
++		seed uint64
++	}{{1.0, 2}, {1.1, 3}, {1.15, 4}} {
++		t.Run(fmt.Sprintf("churn%.2f", c.load), func(t *testing.T) {
++			f, _ := New(Config{Capacity: 200_000, Horizon: time.Minute, Resolution: time.Millisecond})
++			var wc workCalls
++			workload.Churn(c.load, c.seed, 200_000, 60_000, mix64, func(h, w, now uint64) {
++				wc.do(true, func() { f.CheckAndTouchAt(h, w, now) })
++			})
++			wc.report(t, fmt.Sprintf("churn %.2f", c.load))
++		})
++	}
++	t.Run("heavy16x", func(t *testing.T) {
++		path := os.Getenv("TF_TRACE")
++		if path == "" {
++			t.Skip("TF_TRACE=<heavy16x.trace>")
++		}
++		data, err := os.ReadFile(path)
++		if err != nil {
++			t.Fatal(err)
++		}
++		u := func(i int) uint64 { return binary.LittleEndian.Uint64(data[8+8*i:]) }
++		capacity, horizonMs, windowMs, records := u(0), u(2), u(3), u(7)
++		f, _ := New(Config{Capacity: int(capacity), Horizon: time.Duration(horizonMs) * time.Millisecond, Resolution: time.Millisecond})
++		var wc workCalls
++		for r := range records {
++			b := data[128+16*r:]
++			key, tick, n := binary.LittleEndian.Uint64(b), uint64(binary.LittleEndian.Uint32(b[8:])), binary.LittleEndian.Uint32(b[12:])
++			for range n {
++				wc.do(true, func() { f.TouchAt(f.HashUint64(key), windowMs, tick) })
++			}
++		}
++		wc.report(t, "heavy16x (1/4 scale)")
++	})
++	t.Run("sweep", func(t *testing.T) {
++		f, _ := New(Config{Capacity: 1 << 18, Horizon: time.Minute})
++		h := f.Ticks(time.Minute)
++		const keys = 2 << 20
++		span, sl := h*7/2, (h+1)/2
++		var wc workCalls
++		for k := range uint64(keys) {
++			x := mix64(k + 1<<50)
++			now := 1 + span*k/keys
++			for range 4 {
++				wc.do(now >= sl, func() { f.TouchAt(x, h, now) })
++			}
++		}
++		wc.report(t, "sweep (E11)")
++	})
++	for _, bg := range []bool{false, true} {
++		t.Run(fmt.Sprintf("insert-bg=%v", bg), func(t *testing.T) {
++			const capacity = 200_000
++			f, _ := New(Config{Capacity: capacity, Horizon: time.Minute, Background: bg})
++			f.bgManual = bg
++			w := f.Ticks(30 * time.Second)
++			perKey := f.Ticks(time.Minute) / capacity
++			var wc, placer workCalls
++			ctr := uint64(0)
++			for i := range 3 * capacity {
++				ctr++
++				keep := i >= 2*capacity
++				wc.do(keep, func() { f.CheckAndTouchAt(mix64(1<<40+ctr), w, 1000+ctr*perKey) })
++				if bg {
++					placer.do(keep, func() {
++						for f.room.Load() != nil && f.placeNext(f.room.Load(), 0) {
++						}
++					})
++				}
++			}
++			wc.report(t, fmt.Sprintf("insert 85%% bg=%v", bg))
++			if bg {
++				placer.report(t, "  placer, per call")
++			}
++		})
++	}
++}

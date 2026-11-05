@@ -12,9 +12,12 @@
 | `ContainsAt(h, W, now)` | Read-only freshness check | 1 line |
 | `Touch(key, W) Result`, `Count(key, W) Result` | TouchAndCount / VelocityCount plus the trust flags below | 1 line |
 | `ContinuousDecay()` | Bounded slot reclaimer, paced by the clock (one table pass per horizon, ≤ 4 lines per call; inline on 1/64 of touches, 1 line) | — |
-| `Merge(g) error` | Adds g's keys: a key in both gets the two registers re-bucketed to the newer epoch and summed, and the newer last touch; a key only g holds goes in as a first touch would. Both filters quiescent, same `Config`; g's stash and overflow table are not merged; ConstantTime, Background and hot entries in use are refused [D24] | a pass over both tables |
+| `TouchIfUnder(key, W, limit) (Result, bool)` | Touches only while the key is under `limit` in W by the strict recipe below (`Upper` below `limit`, not `Saturated`; with the overflow table off, not an unseen key read `Degraded`); conditional touches of one key are serialized by one of 64 stripes, so concurrent callers never admit past the limit [A45] | 1 line, a lock and a count before the touch |
+| `Merge(g) error` | Adds g's keys: a key in both gets the two registers re-bucketed to the newer epoch and summed, and the newer last touch; a key only g's table holds goes in as a first touch would, with f's own stashed history of it summed in. Both filters quiescent, same `Config`; g's stash and overflow table are not merged; ConstantTime, Background and hot entries in use are refused [D24, D26] | a pass over both tables |
+| `WriteTo(w)`, `ReadFrom(r)` | Snapshot and restore of a quiescent filter: table, stash, hot entries, overflow table and counters, in six sections each checked by a CRC32C; a restore refuses another `Config`, a damaged or truncated stream, and continues the built-in clock's timeline. ConstantTime, Background and the count-min overflow are refused [D27] | the filter's `Bytes()` and 128 B |
+| `NewResizable(cfg)`, `Resize(capacity, now)` | A filter whose Capacity can change: for a horizon after `Resize` the old filter stays beside the new one, a touch moves a key live in the old table to the new, and reads add the old filter's answer. Hot entries off, calls serialized [D28] | both tables for a horizon |
 
-`*At(hash, windowTicks, nowTicks)` variants take a pre-hashed key and a caller-cached clock (`TouchAt`, `CountAt`, `CheckAndTouchAt`, `TouchAndCountAt`, `VelocityCountAt`). The `*At` methods take a hash from the caller and can't check it: pass them only `Hash`/`HashUint64` values of the same filter.
+`*At(hash, windowTicks, nowTicks)` variants take a pre-hashed key and a caller-cached clock (`TouchAt`, `CountAt`, `CheckAndTouchAt`, `TouchAndCountAt`, `VelocityCountAt`, `TouchIfUnderAt`). The `*At` methods take a hash from the caller and can't check it: pass them only `Hash`/`HashUint64` values of the same filter.
 
 ### Ticks and the 46-bit range
 
@@ -68,6 +71,8 @@ deny := r.Count >= limit ||
 	r.Saturated ||               // Count is only a floor
 	strict && r.Upper >= limit   // the edge bucket, or a dropped history in the overflow table, could hold the rest
 ```
+
+Checking and touching in two calls lets concurrent callers of one key all pass the check before any touch lands. `TouchIfUnder` does both under one of 64 stripes, with the strict recipe, so no window ever holds more than `limit` admitted events [A45]. Because `Upper` counts the bucket a window's edge cuts as whole, it admits fewer than `limit` on short windows: 30–65% on 1–5 s windows with the default 2.5 s unit, and it agrees with an exact sliding log on 67–71% of requests on tfbench's velocity workload.
 
 `Degraded` means the key likely has a history the stash dropped: its count partly comes from the overflow table and, about 0.3% of the time while that table is full, from another key whose fingerprint matches. For dedup, treat `r.Seen || (strict && r.Degraded)` as a duplicate. Histories under `SpillMin` (4) events are shed when the stash drops them, so a key seen 1–3 times can read new again after a flood; `SpillMin: 1` keeps them too (dedup then survives floods until the overflow table itself overflows, and inserts into a full table cost ~30% more, S35). With the overflow off (`Overflow < 0`), `Degraded` keeps its old, table-wide meaning: some history was lost within a horizon and this key isn't held; strict callers then add `strict && r.Degraded && !r.Seen` to `deny`. A key whose history was lost and that has come back is held again, so it reads low without `Degraded` until the lost events leave the window: with the overflow off, `Upper` is a bound only while `Lost()` hasn't moved within a horizon (found by the fuzzer, A18).
 

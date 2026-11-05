@@ -37,6 +37,12 @@ func TestSmoke(t *testing.T) {
 		if r := f.Count("b", w); r.Seen || r.Count != 0 {
 			t.Errorf("Count of an unseen key = %+v", r)
 		}
+		if r, ok := f.TouchIfUnder("c", w, 1); !ok || r.Count != 1 {
+			t.Errorf("TouchIfUnder under the limit = %+v, %v", r, ok)
+		}
+		if r, ok := f.TouchIfUnder("c", w, 1); ok || r.Upper < 1 {
+			t.Errorf("TouchIfUnder at the limit = %+v, %v", r, ok)
+		}
 		now := f.Now()
 		hs := []uint64{f.HashUint64(1), f.HashUint64(2), f.HashUint64(1)}
 		seen := make([]bool, len(hs))

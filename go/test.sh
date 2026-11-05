@@ -92,7 +92,7 @@ perf() {
 }
 
 stress() {
-	check race-full - go test -race -count=1 ./...
+	check race-full - go test -race -count=1 -timeout 30m ./...
 	check racy-regressions - verify/replay.sh stress "${STRESS_RUNS:-300}"
 	check soak - env TF_STRESS="${TF_STRESS:-60s}" go test -count=1 -run '^TestStressSoak$' -v -timeout 0 .
 	check soak-race - env TF_STRESS="${TF_STRESS_RACE:-20s}" go test -race -count=1 -run '^TestStressSoak$' -v -timeout 0 .

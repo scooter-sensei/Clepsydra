@@ -1,0 +1,752 @@
+diff --git a/SPEED-RESULTS.md b/SPEED-RESULTS.md
+new file mode 100644
+index 0000000..b0ce688
+--- /dev/null
++++ b/SPEED-RESULTS.md
+@@ -0,0 +1,746 @@
++# Speed round 2026-11
++
++Branch `lab/speed-2026-11` from `main` (63b118d). Goal: fewer cycles per operation with every answer byte-for-byte identical. Nothing here is adopted; each code change is a patch under `go/verify/experiments/speed-*.patch` (relative to `go/`).
++
++The gates (every experiment): `./test.sh sanity`; `TF_EXP=1 go test -count=1 -run '^TestAnswerDigest$' -v . | grep '^cell ' | diff - verify/expected/answer-digest.txt`; `go run ./cmd/tfbench -exact | diff - verify/expected/exact.txt`.
++
++## Host
++
++- 4 vCPUs, Intel(R) Xeon(R) Processor @ 2.10GHz (KVM guest); L2 8 MiB (4 instances), L3 260 MiB (1 instance).
++- Flags of note: avx2, bmi2, avx512f, avx512bw, avx512vl. No hardware performance counters (last round: b = 0.41, run-to-run sd 7–19%).
++- 15 GB RAM. `go version go1.24.7 linux/amd64` (go.mod pins 1.24.7).
++- valgrind-3.22.0 (cachegrind). Java 21, tla2tools.jar v1.7.4 at `~/tools/tla/tla2tools.jar` (sha256 936a2620…0e88).
++
++## Batch 0: set up
++
++Status: done.
++
++**Cachegrind** runs Go test binaries here. Method (`/tmp/lab/cg.sh <arm> <Bench> <n1> <n2>`): `GOGC=off GODEBUG=asyncpreemptoff=1 GOMAXPROCS=1 valgrind --tool=cachegrind --cache-sim=yes --LL=33554432,16,64 ... -test.benchtime <n>x` at two n; X/op = (X(n2) − X(n1)) / (n2 − n1), for Ir, D1 misses (read + write) and LL misses (read + write).
++
++- Determinism, `BenchmarkContainsAbsent`, same binary twice: n = 20000/40000 gave 358.2 and 357.8 Ir/op (0.11% apart: the 20,000-op difference is too short to cancel runtime background work); n = 50000/150000 gave 358.1 and 358.1 (D1 2.029 and 2.029). **From here every reading uses n = 50000/150000** (within 0.1%).
++- The stock benchmark table (`benchFilter`, Capacity 1M) is **18.8 MiB** (`Bytes()` = 19,737,920), smaller than the 32 MiB LL, so its LL misses/op read 0.000 after setup. An LL-miss reading needs a table past 32 MiB; the experiment that judges LL misses says how it gets one before measuring.
++
++**TLA+** `verify/tla.sh Relocate`: 13 runs, every one as wanted (the committed protocol ok at its sizes; NotMoved, NotAbandoned, NotEvicted, ReadNotLow, TouchNotLow, Conserved, noMoveCount, noHandoffCheck each violated when their guard is undone; hiddenNoEvictCheck ok). 1 m 45 s.
++
++**Gates on HEAD**: all pass with no diff. `./test.sh sanity` 52 s; answer digest (30 cells) 67 s; `tfbench -exact` (80 lines) 24 s.
++
++**Flood traces**: `go run ./cmd/h2h gen -dir /tmp/lab/h2h -n 65536`, **a quarter of the paper's scale** (65,536 keys, 77,104 slots; every flood number in this file is at this scale). heavy4x 6.56 M ops, heavy16x 26.0 M ops, light16x 1.32 M ops; 61,000 probes each.
++
++Baseline, HEAD, `h2h run -pass t1` (one thread), three runs each, Mops/s:
++
++| Flood | runs | median |
++|---|---|---|
++| heavy4x | 5.374, 5.675, 5.028 | 5.37 |
++| heavy16x | 4.994, 4.504, 4.852 | 4.85 |
++| light16x | 1.040, 0.889, 0.930 | 0.93 |
++
++Flood A/B method (`/tmp/lab/flood.sh A B <flood>`): one `go build -o /tmp/lab/h2h-<arm> ./cmd/h2h` per arm; 6 pairs of `h2h run -pass t1` on one trace, arms alternating, order reversed on even pairs; B/A per pair.
++
++## B1 / E7 redo: the displacement bitmap (L)
++
++Status: done. **Verdict: not adopted** (rule 4 fails in both versions: InsertSteady Ir/op +2.7% / +1.2%; every other part of the rule holds).
++
++Design: one bit per table line ("this line may hold a displaced entry"), 32 KB per 1M slots (1M slots / 4 per line = 262,144 bits), plus a fixed array of per-stripe clear counters (begun, done). A writer sets the bit of the line it places a displaced entry in after the entry's word0 is in place (hidden, word1 busy) and before word1 is published (in `install`, the one choke point: new keys, relocation copies, stash placements). A sweep that finds a line with its bit set and no displaced word0 clears it as: begun++, clear, rescan, set again if a displaced word0 is there, done++. A lookup that misses its primary line reads done, the bit, then begun; it skips the alternate line only if the bit is clear and begun == done (no clear overlapped the bit's read). ConstantTime paths read both lines as before.
++
++Measurement code (not part of the change): a lab benchmark `BenchmarkLabContainsAbsentBig`, ContainsAbsent's loop on a Capacity-4M table (~75 MiB, past the 32 MiB LL), in both arms, because the stock ContainsAbsent table (18.8 MiB) fits the LL and reads 0 LL misses/op.
++
++Decision rule (candidate only if all hold):
++1. Answers identical: the gates pass with no diff, except that `tfbench -exact`'s `memory` line may show bytes higher by exactly the bitmap and counters (Bytes() must count them); no other line may differ.
++2. Skip rate (deterministic test): at 85% load at least 30% of 1M absent keys find their alternate line's bit clear (50%, 90%, 94% reported).
++3. LL misses/op of LabContainsAbsentBig at least 20% lower than HEAD (cachegrind, `--LL=33554432,16,64`, n = 50000/150000).
++4. Ir/op of InsertSteady, CheckAndTouchMissInsert, InsertNearFull and InsertSaturated each at most 1% higher than HEAD (ContainsAbsent and CheckAndTouchHit reported).
++5. `verify/tla.sh DispBitmap`: the committed model passes at the sizes tla.sh uses; each guard undone (no set-before-visible; no sequence check) violates the invariant.
++6. The new racy test passes `go test -race -count=20`; `verify/replay.sh stress 300` passes (a TestAbandonedMoveKeepsCounts failure of the documented shape, one round one count high, is not the change's).
++Reported, not judged: ab.sh 15 rounds on ContainsAbsent and InsertSteady.
++
++B1, first version (patch as first measured): InsertSteady Ir/op 1865.0 → 1914.8 (+2.7%; per function: locateAt +32.3, install +11.0, sweepDisp +1.1), so **rule 4 fails for this version** (full results below). A second version, **B1b**, is measured under the **same rule (1–6, unchanged)**, written here before it is measured: mayDisp reads the bit first and returns at once if it is set; only a clear bit takes done, the bit again and begun (the TLA+ reader updated to match); install's setDisp takes the line by an unsigned shift. B1b's patch replaces B1's at `speed-b1-dispbitmap.patch`; B1's first version is kept as `speed-b1-dispbitmap-v1.patch`.
++
++### B1 results
++
++Commands: gates (`/tmp/lab/gates.sh`); `TF_EXP=1 go test -run '^TestDispBitmapSkipRate$' -v .`; `/tmp/lab/cg.sh <arm> <Bench> 50000 150000` (arms built with `speed-b1-labbench.patch` added); `go test -race -count=20 -run '^(TestDispBitmapSweepRace|TestDispClearRacingPlacement|TestDispBitsCoverDisplaced)$' .`; `CGO_ENABLED=1 verify/replay.sh stress 300`; `verify/tla.sh DispBitmap`; `verify/ab.sh HEAD HEAD+verify/experiments/speed-b1-dispbitmap.patch '^Benchmark(ContainsAbsent|InsertSteady)$' 15`.
++
++1. **Answers: identical.** sanity passes (65 s; it first failed on gofmt and on `TestMemoryOnFirstUse`, which asserted Bytes() = the table alone, so the patch updates that test to the table + bitmap + counters). `tfbench -exact`: one line differs, `memory ... bytes=3764736` → `3773120` (+8,384 B = bitmap 7,360 B for 58,824 lines + counters 1,024 B), as the rule allows. The answer digest differs in the `end=` field of all 30 cells and nowhere else; `end` hashes `f.Bytes()` with the counters (answers_test.go:179). With Bytes() not counting the bitmap the digest has **no diff** (all 30 cells), so every answer is identical. Strictly the rule allowed only the exact gate's memory line, and the digest's `end` carries Bytes() too: an oversight in the rule's wording, reported here, not used to pass anything (the verdict rests on rule 4).
++2. **Skip rate** (1M absent keys, no sweeps; share of lines with the bit set in brackets): 50% load 92.3% (7.7%); **85% load 51.3%** (48.7%); 90% load 41.7% (58.2%); 94% load 33.0% (67.0%). Holds (≥ 30%).
++3. **LL misses/op, LabContainsAbsentBig** (75 MiB table): HEAD 1.154, B1 0.827, B1b 0.827: **−28.3%**. Holds (≥ 20%). D1 misses/op rise (2.088 → 3.344 B1, 2.398 B1b): the bitmap read misses L1 but stays in the LL.
++4. **Ir/op** (cachegrind; HEAD / B1 / B1b; in brackets the library's functions only, without runtime background):
++
++| Benchmark | HEAD | B1 | B1b | B1b vs HEAD |
++|---|---|---|---|---|
++| InsertSteady | 1865.0 (1756.6) | 1914.8 (1799.0) | 1886.6 (1812.6) | **+1.16%** (lib +3.2%) |
++| CheckAndTouchMissInsert | 9433.5 (9310.4) | 9453.3 (9331.0) | 9464.1 (9344.3) | +0.32% |
++| InsertNearFull | 29442.5 (29296.3) | 29498.1 (29356.2) | 29511.2 (29370.2) | +0.23% |
++| InsertSaturated | 10547.4 (8478.4) | 10592.1 (8487.7) | 10587.7 (8501.1) | +0.38% |
++| ContainsAbsent | 359.1 (358.0) | 345.3 (346.2) | 353.1 (352.7) | −1.7% |
++| CheckAndTouchHit | 518.2 (519.3) | 519.5 (521.7) | 520.4 (522.3) | +0.4% |
++| LabContainsAbsentBig | 358.4 (358.0) | 359.8 (346.4) | 352.4 (352.8) | −1.7% |
++
++   **Fails for InsertSteady** in both versions (+2.7%, +1.16%; bar 1%). Per function (InsertSteady): locateAt +32 (B1) / +46 (B1b), install +11: InsertSteady's new keys miss their primary line two or three times per insert (lock-free lookup, lookupStable, claim), and in steady state about half the lines carry the bit, so the check is paid more often than the alternate line is skipped. B1b's fast path for a set bit made the library's share worse (+3.2% against +2.4%); its smaller total is runtime background (sysmon, nanotime: −13 Ir/op), which is why the table also gives library-only counts.
++5. **TLA+** `verify/tla.sh DispBitmap` (B1b's reader): the protocol passes at 4 sizes (566,029 / 10,156,426 / 2,668,777 / 14,881,571 distinct states: writers {K} or {K, X}, 1 or 2 sweepers); NeverCleared, NeverSkipped, NeverRaced each reached; noSetBefore, noSeq, noRescan each violate NoMiss. 8 m 23 s (B1's reader: the same outcomes, 5 m 35 s). Holds.
++6. **Concurrency**: the racy test (`TestDispBitmapSweepRace`: 256 keys read by 4 readers while fills to 80%, 20 churn batches swept at a clock past their horizon, and a fill to 98% relocate them; ~27,800 bit clears a run; with the bitmap disabled it passes too, so its misses would be the bitmap's; its deterministic companion `TestDispClearRacingPlacement` fails when the sequence check is removed) passes `-race -count=20` (204 s). `replay.sh stress 300`: 0/300 for each of the four racy tests (5 m 43 s). Holds.
++
++Reported (ab.sh, 15 rounds, B1b, ns/op medians): InsertSteady 357.0 → 366.7 (1.03), ContainsAbsent 87.6 → 82.9 (0.95): inside this host's noise.
++
++What was learned: the bitmap does what it should for absent lookups on tables past the LL (28% fewer LL misses/op) and the four review points are met (sequence check, model with failing guards, Bytes() counts 32 KB per 1M slots, the white-box test sets the bit), but the check costs inserts more than the 1% bar: a lookup's primary miss is an insert's normal case. A version that checks the bit only in ContainsAt/CountAt (reads), not on insert paths, would avoid that cost; not tried here.
++
++Patches: `go/verify/experiments/speed-b1-dispbitmap.patch` (B1b), `speed-b1-dispbitmap-v1.patch` (B1, first version), `speed-b1-labbench.patch` (the lab benchmark).
++
++
++## S1: prefetch the overflow table's buckets (M)
++
++Status: done. **Verdict: not adopted** (S1: rule 4 fails, CheckAndTouchHit +1.23%; S1b: rule 2 fails, heavy16x and heavy4x slower in 6/6 pairs).
++
++Change: when the overflow read is certain, prefetch the key's overflow buckets (one or two lines, `ghost.slot`) right after hashing, so their misses overlap the main-table line's. Certain = the ghost overflow table is live (`sketchLive(now)`, not the count-min experiment) and the call wants a count (`touch` with wantCount: TouchAt, TouchAndCount; `count`: CountAt, VelocityCount) or the filter is ConstantTime. CheckAndTouch (wantCount false, not ConstantTime) prefetches nothing: a Seen hit skips its overflow read. In TouchAndCountBatch and VelocityCountBatch, `warm` prefetches each key's overflow buckets beside its primary line (`internal/cpu.PrefetchLines`).
++
++Decision rule (candidate only if all hold):
++1. Answers identical: the gates pass with no diff.
++2. heavy16x and heavy4x: B/A Mops/s ≥ 1.10 in at least 5 of 6 pairs, each (`/tmp/lab/flood.sh head s1 <flood> 6`, quarter scale).
++3. light16x: B/A below 0.95 in at most 1 of 6 pairs.
++4. CheckAndTouchHit and InsertSteady Ir/op at most 1% higher (cachegrind, n = 50000/150000).
++Reported: Ir/op of CountOverflowLive and TouchOverflowLive.
++
++S1, first version (`speed-s1-ghost-prefetch-v1.patch`; the prefetch inside `touch`, under `if wantCount || f.ct`): gates pass with no diff (sanity 64 s, digest 73 s, exact 36 s). CheckAndTouchHit Ir/op 519.5 → 525.9 (**+1.23%: rule 4 fails** for this version; touch +4.0 Ir/op from the new test on the CheckAndTouch path, runtime background +1.3); InsertSteady 1828.2 → 1831.0 (+0.15%). Floods not run for it. A second version, **S1b**, is measured under the **same rule (1–4, unchanged)**, written here before it is measured: the prefetch moves out of `touch` into the calls that want a count (Touch, TouchAt, TouchAndCount, TouchAndCountAt through a `touchCount` helper; `count`; `touchCT` for ConstantTime's CheckAndTouch), so CheckAndTouch's path has no new code. The batch prefetch in `warm` is unchanged.
++
++### S1b results
++
++Commands: `/tmp/lab/gates.sh s1b`; `/tmp/lab/cg.sh {head,s1b} <Bench> 50000 150000`; `/tmp/lab/flood.sh head s1b <flood> 6` (quarter scale, n = 65536), on an otherwise idle host.
++
++1. Answers: gates pass with no diff (sanity 61 s, digest 69 s, exact 29 s). Holds.
++2. Floods, B/A Mops/s per pair (A = HEAD, B = S1b):
++   - heavy16x: 0.965, 0.908, 0.917, 0.953, 0.874, 0.917 (A 4.33–4.81, B 3.97–4.40): **0/6 at ≥ 1.10. Fails.**
++   - heavy4x: 0.976, 0.871, 0.737, 0.804, 0.887, 0.903: **0/6. Fails.**
++3. light16x: 1.035, 1.003, 1.087, 0.936, 1.092, 1.002: 1/6 below 0.95. Holds.
++4. Ir/op: CheckAndTouchHit 519.5 → 519.1 (−0.08%); InsertSteady 1828.2 → 1840.3 (+0.66%). Holds.
++
++Reported (S1 first version, whose count path is S1b's): CountOverflowLive 1605.8 → 1947.2 Ir/op, TouchOverflowLive 7440.7 → 7460.7. These two benchmarks' setups differ between the n = 50000 and n = 150000 processes (per-function setup terms such as relocate and warmLine come out negative), so their per-op figures are approximate; the prefetch's own share, by function, is about +176 Ir/op (a second `ghost.slot` +58.5, `prefetchOverflow` +45.6, `ghost.prefetch` +38.5, `PrefetchLines` +17.8, estimate +15.6). D1 misses/op count the prefetches (2.67 → 5.95).
++
++What was learned: on this host at this scale the overflow buckets are not cache misses worth hiding (the whole filter for 65,536 keys is ~2 MB, inside the 8 MiB L2), so the prefetch is pure extra work: a second bucket hash, the table's liveness loads, and the prefetch call, ~10% of a count. A prefetch that reuses the bucket indexes (computed once, passed to estimate) would remove most of that; it would only pay where the overflow table is past the LLC.
++
++Patches: `go/verify/experiments/speed-s1-ghost-prefetch.patch` (S1b), `speed-s1-ghost-prefetch-v1.patch` (S1, first version).
++
++
++## S2: SWAR fingerprint match in the overflow scan (S-M)
++
++Status: done. **Verdict: not adopted** (rule 2 fails: LabTouchOverflowLive −4.0%, bar −10%; LabCountOverflowLive −15.3% and heavy16x ≥ 1.05 in 5/6 pairs hold).
++
++Change: in `ghost.estimate`, each non-empty word's three entries are matched against the key's fingerprint at once: x = (word XOR fp replicated into the three fingerprint fields) AND the three fields' mask; adding 0x3FFF to each 14-bit field carries into the bit above it (bits 21, 42, 63, all masked to 0) exactly when the field is non-zero, so `^(x + L) & C` has one bit per matching lane, with no false matches (exact: the fields are 14 bits with 7 masked bits between them, and 0x3FFF + 0x3FFF < 2^15, so no carry crosses lanes). Word 0's first lane holds the floors and is left out. Age and count are decoded only for matching lanes. A test checks the new scan against the old one on random and edge-case buckets.
++
++Measurement: the stock CountOverflowLive and TouchOverflowLive hash their keys with `f.HashUint64`, whose seed is random per process, so their setups and keys differ between the n1 and n2 processes (per-function setup terms come out negative). Judged on lab copies with deterministic keys (`mix64`) and Capacity 1<<16: `BenchmarkLabCountOverflowLive`, `BenchmarkLabTouchOverflowLive` (`speed-s2-labbench.patch`, both arms). The stock ones are reported.
++
++Decision rule:
++1. Answers identical: the gates pass with no diff; the new test passes.
++2. LabCountOverflowLive and LabTouchOverflowLive Ir/op each at least 10% lower than HEAD.
++3. Floods: heavy16x B/A ≥ 1.05 in at least 5 of 6 pairs. If 1 and 2 hold and 3 fails, the verdict rests on the Ir result alone (candidate, reported as an Ir-only result).
++
++### S2 results
++
++Commands: `/tmp/lab/gates.sh s2`; `go test -run TestGhostMatchExact .`; `/tmp/lab/cg.sh {heads2,s2} BenchmarkLab{Count,Touch}OverflowLive 50000 150000` (both arms with `speed-s2-labbench.patch`); `/tmp/lab/flood.sh head s2 heavy16x 6`.
++
++1. Answers identical: gates pass with no diff (sanity 62 s, digest 69 s, exact 34 s); `TestGhostMatchExact` (4 M random words plus 12 M words built from the key's fingerprint, its neighbours, all-ones and empty fields, three fingerprints each) passes. Holds.
++2. Ir/op: LabCountOverflowLive 1824.2 → 1545.7 (**−15.3%**); LabTouchOverflowLive 7271.9 → 6983.8 (**−4.0%: fails**). Per function the scan itself, `ghost.estimate`, goes 1075.0 → 788.6 Ir/op (−26.6%) in both; a touch does ~6,200 Ir/op of other work (including ~240 Ir/op in `mallocgc`: TouchAt allocates on this path), so the scan is 15% of it.
++3. heavy16x B/A: 1.280, 1.102, 1.113, 1.066, 0.943, 1.114 (A 4.11–4.74, B 4.46–5.26 Mops/s): 5/6 ≥ 1.05. Holds.
++
++What was learned: the SWAR match removes a quarter of the overflow scan's instructions, exactly (no lane is ever misread), and is the only change this round with a flood reading above 1.05 in 5 of 6 pairs; it falls short only on the touch-path bar, where the scan is a small share of a TouchAt with the overflow live. Worth a quiet-host reading of heavy16x and CountOverflowLive.
++
++Patches: `go/verify/experiments/speed-s2-ghost-swar.patch`, `speed-s2-labbench.patch`.
++
++
++## S3: the overflow table's add path, word by word (S-M)
++
++Status: done. **Verdict: candidate, on the Ir result alone** (LabGhostAdd −10.9%; heavy16x ≥ 1.05 in only 1/6 pairs, so no flood gain is claimed).
++
++Change: `ghost.add` reads each bucket word once (one atomic load, not one per entry) and decodes its three entries from that load, in the same entry order (1..23), skipping a word whose entries are all empty (it counts as the bucket's first free entry if none was found yet; word 0's floor lane is left out). The CAS on a merge still compares the whole word read. S2 did not hold, so no SWAR match here.
++
++Measurement: a lab benchmark `BenchmarkLabGhostAdd` (`speed-s3-labbench.patch`, both arms) that spills histories straight into a live overflow table: a ghost table of 1,024 buckets (2 choices, 3 floors) filled first, then per op `add` of one of 65,536 histories (mix64 ids, counts 1–4, at a fixed clock): merges, free entries, and floors of the lightest when buckets are full.
++
++Decision rule:
++1. Answers identical: the gates pass with no diff.
++2. LabGhostAdd Ir/op at least 10% lower than HEAD.
++3. Floods: heavy16x B/A ≥ 1.05 in at least 5 of 6 pairs. If 1 and 2 hold and 3 fails, the verdict rests on the Ir result alone (candidate, reported as an Ir-only result).
++
++### S3 results
++
++Commands: `/tmp/lab/gates.sh s3`; `/tmp/lab/cg.sh {heads3,s3} BenchmarkLabGhostAdd 50000 150000` (both arms with `speed-s3-labbench.patch`); `/tmp/lab/flood.sh head s3 heavy16x 6`.
++
++1. Answers identical: gates pass with no diff (sanity 52 s, digest 68 s, exact 24 s). Holds.
++2. LabGhostAdd Ir/op 3275.4 → 2917.4 (**−10.9%**); D1 misses/op 0.458 → 0.457. Holds.
++3. heavy16x B/A: 1.022, 1.033, 0.932, 0.922, 0.929, 1.149 (A 3.87–4.72, B 4.13–4.53 Mops/s): 1/6 ≥ 1.05. Fails, so the result is Ir-only.
++
++What was learned: one load per word instead of one per entry, and no `k/3` per entry, saves 11% of an add's instructions; in a heavy16x flood the add is a small share of the time next to the scan (`estimate`, S2), and the flood pairs show nothing beyond noise. Order of entries, the CAS operand and the free/victim choices are unchanged, so it is exact by construction.
++
++Patches: `go/verify/experiments/speed-s3-ghost-add-words.patch`, `speed-s3-labbench.patch`.
++
++
++## S4: victim scoring without the view (S)
++
++Status: done. **Verdict: not adopted** (rule 2 fails: CheckAndTouchMissInsert −0.08%, bar −3%; InsertSaturated −16.5% and the rest hold).
++
++Change: `mass` (go/register.go; the eviction score in claimAt and the stash's choices) answers a register that is not hot straight from word1, without building a view: with only bucket 0 filled (estimate's early case), mass = c0 if bucket 0 ends after the horizon's oldest unit, else 0; otherwise the same bucket walk as viewMass, reading each counter from word1 in place. Hot registers still go through the view. Equality is shown by a test against the old mass on 20 M random registers biased to edges (bucket boundaries, an event at now, empty registers, callers behind the last touch, every epoch offset), kept in the patch behind TF_EXP=1.
++
++Decision rule:
++1. Answers identical: the gates pass with no diff; the equality test finds no difference.
++2. InsertSaturated and CheckAndTouchMissInsert Ir/op each at least 3% lower than HEAD (cachegrind, n = 50000/150000).
++3. Nothing else higher: the library-only Ir/op (this module's functions; the runtime's background differs between binaries by up to ~1% of total Ir, see S1b's InsertSteady) of CheckAndTouchHit, InsertSteady, InsertNearFull and TouchAndCount each no more than 0.1% above HEAD.
++
++### S4 results
++
++Commands: `TF_EXP=1 go test -run '^TestMassMatchesView$' .`; `/tmp/lab/gates.sh s4`; `/tmp/lab/cg.sh {head4,s4} <Bench> 50000 150000`.
++
++1. Answers identical: gates pass with no diff (sanity 65 s, digest 64 s, exact 38 s). `TestMassMatchesView` (20 M registers: empty, bucket 0 alone, full / one-event / random counters, every epoch offset, last touches on and beside unit boundaries; clocks at the last touch, behind it, at the horizon, on unit boundaries) finds no difference, 3.0 s; with `e+1 <= oldest` mutated to `<` it fails at case 84, so it bites. Holds.
++2. Ir/op: InsertSaturated 10556.9 → 8820.3 (**−16.5%**; per function viewOf −910, duffcopy −546 (the view's copy), mass −169, duffzero −104); CheckAndTouchMissInsert 9432.0 → 9424.3 (**−0.08%: fails**): that benchmark's inserts mostly find a free or expired slot, and mass runs only when a full line picks a victim (4 Ir/op of mass on HEAD).
++3. Library-only Ir/op: CheckAndTouchHit 519.3 → 519.3 (−0.01%), InsertSteady 1756.4 → 1756.3, InsertNearFull 29296.3 → 29274.2 (−0.08%), TouchAndCount 691.3 → 691.3. Holds (totals: 522.7 → 517.7, 1834.6 → 1827.9, 29441.0 → 29407.7, 691.6 → 688.6).
++
++What was learned: on a saturated table, scoring victims costs a fifth of an insert, and most of it is building and copying the 80-byte view; reading the counters in place removes it exactly. The rule's second benchmark doesn't reach that code, so the change fails the bar as written while doing what it says where victims are scored.
++
++Patch: `go/verify/experiments/speed-s4-mass-noview.patch` (the equality test is in it behind TF_EXP=1).
++
++
++## S5: bounds checks and inlining on the hot paths (M)
++
++Status: done. **Verdict: candidate** (four of six benchmarks 7–12% fewer instructions per op, none higher).
++
++Method: `go build -gcflags='-d=ssa/check_bce/debug=1'` and `-gcflags=-m=2` on slots.go, touch.go, register.go, hot.go, ghost.go and cuckoo.go list the bounds checks left and the hot callees that don't inline; checks on the hit, count and lookup paths are removed by hoisting lengths or masking indices, and hot callees made to inline by splitting cold paths out; a profile of the benchmarks ($LAB/cpu.pprof, never committed) shows what PGO would inline (`-m=2` with and without `-pgo`). Each removed check is confirmed in the assembly (`-gcflags=-S`).
++
++Ir/op here is the library-only figure (this module's functions, the benchmark loops included): across binaries the runtime's background work moves totals by up to ~1% (S1b, S4), more than the 0.5% this rule allows. Totals are reported beside it.
++
++Decision rule:
++1. Answers identical: the gates pass with no diff.
++2. Ir/op of CheckAndTouchHit, CheckAndTouchHitCached, TouchAndCount, VelocityCount, InsertSteady and ContainsAbsent each at most 0.5% higher than HEAD, and at least two of them 3% or more lower.
++
++### S5 results
++
++What the listings showed (Go 1.24.7): 204 bounds checks left in the package; on the hit path `slotWords` (3 checks), `find` (1 slice check), `touch` (2 on word0's index across calls). Not inlined on the hit/count path: `touch` (cost 2748), `bump` (716), `estimate` (459), `nextRegU` (404), `estimateAt` (259), `locateAt` (238), `slotWords` (125), `farAhead` (83, just over the budget of 80). Per function, a CheckAndTouchHit on HEAD is touch 238 Ir, bump 107, locateAt 71, nextRegU 51, the loop 30, slotWords 11, farAhead 11: the last two are calls that return at once (CheckAndTouchAt passes no warm slot, so slotWords(-1) answers "no"; a touch in its register's unit gets (0, false, false) from farAhead).
++
++Change (`speed-s5-bce-inline.patch`, touch.go and slots.go only):
++- touch calls slotWords for warm's slot only when there is one (`i0 >= 0`), and farAhead only when the touch is past the register's unit (`nu > lu`), the two cases where they can answer anything but their early return. (Splitting farAhead's early return into an inlinable wrapper doesn't work: a call to the out-of-line part alone costs 57 of the 80 budget; the wrapper came to 85.)
++- slotWords reads its two words through one slice (`f.words[i : i+2 : i+2]`): one slice check for the three loads. Assembly (`-gcflags=-S`): slotWords' bounds-panic sites 6 → 4.
++- estimateAt answers a register (not a hot entry) with one estimate call and no key identity: a register's estimate never fails and reads no id (viewOf needs it only for a hot entry), so the retry loop and `stashID` are skipped.
++
++PGO (profile of the six benchmarks, `-benchtime 2s`, kept at /tmp/lab/cpu.pprof, not committed): `-pgo` would inline bump, locateAt, nextRegU, nextReg, slotWords, estimate, estimateAt, count, decayStep, lookupStable, install, putNew, putOver, claim, miss, recall, relocate, mass and slotID into their hot callers; nothing here depends on it.
++
++Commands: `/tmp/lab/gates.sh s5`; `/tmp/lab/cg.sh {head5,s5} <Bench> 50000 150000`; `verify/ab.sh HEAD HEAD+verify/experiments/speed-s5-bce-inline.patch '^Benchmark(CheckAndTouchHit|TouchAndCount|VelocityCount)$' 15` (reported).
++
++1. Answers identical: gates pass with no diff (sanity 65 s, digest 70 s, exact 31 s). Holds.
++2. Ir/op, library-only (total in brackets):
++
++| Benchmark | HEAD | S5 | change |
++|---|---|---|---|
++| CheckAndTouchHit | 519.3 (520.3) | 476.3 (476.5) | **−8.3%** (−8.4%) |
++| CheckAndTouchHitCached | 563.6 (563.8) | 522.6 (522.6) | **−7.3%** (−7.3%) |
++| TouchAndCount | 691.3 (692.1) | 610.3 (610.4) | **−11.7%** (−11.8%) |
++| VelocityCount | 464.8 (465.2) | 420.8 (421.3) | **−9.5%** (−9.4%) |
++| InsertSteady | 1756.3 (1819.3) | 1724.3 (1782.3) | −1.8% (−2.0%) |
++| ContainsAbsent | 358.0 (360.4) | 358.0 (357.9) | −0.01% (−0.7%) |
++
++   None higher; four at least 3% lower. Holds.
++
++Reported (ab.sh, 15 rounds, ns/op medians): TouchAndCount 161.1 → 152.6 (0.95), CheckAndTouchHit 130.3 → 128.0 (0.98), VelocityCount 107.3 → 105.1 (0.98): inside this host's noise, in the right direction.
++
++Patch: `go/verify/experiments/speed-s5-bce-inline.patch`.
++
++
++## S6: scalar SipHash-2-4 (S)
++
++Status: done. **Verdict: not adopted** (rule 2 fails on the 33-byte string in both versions: −1.9%, −6.3%; HashUint64 −13.8% and the 11- and 21-byte strings −14.5% to −20.6% hold).
++
++Change (internal/siphash): the finalization written into each hash (no `sipFinish` call), the 8-byte path specialized, message words and the tail read without per-byte loops or repeated bounds checks (a string of 8 bytes or more takes its tail from one overlapping 8-byte load), rotations via math/bits as now.
++
++Decision rule:
++1. Outputs identical: the package's vectors pass, and a test compares the new HashUint64 and HashString with the old code (kept in the test) on 1M random inputs each (strings of every length 0–64, random keys).
++2. Ir/op at least 10% lower than HEAD for each SipHash case: BenchmarkHashUint64/siphash and BenchmarkHashString/siphash/{11B,21B,33B} (cachegrind, n = 500000/1500000, the hashes being short).
++3. The gates pass with no diff (Config.Key filters hash through it).
++
++S6, first version (`speed-s6-siphash-v1.patch`; index loop `for i+8 <= n` with an unsafe 8-byte load, finalization written out, overlapping tail load): outputs identical (vectors; `TestSipHashMatchesOld` 1M random keys/inputs, strings 0–64 bytes). Ir/op HEAD → S6: HashUint64/siphash 210.0 → 181.1 (−13.8%), HashString/siphash/11B 261.0 → 223.1 (−14.5%), 21B 326.0 → 269.1 (−17.5%), **33B 368.1 → 361.1 (−1.9%): rule 2 fails** for this version. Per function, the finalization's call is gone (sipFinish 115 → 0) but each 8-byte block costs ~46 Ir against ~38 in the old slice loop. A second version, **S6b**, is measured under the **same rule (1–3, unchanged)**, written here before it is measured: the old slice loop (`for len(b) >= 8 { ...; b = b[8:] }`) with the finalization still written out and the overlapping tail load.
++
++### S6b results
++
++Commands: `go test ./internal/siphash/`; `/tmp/lab/cg2.sh {head6,s6b} <case> '<bench regex>' 500000 1500000`; `/tmp/lab/gates.sh s6b`.
++
++1. Outputs identical: the vectors and `TestSipHashMatchesOld` (1M random keys, uint64 inputs and strings of every length 0–64, against the old code kept in the test) pass. Holds.
++2. Ir/op HEAD → S6b: HashUint64/siphash 210.0 → 181.0 (**−13.8%**); HashString/siphash/11B 261.0 → 216.1 (**−17.2%**); 21B 326.0 → 259.0 (**−20.6%**); **33B 368.1 → 345.0 (−6.3%): fails.**
++3. Gates pass with no diff (sanity 52 s, digest 65 s, exact 24 s). Holds.
++
++What was learned: the finalization's call and arguments cost ~25–40 Ir per hash, a sixth of a short hash; writing it out removes that, and the overlapping tail load replaces the byte loop. On a 33-byte key (4 blocks, 1 tail byte) the per-block cost dominates and the body with everything inlined keeps more state live: per function, 33B HashString 222 + sipFinish 115 = 337 Ir on HEAD against 314 in S6b, while the 4-round blocks cost a little more each than in the old loop. The gain is real for keys under ~24 bytes (IPs, short ids) and small past that.
++
++Patches: `go/verify/experiments/speed-s6-siphash.patch` (S6b), `speed-s6-siphash-v1.patch` (S6, first version).
++
++
++## S7: multi-lane SipHash-2-4 for batches (L, stretch)
++
++Status: done. **Verdict: candidate** (outputs identical; 4.3–5.5x the keys/s in 6/6 rounds, by the rule's timing branch: cachegrind can't run AVX-512).
++
++Change: `func (f *Filter) HashUint64s(keys, out []uint64)`, each output equal to `f.HashUint64(keys[i])`. With Config.Key set it calls `siphash.Key.HashUint64s`, which hashes 8 keys at once in Go assembly with AVX-512F (zmm lanes, VPROLQ for the 64-bit rotates) where the CPU and OS support it (CPUID leaf 7 EBX bit 16, OSXSAVE and XGETBV's opmask/zmm state, checked once as internal/cpu checks CX16), the remainder and every other CPU through the scalar HashUint64. Without a key, the maphash loop.
++
++Decision rule:
++1. Outputs identical: a test compares HashUint64s with HashUint64 on 1M keys (random keys and filter keys) and on every batch length 0–130, through the AVX-512 path and with it forced off; the gates pass with no diff (nothing else changes).
++2. For 64-key batches, at least 2x fewer Ir per key than HashUint64 (cachegrind). If cachegrind can't run the AVX-512 code (valgrind 3.22 has no AVX-512), then instead 2x the keys/s in 6 of 6 alternated rounds: `BenchmarkLabHashUint64s/batch64` against `BenchmarkLabHashUint64s/scalar64` (the same 64 keys through f.HashUint64 in a loop), each round one run of each, order alternating.
++
++### S7 results
++
++Files (`speed-s7-siphash-avx512.patch`): internal/siphash/batch.go (`Key.HashUint64s`), batch_amd64.go/.s (`hash8x`: 8 keys per zmm register, 14 instructions a round, the initial state, the length block 8<<56 and 0xff broadcast once per call, the final XOR of four as one VPXORQ and one VPTERNLOGQ; `cpuHasAVX512F`: CPUID max leaf ≥ 7, OSXSAVE, XCR0 & 0xE6 = 0xE6, CPUID.7.0:EBX bit 16), batch_other.go (no AVX-512 off amd64), filter.go (`Filter.HashUint64s`; without Config.Key the maphash loop), tests in internal/siphash/batch_test.go and hashbatch_test.go. `go vet` (asmdecl) passes; builds for arm64 and vets for 386.
++
++1. Outputs identical: `TestHashUint64sMatches` (every batch length 0–130, then 1M keys in batches of random lengths, random SipHash keys; once through hash8x (this host has AVX-512F) and once with it off; untouched entries past the batch checked) and `TestHashUint64sMatchesFilter` (with and without Config.Key, lengths 0–130) pass. The gates pass with no diff (sanity 54 s, digest 66 s, exact 25 s). Holds.
++2. Cachegrind can't measure it: under valgrind CPUID reports no AVX-512 (the test under `valgrind --tool=none` logs `AVX-512F: false` and runs the scalar path), so by the rule's other branch, 6 alternated rounds of `BenchmarkLabHashUint64s/{batch64,scalar64}` (`speed-s7-labbench.patch`; 64 keys per op, -benchtime 1s each):
++
++| round | batch64 ns/op (Mkeys/s) | scalar64 ns/op (Mkeys/s) | keys/s ratio |
++|---|---|---|---|
++| 1 | 186.9 (342.4) | 979.6 (65.3) | 5.24x |
++| 2 | 182.0 (351.6) | 1007.0 (63.6) | 5.53x |
++| 3 | 195.5 (327.4) | 1040.0 (61.5) | 5.32x |
++| 4 | 214.6 (298.2) | 917.7 (69.7) | 4.28x |
++| 5 | 182.6 (350.5) | 923.8 (69.3) | 5.06x |
++| 6 | 183.7 (348.4) | 939.6 (68.1) | 5.11x |
++
++   6/6 at ≥ 2x. Holds.
++
++Note: an API addition, not a change to existing calls; it pays only for callers that hash integer keys in batches under Config.Key (as CheckAndTouchBatch's callers can). No AVX2 path: AVX2 lacks a 64-bit rotate (each would be two shifts and an OR).
++
++Patches: `go/verify/experiments/speed-s7-siphash-avx512.patch`, `speed-s7-labbench.patch`.
++
++## B1c: the displacement bitmap, checked on read paths only (L)
++
++Status: done. **Verdict: candidate** (every part of the rule holds; inserts pay only the bitmap's upkeep, +0.0–0.6% library Ir).
++
++Follow-up to B1 (asked for after this round): B1b's bitmap and its upkeep unchanged (install sets the bit, the sweep clears it under the clear counts, Bytes() counts it, the TLA+ model, the tests), but only reads consult it: `read` (ContainsAt, CountAt, VelocityCountAt, Count, the count batches) looks a key up with `locateRead` (primary line, then the alternate line only if mayDisp). Every insert path (touch's lookups, lookupStable, claim, warm's prefetches) goes back to HEAD's `locateAt`, reading the alternate line whenever the primary misses. The writers' cost (setDisp in install, sweepDisp) stays.
++
++Ir/op here is library-only (this module's functions), as for S4 and S5: the runtime's background moves totals between binaries by up to ~1%. Totals reported.
++
++Decision rule (candidate only if all hold):
++1. Answers identical: the gates pass with no diff except two fields that carry Bytes(), which must count the bitmap: `tfbench -exact`'s `memory` line (bytes higher by exactly the bitmap and counters) and the answer digest's `end=` field; with Bytes() not counting the bitmap the digest must show no diff at all.
++2. Skip rate (TestDispBitmapSkipRate): at 85% load at least 30% of 1M absent keys find their alternate line's bit clear.
++3. LL misses/op of LabContainsAbsentBig at least 20% lower than HEAD.
++4. Ir/op of InsertSteady, CheckAndTouchMissInsert, InsertNearFull and InsertSaturated each at most 1% higher than HEAD (ContainsAbsent, VelocityCount, CheckAndTouchHit reported).
++5. `verify/tla.sh DispBitmap` behaves as for B1b (the model is the same: it models a lookup that consults the bit).
++6. The racy tests (`TestDispBitmapSweepRace`, `TestDispClearRacingPlacement`, `TestDispBitsCoverDisplaced`; their lookups are ContainsAt, a read) pass `-race -count=20`; `verify/replay.sh stress 300` passes (the documented one-high residual of TestAbandonedMoveKeepsCounts excepted).
++
++### B1c results
++
++Commands: `/tmp/lab/gates.sh b1c`; the digest again with Bytes() not counting the bitmap; `TF_EXP=1 go test -run '^TestDispBitmapSkipRate$' -v .`; `/tmp/lab/cg.sh {headb1c,b1c} <Bench> 50000 150000` (both arms with `speed-b1-labbench.patch`); `verify/tla.sh DispBitmap`; `go test -race -count=20 -timeout 40m -run '^(TestDispBitmapSweepRace|TestDispClearRacingPlacement|TestDispBitsCoverDisplaced)$' .`; `CGO_ENABLED=1 verify/replay.sh stress 300`.
++
++1. **Answers identical.** sanity passes (73 s). `tfbench -exact`: only `memory ... bytes=3764736` → `3773120` (+8,384 B: bitmap 7,360 + counters 1,024). Digest: only `end=` in all 30 cells; with Bytes() not counting the bitmap, **no diff** in any cell. Holds.
++2. **Skip rate**: 85% load 51.3% (50% 92.3%, 90% 41.7%, 94% 33.0%; the bitmap's upkeep is B1b's, so the same figures). Holds.
++3. **LL misses/op, LabContainsAbsentBig**: 1.150 → 0.830 (**−27.8%**). Holds.
++4. **Ir/op, library-only** (total in brackets):
++
++| Benchmark | HEAD | B1c | change | moved by |
++|---|---|---|---|---|
++| InsertSteady | 1756.6 (1856.0) | 1766.7 (1881.1) | **+0.58%** (+1.35%) | install +11.0, sweepDisp +1.1 |
++| CheckAndTouchMissInsert | 9310.4 (9433.7) | 9335.9 (9455.2) | +0.27% (+0.23%) | install +27.6 |
++| InsertNearFull | 29296.3 (29441.4) | 29325.3 (29464.4) | +0.10% (+0.08%) | install +30.2 |
++| InsertSaturated | 8478.5 (10575.8) | 8478.5 (10575.9) | +0.00% (+0.00%) | install +2.0 |
++| ContainsAbsent | 358.0 (358.6) | 352.7 (353.6) | −1.5% | locateRead replaces locateAt |
++| VelocityCount | 464.8 (464.4) | 467.8 (466.4) | +0.65% | locateRead +73.8, locateAt −70.8 (keys present: the primary line hits; the lookup's body is larger) |
++| CheckAndTouchHit | 519.3 (517.1) | 519.3 (520.5) | +0.01% | unchanged path |
++| LabContainsAbsentBig | 358.0 (356.0) | 352.9 (359.8) | −1.4% | |
++
++   All four inserts within 1% (library-only, as the rule says). InsertSteady's total is +1.35%; its library share is +0.58%, the rest runtime background. Holds.
++5. **TLA+** DispBitmap: the same 10 outcomes as B1b (4 sizes pass, up to 14,881,571 states; the three reachability checks reached; noSetBefore, noSeq, noRescan each violate NoMiss). Holds.
++6. **Concurrency**: the racy tests pass `-race -count=20` (2 m 54 s; 0 misses, ~29,600 bit clears a run). A first attempt timed out at go test's default 10 minutes with TestDispBitmapSweepRace just started, while three cachegrind processes and TLC's four workers shared the 4 cores; re-run on the idle host with `-timeout 40m`, it passed all 60. With the sequence check removed, `TestDispClearRacingPlacement` fails through ContainsAt ("a lookup during the clear missed K in A"), so the read path's guard is exercised. `replay.sh stress 300`: 0/300 for each of the four (5 m 14 s). Holds.
++
++What was learned: moving the bit check off the insert paths removes B1's failure (locateAt's +32–46 Ir/op on InsertSteady is gone); what remains on inserts is the writers' upkeep, mostly `install`'s setDisp (+11 Ir/op on InsertSteady, +28–30 on the miss-insert and near-full benchmarks, where more entries go in displaced). Reads of absent keys on tables past the LLC keep B1's 28% fewer LL misses. Not tried: the count batches' `warm` still prefetches every alternate line (it is shared with the touch batches).
++
++Patch: `go/verify/experiments/speed-b1c-dispbitmap-reads.patch` (B1b's patch with `locateRead` used by `read` only; warm and every insert path as on HEAD).
++
++
++## S2c: S2's SWAR match on the count path only (S-M)
++
++Status: done. **Verdict: S2c (first version, one flagged estimate) not adopted (rule 3: touch +0.72%); S2d (a separate estimateSWAR) candidate** (count −15.5%, touch +0.09%).
++
++Follow-up to S2 (asked for after this round): `ghost.estimate` takes a flag; with it, the scan is S2's SWAR match (ghMatch, then age and count decoded only for matching lanes), without it HEAD's per-entry scan. `addSketch` passes the flag only from `count` (CountAt, VelocityCountAt, Count, VelocityCount, VelocityCountBatch). Every touch path (TouchAt, TouchAndCount, CheckAndTouch's misses, ConstantTime's touches) and ContainsAt keep HEAD's scan. S2 failed on the touch benchmark (−4.0% against a 10% bar); this asks whether the change holds where it helps most, with touches left as they are.
++
++Ir/op here is library-only, as for S4, S5 and B1c (totals reported). Lab benchmarks as in S2 (`speed-s2-labbench.patch`, both arms).
++
++Decision rule (candidate only if all hold):
++1. Answers identical: the gates pass with no diff; `TestGhostMatchExact` passes.
++2. LabCountOverflowLive Ir/op at least 10% lower than HEAD.
++3. LabTouchOverflowLive Ir/op at most 0.5% higher than HEAD (its scan is HEAD's; it sees only the flag).
++Reported, not judged: heavy16x, 6 pairs (the flood's operations are TouchAt, which keep HEAD's scan, so no gain is expected there; only its 61,000 probes are counts).
++
++S2c, first version (`speed-s2c-ghost-swar-count-v1.patch`; one `estimate` with a `swar` flag): gates pass with no diff (sanity 63 s, digest 84 s, exact 27 s); `TestGhostMatchExact` and a new `TestGhostScansAgree` (both scans on tables filled past capacity, floors raised, 3 table shapes, 4 windows, 3 clocks; it fails if word 0's lane 2 is dropped from the SWAR scan) pass. Library-only Ir/op, HEAD → S2c: LabCountOverflowLive 1810.5 → 1566.2 (**−13.5%**); LabTouchOverflowLive 6109.3 → 6153.4 (**+0.72%: rule 3 fails** for this version). The touch path's per-entry scan got slower in the shared function (estimate 1075.0 → 1117.6 Ir/op on the touch benchmark: the flag's branch, the replicated fingerprint computed for both scans, and the larger function's code). A second version, **S2d**, is measured under the **same rule (1–3, unchanged)**, written here before it is measured: HEAD's `estimate` left exactly as it is for the touch paths, and a separate `estimateSWAR` (the same prologue, S2's scan) that `addSketch` calls when `count` asks for it.
++
++### S2d results
++
++Change (`speed-s2c-ghost-swar-count.patch`): ghost.go only gains lines: S2's `ghMatch`/`addMatches` and `estimateSWAR` (estimate's prologue, S2's scan); HEAD's `estimate` is unchanged. `addSketch` takes a `swar` flag and calls `estimateSWAR` when `count` passes it; the touch paths and ContainsAt pass false and call `estimate` as before. Tests: `TestGhostMatchExact` (from S2) and `TestGhostScansAgree` (estimateSWAR against estimate; it fails when word 0's lane 2 is dropped from estimateSWAR).
++
++Commands: `/tmp/lab/gates.sh s2d`; `/tmp/lab/cg.sh s2d BenchmarkLab{Count,Touch}OverflowLive 50000 150000` against S2's HEAD arm (`heads2`, the same go/ sources: nothing outside the ledger and patches changed since main); `/tmp/lab/flood.sh head s2d heavy16x 6`.
++
++1. Answers identical: gates pass with no diff (sanity 67 s, digest 83 s, exact 28 s); both tests pass. Holds.
++2. LabCountOverflowLive, library-only Ir/op: 1810.5 → 1529.2 (**−15.5%**; estimate −1075.0, estimateSWAR +788.6, addSketch +4.0, count +1.0); total 1824.2 → 1541.6. Holds.
++3. LabTouchOverflowLive, library-only Ir/op: 6109.3 → 6114.8 (**+0.09%**; addSketch +4.0 for the flag's branch, touch +1.5); total 7271.9 → 7282.8. Holds.
++
++Reported: heavy16x B/A 0.907, 0.971, 1.007, 0.994, 0.941, 0.974 (A 4.10–4.34, B 3.81–4.37 Mops/s): no gain, as expected, since the flood's operations are TouchAt and keep HEAD's scan. S2's heavy16x reading (≥ 1.05 in 5/6) came from the touch path, which S2d leaves alone.
++
++What was learned: sharing one function between the two scans cost the per-entry scan 4% (S2c); kept apart, the count path gets S2's full gain and the touch path pays one predictable branch. Whether S2's touch-path gain (−4.7% library Ir, the flood pairs) is wanted is a separate question from this change.
++
++Patches: `go/verify/experiments/speed-s2c-ghost-swar-count.patch` (S2d), `speed-s2c-ghost-swar-count-v1.patch` (S2c, first version); measured with `speed-s2-labbench.patch`.
++
++
++## S4b: S4 with CheckAndTouchMissInsert left out of the rule (S)
++
++Status: done. **Verdict: candidate, post-hoc** (the relaxed rule holds; S4's own verdict stays not adopted).
++
++**Post-hoc.** Asked for after this round, with S4's numbers already known: S4's verdict above (not adopted, rule 2 failed on CheckAndTouchMissInsert) stands as recorded. This entry re-measures the same patch (`speed-s4-mass-noview.patch`, rebuilt from the committed file) under a rule relaxed at the person's request: CheckAndTouchMissInsert no longer has to be 3% lower (its inserts rarely score a victim, so mass barely runs there). It is moved into the "nothing else higher" set instead, so the rule still checks that it doesn't get worse. Read the verdict as a post-hoc reading, not a pre-registered one.
++
++Decision rule:
++1. Answers identical: the gates pass with no diff; `TF_EXP=1 go test -run '^TestMassMatchesView$'` (20 M registers) finds no difference.
++2. InsertSaturated Ir/op at least 3% lower than HEAD (total and library-only).
++3. Nothing else higher: library-only Ir/op of CheckAndTouchMissInsert, CheckAndTouchHit, InsertSteady, InsertNearFull and TouchAndCount each no more than 0.1% above HEAD.
++
++### S4b results
++
++Commands: `TF_EXP=1 go test -count=1 -run '^TestMassMatchesView$' -v .`; `/tmp/lab/gates.sh s4b`; `/tmp/lab/cg.sh {head4b,s4b} <Bench> 50000 150000` (both arms rebuilt: HEAD's go/ tree, and HEAD with the committed `speed-s4-mass-noview.patch`).
++
++1. Answers identical: gates pass with no diff (sanity 68 s, digest 81 s, exact 28 s); `TestMassMatchesView` finds no difference in 20 M registers (3.4 s). Holds.
++2. InsertSaturated: library-only 8478.3 → 7399.4 (**−12.7%**), total 10548.2 → 8832.5 (**−16.3%**). Holds.
++3. Library-only Ir/op: CheckAndTouchMissInsert 9310.4 → 9306.0 (−0.05%), CheckAndTouchHit 519.3 → 519.3 (+0.00%), InsertSteady 1756.4 → 1756.2 (−0.01%), InsertNearFull 29296.2 → 29274.3 (−0.07%), TouchAndCount 691.3 → 691.3 (+0.01%). All within +0.1%. Holds. (Totals: −0.06%, +0.27%, −1.83%, −0.07%, +0.98%: the runtime's background, as in S1b and S4; the library's work on these is unchanged, as the patch touches only `mass`.)
++
++The same numbers as S4 (cachegrind is deterministic for a binary; the HEAD arm here is a fresh build). What changed is the rule, not the result: under S4's pre-registered rule the patch failed; under this one, relaxed after the fact at the person's request, it holds.
++
++## Passing experiments
++
++Six changes pass their rules. Five were judged under rules written before they were measured. S4b is the exception: its rule was relaxed after S4's numbers were known. This section gathers what each one changes, why its answers can't move, every number behind its verdict, its tests and its limits, and how to read it on the quiet host. They are listed in the order of the candidate list in the Summary.
++
++What all six share:
++- **Answers**: the three gates (`./test.sh sanity`, the 30-cell answer digest, `tfbench -exact`) pass with no diff. B1c differs in two fields only, both of which carry `Bytes()`; with the bitmap's bytes left out, its digest has no diff either.
++- **Work**: cachegrind `Ir/op = (Ir(n2) − Ir(n1)) / (n2 − n1)`, n = 50000/150000, `--LL=33554432,16,64`, `GOGC=off GODEBUG=asyncpreemptoff=1 GOMAXPROCS=1`. A binary repeats to 0.1%. Between two builds, though, the Go runtime's background work (sysmon, nanotime, traceback helpers) moves totals by up to ~1%. So S5, B1c, S2d and S4b were judged on **library-only** Ir/op (the sum over this module's functions, benchmark loops included), with totals beside them.
++- **Applying**: `git apply --directory=go go/verify/experiments/<patch>` from the repository root. For ab.sh and lrab.sh, an arm is `HEAD+verify/experiments/<patch>`, and several patches can be joined with `+`.
++- **Together**: all six apply on top of each other to main in this order, with no conflicts: S5, B1c, S7, S2d, S4b, S3. The combined tree builds and passes `go vet` and gofmt. `./test.sh sanity` passes (ALL PASS). The digest and `tfbench -exact` differ only in B1c's two `Bytes()` fields, and with the bitmap's bytes left out the digest has no diff. Their speed was not measured together. Files touched by more than one patch: touch.go (S5: touch, estimateAt; B1c: read; S2d: count, addSketch), slots.go (S5: slotWords; B1c: new functions), ghost.go (S2d: new functions; S3: add), filter.go (B1c: Filter, Bytes; S7: HashUint64s; S2d: ContainsAt's addSketch call).
++
++### P1. S5: bounds checks and inlining on the hot paths
++
++Verdict: **candidate** (pre-registered rule). Patch `speed-s5-bce-inline.patch`, go/slots.go +4/−3 and go/touch.go +13/−2; no new tests.
++
++What it changes. Three edits on the paths every touch and count takes. They came from `-d=ssa/check_bce/debug=1` and `-m=2` listings and a per-function cachegrind profile of CheckAndTouchHit on HEAD: touch 238 Ir, bump 107, locateAt 71, nextRegU 51, the loop 30, slotWords 11, farAhead 11.
++1. `touch` calls `slotWords` only when warm handed it a slot, and `farAhead` only when the touch is past its register's unit. Those are the only cases where either can return anything but its early answer: slotWords(-1) is "no match", and farAhead with nu ≤ lu is (0, false, false). CheckAndTouchAt passes no warm slot, and most touches land in their register's unit, so both calls were pure overhead on the hit path. (An inlinable farAhead wrapper doesn't fit Go's inlining budget: its call to the out-of-line part alone costs 57 of the 80.)
++2. `slotWords` reads its two words through one 2-element slice, so one slice check replaces three index checks. In the assembly (`-gcflags=-S`), slotWords' bounds-panic sites go from 6 to 4.
++3. `estimateAt` answers a register (as opposed to a hot entry) with a single `estimate` call. For a register, estimate never fails and never reads the key identity (viewOf needs it only for a hot entry), so the 8-try loop and `stashID` (a multiply and shifts) were dead work there.
++
++```go
++// touch.go, in touch
++if first && !ct && i0 >= 0 { // (slotWords of no slot is no match: skip the call)
++...
++var old uint64
++var far, wait bool
++if nu > lu { // else farAhead's answer is (0, false, false): skip the call
++	old, far, wait = f.farAhead(i, nu, lu, stale)
++}
++// touch.go, in estimateAt
++if !isHot(w1) {
++	r, _ := f.estimate(0, w1, last, now, window, sat)
++	return r
++}
++// slots.go, in slotWords
++w := f.words[i : i+2 : i+2] // one bounds check for the three loads
++```
++
++Why answers can't move: each skipped call is one whose result is a constant in exactly the skipped case. The slice reads the same two words with the same atomic loads in the same order.
++
++Rule: gates no diff; Ir/op of the six benchmarks below each at most +0.5%, and at least two of them −3% or more. Numbers (library-only, total in brackets):
++
++| Benchmark | HEAD | S5 | change |
++|---|---|---|---|
++| CheckAndTouchHit | 519.3 (520.3) | 476.3 (476.5) | **−8.3%** (−8.4%) |
++| CheckAndTouchHitCached | 563.6 (563.8) | 522.6 (522.6) | **−7.3%** (−7.3%) |
++| TouchAndCount | 691.3 (692.1) | 610.3 (610.4) | **−11.7%** (−11.8%) |
++| VelocityCount | 464.8 (465.2) | 420.8 (421.3) | **−9.5%** (−9.4%) |
++| InsertSteady | 1756.3 (1819.3) | 1724.3 (1782.3) | −1.8% (−2.0%) |
++| ContainsAbsent | 358.0 (360.4) | 358.0 (357.9) | −0.01% (−0.7%) |
++
++Gates: sanity 65 s, digest 70 s, exact 31 s, no diff. Timing on this host (ab.sh, 15 rounds, medians, reported only): TouchAndCount 161.1 → 152.6 ns/op (0.95), CheckAndTouchHit 130.3 → 128.0 (0.98), VelocityCount 107.3 → 105.1 (0.98). That is inside this host's noise, in the right direction.
++
++PGO for reference: a profile of these benchmarks (kept out of the repository, as decisions.md E25 asks) would have `-pgo` inline bump, locateAt, nextRegU, nextReg, slotWords, estimate, estimateAt, count, decayStep, lookupStable, install, putNew, putOver, claim, miss, recall, relocate, mass and slotID. S5 depends on none of that.
++
++Limits: the gain is per call, from work no longer done, so it should show as cycles too. The hit path's cache miss still dominates a cold-table touch, so expect a smaller relative change in ns/op on CheckAndTouchHit than on CheckAndTouchHitCached.
++Quiet-host reading: `verify/lrab.sh '^Benchmark(CheckAndTouchHit|CheckAndTouchHitCached|TouchAndCount|VelocityCount)$' <layouts> <rounds> HEAD HEAD+verify/experiments/speed-s5-bce-inline.patch`.
++
++### P2. B1c: the displacement bitmap, consulted on read paths only
++
++Verdict: **candidate**. The rule was written before measuring; the experiment itself was asked for after the round. Patch `speed-b1c-dispbitmap-reads.patch`, +531/−10:
++- go/slots.go +96 (the bitmap's functions, `locateRead`)
++- go/cuckoo.go +3 (install sets the bit)
++- go/decay.go +1 (the sweep clears it)
++- go/filter.go +19/−6 (fields, allocation, Bytes, test hook)
++- go/touch.go +1/−1 (`read` uses locateRead)
++- go/filter_test.go and go/mirror_test.go (tests that plant entries or check Bytes)
++- go/disp_bitmap_test.go +216 (four tests)
++- go/verify/tla/DispBitmap.tla +172 and go/verify/tla.sh +21/−2 (the model and its runs)
++
++What it is. One bit per table line (`Filter.disp`, `(lines+63)/64` words), meaning "this line may hold a displaced entry". Displaced means an entry living in its alternate line. A **read** whose key misses its primary line reads the alternate line only if that line's bit is set, or if a clear of it may have overlapped the bit's read. Inserts keep HEAD's lookup. Memory: 32 KB per 1M slots (1M slots / 4 per line = 262,144 bits), plus 16 clear-count stripes of 64 bytes (1 KB). `Bytes()` counts both: +8,384 B (+0.22%) on tfbench's 235,296-slot filter.
++
++The protocol (B1b's, unchanged in B1c):
++- **Set before visible.** `install`, the one place an entry enters a slot (new keys, relocation copies, stash placements), sets the line's bit after the entry's word0 is in place (hidden: word1 busy) and before word1 is published.
++- **Clear under counts, with a rescan.** `sweepDisp`, after each `sweepLine`, clears a bit only if the line holds no displaced word0. It counts the clear in its stripe's `begun` before clearing, scans the line again after, sets the bit back if a displaced word0 appeared, then counts `done`.
++- **Read checks.** `mayDisp` returns true at once on a set bit. On a clear bit it reads `done`, the bit again, then `begun`, and trusts the clear bit only if begun == done.
++
++The invariant: while a published displaced entry is in a line, its bit is set or a clear of its stripe is under way. So a clear bit read with no clear around it means the line held no published displaced entry at that moment: the same answer a scan of the line would have given then.
++
++```go
++func (f *Filter) mayDisp(line uint64) bool {
++	w, b := &f.disp[line>>6], uint64(1)<<(line&63)
++	if atomic.LoadUint64(w)&b != 0 {
++		return true
++	}
++	c := &f.dispClr[line&(dispStripes-1)]
++	d := c.done.Load()
++	if atomic.LoadUint64(w)&b != 0 {
++		return true
++	}
++	return c.begun.Load() != d
++}
++
++func (f *Filter) sweepDisp(line uint64) {
++	p, b := &f.disp[line>>6], uint64(1)<<(line&63)
++	if atomic.LoadUint64(p)&b == 0 || f.holdsDisp(line) {
++		return
++	}
++	c := &f.dispClr[line&(dispStripes-1)]
++	c.begun.Add(1)
++	atomic.AndUint64(p, ^b)
++	if f.holdsDisp(line) {
++		atomic.OrUint64(p, b)
++	}
++	c.done.Add(1)
++}
++
++// cuckoo.go, install: after word0's CAS, before word1 is published
++if mine0&dispBit != 0 {
++	f.setDisp(uint64(i) / wordsPerLine)
++}
++```
++
++Why answers can't move: a skipped alternate line held no published displaced entry at the moment of the check. A read at that moment is one of the interleavings the existing read protocol already allows (lookupStable's move counts still cover entries in flight). ConstantTime's `locateBoth` and every insert path are untouched.
++
++Evidence:
++- **TLA+** `verify/tla/DispBitmap.tla`, registered in `verify/tla.sh`. Writers place, publish, abandon and take out displaced entries; sweepers clear bits; a reader looks a key up. Invariants: NoMiss (a lookup that starts after the key's entry is visible and ends before it is removed finds it) and Covered.
++  - It passes at 4 sizes: 566,029 / 10,156,426 / 2,668,777 / 14,881,571 distinct states, with writers {K} or {K, X} and 1 or 2 sweepers.
++  - NeverCleared, NeverSkipped and NeverRaced are all reached, so clears, skips and raced reads all happen in the model.
++  - noSetBefore, noSeq and noRescan each violate NoMiss.
++- **Tests:**
++  - `TestDispBitsCoverDisplaced`: after fills to 50–120% and a sweep, every line holding a displaced entry has its bit.
++  - `TestDispClearRacingPlacement`: a deterministic race inside a clear's window. It fails through ContainsAt when the sequence check is removed.
++  - `TestDispBitmapSweepRace`: 4 readers, a sweeper, fills to 80%, 20 churn batches, then a fill to 98%. About 29,600 clears a run, 0 misses.
++  - `TestDispBitmapSkipRate` (TF_EXP=1).
++  - mirror_test.go plants a displaced entry, so it now sets that line's bit. TestMemoryOnFirstUse now expects Bytes() = table + bitmap + counters.
++- **Concurrency:** `-race -count=20` passes (2 m 54 s; a first attempt hit go test's 10-minute default while the host was loaded). `replay.sh stress 300` gives 0/300 for each of the four racy regression tests.
++
++Numbers:
++- Skip rate with 1M absent keys: 92.3% / **51.3%** / 41.7% / 33.0% at 50 / 85 / 90 / 94% load.
++- LL misses/op on LabContainsAbsentBig (`speed-b1-labbench.patch`, a Capacity-4M table of ~75 MiB, past the 32 MiB simulated LLC): 1.150 → 0.830 (**−27.8%**).
++- Ir/op, library-only (total in brackets):
++
++| Benchmark | HEAD | B1c | change |
++|---|---|---|---|
++| InsertSteady | 1756.6 (1856.0) | 1766.7 (1881.1) | +0.58% (+1.35%) |
++| CheckAndTouchMissInsert | 9310.4 (9433.7) | 9335.9 (9455.2) | +0.27% |
++| InsertNearFull | 29296.3 (29441.4) | 29325.3 (29464.4) | +0.10% |
++| InsertSaturated | 8478.5 (10575.8) | 8478.5 (10575.9) | +0.00% |
++| ContainsAbsent | 358.0 | 352.7 | −1.5% |
++| LabContainsAbsentBig | 358.0 | 352.9 | −1.4% |
++| VelocityCount | 464.8 | 467.8 | +0.65% |
++| CheckAndTouchHit | 519.3 | 519.3 | +0.01% |
++
++The inserts' cost is the upkeep: `install`'s setDisp (+11 Ir/op on InsertSteady, +28–30 where more entries go in displaced) and `sweepDisp` (+1).
++
++Limits:
++- The win is DRAM traffic on absent-key reads (ContainsAt, CountAt of unknown keys), and only on tables past the LLC. On a table that fits, it is ~1.5% fewer instructions and nothing else.
++- This host's L3 is 260 MB, so the 75 MiB lab table fits it in real hardware: only cachegrind's 32 MiB model shows the misses.
++- The count batches' `warm` still prefetches every alternate line (shared with the touch batches).
++- Bytes() rises by 32 KB per 1M slots, which moves `tfbench -exact`'s memory line and the digest's `end=` hash.
++
++Quiet-host reading: `ContainsAbsent` on a table larger than that host's LLC (raise `LabContainsAbsentBig`'s capacity if 75 MiB fits), plus `InsertSteady`. For example: `verify/lrab.sh '^Benchmark(LabContainsAbsentBig|InsertSteady)$' <layouts> <rounds> HEAD+verify/experiments/speed-b1-labbench.patch HEAD+verify/experiments/speed-b1-labbench.patch+verify/experiments/speed-b1c-dispbitmap-reads.patch`.
++
++### P3. S7: multi-lane SipHash-2-4 for batches (AVX-512)
++
++Verdict: **candidate**, by the rule's timing branch, which was written before measuring for the case where cachegrind can't run AVX-512. Patch `speed-s7-siphash-avx512.patch`, +229/−0, all new code:
++- go/internal/siphash/batch.go (`Key.HashUint64s`)
++- batch_amd64.go and batch_amd64.s (`hash8x`, `cpuHasAVX512F`)
++- batch_other.go (no AVX-512 off amd64)
++- go/filter.go +14 (`Filter.HashUint64s`)
++- tests: go/internal/siphash/batch_test.go and go/hashbatch_test.go
++
++What it is. A new API, `func (f *Filter) HashUint64s(keys, out []uint64)`; each `out[i]` equals `f.HashUint64(keys[i])`.
++- With Config.Key on a CPU with AVX-512F, `hash8x` hashes 8 keys per zmm register: SipHash-2-4's 14-instruction round on 8 lanes, with VPROLQ for the 64-bit rotates.
++- The keyed initial state, the length block 8<<56 and 0xff are broadcast once per call. The final XOR of four values is one VPXORQ and one VPTERNLOGQ $0x96.
++- The remainder, keyed filters on other CPUs, and every non-amd64 build use the scalar `HashUint64`. Unkeyed filters use the maphash loop.
++- Detection runs once (`cpuHasAVX512F`): CPUID max leaf ≥ 7, OSXSAVE, XGETBV's XCR0 & 0xE6 = 0xE6 (SSE, AVX, opmask, the upper zmm halves and zmm16–31), and CPUID.7.0:EBX bit 16.
++
++```asm
++#define ROUND \
++	VPADDQ Z1, Z0, Z0; VPROLQ $13, Z1, Z1; VPXORQ Z0, Z1, Z1; VPROLQ $32, Z0, Z0; \
++	VPADDQ Z3, Z2, Z2; VPROLQ $16, Z3, Z3; VPXORQ Z2, Z3, Z3; \
++	VPADDQ Z3, Z0, Z0; VPROLQ $21, Z3, Z3; VPXORQ Z0, Z3, Z3; \
++	VPADDQ Z1, Z2, Z2; VPROLQ $17, Z1, Z1; VPXORQ Z2, Z1, Z1; VPROLQ $32, Z2, Z2
++```
++
++Evidence: `TestHashUint64sMatches` covers every batch length 0–130, then 1M keys in batches of random lengths under random SipHash keys. It runs once through hash8x and once with AVX-512 forced off, and checks that entries past the batch are left untouched. `TestHashUint64sMatchesFilter` covers lengths 0–130 with and without Config.Key. `go vet` (asmdecl) passes, the package builds for arm64 and vets for 386, and the gates show no diff (sanity 54 s, digest 66 s, exact 25 s). Valgrind's CPUID reports no AVX-512, so cachegrind runs only the scalar path: the test under `valgrind --tool=none` logs `AVX-512F: false`.
++
++Numbers: `BenchmarkLabHashUint64s` (`speed-s7-labbench.patch`), 64 keys per op, 6 rounds in alternating order, `-benchtime 1s`:
++
++| round | batch64 ns/op (Mkeys/s) | scalar64 ns/op (Mkeys/s) | ratio |
++|---|---|---|---|
++| 1 | 186.9 (342.4) | 979.6 (65.3) | 5.24x |
++| 2 | 182.0 (351.6) | 1007.0 (63.6) | 5.53x |
++| 3 | 195.5 (327.4) | 1040.0 (61.5) | 5.32x |
++| 4 | 214.6 (298.2) | 917.7 (69.7) | 4.28x |
++| 5 | 182.6 (350.5) | 923.8 (69.3) | 5.06x |
++| 6 | 183.7 (348.4) | 939.6 (68.1) | 5.11x |
++
++That is ~2.9–3.4 ns per key batched against ~14–16 ns per key one at a time; 6/6 rounds at ≥ 2x (bar 2x).
++
++Limits:
++- It is an API addition. Existing calls are unchanged, and it pays only for callers that hash integer keys in batches under Config.Key, for example before CheckAndTouchBatch.
++- There is no AVX2 path: AVX2 has no 64-bit rotate.
++- On some Intel parts, heavy zmm use can lower the core's clock for a while; that is worth watching in a mixed workload.
++
++Quiet-host reading: on an AVX-512 host, `BenchmarkLabHashUint64s/{batch64,scalar64}`. On a host without AVX-512, batch64 is the scalar loop, so expect ~1.0.
++
++### P4. S2d: S2's SWAR overflow match on the count path only
++
++Verdict: **candidate**. The rule was written before measuring, and kept unchanged from S2c's first version; the experiment itself was asked for after the round. Patch `speed-s2c-ghost-swar-count.patch`, +194/−7:
++- go/ghost.go +106, additions only: `ghMatch`, `addMatches`, `estimateSWAR`. HEAD's `estimate` is byte-for-byte unchanged.
++- go/touch.go +13/−6: `addSketch` takes a `swar` flag, and `count` passes true.
++- go/filter.go +1/−1: ContainsAt passes false.
++- go/ghost_swar_test.go +74: two tests.
++
++What it is. The overflow table packs three 21-bit entries per word: a 14-bit fingerprint (bits 7–20 of a lane), a 5-bit count and a 2-bit slice. `ghMatch` compares all three fingerprints with the key's at once. XORing the word with the fingerprint replicated into each field, and masking to the fields, leaves a field zero exactly where it matches. Adding 0x3FFF to each 14-bit field then carries into the masked-out bit above it (bits 21, 42, 63) exactly when the field is non-zero. Since 0x3FFF + 0x3FFF < 2^15, no carry crosses into the next lane: the test is exact, with no false matches. Age and count are decoded only for matching lanes. Word 0's first lane holds the floors and is left out. Counts use this scan; touches and ContainsAt keep HEAD's per-entry scan.
++
++```go
++const (
++	ghLanes  = 1 | 1<<ghEntryBits | 1<<(2*ghEntryBits)
++	ghFPLow  = (1<<ghFPBits - 1) << (ghCntBits + ghSlBits) * ghLanes
++	ghFPMask = ghFPLow
++	ghCarry  = 1 << ghEntryBits * ghLanes
++)
++
++func ghMatch(w, fpRep uint64) uint64 {
++	x := (w ^ fpRep) & ghFPMask
++	return ^(x + ghFPLow) & ghCarry
++}
++
++// touch.go, addSketch
++if g := f.gh.Load(); swar {
++	s, ok = g.estimateSWAR(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now)
++} else {
++	s, ok = g.estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now)
++}
++```
++
++Evidence: the gates show no diff (sanity 67 s, digest 83 s, exact 28 s). `TestGhostMatchExact` checks 4M random words, plus 12M words built from the key's fingerprint, its neighbours, all-ones and empty fields. `TestGhostScansAgree` compares estimateSWAR with estimate on tables filled past capacity (floors raised), across 3 table shapes, 4 windows and 3 clocks; it fails when word 0's lane 2 is dropped from the SWAR scan.
++
++Numbers: lab copies of the overflow benchmarks with deterministic keys (`speed-s2-labbench.patch`; the stock ones hash with a per-process random seed). Library-only, total in brackets:
++- LabCountOverflowLive: 1810.5 → 1529.2 (**−15.5%**; 1824.2 → 1541.6). The scan itself goes from 1075.0 to 788.6 Ir/op (−26.6%).
++- LabTouchOverflowLive: 6109.3 → 6114.8 (**+0.09%**; 7271.9 → 7282.8). That is +4.0 for the flag's branch in addSketch.
++- heavy16x pairs (reported): 0.907, 0.971, 1.007, 0.994, 0.941, 0.974. No gain was expected: the flood's operations are TouchAt.
++
++Limits:
++- It helps only counts while the overflow table is live, that is, during floods past the stash.
++- The touch path's share of S2's gain is left out: S2's touch scan was −4.7% library Ir, and S2's heavy16x pairs were ≥ 1.05 in 5 of 6.
++- ContainsAt keeps the per-entry scan; it could take the SWAR one too.
++
++Quiet-host reading: CountOverflowLive, the lab copy for instruction counts or the stock one for time.
++
++### P5. S4b: victim scoring without the view (post-hoc)
++
++Verdict: **candidate, post-hoc**. Under S4's pre-registered rule this patch failed, because CheckAndTouchMissInsert was −0.08% against a 3% bar. S4b re-measures the same patch under a rule relaxed at the person's request after those numbers were known. MissInsert moved from "must drop 3%" to "must not rise". Patch `speed-s4-mass-noview.patch`: go/register.go +24/−4, plus go/mass_exp_test.go +73 (TF_EXP=1).
++
++What it is. `mass` scores eviction victims in `claimAt` and the stash's choices. For a register (as opposed to a hot entry) it now reads the counters straight from word1 instead of building and copying the 80-byte `view`. With only bucket 0 filled (estimate's early case), mass is c0 if bucket 0 ends after the horizon's oldest unit, else 0. Otherwise it walks the buckets exactly as `viewMass` does, reading each counter in place. Hot entries still go through the view.
++
++```go
++reg := w1 & regMask
++if reg == 0 {
++	return 0
++}
++e := regEpoch(w1, f.unitOf(last))
++oldest := int64(now-min(now, f.horizon)) / int64(f.unit) // as viewMass
++if e+1 <= oldest {
++	return 0
++}
++if reg>>bucketBits0 == 0 {
++	return reg
++}
++n, top := reg&(1<<bucketBits0-1), bucketStart(e, 0)
++for j := 1; j < nBuckets && top > oldest; j++ {
++	n += reg >> bucketShift[j] & (1<<bucketBits[j] - 1)
++	top = bucketStart(e, j)
++}
++return n
++```
++
++Evidence: the gates show no diff (sanity 68 s, digest 81 s, exact 28 s). `TestMassMatchesView` compares the new mass with the view's walk on 20M registers biased to edges:
++- registers: empty, bucket 0 alone, full / one-event / random counters, every epoch offset;
++- last touches on and beside unit boundaries;
++- clocks at the last touch, behind it, at the horizon and on unit boundaries.
++
++It finds no difference. With `e+1 <= oldest` mutated to `<`, it fails at case 84.
++
++Numbers (library-only, total in brackets):
++- InsertSaturated: 8478.3 → 7399.4 (**−12.7%**; 10548.2 → 8832.5, **−16.3%**). By function: viewOf −910, duffcopy −546 (the view's copy), mass −169, duffzero −104.
++- Unchanged: CheckAndTouchMissInsert −0.05%, CheckAndTouchHit +0.00%, InsertSteady −0.01%, InsertNearFull −0.07%, TouchAndCount +0.01%.
++
++Limits:
++- It only pays where full lines pick victims: saturated tables and floods.
++- Read it as post-hoc.
++
++Quiet-host reading: InsertSaturated.
++
++### P6. S3: the overflow table's add, word by word
++
++Verdict: **candidate on Ir alone** (pre-registered rule; its flood part failed, so no flood gain is claimed). Patch `speed-s3-ghost-add-words.patch`, go/ghost.go +29/−14; no new tests.
++
++What it is. `ghost.add` used to load one bucket word per entry and compute `k/3` and `k%3` for each of the 23 entries. It now loads each word once and decodes its three entries from that one load, in the same entry order. A word whose entries are all empty is skipped: it counts as the bucket's first free entry if none was found yet, and word 0's floor lane is left out. A merge's CAS still compares the whole word as read.
++
++```go
++for wi := range ghWords {
++	w := &g.words[base+wi]
++	old := atomic.LoadUint64(w)
++	k, sh := wi*ghPerWord, uint(0)
++	if wi == 0 {
++		k, sh = 1, ghEntryBits
++	}
++	if old>>sh == 0 {
++		if free[bi] < 0 {
++			free[bi] = k
++		}
++		continue
++	}
++	for ; sh < ghPerWord*ghEntryBits; k, sh = k+1, sh+ghEntryBits {
++		e := old >> sh & ghEntryMask
++		// ... the same body as before (free, live, merge, victim)
++	}
++}
++```
++
++Why answers can't move: the entry order, the free and victim choices and the CAS operand are all the same. Three loads of one word are replaced by one load whose value all three decodes use. That is an interleaving the old code also allowed, since Go's atomics are sequentially consistent.
++
++Numbers:
++- `BenchmarkLabGhostAdd` (`speed-s3-labbench.patch`: a 1,024-bucket overflow table filled first, then one add per op of one of 65,536 histories, counts 1–4): 3275.4 → 2917.4 Ir/op (**−10.9%**; library-only the same). D1 misses/op 0.458 → 0.457.
++- heavy16x pairs: 1.022, 1.033, 0.932, 0.922, 0.929, 1.149 (1 of 6 ≥ 1.05; reported).
++- Gates: no diff (sanity 52 s, digest 68 s, exact 24 s).
++
++Limits: the add is a small share of a flood's time next to the scan (S2/S2d), so expect little in whole-flood numbers.
++Quiet-host reading: LabGhostAdd, and heavy16x together with S2d.
++
++## Summary
++
++Every patch under `go/verify/experiments/speed-*.patch` applies to main (63b118d) with `git apply --directory=go`. The passing experiments are written up in full in **Passing experiments** above. Ir/op is cachegrind's, n = 50000/150000 (SipHash 500000/1500000); floods are at a quarter of the paper's scale (n = 65,536).
++
++| Exp | Verdict | Rule | Key numbers | Patch |
++|---|---|---|---|---|
++| B1c bitmap, read paths only | **candidate** | holds | LL misses −27.8% on absent reads; inserts +0.0–0.6% (library); ContainsAbsent −1.5% Ir; TLA+, race ×20, stress 300 clean | speed-b1c-dispbitmap-reads |
++| B1 displacement bitmap (+ B1b) | not adopted | insert Ir ≤ +1% failed | skip 51.3% at 85% load; LL misses −28.3% (75 MiB table); InsertSteady +2.7% / +1.16%; TLA+ ok, guards fail as required; race ×20, stress 300 clean | speed-b1-dispbitmap(-v1) |
++| S1 overflow prefetch (+ S1b) | not adopted | S1: CheckAndTouchHit +1.23%; S1b: floods | S1b heavy16x 0.87–0.97, heavy4x 0.74–0.98 (0/6 ≥ 1.10) | speed-s1-ghost-prefetch(-v1) |
++| S2 SWAR overflow match | not adopted | touch Ir −10% failed | Count −15.3%, Touch −4.0%; estimate −26.6%; heavy16x ≥ 1.05 in 5/6 | speed-s2-ghost-swar |
++| S2c/S2d SWAR on the count path only | S2c not adopted; **S2d candidate** | S2c: touch +0.72%; S2d holds | S2d: LabCountOverflowLive −15.5%, LabTouchOverflowLive +0.09% (library); heavy16x 0.91–1.01 (touches unchanged) | speed-s2c-ghost-swar-count(-v1) |
++| S3 ghost add word by word | **candidate (Ir only)** | holds on Ir; floods 1/6 | LabGhostAdd −10.9% | speed-s3-ghost-add-words |
++| S4 mass without the view | not adopted | MissInsert −3% failed | InsertSaturated −16.5%; MissInsert −0.08% | speed-s4-mass-noview |
++| S4b S4, MissInsert out of the rule (post-hoc) | **candidate (post-hoc)** | relaxed rule holds | InsertSaturated −12.7% library (−16.3% total); MissInsert −0.05%; others within +0.01% | speed-s4-mass-noview |
++| S5 bounds checks, inlining | **candidate** | holds | CheckAndTouchHit −8.3%, HitCached −7.3%, TouchAndCount −11.7%, VelocityCount −9.5%, InsertSteady −1.8%, ContainsAbsent 0 | speed-s5-bce-inline |
++| S6 scalar SipHash (+ S6b) | not adopted | 33B −10% failed | u64 −13.8%, 11B −17.2%, 21B −20.6%, 33B −6.3% | speed-s6-siphash(-v1) |
++| S7 AVX-512 SipHash batches | **candidate** | holds (timing branch) | 4.3–5.5x keys/s, 6/6 rounds | speed-s7-siphash-avx512 |
++
++Candidates for the quiet host, most promising first:
++1. **S5** (`speed-s5-bce-inline.patch`): 7–12% fewer instructions on the hit and count paths every caller takes, from three small, exact edits; read CheckAndTouchHit, TouchAndCount and VelocityCount.
++2. **B1c** (`speed-b1c-dispbitmap-reads.patch`, added after the round): 28% fewer LL misses for absent-key reads on tables past the LLC at a 0.0–0.6% instruction cost to inserts; read ContainsAbsent on a table larger than the quiet host's LLC, and InsertSteady.
++3. **S7** (`speed-s7-siphash-avx512.patch`): 4–5x the keyed integer hashing rate in batches on AVX-512 hosts; a new API, so it only helps callers that hash in batches.
++4. **S2d** (`speed-s2c-ghost-swar-count.patch`, added after the round): 15.5% fewer instructions per count while the overflow table is live, touches unchanged; read CountOverflowLive.
++5. **S4b** (`speed-s4-mass-noview.patch`, post-hoc: passes only under a rule relaxed after S4's numbers were known): 16% fewer instructions per insert on a saturated table, nothing else moves; read InsertSaturated.
++6. **S3** (`speed-s3-ghost-add-words.patch`): 11% fewer instructions per overflow add, exact by construction; worth a heavy16x reading together with S2, whose flood pairs (5/6 ≥ 1.05) were the only ones this round to move.

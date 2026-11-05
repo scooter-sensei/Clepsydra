@@ -1,0 +1,47 @@
+diff --git a/verify/tla.sh b/verify/tla.sh
+index 5972ba9..a31b1e6 100755
+--- a/verify/tla.sh
++++ b/verify/tla.sh
+@@ -26,11 +26,12 @@ runs=0
+ 
+ # run <want: ok|violation> <model> <label> <invariants> <constant definitions...>
+ run() {
+-	local want=$1 m=$2 label=$3 inv=$4 got=ok states why c d
++	local want=$1 m=$2 label=$3 inv=$4 got=ok states why c d src
++	src=$m.tla; [ -f "$src" ] || src=experiments/$m.tla # an experiment's model (verify/tla/experiments)
+ 	shift 4
+ 	runs=$((runs + 1))
+ 	d="$tmp/$m-$runs"
+-	mkdir -p "$d" && tr -d '\r' <"$m.tla" >"$d/$m.tla"
++	mkdir -p "$d" && tr -d '\r' <"$src" >"$d/$m.tla"
+ 	(cd "$d" && java -cp "$J" pcal.trans -nocfg "$m.tla" >pcal.log 2>&1) || { cat "$d/pcal.log"; bad=1; return; }
+ 	{
+ 		echo "SPECIFICATION Spec"
+@@ -231,6 +232,19 @@ stashset() {
+ 	done
+ }
+ 
++# SpilledBit (claims E53, an experiment not adopted): a per-key bit that lets
++# touches and reads skip the overflow table, against an eviction and a
++# spill of the key's stashed history.
++spilledbit() {
++	local inv="ReadNotLow TouchNotLow" v t
++	for t in "Touches = 2,Reads = 1" "Touches = 1,Reads = 2"; do
++		run ok SpilledBit "fixed, ${t//,/, }" "$inv" "${t%%,*}" "${t#*,}" 'Variant = "fixed"'
++	done
++	for v in evictNoStripe wayFirst checkOutsideStripe noBit; do
++		run violation SpilledBit "$v" "$inv" 'Touches = 2' 'Reads = 1' "Variant = \"$v\""
++	done
++}
++
+ models=("$@")
+ [ ${#models[@]} -gt 0 ] || models=(WaitRoom RegisterEpoch Relocate RoomWays SlotHold TagStripe BumpABA HotEntry StashSet)
+ for m in "${models[@]}"; do
+@@ -244,6 +258,7 @@ for m in "${models[@]}"; do
+ 	BumpABA) bumpaba ;;
+ 	HotEntry) hotentry ;;
+ 	StashSet) stashset ;;
++	SpilledBit) spilledbit ;;
+ 	*) echo "unknown model $m"; bad=1 ;;
+ 	esac
+ done

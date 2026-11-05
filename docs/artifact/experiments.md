@@ -416,3 +416,109 @@ Mean MAE is the same within 0.001, and the 60 s error is **0.038 vs 0.024**. The
 | colocation, colocation-small-stash | 2ca617b; -small-stash on colocation | experiment E57: `TestColocation`, an attacker's keys sharing one or both of a victim's lines (found by a perfect oracle, or built), against a control of the same volume; `N17_STASH=64` runs it with a 64-entry stash | claims E57 |
 | decayed-rate | 2ca617b | experiment E58: `DecayedRateAt(h, tau, now)`, an exponentially decayed event rate from the register's buckets, and `TestDecayedRate` against the exact decayed rate | claims E58 |
 | fitted-cut | 2ca617b | experiment E59: `TestFittedCut`, the cut bucket's fraction fitted per context cell on training data (`N20_ADDITIVE=1`: a correction added to the uniform fraction), scored on held-out data; `N20_MAWI` names the MAWI reader's records | claims E59 |
+| spilled-bit-model | 8dd007a and later (`git apply --directory=go`) | the runner for experiment E53's model: `verify/tla.sh SpilledBit` (two sizes as designed, then each of four guards undone), the runner finding a model in `verify/tla/experiments/` when `verify/tla/` has none | claims E53. At 8dd007a with `TLC_WORKERS=1`: 7,694 and 6,206 states holding, as first read; each guard undone violates TouchNotLow (530–5,034 states) |
+| lab-notebook-experiments-2026-11 | 8dd007a and later (`git apply` from the root) | the notebook of lab/experiments-2026-11, `LAB-RESULTS.md`: host, gates, noise bar, and for E1–E16 the design, the rule as committed before the reading, the readings and the verdict | [below](#the-lab-branches-every-arm-and-where-it-is-recorded) |
+| lab-notebook-speed-2026-11 | 8dd007a and later (`git apply` from the root) | the notebook of lab/speed-2026-11, `SPEED-RESULTS.md`: B1, B1c and S1–S7 the same way, and the passing ones written up in full | [below](#the-lab-branches-every-arm-and-where-it-is-recorded) |
+| lab-notebook-next-2026-11 | 8dd007a and later (`git apply` from the root) | the notebook of lab/next-2026-11, `NEXT-RESULTS.md` (N1–N21, the gap audit's arms, M1), with its tools and raw readings under `lab/`: `duet.sh` (E47), `cg.sh` and `cgm.sh` (cachegrind), `fd.sh` (strict false denies), `flood.sh`, `gates.sh`, `pads.sh`, `n2.sh`, `a6-repro.sh`, `common.sh`, `ledger.py`; the MAWI reader `lab/mawi` (its own module: E59's `N20_MAWI` records, §7.2's light sources); `lab/readings/`, each arm's raw output. Also three arm patches with no copy above: `next-n14b-resize-evict` and `next-n16c-size-all` (their cases are now `TestResize`'s and `TestSnapshotSize`'s) and `next-n2-b1c-bytes-nobitmap` (prepared, never run) | [below](#the-lab-branches-every-arm-and-where-it-is-recorded) |
+
+## The lab branches: every arm and where it is recorded
+
+Four branches carried experiments after 63b118d, each arm's rule committed before its reading:
+
+- **lab/experiments-2026-11**: E1–E16, 43 commits (93b768c–9263915) from 63b118d.
+- **lab/speed-2026-11**: B1, B1c and S1–S7, 30 commits (82fbbe5–c7d55f1) from 63b118d.
+- **lab/next-2026-11**: N1–N21, the gap audit's arms and M1, 59 commits (f45141c–c02a974) from 2ca617b.
+- **fix/merge-own-stash**: M1's fix as a pull request (c8b6d56, 0c02e0f) from 2ca617b; it went in as 1cb3c35.
+
+The three labs ran on a 4-vCPU KVM guest of the Xeon host's description without performance counters (ns/op and cachegrind's instruction counts; [hosts](../README.md#hosts)); what was adopted was read again on the Ryzen host before it merged. The branches were deleted once every arm below was recorded, so their commits are no longer fetched: each notebook is in a `lab-notebook-*` patch (above), each arm's code in the patch named here, or in the tree where it was adopted. Arm names (E1, S2d, N14b) are the notebooks' own; claim ids (E28–E59, D, A, S) are this repository's.
+
+**lab/experiments-2026-11**
+
+| Arm | Verdict | Recorded as | Code |
+|---|---|---|---|
+| E1 ConstantTime's dither on a `tsc` clock | not adopted: that clock needs no fix | E28 | — (ct-dither-calibrated is the fix) |
+| E2 Go 1.27.3 | adopted (cedeefd) | D23 | `go.mod` |
+| E3 a size gate for the batch's lookup pass | not adopted | E29; §8.2 | batch-size-gate, batch-small-bench |
+| E4 a per-line overflow hint | not adopted | E30 | overflow-line-hint |
+| E5a, E5b breadth-first cuckoo search | not adopted | E31 | bfs-search, bfs-search-wide |
+| E6, E6b a saturation shortcut | not adopted | E32 | saturation-shortcut |
+| E7, E7b, E7c a first-touch doorkeeper | not adopted | E33 | doorkeeper, doorkeeper-degraded, doorkeeper-no-overwrite |
+| E8 median estimators for the cut bucket | not adopted | E34 | median-binomial, median-mixture |
+| E9 finer buckets near now, approximate old ones | not adopted | E35 | split-now-register |
+| E10 accuracy on real traffic (MAWI) | report | §7.2; the MAWI row of [claims' not-reproducible table](claims.md#not-reproducible) | — |
+| E11, E11b an incremental overflow-table sweep | not adopted; read again on the Ryzen host, failed again | E36, S79 | incremental-sweep, sweep-latency-test (and -v1 of each) |
+| E12 `TimeToCount` | not adopted | E37; §8.3 | time-to-count |
+| E13 `Merge` | adopted (cedeefd) | D24 | in the tree (`merge.go`) |
+| E14 snapshot and restore | not adopted (size 2.16% over `Bytes()`, bar 1%); N16's format adopted | E38, D27 | snapshot |
+| E15 a SIMD fingerprint compare | unmeasurable: a bound | E39 | — |
+| E16 interleaving a batch's keys (AMAC) | unmeasurable: a bound | E40 | — |
+
+**lab/speed-2026-11**
+
+| Arm | Verdict | Recorded as | Code |
+|---|---|---|---|
+| B1 the displacement bitmap on every lookup | not adopted | E41 | dispbitmap-all-lookups (and -v1), contains-absent-big-bench |
+| B1c the bitmap on reads only | adopted (24ea752), reverted (cbfb6e1) and held for the user | S73, A43, E46; §8.4 | dispbitmap-reads |
+| S1, S1b prefetching the overflow buckets | not adopted | E42 | overflow-prefetch (and -v1) |
+| S2 SWAR overflow match on every path | not adopted | E43 | overflow-swar-all-paths, overflow-live-lab-bench |
+| S2c, S2d SWAR overflow match on counts only | S2c failed its rule; S2d adopted (140823d), reverted on the Ryzen host (c305232) | S75, E45 | overflow-swar-count-flag (S2c), overflow-swar-count (S2d) |
+| S3 the overflow add word by word | adopted (562c1df) | S77 | in the tree |
+| S4 eviction scoring without the view | failed its rule (miss-inserts −0.08% in instructions, −0.05% in the library's own, against −3%) | S76 | — |
+| S4b S4 under a rule without MissInsert (written after S4's reading) | adopted (c2c8c0f) | S76 | in the tree |
+| S5 bounds checks and inlining | adopted (9946855) | S72 | in the tree |
+| S6, S6b a scalar SipHash rewrite | not adopted | E44 | siphash-scalar (and -v1) |
+| S7 multi-lane SipHash (AVX-512) | adopted (8269430) | S74 | in the tree (`HashUint64s`) |
+
+**lab/next-2026-11** (and fix/merge-own-stash)
+
+| Arm | Verdict | Recorded as | Code |
+|---|---|---|---|
+| N1 duet benchmarking | not adopted | E47 | `lab/duet.sh` (notebook) |
+| N2 the speed candidates stacked | not run: 2ca617b had adopted them | S72–S78 | next-n2-b1c-bytes-nobitmap (notebook), never run |
+| N3 the batch size gate again | not run: it needed N1's wall-clock bar | E29; §8.2 | — |
+| N4 14 freed bits, counters capped | void: the capped model is not the filter | E48 | — |
+| N4b the same, counters uncapped | worth building: a decision left to the user | E48; §8.4 | wide-registers |
+| N5 page-local alternate lines | not adopted | E49 | local-alt |
+| N6 `ActiveKeysAt` | not adopted | E50 | active-keys |
+| N7 work counters; E11b in work units | counters not adopted; E11b a candidate, failed on the Ryzen host | E51, S79 | work-counters, work-counters-sweep |
+| N8 backyard placement, simulated | not worth writing | E52 | backyard |
+| N9 a per-key spilled bit | not adopted | E53 | spilled-bit, spilled-bit-model |
+| N10 weighted touches (`TouchNAt`) | not adopted | E54 | touchn |
+| N11 a conditional touch | adopted (4579f36) | A45, S81 | in the tree (`TouchIfUnder`) |
+| N12 fine entries for short windows, simulated | not worth building | E55 | fine-entries |
+| N13 MAWI's light sources | report | §7.2; claims' MAWI row | `lab/mawi` (notebook) |
+| N14 resizing | adopted (50e9f5a) in the scope N14b and N14d set | D28, S81 | in the tree (`Resizable`) |
+| N15 `Merge` of hot entries, stashes and overflow tables | not adopted | E56 | merge-all |
+| N15b N15 with the stash recall | not adopted | E56 | merge-all-recall |
+| N16 a checked snapshot format | adopted (d03c19d) | D27, S80 | in the tree (`WriteTo`, `ReadFrom`) |
+| N17 a co-location attack | report | E57 | colocation |
+| N18 a stash model in TLA+ | the premise holds; it found D24's `Merge` defect | A44 | in the tree (`StashSet.tla`) |
+| N19 `DecayedRateAt` | not adopted | E58 | decayed-rate |
+| N20, N20b a fitted cut fraction | not adopted | E59 | fitted-cut |
+| N21 an AVX-512 overflow-table scan | not run: cachegrind can't decode AVX-512 and N1 gave no wall-clock bar | §8.3 | — |
+| M1 `Merge` keeps f's stashed history | adopted (1cb3c35, from fix/merge-own-stash) | D26 | in the tree |
+
+The gap audit re-ran N14–N20 against their specification and gave each gap that needed evidence an arm with its own rule:
+
+| Arm | Verdict | Recorded as | Code |
+|---|---|---|---|
+| N14b grow and shrink into sizes that evict | narrowed N14's claim: a grow from a filter that had evicted carries its losses for a horizon (4,412 unflagged lows, all in the transition) | D28 | `TestResize`'s grow from 1,280 (next-n14b-resize-evict in the notebook) |
+| N14d a shrink that evicts | holds | D28 | `TestResize`'s shrink to 1,280 |
+| N16b N16's clock line, 3 runs | holds: the line is wall-clock by design | D27 | — |
+| N16c the size with every section | void: the overflow table was never allocated (single-touch histories are shed under SpillMin 4) | — | next-n16c-size-all (notebook) |
+| N16f N16c with SpillMin 1 | holds: +0.006% | D27 | `TestSnapshotSize` |
+| N17b N17 over 10 seeds | holds | E57 | colocation |
+| N17c N17 with a 64-entry stash | 19.7% of the victim's reads Degraded and 22 unflagged lows: a contract question left to the user | E57; §8.4 | colocation-small-stash |
+| N18c StashSet again | holds: the holding runs' state counts identical | A44 | — |
+
+The audit's other arms were proposed and not run; each gap is stated where its claim is:
+
+| Arm | What it would read | Stated in |
+|---|---|---|
+| N14c | a lock-free `Resizable` whose move recalls the new filter's stash, fed by 4 goroutines | D28's scope; [record/decisions.md](../record/decisions.md) (resizing) |
+| N16d | 100,000 structured mutations of a snapshot with its check words recomputed: refused, or restored consistent | D27 (a snapshot is trusted input) |
+| N16e | a big-endian restore (`GOARCH=s390x` under qemu) | D27 |
+| N17d | the draws a timing attacker needs, on a host with a usable wall-clock bar | E57 (no timing oracle measured) |
+| N18b | StashSet with ConstantTime's parked keys and `putBack` | A44 (not modelled) |
+| N19b | `DecayedRateAt` with hot keys read through their entries and evicted keys through the overflow table | E58 |
+| N20c | the fitted cut trained on three or more trace days and more seeds | E59 |

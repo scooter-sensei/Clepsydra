@@ -1,0 +1,497 @@
+diff --git a/LAB-RESULTS.md b/LAB-RESULTS.md
+new file mode 100644
+index 0000000..6f6bf75
+--- /dev/null
++++ b/LAB-RESULTS.md
+@@ -0,0 +1,491 @@
++# Lab results, 2026-11
++
++Experiments on `main` at 63b118d, branch `lab/experiments-2026-11`. Rules are written and pushed before each reading; nothing here is adopted. Patches are relative to `go/` and live in `go/verify/experiments/lab-*.patch`.
++
++## Host
++
++- 4 vCPUs, Intel Xeon Processor @ 2.10GHz (KVM guest, `hypervisor` flag); L2 8 MiB (4 instances), L3 260 MiB; no MHz line reported.
++- Flags of note: avx2, avx512f, avx512bw, avx512vl, bmi2, constant_tsc, tsc_known_freq, rdtscp.
++- Clock source: `tsc` (available: tsc, kvm-clock). `perf_event_paranoid` = 2.
++- Perf counters: **not available**. `BenchmarkCheckAndTouchHitCached` prints no cycles/op column (75.19 ns/op), so every reading here is ns/op.
++- 15 GB RAM. Go 1.24.7 (`go version go1.24.7 linux/amd64`, already in the toolchain cache).
++
++## Gates (Batch 0.3)
++
++On HEAD, all pass with no diff: `./test.sh sanity` 59 s; the answer digest (30 cells) 81 s; `tfbench -exact` 24 s.
++
++## Noise and the bar b (Batch 0.4)
++
++`NULL=1 verify/lrab.sh '^Benchmark(CheckAndTouchHit|TouchAndCount|InsertSteady)$' 4 2 HEAD HEAD`, 568 s (ns/op):
++
++| Benchmark | a0 median | layouts spread | sd layout / run | a1 (HEAD again) | null |
++|---|---|---|---|---|---|
++| TouchAndCount | 187.8 | 1.311 | 0.100 / 0.073 | 1.098 [0.914, 1.319] | 1.202 [0.969, 1.490] |
++| InsertSteady | 465.9 | 1.157 | 0.000 / 0.185 | 0.911 [0.787, 1.055] | 0.851 [0.757, 0.957] |
++| CheckAndTouchHit | 148.4 | 1.254 | 0.082 / 0.106 | 1.126 [0.789, 1.606] | 1.101 [0.924, 1.312] |
++
++Intervals reach far outside [0.98, 1.02]; the largest |1 − geomean| is 0.202 (TouchAndCount's null arm), so **b = 0.41**. This host's run-to-run sd is 7–19%: from here on "faster" = geomean below 0.59 with its interval below 1.00, "slower" = above 1.41 with its interval above 1.00, and a reading whose null arm leaves [0.59, 1.41] is void. Only very large effects can register through lrab on this host; flood throughput (pairs of `h2h run`) and the deterministic outputs carry most of the weight. Sizing: 4 layouts × 2 rounds with three arms and three benchmarks took 9.5 minutes, so readings stay at 4 × 2 with at most four benchmarks per command.
++
++## Flood traces (Batch 0.5)
++
++`h2h gen -dir /tmp/lab/h2h -n 65536`: **a quarter of the paper's scale** (65,536 keys, 77,104 slots); every flood number below is at this scale. heavy1x–16x: 1.70 M–26.0 M ops; light16x (one-event keys): 1.32 M ops; 61,000 probes each. One `h2h run -pass t1` of heavy16x on HEAD: 6.8 s wall, 3.86 Mops/s; `-pass acc` 8.1 s, 3.23 Mops/s, 2,034,808 bytes; strict false denies (`h2h falsedeny`) 39,951 of 40,000 (past the ~4.5x cliff, as §8.1 says).
++
++Flood throughput method: per arm a copy of the tree with the patch applied and `go build -o /tmp/lab/h2h-<arm> ./cmd/h2h`; 6 pairs of `h2h run -pass t1` on one trace, arms alternating, the order reversed on even pairs.
++
++## E1 ConstantTime on a slow-clock VM
++
++- Status: done. Verdict: **not adopted** (HEAD already passes; nothing for the patch to fix on this host).
++- Rule (before any reading): the patch `verify/experiments/ct-dither-calibrated.patch` is a candidate if HEAD fails `TestCTPadEndIsDithered` or its distinguisher exceeds 52% (target 13) in any of 3 runs, while HEAD + the patch passes both tests in all 3 runs with every distinguisher at or under 52%. Otherwise: not adopted (no slow clock to fix here). The cost of one `time.Now()` is reported beside it; this host's clock source is `tsc`, so a fast read is expected.
++- Commands: `TF_CTEXP=1 go test -count=1 -run '^(TestCTPads|TestCTPadEndIsDithered)$' -v .` ×3 on HEAD and on HEAD + the patch; a `time.Now()` benchmark kept in /tmp.
++- Clock read: `time.Now()` 64.8–68.9 ns, `time.Since` (monotonic only) 37.5–49.3 ns (3 runs each): under the 128 ns dither, as the `tsc` clock source predicts. This VM is not a slow-clock host.
++- HEAD, 3 runs: `TestCTPadEndIsDithered` PASS 3/3; `TestCTPads` PASS 3/3. Distinguisher (percent correct) over the padded modes (fixed 1 µs, fixed 3 µs, 3 µs + Count auto, AutoPad): Count 50.2–50.7%, Touch 50.3–50.8% (D ≤ 0.017). Unpadded (`off`, the reference row): Count 60.7–65.9%, Touch 88.0–91.3%.
++- HEAD + patch: the patch no longer applies (`filter.go:1091`: filter.go was split since it was written). It was not ported: the rule's first condition (HEAD fails) is false, so the patch's own readings cannot change the verdict. The three "patch" runs were HEAD again and read alike.
++- Patch: none (no code change).
++
++## E2 Newer Go toolchain
++
++- Status: done. Verdict: **candidate** (go1.27.3).
++- Rule (before any reading): with GOTOOLCHAIN = the newest go1.27.x on proxy.golang.org (else go1.26.x), a candidate if every gate output is identical to the committed expected files (sanity passes; digest and `tfbench -exact` diff empty) and none of the six core benchmarks (CheckAndTouchHit, CheckAndTouchHitCached, TouchAndCount, VelocityCount, InsertSteady, CheckAndTouchMissInsert) reads above 1 + b = 1.41 of Go 1.24.7's in 6 or more of 8 alternated rounds. lrab.sh can't compare toolchains and layout moves with the compiler, so the ratios are one layout per toolchain.
++- Toolchain: go1.27.3 (newest go1.27.x on proxy.golang.org: 1.27.0–1.27.3), downloaded through GOTOOLCHAIN.
++- Gates under go1.27.3: sanity PASS (70 s); answer digest identical (30 cells); `tfbench -exact` identical.
++- Benchmarks: `go test -c` under each toolchain, the six run alternated (order reversed on even rounds), 8 rounds, default benchtime, ns/op; one layout per toolchain (the compiler moves the layout, and lrab can't compare toolchains).
++
++| Benchmark | 1.24.7 median | 1.27.3 median | ratio of medians | per-round 1.27/1.24 | rounds > 1.41 |
++|---|---|---|---|---|---|
++| CheckAndTouchHit | 136.5 | 139.9 | 1.025 | 1.05 1.06 1.13 1.29 1.03 0.98 0.90 1.24 | 0/8 |
++| CheckAndTouchHitCached | 71.0 | 69.7 | 0.982 | 0.91 0.89 1.15 0.66 0.95 1.02 0.84 1.27 | 0/8 |
++| CheckAndTouchMissInsert | 1737.0 | 1566.5 | 0.902 | 0.89 0.93 0.76 0.93 0.93 0.93 1.00 0.86 | 0/8 |
++| InsertSteady | 396.9 | 356.1 | 0.897 | 0.90 1.06 0.98 1.13 1.10 0.75 0.79 0.73 | 0/8 |
++| TouchAndCount | 173.6 | 160.1 | 0.923 | 0.90 0.82 0.64 0.84 0.81 1.08 0.94 1.03 | 0/8 |
++| VelocityCount | 126.8 | 119.6 | 0.943 | 0.89 1.21 1.04 0.69 1.00 1.15 0.83 1.29 | 0/8 |
++
++- By the rule: every gate identical and no benchmark above 1.41 in 6 or more rounds (0 of 8 everywhere): candidate. MissInsert was below 1.00 in 7 of 8 rounds (one at 1.00), a hint of a real gain on the insert path; with b = 0.41 nothing here can be called faster.
++- Patch: none (only GOTOOLCHAIN changes; adopting it would mean a new `go`/`toolchain` line in go.mod and a regenerated note in docs).
++
++## E3 Size gate for the batch's lookup pass
++
++- Status: done. Verdict: **not adopted** (the rule failed: the small-table gain is real but under the bar).
++- Sweep (before the rule; `zz_sweep_test.go` in a copy of the tree, not committed): CheckAndTouchBatch against a plain CheckAndTouchAt loop (what a gated batch runs) on tables at 85% load, 4 runs each, medians of ns/key, batch/loop: 256 KiB 1.311, 512 KiB 1.235, 1 MiB 1.250, 2 MiB 1.134, 4 MiB 0.917, 8 MiB 0.944, 16 MiB 0.636, 64 MiB 0.402. The crossover is between 2 and 4 MiB (this host: 2 MiB L2 per core, 260 MiB shared L3). Gate: skip `warm` when the table's words take 2 MiB or less (`batchGateBytes = 2 << 20`; ConstantTime keeps warm).
++- Change: `lab-e3-batch-size-gate.patch` (the gate in `batch.go` for all three batch calls + `BenchmarkCheckAndTouchBatchSmall`, a 1 MiB table); `lab-e3-batch-small-bench.patch` is the benchmark alone, the base arm.
++- Rule (before any reading): `NULL=1 verify/lrab.sh '^BenchmarkCheckAndTouchBatch(Small)?$' 4 2 HEAD+lab-e3-batch-small-bench.patch HEAD+lab-e3-batch-size-gate.patch`. Candidate if CheckAndTouchBatchSmall is faster (geomean below 1 − b = 0.59, interval below 1.00), CheckAndTouchBatch (32 MiB table, ungated) is not slower (not above 1.41 with its interval above 1.00), and the three gates pass with no diff. Void if the null arm leaves [0.59, 1.41].
++- Gates on HEAD + the gate patch (a full copy of the repository; a first try on a copy of `go/` alone failed only `TestConformance`, which reads `../spec/vectors`): sanity PASS, digest identical, `tfbench -exact` identical.
++- Reading (119 s, ns/op):
++
++| Benchmark | a0 (bench only) | sd layout / run | gated / a0 | null |
++|---|---|---|---|---|
++| CheckAndTouchBatchSmall (1 MiB) | 84.8 | 0.000 / 0.070 | **0.856 [0.822, 0.892]** | 1.013 [0.968, 1.060] |
++| CheckAndTouchBatch (32 MiB) | 84.0 | 0.027 / 0.059 | 1.057 [0.951, 1.174] | 1.061 [0.930, 1.209] |
++
++- Null arm inside [0.59, 1.41]: valid. By the rule: Small is not below 0.59, so not "faster" by this host's bar; the large table is not slower; gates clean. Rule failed. The small-table interval excludes 1.00 (a 14% gain, matching S48's 0.86x), so on a host with a usable bar this would be worth re-reading; the gate size (2 MiB) is this host's L2 and would need a per-host or cache-size-derived threshold.
++- Patches: `go/verify/experiments/lab-e3-batch-size-gate.patch` (gate + benchmark), `go/verify/experiments/lab-e3-batch-small-bench.patch` (benchmark only).
++
++## E4 Per-line overflow hint
++
++- Status: done. Verdict: **not adopted** (rule failed: no speed gain, digest differs).
++- Design (before any reading): in the ghost table, a side array of 2-bit stamps, one per primary line of the main table (32 per word: lines/256 bytes). `ghost.add` sets the stamp of the history's primary line (`id >> 28`) to its newest slice (mod 3, + 1; the max with the stamp's live slice) before writing the entry or floor, committing only while the epoch it decoded against is current, as the entries do. `advance` clears dead stamps in the same sweep as the entries, so stamps decode unambiguously against the epoch (live slices are cur−2..cur). A read loads the epoch, the stamp, and the epoch again (retrying if it moved), and skips the overflow read when the stamp is 0 or its slice is dead at `now` over the horizon. ConstantTime always reads (its loads must not depend on the key).
++- Note written before measuring: a skipped read drops what the overflow table gives a key that never spilled: other keys' floors (to `Upper`) and fingerprint matches with other keys' entries (to `Count`, `Seen`, `Degraded`). `Upper` stays at or above the truth (the key's own histories always set its line's stamp first), but those answers change, so the digest may differ; the rule's "digest identical" is kept as written.
++- Rule (the experiment's, unchanged, before any reading): CountOverflowLive and TouchOverflowLive each faster (geomean < 0.59, interval < 1.00); no benchmark slower (CheckAndTouchOverflowLive, CheckAndTouchHit, TouchAndCount, InsertSteady, CheckAndTouchMissInsert not above 1.41 with the interval above 1.00); heavy16x Mops/s ≥ 1.10x HEAD's in at least 5 of 6 pairs; digest identical; `go test -race -count=3 -run '^TestGhost' .` passes. Void if a null arm leaves [0.59, 1.41]. Also reported: heavy4x pairs, Bytes() before and after, false denies.
++- Patch: `go/verify/experiments/lab-e4-overflow-line-hint.patch` (ghost.go, overflow.go, touch.go, filter.go's Bytes).
++- Gates: `tfbench -exact` identical. Digest: 18 of 30 cells differ (every non-ConstantTime `repeat=6000` cell, plain and `spill1`, plain and Background; the ConstantTime cells and `repeat=64` cells are identical; `floored 0` in them, so the change is fingerprint matches with other keys' entries no longer read). Sanity fails 2 tests, both answers the note predicted: `TestConformance/overflow` op 123, the first touch of `mid:123`, wants `Seen:true Count:2 Degraded:true` (HEAD reads another key's matching entry) and gets `Seen:false Count:1` (the truth); `TestMemoryOnFirstUse` expects the old byte count (+ the hint array). `go test -race -count=3 -run '^TestGhost' .`: PASS.
++- lrab (4 × 2, ns/op; null arms inside [0.59, 1.41], valid):
++
++| Benchmark | HEAD median | hint / HEAD | null |
++|---|---|---|---|
++| CountOverflowLive | 236.5 | 1.025 [0.978, 1.075] | 1.013 [0.920, 1.116] |
++| TouchOverflowLive | 1043.6 | 0.972 [0.886, 1.067] | 1.034 [0.849, 1.261] |
++| CheckAndTouchOverflowLive | 894.6 | 1.003 [0.918, 1.096] | 1.010 [0.929, 1.097] |
++
++- Flood throughput (t1, 6 pairs, quarter scale), hint / HEAD: heavy4x 0.933 1.061 0.990 0.937 1.094 1.015; heavy16x 0.921 0.938 0.982 0.958 1.006 1.038 (0 of 6 at ≥ 1.10). HEAD heavy16x 4.01–4.48 Mops/s.
++- Why no gain: a line of 4 slots sees the spills of every flood key homed there; at 16x (16 × 4 = 64 flood keys per line per pass) every line's stamp is live, so the skip never fires where the 47% of CPU is. The hint is per line, but the flood's spills are per key: a per-line filter can only help when lines have no spilled key at all, which floods don't leave. The overflow benchmarks read alike for the same reason.
++- Strict false denies (h2h acc, one round; HEAD / hint, of 40,000; light16x of 60,000): heavy1x 3 / 0, heavy2x 22 / 27, heavy4x 132 / 114, heavy16x 39,950 / 39,957, light16x 0 / 0. Bytes: 2,034,808 → 2,039,632 (+4,824, +0.24%; lines/256 bytes for the hint). HEAD's own heavy16x read 39,951 in Batch 0 and 39,950 here: `acc` answers move by a few between runs.
++- The core-benchmark lrab group (Hit, TouchAndCount, InsertSteady, MissInsert) was not run: the rule had already failed on four of its criteria.
++
++## E5 BFS cuckoo search, then a higher default load
++
++- Status: done. Verdict: **not adopted** (rule 1 failed for both arms; rule 2 not written).
++- Design (before any reading): `claimAt`'s iterative-deepening DFS (depth ≤ 3, each pass re-scanning the shallower levels) is replaced by a read-only BFS over the same pressure-scaled budget (one unit per alternate line scanned, `relocBudget` 500) and depth bound (`relocDepth` 3), each line scanned once. When a scanned line has a free or expired slot, the path root..leaf is executed back to front by `relocate` restricted to that path (a `path` argument: at each level it tries only the path's slot, after the line's free slots as now), so the copy/hand-off/move-count protocol is unchanged. A path that fails on execution (a slot changed) is dropped and the BFS continues. With the budget at 500, BFS reaches 332 depth-3 lines where the DFS reaches 116.
++- Rule 1 (before any reading): in `tfbench -exact`, churn load=1.15 (97.8% slot load) evictions at most half of HEAD's 4,577 (≤ 2,288); InsertNearFull faster (geomean < 0.59, interval < 1.00); InsertSteady and CheckAndTouchMissInsert not slower (not above 1.41 with the interval above 1.00); InsertSaturated reported. `go test -race -short -count=1 .` and `verify/replay.sh stress 100` pass. Answers change: the tfbench deltas (evictions, relocations, missed keys, FPR rows) and the digest diff are reported. Void if a null arm leaves [0.59, 1.41].
++- Rule 2 (Load 0.90) is written only if rule 1 holds.
++- E5a (BFS, same budget 500, depth 3; `lab-e5-bfs-search.patch`): `tfbench -exact` differs only in churn load=1.15: evictions 4,577 → **2,703** (0.59x; the rule asks ≤ 2,288), relocations 932,499 → 968,829, missed 0 → 0, false_seen 0 → 0; every other row identical (static_fpr 18). **Rule 1 failed** for E5a on its first criterion; its speed readings were not taken.
++- E5b, declared after E5a's reading, before its own (`lab-e5b-bfs-search-wide.patch`: E5a with the BFS budget 1000 (pressure-scaled the same way) and depth bound 4, i.e. "a larger budget of lines" as the experiment allows). Its rule is rule 1 unchanged: evictions at 97.8% ≤ 2,288; InsertNearFull faster; InsertSteady and MissInsert not slower; race and replay pass. Rule 2 only if E5b holds.
++- E5b `tfbench -exact`: only churn load=1.15 differs: evictions 4,577 → **369** (0.08x), relocations 932,499 → 1,023,957, missed 0, false_seen 0; static_fpr and every other row identical.
++- E5b lrab (4 × 2, ns/op; null arms inside [0.59, 1.41], valid):
++
++| Benchmark | HEAD median | E5b / HEAD | null |
++|---|---|---|---|
++| InsertNearFull | 3923.2 | **1.358 [1.210, 1.524]** | 0.915 [0.880, 0.951] |
++| CheckAndTouchMissInsert | 1651.2 | 1.140 [0.975, 1.332] | 0.995 [0.889, 1.114] |
++| InsertSteady | 387.8 | 1.086 [0.886, 1.330] | 0.987 [0.821, 1.188] |
++| InsertSaturated | 1321.2 | 0.994 [0.900, 1.098] | 0.930 [0.867, 0.997] |
++
++- By rule 1: evictions 369 ≤ 2,288 holds, but InsertNearFull is not faster: it is 36% slower, its interval wholly above 1.00 (under the 1.41 "slower" bar only because b is wide). **Rule 1 failed for E5b**; rule 2 (Load 0.90) was not written or read. The wider search buys evictions with more lines scanned per near-full insert: BFS finds what DFS gives up on, but at about twice the work where it searches.
++- Checks on E5b: `go test -race -short -count=1 .` PASS (216 s). `verify/replay.sh stress 100` and the gates were not run once the rule had failed (E5a's tfbench shows the only answer change is the churn row's evictions and relocations).
++- Patches: `go/verify/experiments/lab-e5-bfs-search.patch` (E5a), `go/verify/experiments/lab-e5b-bfs-search-wide.patch` (E5b).
++
++## E6 Saturation shortcut
++
++- Status: done. Verdict: **not adopted** (rule failed: InsertSaturated 0.722 is not under 0.59; heavy16x ≥ 1.10x in 2 of 6 pairs).
++- Design (before any reading): reuse the filter-wide search-pressure EWMA (`f.pressure`, which moves 1/8 toward "fail" on every failed search and 1/8 toward "succeed" on every success). When it reads 15/16 or more (about 21 consecutive failures from a calm table), `claimAt` skips `warmAlts` and the relocation search and goes straight to the eviction choice, except for 1 in 16 inserts (by 4 fingerprint bits), which still search as probes; skipped inserts leave the pressure alone. A probe's success moves the pressure back below the threshold, so searching resumes after a success, including once a decay pass or expiry has freed slots. No new field; answers change only where the shortcut fires (saturated tables).
++- Rule (the experiment's, before any reading; "faster" as defined by b): InsertSaturated faster (geomean < 0.59, interval < 1.00; this also covers "20% or more"); heavy16x and light16x (the one-event flood) Mops/s ≥ 1.10x HEAD's in at least 5 of 6 pairs each; strict false denies on heavy1x, heavy2x and heavy4x at most 0.05 percentage points (20 of 40,000) above HEAD's (HEAD: 3, 22, 132); in `tfbench -exact` the churn rows at load 1.00 and 1.10 (85% and 93.5% slot load) and static_fpr unchanged; InsertSteady and CheckAndTouchMissInsert not slower. Reported: the churn load=1.15 deltas and the digest diff. Void if a null arm leaves [0.59, 1.41].
++- Patch: `go/verify/experiments/lab-e6-saturation-shortcut.patch` (cuckoo.go only).
++- `tfbench -exact`: identical to HEAD, every row (the shortcut never fires there: the churn at 97.8% keeps the pressure under 15/16), so the 85%/93.5% churn rows and static_fpr are unchanged.
++- Gates: sanity PASS; tfbench identical; the digest differs in all 30 cells (its workloads run saturated). First cell (plain, seed 1, repeat 6000): evictions 1,341,146 → 457,320, folded 6,804 → 0, seen checks with the overflow live 31,990 → 0: evicting the lightest of the 8 without first relocating sheds 1-event keys (under SpillMin) instead of pushing heavier histories out to the stash and the overflow table.
++- lrab (4 × 2, ns/op; null arms inside [0.59, 1.41], valid):
++
++| Benchmark | HEAD median | E6 / HEAD | null |
++|---|---|---|---|
++| InsertSaturated | 1481.8 | **0.722 [0.590, 0.885]** | 1.011 [0.703, 1.452] |
++| CheckAndTouchMissInsert | 1785.2 | **0.709 [0.650, 0.773]** | 1.020 [0.949, 1.097] |
++| InsertSteady | 392.8 | 1.063 [0.912, 1.239] | 1.033 [0.835, 1.279] |
++
++- Flood throughput (t1, 6 pairs, quarter scale), E6 / HEAD: heavy16x 1.057 1.140 1.068 1.131 1.097 1.029 (2 of 6 at ≥ 1.10; HEAD 3.33–3.78 Mops/s); light16x (one-event) 1.230 1.215 1.375 1.125 1.395 1.522 (6 of 6; HEAD 0.60–0.90 Mops/s, E6 0.76–1.02).
++- Strict false denies (acc, one round, of 40,000; HEAD from E4's run): heavy1x 3 → 0, heavy2x 22 → 34 (+0.03 points, inside 0.05), heavy4x 132 → 123, heavy16x 39,950 → 39,948, light16x 0 → 0 of 60,000.
++- By the rule: InsertSaturated is 28% faster with its interval below 1.00, but not under this host's 0.59 bar; heavy16x fails 5 of 6; light16x, false denies, the tfbench rows and the not-slower checks hold. Rule failed. What it shows: on this host (whose 260 MiB L3 holds the whole flood table) the search is about a quarter of a saturated insert, and the one-event flood gains 1.1–1.5x; heavy floods gain less because their time is in the overflow table, not the search.
++
++### E6b: E6 re-run with a non-inferiority false-deny rule
++
++- Status: done. Verdict: **not adopted** (rule failed: InsertSaturated 0.721 is not under 0.59; heavy16x ≥ 1.10x in 0 of 6 pairs). The false denies pass non-inferiority.
++- Change: none; `lab-e6-saturation-shortcut.patch` as E6 measured it (the same /tmp/lab/h2h-e6 build).
++- Rule (before E6b's readings): E6's criteria unchanged except the false-deny one, which becomes non-inferiority on more rounds:
++  - False denies: on heavy1x, heavy2x and heavy4x, `acc` rounds 1–10 per arm, arms alternated per round (order reversed on even rounds); the upper end of the 95% paired t-interval of mean(E6 − HEAD) strict false denies at most **+20 of 40,000 (0.05 points, E6's own margin)** on each trace. This replaces E6's single-run comparison with a bound on the same margin, so it is no looser. heavy16x reported (past the cliff; 99.9% denied in both arms).
++  - Unchanged: InsertSaturated faster by this host's bar (geomean < 0.59, interval < 1.00); heavy16x and light16x t1 Mops/s ≥ 1.10x HEAD's in at least 5 of 6 pairs each; InsertSteady and CheckAndTouchMissInsert not slower (not above 1.41 with the interval above 1.00); `tfbench -exact` churn rows at load 1.00 and 1.10 and static_fpr unchanged. Void if a null arm leaves [0.59, 1.41].
++  - Noted before measuring: E6 failed on InsertSaturated (0.722) and heavy16x (2 of 6), not on false denies, so this rule can only pass if those fresh speed readings come out differently.
++
++- Readings (quarter-scale traces):
++  - `tfbench -exact` on the patched tree: identical to HEAD (churn rows and static_fpr unchanged).
++  - heavy16x t1, 6 pairs, E6 / HEAD: 1.085 1.023 1.022 0.966 1.057 1.026 (HEAD 4.07–4.63 Mops/s): **0 of 6** at ≥ 1.10.
++  - light16x t1, 6 pairs: 1.485 1.144 1.136 1.096 1.482 1.578 (HEAD 0.69–0.94): **5 of 6** at ≥ 1.10.
++  - Strict false denies, rounds 1–10 alternated (of 40,000), E6 − HEAD mean [95% paired t], bound +20:
++
++| Trace | HEAD mean | E6 mean | difference | upper end ≤ +20 |
++|---|---|---|---|---|
++| heavy1x | 1.7 | 1.6 | −0.1 [−1.6, +1.4] | yes |
++| heavy2x | 29.6 | 31.6 | +2.0 [−3.9, +7.9] | yes |
++| heavy4x | 110.9 | 114.1 | +3.2 [−7.7, +14.1] | yes |
++| heavy16x (reported) | 39,956.1 | 39,951.0 | −5.1 [−10.4, +0.2] | — |
++
++  - lrab (4 layouts with `SEED0=4`, i.e. layouts 5–8, fresh ones, × 2 rounds; ns/op; null arms inside [0.59, 1.41], valid):
++
++| Benchmark | HEAD median | E6 / HEAD | null |
++|---|---|---|---|
++| InsertSaturated | 1360.5 | **0.721 [0.621, 0.838]** | 1.013 [0.839, 1.222] |
++| CheckAndTouchMissInsert | 1669.2 | **0.725 [0.677, 0.778]** | 0.948 [0.870, 1.033] |
++| InsertSteady | 370.5 | 0.986 [0.888, 1.095] | 1.014 [0.862, 1.194] |
++
++- By the rule: false denies non-inferior on heavy1x, 2x and 4x (upper ends +1.4, +7.9, +14.1 against +20); light16x 5 of 6; tfbench unchanged; InsertSteady and MissInsert not slower. Failed: InsertSaturated 0.721 (again 28% faster, interval below 1.00, but not under this host's 0.59), and heavy16x 0 of 6 at 1.10x (1.02–1.09, E6 had 2 of 6). Both readings repeat E6's on fresh layouts and rounds (E6: 0.722 and 0.709), so the speedup is stable: saturated and miss inserts about 28% faster, the one-event flood 1.1–1.6x, heavy floods a few percent. What keeps E6 out is the bar (b = 0.41 from this host's noise) and the heavy16x criterion, whose time is in the overflow table, not the search.
++## Batch 2 note: E7 deferred
++
++E7 (first-touch doorkeeper, size L) is deferred to the end of the run: it runs only if budget remains after Batches 3–5, which are cheaper and deterministic.
++
++## E8 Estimator aimed at absolute error
++
++- Status: done. Verdict: **not adopted** (both arms fail: A −0.0003, B +0.0069).
++- Background read before the rule (as E3's sweep): `TF_EXP=1 go test -run '^TestVelocityBound$'` (the register's model, no counter limits): filter 0.0779; its "median (anchored)" variant (binomial median of the cut bucket) 0.0776; model floor 0.0582 (the median's expected error on Poisson traffic). The workload is 2,000 keys in five shapes: Poisson 0.2–5/s, bursts of 5–20 events within 200 ms every ~10 s, a ramp, slow Poisson, on/off.
++- Change (only `estimate` in register.go, where the cut bucket is split; the anchored event at `last` still counts whole): the cut bucket's n = c − a spread events, with window share p = (hi − from)/(hi − lo), contribute a median instead of n·p:
++  - arm A `lab-e8-median-binomial.patch`: the median of Binomial(n, p), the absolute-error optimum if events are uniform in the bucket;
++  - arm B `lab-e8-median-mixture.patch`: the median of an even mixture of Binomial(n, p) (spread events) and all-or-none (a burst: all n in the window with probability p). That median is the smallest k with BinomialCDF(k) ≥ p for p < 1/2 (and symmetrically toward n above), so it leans toward the nearer edge of the bucket.
++  - Both fall back to n·p for n > 1000 (hot entries).
++- Rule (before any reading; per arm): in `go run ./cmd/tfbench -exact`, velocity mean_of_windows at most 0.0749 (HEAD 0.0779 − 0.003) and no window's error more than 5% above HEAD's (1 s 0.2138, 5 s 0.0567, 15 s 0.0513, 30 s 0.0436, 60 s 0.0240). Reported: `TestVelocityInformation`, `TestVelocityAccuracy`, the digest diff (which call kinds move).
++- `tfbench -exact` velocity (normalized MAE; HEAD 0.2138 0.0567 0.0513 0.0436 0.0240, mean 0.0779):
++
++| Arm | 1 s | 5 s | 15 s | 30 s | 60 s | mean |
++|---|---|---|---|---|---|---|
++| A binomial median | 0.2135 | 0.0565 | 0.0508 | 0.0435 | 0.0239 | **0.0776** |
++| B mixture median | 0.2351 | 0.0643 | 0.0532 | 0.0462 | 0.0250 | **0.0848** |
++
++- By the rule (mean ≤ 0.0749, no window > 5% worse): A is better in every window but by 0.0003, a tenth of the bar; B is worse in every window (1 s +10%, 5 s +13%). Both fail. Under the register's own uniform model the mean split is already within rounding of the median, so a median query moves little; leaning toward the bucket's edges (B) loses more on the Poisson and ramp keys than it gains on the bursts.
++- Arm A's other changes: `tfbench -exact` steady rows at low rates get worse in short windows (1 s at 1/s: reported/exact min 1.000 → 0.500; 1 s at 5/s 1.000 → 0.833; 5 s at 1/s 1.000 → 0.833; 5 s at 5/s 1.000 → 0.962; 60 s at 12/s max 1.001, as before); bursts and churn rows identical. `TestVelocityAccuracy` PASS. `TestVelocityInformation`: the filter row reads A's numbers and the test reports "the register model differs from the filter" (its model is HEAD's estimator), as expected for a change to `estimate`. Digest: `touch`, `count` and `tcbatch` change in all 30 cells (every count-returning call); `check`, `contains`, `cbatch`, `decay`, `end` identical.
++- Patches: `go/verify/experiments/lab-e8-median-binomial.patch`, `go/verify/experiments/lab-e8-median-mixture.patch`.
++
++## E9 Approximate counters in the oldest buckets, finer buckets near now
++
++- Status: done. Verdict: **not adopted** (rule failed in registersim; not ported).
++- Design (before any reading; `go/internal/registersim` only, patch `lab-e9-split-now.patch`): registersim has no model of the shipped register, so two are added to `TestRegisterExperiment`'s makers:
++  - `aligned 7 (shipped)`: register.go's geometry (unit H/24; bucket j starts at ⌊U/2^s_j⌋·2^s_j − off_j with s = 0,0,1,2,3,3,3 and off = 0,1,2,4,8,16,24; exact counters capped at 2^bits − 1 with bits 5,5,6,7,8,8,9 = 48), re-bucketed whole on advance, and estimate's query (the register read at its own epoch, the newest bucket ending at `last` with that event counted whole, the cut bucket uniform, rounded, at least 1);
++  - `aligned 8 (split now, approx old)`: the same, with bucket 0 split into two half-unit buckets of 4 bits (cap 15 each), paid for by 7-bit floating-point counters in buckets 5 and 6 (Csűrös-style: 5-bit mantissa, 2-bit exponent, value (32+m)·2^e − 32: exact to 31, then steps of 2, 4, 8 up to 472), which take each merge with unbiased randomized rounding. Bits: 4+4+5+6+7+8+7+7 = 48.
++  - A steady-count check added to the test: evenly spaced events at 100, 300, 500 and 700 per horizon, the 60 s count queried every ~0.5 s over 8 horizons, worst |reported/exact − 1|.
++- Rule (the experiment's, before any reading), comparing `aligned 8` with `aligned 7` in registersim's output: the mean over all traffic × windows lower by 0.005 or more; the 1 s column's mean over traffic lower; the 30 s and 60 s columns' means each at most 10% above; the steady check within 1% at every rate up to 700 per horizon. Only if it holds: port to register.go and re-score with `tfbench -exact` under the same rule.
++- `go test -count=1 -run '^(TestRegisterExperiment|TestAlignedSteady)$' -v ./internal/registersim` (registersim's workloads: 40 trials × 5 traffic shapes, queries every ~0.5 s; normalized MAE):
++
++| Register | 1 s | 5 s | 15 s | 30 s | 60 s | mean |
++|---|---|---|---|---|---|---|
++| aligned 7 (shipped) | 0.2074 | 0.0636 | 0.0668 | 0.0660 | 0.0402 | 0.0888 |
++| aligned 8 (split now, approx old) | 0.1564 | 0.0680 | 0.0770 | 0.0748 | 0.0506 | 0.0854 |
++
++  (column means over traffic; per shape, the split gains at 1 s everywhere, e.g. steady 0.230 → 0.179, bursty 0.422 → 0.304, on/off 0.197 → 0.148, and loses most on bursty at 15–60 s: 0.106 → 0.153, 0.113 → 0.153, 0.071 → 0.117.)
++- Steady 60 s count, worst |reported/exact − 1| over 8 trials (shipped / split): 100/h 0.0100 / 0.0300, 300/h 0.0033 / 0.0033, 500/h 0.0020 / 0.0120, 700/h 0.0014 / 0.0200.
++- By the rule: mean −0.0034 (needs −0.005), 1 s lower (holds), 30 s +13% and 60 s +26% (over 10%), steady up to 3.0% (over 1%). Failed on three of four criteria, so not ported to register.go. Where the cost comes from: a half-unit bucket of 4 bits holds 15, so a burst of 5–19 events in 200 ms is clipped at its first bucket, and the 7-bit counters' steps of 4–8 at a few hundred events move a 60 s count by 1–3%. The 1 s gain (−25%) is real; paying for it needs bits that aren't the old buckets' precision.
++- Patch: `go/verify/experiments/lab-e9-split-now.patch` (registersim test file only: the two aligned models and `TestAlignedSteady`).
++
++## E10 Accuracy on real traffic (MAWI)
++
++- Status: done. Verdict: **report only** (re-opened 2026-11-03 after network access was granted; the first attempt, under the old policy, got `CONNECT tunnel failed, response 403`).
++- Trace: MAWI samplepoint-F 2025-01-01 14:00, `https://mawi.wide.ad.jp/mawi/samplepoint-F/2025/202501011400.pcap.gz` (3,732.62 MB gzipped; 136,925,174 packets per the trace page; caplen 96), downloaded once to /tmp (plain http does not resolve here; https does, ~3 MB/s).
++- Method (written before any reading): a Go reader in /tmp (not committed) streams the gzipped pcap. Keys: the IPv4 source address of every IPv4 packet (Ethernet, with or without one 802.1Q tag; other packets skipped); times from the pcap in µs, ticks = ms since the first packet + 1 (`Resolution` 1 ms, `Horizon` 60 s, as tfbench). Pass 1 counts distinct sources; pass 2 builds the filter with `Capacity` = distinct / 0.85 and touches every packet (`CheckAndTouchAt(mix64(ip), 0, t)`), keeping each source's exact times in the last 60 s. From 60 s in, one query per ms of trace time: the source of the latest packet (traffic-weighted, so heavy sources are asked most, as a rate limiter would be) and a window drawn uniformly from 1, 5, 15, 30, 60 s (seeded); `VelocityCountAt` against the exact count; normalized MAE per window (sum|est − exact| / sum exact) and their mean, as tfbench computes it. Also reported: distinct sources, evictions, promotions to hot entries, Saturated answers.
++- Rule: report only (the experiment's).
++
++- Reading (`/tmp/lab/mawi-e10`, 3 min for both passes): 136,925,174 packets, 117,883,811 IPv4, **6,006,309 distinct sources**; Capacity 7,066,245, 137,168,384 bytes; evictions 0, promoted to hot entries 23,486, hot refused 0, Saturated answers 0.
++
++| Window | queries | abs error sum | exact sum | normalized MAE |
++|---|---|---|---|---|
++| 1 s | 167,904 | 19,927,613 | 933,867,524 | 0.0213 |
++| 5 s | 168,130 | 24,508,240 | 4,664,407,694 | 0.0053 |
++| 15 s | 168,055 | 63,080,983 | 13,712,966,079 | 0.0046 |
++| 30 s | 167,724 | 116,746,453 | 27,248,807,490 | 0.0043 |
++| 60 s | 168,202 | 113,537,639 | 54,366,240,632 | 0.0021 |
++| mean | | | | **0.0075** |
++
++- Reading it: the queries are traffic-weighted (the latest packet's source), so they fall mostly on heavy sources (5,560 packets in an average 1 s window), which hot entries count exactly: 23,486 sources were promoted and none refused. That makes this the error a rate limiter asking about its current traffic would see, 10x below tfbench's 0.0779 on synthetic keys; it says little about the register's accuracy on light sources, which a query drawn uniformly over active sources would measure (not run: the method was fixed before the reading and the budget is short).
++- Reader: `/tmp/lab/mawiprog/main.go` (not committed; streams the gzipped pcap twice, Ethernet with or without one 802.1Q tag).
++
++## E11 Incremental overflow-table sweep
++
++- Status: done. Verdict: **not adopted** (rule failed: max 3.4x lower, not 10x; the host's own stalls set the floor). Every other criterion held.
++- Slice counts, checked against ghost.go: slices are Horizon/2 (`sliceLen = (H+1)/2`); an entry of slice sl is dead by slice sl+3 (for odd H, from the last tick of slice sl+2); decoded with 2 bits against epoch cur it reads correctly anywhere in [cur−3, cur] and aliases to cur (live) at sl = cur−4. `advance` today clears every entry with real + 2 < ns, so at epoch cur no entry is older than cur−2; the slack is one slice.
++- Design (before any reading; `lab-e11-incremental-sweep.patch`): the per-word clearing in `advance` becomes a helper. During slice cur, every `add` sweeps the next 4 buckets of a shared cursor, clearing entries with real + 2 < cur (dead since this slice began), each word committed only while the epoch is the one it decoded against (add's own rule). A one-slice move (cur → cur+1) under `g.mu` claims the buckets the cursor hasn't reached, sweeps them, waits for adds still sweeping claimed ones, then moves the epoch and resets the cursor: O(1) when the adds kept up. A move of more than one slice (an idle gap) also runs today's full sweep. Invariant kept: at epoch cur no entry is older than cur−3, so none is decoded where its slice aliases. Answers are unchanged where the adds keep up (entries of cur−3 decode as dead either way).
++- Measure: a test in the patch (`TestLabSweepLatency`, `TF_LAB=1`; also in `lab-e11-latency-test.patch` alone, the HEAD arm) floods a filter of 1M keys' capacity (overflow table ~10 MB) with 4-event keys across 7 slices and times every `TouchAt` (max, p99.99, p99.9), 3 runs per arm alternated; `go test -race -count=20 -run '^TestGhost' .`; the gates; heavy16x pairs.
++- Rule (the experiment's, before any reading): max per-call latency 10x or more lower (median of the 3 runs' max); p99.9 not higher (median of runs); heavy16x Mops/s ratio at least 1 − b = 0.59 in at least 5 of 6 pairs; digest identical; race tests pass.
++- Reading 1 (3 runs per arm, alternated; ns per `TouchAt`; 8,388,608 calls, 1,687,868 histories folded, floored 0, 8,139,136 bytes in both arms):
++
++| Run | HEAD max | patch max | HEAD p99.99 | patch p99.99 | HEAD p99.9 | patch p99.9 | p50 |
++|---|---|---|---|---|---|---|---|
++| 1 | 7,764,344 | 8,495,397 | 47,670 | 50,147 | 16,926 | 18,452 | 242 / 249 |
++| 2 | 6,867,780 | 3,938,261 | 44,817 | 46,477 | 15,855 | 18,032 | 223 / 263 |
++| 3 | 8,467,535 | 2,442,875 | 42,716 | 46,686 | 18,303 | 16,080 | 271 / 233 |
++
++- By the rule: median max 7.76 ms → 3.94 ms (2.0x, not 10x); median p99.9 16.9 → 18.0 µs (higher). **Rule failed** as read. But the max in both arms is 3–12x what a full sweep of this 2.7 MB overflow table costs (~0.34 M words), so the reading is dominated by something else: the first eviction's lazy allocation and prefault of the stash and overflow table, or the VM's own stalls (p99.99 is already 43–50 µs). The test as declared can't see the sweep; that makes the rule unmeasurable on this host as designed.
++- E11b, written after reading 1 and before its own: the same test, timing only the calls after the first slice (the tables allocated and full), and printing the 10 largest latencies with their slice index, 3 runs per arm. Rule E11b: the median over runs of the max 10x or more lower, and p99.9 not higher; the rest of the rule as before (heavy16x ≥ 0.59 in 5 of 6, digest identical, race tests). If the HEAD arm's largest calls don't fall at slice boundaries (the sweep is not what sets them), the rule is unmeasurable on this host.
++- E11b reading (calls after the first slice: 7,190,232 per run; ns):
++
++| Run | HEAD max | patch max | HEAD p99.99 | patch p99.99 | HEAD p99.9 | patch p99.9 |
++|---|---|---|---|---|---|---|
++| 1 | 6,800,891 | 2,138,397 | 43,652 | 46,732 | 16,800 | 16,568 |
++| 2 | 9,253,058 | 2,294,248 | 48,451 | 42,602 | 17,049 | 15,494 |
++| 3 | 7,765,744 | 2,642,293 | 54,467 | 90,597 | 17,597 | 22,435 |
++
++- Where the largest calls fall (run 1): HEAD's five largest are all at the first tick of a slice (slices 2–6, +0.0000: 3.4–6.8 ms, the full sweep); its next five are elsewhere in a slice (2.1–3.2 ms: the VM). The patch's ten largest are all elsewhere in a slice (1.1–2.1 ms): the boundary stalls are gone.
++- By rule E11b: the boundary calls are the sweep, so the reading is measurable; median max 7.77 → 2.29 ms is 3.4x, under 10x; median p99.9 17.0 → 16.6 µs (not higher). **Failed** on the max: the patch's max equals the stalls HEAD shows away from boundaries, so on this host no change can show more than ~3x here.
++- The rest of the rule, all held: `go test -race -count=20 -run '^TestGhost' .` PASS (257 s); gates on the patched tree: sanity PASS, digest identical, `tfbench -exact` identical; heavy16x t1 pairs, patch / HEAD: 1.026 0.952 0.988 1.064 0.926 1.135 (6 of 6 ≥ 0.59).
++- Patches: `go/verify/experiments/lab-e11b-incremental-sweep.patch` (ghost.go + the E11b test; the candidate to re-read on a quieter host), `go/verify/experiments/lab-e11b-latency-test.patch` (the test alone); reading 1's pair `lab-e11-*.patch`.
++
++## E12 TimeToCount(h, n)
++
++- Status: done. Verdict: **not adopted** (rule failed for n = 5 and 10).
++- Design (before any reading; `lab-e12-time-to-count.patch`): `TimeToCountAt(h, n, now) (ticks uint64, ok bool)`: how long the key's last n events took, from its n-th newest event in the horizon to its newest (`last`; 0 for n = 1). A cumulative scan of the register at its own epoch, newest bucket first (the view `estimate` reads, hot entries included): the newest bucket's first event is at `last` and its other c−1 are spread uniformly over [its start, last], so its r-th newest sits at last − (r−1)/c·(last − start); in an older bucket [lo, hi) of c events the r-th newest sits at its expected order statistic hi − r/(c+1)·(hi − lo). ok is false if the key is unseen or the register holds fewer than n events in the horizon. The overflow table is not read; not ConstantTime-padded.
++- Measure: a test in the patch (`TestLabTimeToCount`, `TF_LAB=1`) replays tfbench's velocity workload (`velWorkload`: 2,000 keys in five shapes, a query per ms over 4 horizons, ms ticks, Capacity 4,096) and at every query asks n = 2, 5, 10, 50 where the key's exact times hold n events in the horizon with a nonzero span; relative error |est − exact| / exact, median and p90 per n, plus how often ok was false.
++- Rule (the experiment's, before any reading): candidate if the median relative error is at or under 10% for each of n = 5, 10 and 50.
++- `TF_LAB=1 go test -count=1 -run '^TestLabTimeToCount$' -v .` (deterministic):
++
++| n | queries | median rel. error | p90 | mean | not ok |
++|---|---|---|---|---|---|
++| 2 | 227,622 | 0.5348 | 11.68 | 5.62 | 618 |
++| 5 | 198,996 | **0.2446** | 6.59 | 1.91 | 899 |
++| 10 | 191,404 | **0.1108** | 4.48 | 1.14 | 46 |
++| 50 | 173,314 | **0.0528** | 0.18 | 0.081 | 1,173 |
++
++- By the rule (median ≤ 10% for n = 5, 10, 50): n = 50 holds, n = 5 and n = 10 fail. The p90s show where: a burst of 5–20 events within 200 ms sits in one 2.5 s bucket, and spreading it uniformly makes "the last 5 took 200 ms" read as about a second (errors of several hundred percent). The question needs resolution near now finer than the register's 2.5 s for small n, the same gap as target 7's 1 s window; for spans of tens of events it works.
++- Patch: `go/verify/experiments/lab-e12-time-to-count.patch` (`timetocount.go`, `lab_ttc_test.go`).
++
++## E13 Merging two filters
++
++- Status: done. Verdict: **candidate** (within its stated scope: no hot entries, stash and overflow not merged).
++- Design (before any reading; `lab-e13-merge.patch`): `func (f *Filter) Merge(g *Filter) error` adds g's live table slots to f; both filters quiescent, the same Config (lines, horizon, unit, resolution; the same Key for string hashing). Refused: ConstantTime, Background, or hot entries in use on either side (a hot key's exact counters don't fit a register; out of scope here). Not merged: g's stash and overflow table (evicted histories). Per slot of g: its identity (primary line, fp, tag) gives a hash h with f's same line, fp and tag; if f holds the key, the two registers are re-bucketed to the newer epoch (`register.advance`) and summed bucket by bucket (`register.add`, spilling as a touch does; an overflow sets the saturated bit), last touch = the max; else the slot goes in through `claim` under the key's claim stripe, as a first touch would (which may evict).
++- Measure: a test in the patch (`TestLabMerge`, `TF_LAB=1`) replays tfbench's velocity workload (2,000 keys; Capacity 4,096, Hot −1, ms ticks, 1 min horizon) into three filters: A and B each take each event with probability 1/2 (seeded), S takes every event. Every 5 s of workload time after the first horizon (48 checkpoints) a fresh M = Merge(A) then Merge(B) is compared with S over every key and windows 1, 5, 15, 30, 60 s via `VelocityCountAt`: Seen agreement, count MAE against the exact counts (sum|est − exact| / sum exact), Upper below the exact count (flagged Saturated or not); at the last checkpoint 1M absent keys probed in M and S (false Seen). Evictions in A, B, S must be 0 (else Seen is compared only where neither evicted).
++- Rule (the experiment's, before any reading): Seen identical in every comparison where neither filter evicted; M's count MAE at most 1.5x S's in every window; no unflagged (not Saturated) answer with Upper below the truth. FPR reported beside it.
++- `TF_LAB=1 go test -count=1 -run '^TestLabMerge$' -v .` (deterministic): 47 checkpoints, 470,000 comparisons; evictions A 0, B 0, S 0, M 0.
++  - Seen differs: **0**. Upper below the exact count: **0 unflagged**, 12 flagged Saturated (buckets that overflowed with hot entries off, in M; S flags its own the same way).
++  - Count MAE, merged / single (ratio): 1 s 0.2841 / 0.2841 (1.000), 5 s 0.0014 / 0.0014 (0.992), 15 s 0.0188 / 0.0189 (0.993), 30 s 0.0408 / 0.0408 (0.999), 60 s 0.0233 / 0.0233 (0.998). (Checkpoints fall on multiples of 5 s, two units, so the 5 s window's edge sits on a bucket boundary: hence its tiny error in both; the comparison is like for like.)
++  - 1M absent probes at the end: false Seen merged 0, single 0.
++- By the rule: Seen identical, MAE ratio ≤ 1.000 in every window (bar 1.5), no unflagged low Upper. Candidate. Re-bucketing both registers to the newer epoch and summing loses nothing measurable against one filter fed everything, because re-bucketing is exactly what a touch does.
++- Gates on HEAD + patch: sanity PASS, digest identical, `tfbench -exact` identical (nothing calls Merge). `go test -race -run '^TestLabMerge$'`: PASS.
++- Open before adoption: hot entries (refused now), g's stash and overflow table, and concurrent use (Merge assumes both filters quiescent).
++- Patch: `go/verify/experiments/lab-e13-merge.patch` (`merge.go`, `lab_merge_test.go`).
++
++## E14 Snapshot and restore
++
++- Status: done. Verdict: **not adopted** (rule failed on size alone: 2.16% over Bytes() against the 1% written; answers and clock held).
++- Design (before any reading; `lab-e14-snapshot.patch`): `WriteTo(io.Writer)` and `ReadFrom(io.Reader)` (io.WriterTo/io.ReaderFrom) on a quiescent filter, into one made by `New` with the same Config: a magic word, the Config's shape (lines, horizon, unit, resolution, stash and hot sizes, overflow size and shape, SpillMin), the clock anchor (the filter's tick and wall time at the snapshot), the table words, the decay cursor, pressure and counters, the stash (entries, wait words, placement cursor), the hot table (entries packed to 64 B each, free list, hand, counters) and the overflow ghost table (words, epoch, until, saturated, floored). On restore with the built-in clock, the new filter's clock is moved on to continue the old timeline (old tick + wall time elapsed since the snapshot), so stored ticks stay valid; with a caller's Clock nothing is shifted (that clock must continue the old timeline). Refused: ConstantTime, Background and the count-min overflow (experiments). String keys need Config.Key (the default maphash seed is per process).
++- Measure: a test in the patch (`TestLabSnapshot`, `TF_LAB=1`): tfbench's velocity workload (2,000 keys) into a filter of Capacity 512 (so the stash, the overflow table and hot entries are all in use; ms ticks; every event a `TouchAt`, every query a `CountAt`), run once uninterrupted and once snapshotted at the midpoint (150 s), restored into a new filter and finished; every Result of the two runs compared field by field; snapshot size against `Bytes()`; a clock check (built-in clock, 20 ms between snapshot and restore: the restored tick at least the old tick + 20 ms).
++- Rule (the experiment's, before any reading, made concrete): every answer identical (0 differing Results); snapshot size within 1% of `Bytes()`; the clock check passes; gates pass with no diff.
++- `TF_LAB=1 go test -count=1 -run '^TestLabSnapshot$' -v .` (deterministic): 1,545,412 answers in each run, **0 differing**; at the end both runs read evictions 645,482, folded 20,958, promoted 136 (the stash, the overflow table and hot entries all in use across the snapshot), floored 0.
++- Size: snapshot 17,400 bytes against `Bytes()` 17,032 at the snapshot: **+2.16%**. The excess is fixed (magic, shape, clock anchor, 13 counters, the presence words and hot table fields, the free list: ~368 bytes), so it is under 1% from about 37 KB of state up; this test's filter (Capacity 512) is smaller than that.
++- Clock: built-in clock, 20 ms between snapshot and restore: old tick 96, restored 23,790 (+23,694 µs ticks, want ≥ 20,000): passes.
++- Gates on HEAD + patch: sanity PASS, digest identical, `tfbench -exact` identical (the built-in clock now adds an atomic offset, 0 unless restored). `go test -race -run '^TestLabSnapshot$'` PASS.
++- By the rule: answers identical (holds), clock (holds), gates (hold), size within 1% (fails at 2.16%). Rule failed as written; the size criterion was mine (the experiment said "close to Bytes()"), and the test filter was too small for a fixed header to stay under 1%.
++- Patch: `go/verify/experiments/lab-e14-snapshot.patch` (`snapshot.go`, `lab_snapshot_test.go`, and in filter.go the clock offset).
++
++## E15 SIMD fingerprint compare
++
++- Status: stopped. Verdict: **unmeasurable** on this host (the rule can't be met by any compare).
++- Toolchain probe: go1.27.3 with `GOEXPERIMENT=simd` has `simd/archsimd` (`Uint64x4.Equal`, `Mask64x4.ToBits`, loads, broadcasts; the host has AVX2 and AVX-512).
++- Bound, before writing code (a benchmark in a scratch copy, not committed; 4 runs): the whole lookup on a cached table (`locateAt`: hash to line, `find`'s compare loop and its loads, plus the loop) 17.3–24.1 ns/op against `CheckAndTouchHitCached` 64.9–74.5 ns/op. The rule needs the cached hit faster by this host's bar (geomean < 0.59, i.e. ~29 ns saved); with the lookup free the hit would still read about 0.7. So no SIMD compare can pass here, and none was written.
++
++## E16 AMAC-style interleaving in CheckAndTouchBatch
++
++- Status: stopped (re-opened 2026-11-03). Verdict: **unmeasurable** on this host.
++- Bound, before writing the change (as E15's; a benchmark in a scratch copy, not committed): CheckAndTouchBatch of 64 keys, 30% never seen, on a table filled to 90% slot load, 4 runs, ns per key: 1 MiB table 522.7, 468.5, 550.4, 537.1; 32 MiB table (the batch benchmark's size) 482.4, 477.3, 561.0, 515.9. The large table is no slower than the cache-resident one: this host's 260 MiB L3 holds it, so the miss path's time is compute (the cuckoo search, eviction, stash), not stalls. Interleaving keys (AMAC) can only hide stall time, so its best case here is about 1.0x, against a rule of ≥ 10% faster and this host's bar of a geomean under 0.59. No change was written. It needs a host whose L3 is smaller than the table, or a table past 260 MiB (the 600 MB `hugeFilter` benchmarks, which take minutes to build per arm).
++
++## E7 First-touch doorkeeper (deferred from Batch 2)
++
++- Status: done. Verdict: **not adopted** (rule failed: mean strict false denies higher on heavy2x, heavy4x and heavy16x; and the patch has a defect, below).
++- Design (before any reading; `lab-e7-doorkeeper.patch`): a doorkeeper of 32-bit entries (24-bit fingerprint from other hash bits, 8-bit Horizon/2 slice stamp) in 64-byte buckets of 15 entries plus a floor word, one bucket per 32 slots (2 B per slot), allocated on first use. It engages only while the table is saturated: the search-pressure EWMA at 15/16 or more (about 21 failed searches in a row), so at design load nothing changes. ConstantTime and Background never use it.
++  - A first touch with no stash history while engaged: if the doorkeeper holds no live entry for the key, the key is kept out of the table (no search, no eviction): its entry goes in a free or dead way, else over the oldest, whose slice first raises the bucket's floor; the answer is Seen false, Count 1, Upper 1 (+1 if the floor is live: the key may be one that was forgotten).
++  - A touch that finds its entry (its second): the key goes into the table through the normal path, then counts its earlier event(s) at now (one for the entry, one more if the bucket's floor is live) by touching again internally; Seen stays false (never answered from the doorkeeper), Count and Upper come from the table; the entry is cleared once the key is in. A key with no entry is kept out even when the floor is live (corrected before any reading: the first draft of this bullet also sent floor-covered keys into the table, which contradicted the bullet above and the code).
++  - Reads of a key absent from the table (CountAt, VelocityCount): Upper +1 when its entry or its bucket's floor is live; Seen and Count unchanged; Contains unchanged.
++  - Known gap, before measuring: a key kept out, forgotten, and kept out again more than once can read Upper low by all but one forgotten event (the floor is a single event, like the overflow table's "floored more than once" exception).
++- Rule (the experiment's, before any reading, made concrete): light16x (the one-event flood) Mops/s at least 1.5x HEAD's in at least 5 of 6 pairs; strict false denies on heavy1x, heavy2x, heavy4x and heavy16x, mean of 3 acc runs per arm, not above HEAD's mean of 3; `tfbench -exact` static_fpr row identical; `go test -race -short -count=1 .` and `verify/replay.sh stress 100` pass; sanity passes (its soak and fuzz checks hold A18). Reported: the digest and tfbench diffs, Bytes() under the flood.
++
++- Readings (quarter-scale traces):
++  - light16x (one-event flood), t1, 6 pairs, E7 / HEAD: **7.115 6.467 6.181 6.668 6.367 6.721** (HEAD 0.66–0.81 Mops/s, E7 4.39–5.54): 6 of 6 at ≥ 1.5x.
++  - Strict false denies, acc rounds 1–3 (of 40,000), HEAD → E7, means: heavy1x 2 2 0 → 2 0 0 (1.33 → 0.67); heavy2x 26 36 30 → 35 29 48 (30.7 → **37.3**); heavy4x 99 100 96 → 90 101 125 (98.3 → **105.3**); heavy16x 39,962 39,948 39,960 → 39,946 39,962 39,967 (39,956.7 → **39,958.3**); light16x 0 → 0 of 60,000. The differences are inside HEAD's own run-to-run spread (heavy2x 26–36), but the rule asked for "not higher" and three of four are.
++  - Bytes under the flood: 2,034,808 → 2,188,984 (+154,176: the doorkeeper, 2 B per slot); light16x 1,349,496 → 1,503,672.
++  - `tfbench -exact`: identical to HEAD (static_fpr included; the doorkeeper never engages there).
++  - Gates: digest differs (12 of 30 cells; its saturated workloads); sanity fails `TestConformance/churn` and `/overflow` (answer vectors: expected), `TestMemoryOnFirstUse` (bytes: expected) and **`TestAttackEvictionReset`**. `go test -race -short` fails the same tests. `verify/replay.sh stress 100` not run once the rule had failed.
++- The defect `TestAttackEvictionReset` found: "keyed spray, no stash/sketch": an offender with 21 events, evicted with no stash to hold its history, returns as a first touch while the table is saturated; the kept-out path answers Count 1, Upper 1 with `Degraded:false`, where `miss()` (HEAD) sets Degraded from `lostRecently`. That is an unflagged Upper below the truth: a bug in this patch's kept-out path (one line: set Degraded as `miss()` does), not in the idea. Not fixed and re-read: the rule had already failed, and a second draw against noise-level false-deny differences would be a re-roll.
++- What it shows: keeping first touches out of a saturated table moves the one-event flood 6–7x (E6's search skip alone gave 1.1–1.5x), at 2 B per slot allocated only under attack. Before adoption: the Degraded fix, a false-deny reading with enough rounds to resolve a few counts in 40,000, and the A18 gap noted in the design (keys forgotten more than once).
++
++### E7b: the Degraded fix, re-measured
++
++- Status: done. Verdict: **not adopted** (rule failed twice: heavy4x's false-deny mean, and `replay.sh stress` finds counts one low that HEAD never shows).
++- Change (`lab-e7b-doorkeeper.patch`): E7's patch plus one line: the kept-out first touch sets `Degraded` from `lostRecently(now)`, as `miss()` does for a key with no history (the defect `TestAttackEvictionReset` found). Nothing else differs.
++- Rule (written after E7's reading, before E7b's), every criterion of E7's, with two declared differences:
++  1. False denies over more rounds: strict false denies on heavy1x, heavy2x, heavy4x and heavy16x, `acc` rounds 1–10 per arm (HEAD and E7b alternated per round), the mean over the 10 rounds not above HEAD's mean, per trace. The threshold is E7's ("not higher"), on 10 rounds instead of 3, because E7's 3-round means moved by more than the differences between arms. Reported beside it: the mean paired difference per trace with a 95% t-interval.
++  2. Which tests must pass, named: E7's "sanity passes" can't be met literally by any change of answers, since `TestConformance`'s vectors pin HEAD's answers and `TestMemoryOnFirstUse` HEAD's bytes (E4 and E6 listed those failures as expected). Here every test of `./test.sh sanity` and `go test -race -short -count=1 .` must pass except those two, which are reported; the attack, soak and fuzz checks (A18) included. This relaxes E7's literal wording, so it is flagged here; E7's own verdict stands.
++  - Unchanged: light16x Mops/s ≥ 1.5x HEAD's in at least 5 of 6 pairs; `tfbench -exact` static_fpr identical; `verify/replay.sh stress 100` passes (run on the main tree with the patch applied, then restored).
++
++- `tfbench -exact`: identical to HEAD (static_fpr included).
++- Tests: `./test.sh sanity` and `go test -race -short -count=1 .` fail only `TestConformance` (churn, overflow vectors) and `TestMemoryOnFirstUse`, the two named exceptions; **`TestAttackEvictionReset` now passes**, as do the soak and fuzz checks. Digest: 12 of 30 cells differ, as in E7.
++- light16x t1, 6 pairs, E7b / HEAD: **5.918 6.517 5.174 5.245 6.444 4.874** (HEAD 0.79–0.89 Mops/s, E7b 4.15–5.46): 6 of 6 at ≥ 1.5x.
++- Strict false denies, `acc` rounds 1–10 (of 40,000), arms alternated per round:
++
++| Trace | HEAD rounds | HEAD mean | E7b rounds | E7b mean | E7b − HEAD, mean [95% t] |
++|---|---|---|---|---|---|
++| heavy1x | 0 0 2 3 2 3 2 4 3 2 | 2.1 | 1 1 1 1 1 2 1 1 2 2 | 1.3 | −0.8 [−1.7, +0.1] |
++| heavy2x | 43 36 32 42 35 26 31 39 40 20 | 34.4 | 30 35 37 19 39 32 30 28 39 29 | 31.8 | −2.6 [−9.8, +4.6] |
++| heavy4x | 138 115 108 106 113 87 108 102 116 107 | 110.0 | 102 109 86 116 110 115 125 125 113 126 | **112.7** | +2.7 [−12.0, +17.4] |
++| heavy16x | 39,944 … 39,952 | 39,953.6 | 39,956 … 39,950 | 39,949.7 | −3.9 [−13.2, +5.4] |
++
++- By the rule: light16x, tfbench and the named tests hold; the false-deny mean is lower on three traces and higher on heavy4x (+2.7, 0.007 points of 40,000), so **the rule failed**. Every paired interval includes 0: at 10 rounds the reading can't tell E7b's false denies from HEAD's in either direction. A "not higher" rule on means is close to a coin flip per trace for a change with no effect; a non-inferiority bound (say the interval's upper end under +20 of 40,000, 0.05 points, E6's margin) would decide it, but it can't be applied after these numbers.
++
++- `verify/replay.sh stress 100` (main tree with the patch applied, restored after): `TestConcurrentFirstInsertNoDuplicates` 0/100, `TestTouchRacingRelocationKeepsCounts` 0/100, `TestAbandonedMoveKeepsCounts` 0/100, **`TestStashConcurrentEvictions` 13/100**, each failure a key's count one **low** (e.g. "round 19 key 3: Count 19 Upper 19, want count 20 (evictions 560, restored 284, lost 0)"). Not the documented residual (that is `TestAbandonedMoveKeepsCounts`, one high). Baseline, same binary style, 100 runs, 4 in parallel: HEAD **0/100**, E7b **14/100**. So it is E7b's.
++- Likely cause (a hypothesis, not instrumented): the test saturates the table with concurrent evictions, so the doorkeeper engages; when a kept-out key's entry is overwritten by another key in its bucket before the key returns, that first event survives only in the floor, i.e. in `Upper` while the floor lives (here Upper 19 too, so the floor had expired or was the bucket's earlier one), and never reaches `Count`, where HEAD's stash would have kept and restored it. That is the design's known gap showing in `Count`, at a rate the stash-backed path never has.
++- What E7b leaves: the one-event flood gain holds (4.9–6.5x) and the attack test's Degraded defect is fixed, but keeping first touches out costs exact counts for keys the doorkeeper forgets, and its false-deny effect is unresolved at 10 rounds. Making it exact would need forgetting to fall back to the normal path (insert or stash) instead of overwriting, which would give back much of the speed whenever the doorkeeper is full.
++### E7c: no overwrite, and the entry read whenever the doorkeeper exists
++
++- Status: done. Verdict: **not adopted** (rule failed: no flood gain once the doorkeeper is full; false-deny means higher on all four traces).
++- Re-reading E7b's failure before this change: the failing key read **Count 19, Upper 19** (want 20). A forgotten entry would have kept Upper at 20 through the floor, so E7b's stated cause doesn't fit. A path that does: a kept-out key whose next touch comes after the search pressure has fallen below 15/16 skipped the doorkeeper (E7/E7b look it up only while saturated), went in with one event, and its kept-out event left both Count and Upper.
++- Change (`lab-e7c-doorkeeper.patch`, from E7b's): (1) a full bucket overwrites nothing: `keep` reports it and the key takes the normal path (insert, eviction, stash), so no entry is ever forgotten and floors are gone (buckets are 16 entries); (2) a first touch with no stash history looks up its entry whenever the doorkeeper exists, saturated or not, and if it finds one goes in counting it (Seen stays false); keeping out still happens only while saturated. Reads still add +1 to Upper for a live entry of an absent key. With nothing forgotten, E7's known A18 gap (keys forgotten more than once) is gone too.
++- Rule (before any reading): E7b's, unchanged: light16x Mops/s ≥ 1.5x HEAD's in at least 5 of 6 pairs; strict false denies on heavy1x, 2x, 4x, 16x, `acc` rounds 1–10 alternated, mean not above HEAD's per trace (paired 95% intervals reported); `tfbench -exact` static_fpr identical; `./test.sh sanity` and `go test -race -short -count=1 .` pass except `TestConformance`'s vectors and `TestMemoryOnFirstUse`; `verify/replay.sh stress 100` passes (a `TestAbandonedMoveKeepsCounts` failure one count high is HEAD's known residual, not the change's). Reported beside it: `TestStashConcurrentEvictions` alone, 100 runs, against HEAD's 0/100 and E7b's 14/100.
++
++- Correctness, now clean: `TestStashConcurrentEvictions` alone **0/100** (E7b 14/100, HEAD 0/100), so E7c's diagnosis of E7b held; `./test.sh sanity` and `go test -race -short -count=1 .` fail only the two named tests (`TestConformance` vectors, `TestMemoryOnFirstUse`); `TestAttackEvictionReset` passes; `tfbench -exact` identical (static_fpr included); digest 12 of 30 cells differ.
++- light16x t1, 6 pairs, E7c / HEAD: **1.192 0.723 0.832 0.751 0.997 0.702** (HEAD 0.70–0.87 Mops/s, E7c 0.56–0.86): 0 of 6 at ≥ 1.5x, slower in 5. Bytes 1,349,496 → 1,503,672 (the doorkeeper); light16x false denies 0 of 60,000.
++- Strict false denies, rounds 1–10 alternated (of 40,000), E7c − HEAD mean [95% t]: heavy1x 1.8 → 1.9, +0.1 [−1.5, +1.7]; heavy2x 32.2 → 37.4, **+5.2 [+0.9, +9.5]**; heavy4x 110.5 → 112.4, +1.9 [−12.0, +15.8]; heavy16x 39,950.0 → 39,955.3, +5.3 [−1.4, +12.0]. Higher on all four; heavy2x's interval excludes 0 (+0.013 points).
++- `verify/replay.sh stress 100` not run in full once the rule had failed twice; its test that E7b failed was run alone (above).
++- What the three arms show together: the doorkeeper's speed came from overwriting. A 16x flood of one-event keys is 16 keys per slot per horizon; a doorkeeper of 2 B per slot holds about half a key per slot, so without overwriting it is full almost at once, and every first touch then pays the doorkeeper's scan on top of the normal insert (E7c: slower). With overwriting (E7, E7b) it keeps its 5–7x, but forgotten keys lose events from Count, and E7b's saturation-only lookup lost them from Upper too. A doorkeeper that is both fast and exact under this flood would need room for the flood (16 keys per slot, ~64 B per slot at 4 B an entry), more than the table itself.
++
++## Passing experiments
++
++Two experiments met their rules: **E2** (Go 1.27.3) and **E13** (`Merge`). E10 had no pass/fail rule (report only) and is not listed here. Nothing is adopted; each subsection below is what a decision needs.
++
++### E2: Go 1.27.3 — candidate
++
++**What it is.** No code change: the same tree built and tested with go1.27.3 (the newest 1.27.x on proxy.golang.org on 2026-11-03; 1.27.0–1.27.3 listed) instead of the pinned go1.24.7.
++
++**Every criterion, with its reading:**
++
++| Criterion (written before the reading) | Reading | Met |
++|---|---|---|
++| `./test.sh sanity` passes | PASS in 70 s (go1.24.7: 59 s) | yes |
++| Answer digest identical to `verify/expected/answer-digest.txt` | 30 of 30 cells identical | yes |
++| `tfbench -exact` identical to `verify/expected/exact.txt` | 0 diff lines (24 s) | yes |
++| No core benchmark above 1.41 of go1.24.7's in 6 or more of 8 rounds | 0 of 8 rounds above 1.41 on all six | yes |
++
++**Speed, for information** (8 alternated rounds, one layout per toolchain, ns/op, medians; with b = 0.41 none of this counts as faster or slower on this host): MissInsert 1,737 → 1,567 (0.902; under 1.00 in 7 of 8 rounds), InsertSteady 397 → 356 (0.897), TouchAndCount 174 → 160 (0.923), VelocityCount 127 → 120 (0.943), HitCached 71.0 → 69.7 (0.982), Hit 136.5 → 139.9 (1.025). The per-round table is in E2's section.
++
++**Reproduce.**
++
++```
++cd go
++GOTOOLCHAIN=go1.27.3 ./test.sh sanity
++GOTOOLCHAIN=go1.27.3 TF_EXP=1 go test -count=1 -run '^TestAnswerDigest$' -v . | grep '^cell ' | diff - verify/expected/answer-digest.txt
++GOTOOLCHAIN=go1.27.3 go run ./cmd/tfbench -exact | diff - verify/expected/exact.txt
++GOTOOLCHAIN=go1.24.7 go test -c -o /tmp/t124.test . && GOTOOLCHAIN=go1.27.3 go test -c -o /tmp/t127.test .
++# then the six benchmarks from each binary, alternated, 8 rounds (E2's section)
++```
++
++**What adopting it involves.**
++- `go/go.mod` pins `go 1.24.7`; moving to 1.27.3 is a `go`/`toolchain` line change there.
++- `verify/expected/` need not be regenerated: digest and `tfbench -exact` are byte-identical under 1.27.3.
++- 20 places in `docs/` name Go 1.24.7 as the toolchain behind the deterministic results (among them `docs/README.md`, `docs/paper/07-evaluation.md`, `docs/paper/08-limitations.md` §8.1 "Platforms", `docs/artifact/reproducing.md`, `docs/artifact/claims.md`, `docs/specification/conformance.md`); they would say 1.27.3, or both.
++- It is the prerequisite E15 named (Go 1.26 or later for `simd/archsimd`; present in 1.27.3 with `GOEXPERIMENT=simd`).
++
++**Not checked here.** The racy-test replay (`verify/replay.sh stress`), the 386 and arm64-under-qemu builds §8.1 lists, the `-race` suite and the head-to-head runner under 1.27.3; speed on any other host. Placement: lrab can't compare toolchains, so the speed ratios are one layout each.
++
++### E13: `Merge` — candidate
++
++**What it is.** A new method (`lab-e13-merge.patch`: `go/merge.go`, plus its test `go/lab_merge_test.go`; 181 added lines; no existing file changed):
++
++```go
++// Merge adds g's keys to f: for a key in both, the two registers are
++// re-bucketed to the newer one's epoch and summed bucket by bucket (an
++// overflow sets the saturated bit), and the last touch is the newer one; a
++// key only g holds goes in as a first touch would (which may evict).
++func (f *Filter) Merge(g *Filter) error
++```
++
++**How it works.**
++- Checks first, returning an error and changing nothing: `f == g`; a different shape (lines, horizon, unit, resolution); ConstantTime or Background on either side; hot entries in use on either side.
++- `now` for expiry is the newest last touch in either table (a scan of both).
++- For each live slot of g (skipping empty, busy and expired ones): its identity (primary line, 16-bit fingerprint, 12-bit tag) is turned back into a hash with the same line, fingerprint and tag in f (the line part is ⌈line·2³⁶/lines⌉), and the round trip is checked (`primary`, `fingerprint` and `tag` of the new hash must give the identity back, else an error).
++- Under the key's claim stripe: if f holds the key, both registers are read as views, re-bucketed to the newer epoch with `register.advance`, summed with `register.add` (spilling to older buckets as a touch does), the saturated bit set on overflow or if either side had it, and word0 keeps f's fingerprint and displaced bit with the newer last touch. Else the slot goes in through `claim` (the first-touch path: free slot, cuckoo path, or eviction to f's stash), with g's register and last touch.
++
++**Every criterion, with its reading** (`TF_LAB=1 go test -count=1 -run '^TestLabMerge$' -v .`; deterministic; tfbench's velocity workload, 2,000 keys split at random between A and B, S fed everything, M = Merge(A) + Merge(B) at 47 checkpoints, 470,000 comparisons; evictions 0 in A, B, S and M):
++
++| Criterion (written before the reading) | Reading | Met |
++|---|---|---|
++| Seen identical to the single filter wherever neither evicted | 0 differences in 470,000 | yes |
++| Count MAE at most 1.5x the single filter's, every window | 1 s 0.2841 vs 0.2841 (1.000); 5 s 0.0014 vs 0.0014 (0.992); 15 s 0.0188 vs 0.0189 (0.993); 30 s 0.0408 vs 0.0408 (0.999); 60 s 0.0233 vs 0.0233 (0.998) | yes |
++| No unflagged answer with Upper below the truth | 0 unflagged; 12 flagged Saturated (hot entries were off, so some buckets overflowed, in M and in S alike) | yes |
++| FPR (reported) | 1M absent probes: false Seen 0 merged, 0 single | — |
++
++Also: gates on HEAD + patch clean (sanity PASS, digest identical, `tfbench -exact` identical, since nothing calls `Merge`); `go test -race -run '^TestLabMerge$'` PASS.
++
++**Reproduce.**
++
++```
++cd go
++git apply verify/experiments/lab-e13-merge.patch   # from a checkout of go/ (in a subdirectory of the repo use patch -p1)
++TF_LAB=1 go test -count=1 -run '^TestLabMerge$' -v .
++```
++
++**Limits, before it could ship.**
++- Hot entries are refused: a key promoted to a hot entry keeps 32-bit exact counters that a register can't hold. Merging them needs entry-to-entry sums (and an entry in f for a key hot only in g).
++- g's stash and overflow table are not merged: histories g had evicted are dropped from the merged answer (their keys read as never seen in f, where g would have restored them).
++- Both filters must be quiescent; nothing guards against concurrent calls during a merge.
++- If `claim` keeps losing races it gives up on that key after 8 tries without an error. In a quiescent filter `claim` returns a slot or evicts, so this is not expected to happen, but it is not reported if it does.
++- Keys that `claim` evicts from f when it is full go to f's stash, as any first touch would; the test never filled f, so that path is unmeasured here.
++- Only the velocity workload was tested; flood traffic, ConstantTime and Background are untested or refused.
++
++## Summary
++
++| Exp | Verdict | Key numbers | Patch |
++|---|---|---|---|
++| E1 CT dither on slow clock | not adopted | tsc clock: time.Now 65–69 ns; HEAD passes 3/3 (≤ 50.8%) | none |
++| E2 go1.27.3 | **candidate** | gates identical; 0/8 rounds > 1.41; MissInsert 0.90, InsertSteady 0.90 (medians) | none (GOTOOLCHAIN) |
++| E3 batch size gate | not adopted | small 0.856 [0.822, 0.892] vs bar 0.59; large 1.057 | lab-e3-* |
++| E4 per-line overflow hint | not adopted | no speed change (0.92–1.06); digest 18 cells differ; lines saturate in floods | lab-e4-* |
++| E5a/E5b BFS search | not adopted | evictions 4,577 → 2,703 / 369; E5b NearFull 1.358 [1.21, 1.52] | lab-e5-*, lab-e5b-* |
++| E6 saturation shortcut | not adopted | Saturated 0.722, MissInsert 0.709; light16x 1.13–1.52 (6/6); heavy16x 2/6 | lab-e6-* |
++| E6b shortcut, non-inferiority FDs | not adopted | FDs non-inferior (upper ends +1.4/+7.9/+14.1 vs +20); Saturated 0.721, MissInsert 0.725; light16x 5/6; heavy16x 0/6 | lab-e6-* |
++| E7 doorkeeper | not adopted | light16x 6.2–7.1x (6/6); mean FDs higher on 2x/4x/16x (within noise); a Degraded defect | lab-e7-doorkeeper.patch |
++| E7b doorkeeper + fix | not adopted | light16x 4.9–6.5x (6/6); attack test passes; heavy4x FD mean +2.7 [−12.0, +17.4]; TestStashConcurrentEvictions 14/100 one low (HEAD 0/100) | lab-e7b-doorkeeper.patch |
++| E7c doorkeeper, no overwrite | not adopted | stash test 0/100 (fixed); light16x 0.70–1.19 (gain gone); FD means higher on all four, heavy2x +5.2 [+0.9, +9.5] | lab-e7c-doorkeeper.patch |
++| E8 median estimator | not adopted | 0.0779 → 0.0776 (A), 0.0848 (B) | lab-e8-* |
++| E9 split now / FP old | not adopted | mean −0.0034; 1 s −25%; 30 s +13%, 60 s +26%; steady to 3% | lab-e9-* |
++| E10 MAWI | report only | 6.0 M sources, 118 M IPv4 packets; traffic-weighted MAE 0.0075 (1 s 0.0213); 23,486 hot keys | none |
++| E11/E11b incremental sweep | not adopted | boundary stalls 3.4–6.8 ms removed; max 3.4x lower (bar 10x; host stalls 2–3 ms); all checks clean | lab-e11-*, lab-e11b-* |
++| E12 TimeToCount | not adopted | median error 24.5% / 11.1% / 5.3% at n = 5 / 10 / 50 | lab-e12-* |
++| E13 Merge | **candidate** | Seen 0 diffs in 470,000; MAE ratio ≤ 1.000; 0 unflagged low Upper | lab-e13-merge.patch |
++| E14 snapshot/restore | not adopted | 0 diffs in 1,545,412 answers; clock OK; size +2.16% (bar 1%) | lab-e14-snapshot.patch |
++| E15 SIMD compare | unmeasurable | lookup is 17–24 of ~70 ns: bar out of reach | none |
++| E16 AMAC batch | unmeasurable | 30%-new batch 469–550 ns/key at 1 MiB vs 477–561 at 32 MiB: no stalls to hide | none |

@@ -124,7 +124,7 @@ A register's count can't do this: it is a CAS of the slot's word1, which the evi
 | `BumpABA.tla` | a touch's count across a hand-over of its slot, before or after the count, to a key of its tag or another; E21's 16-byte count | A29, E21 |
 | `HotEntry.tla` | a hot entry's lock-free add against a writer that advances the entry, demotes it, reclaims it for another key or spills its history to the overflow table | A31, A32 |
 | `StashSet.tla` | one stash set: eviction puts (the first way of the identity, else the first free or expired, else the lightest leaves), recalls by first touches, other keys' puts and recalls; no two live entries of one identity can form. An install with no recall makes a pair: `Merge`'s before D26 | A44, D26 |
-| `experiments/SpilledBit.tla` | a per-key spilled bit (experiment E53, not adopted) against an eviction, a spill of the key's stashed history and its first touch; run by `verify/tla.sh SpilledBit` on c3b83cf | E53 |
+| `experiments/SpilledBit.tla` | a per-key spilled bit (experiment E53, not adopted) against an eviction, a spill of the key's stashed history and its first touch; run by `verify/tla.sh SpilledBit` with `verify/experiments/spilled-bit-model.patch` applied | E53 |
 | `experiments/DispBitmap.tla` | the displacement bitmap (experiment E46, held): writers placing, publishing, abandoning and taking out displaced entries in a line, sweeps clearing its bit, against a read that skips the line when its bit is clear; run by `verify/tla.sh DispBitmap` on 24ea752 | A43, E46 |
 | `experiments/HotCells.tla` | per-core cells for a hot entry (experiment E23, not adopted) | S53 |
 

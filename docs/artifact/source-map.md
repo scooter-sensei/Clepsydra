@@ -66,6 +66,6 @@ The head-to-head harness ([head-to-head.md](head-to-head.md)): `trace.go` (part 
 | `verify/h2h.sh` | part 1 of the head-to-head: both runners, the traces, the rotated rounds, the ECM-sketch supplement, the report ([head-to-head.md](head-to-head.md)) |
 | `verify/lib/` | `lib.sh` (tree export, import rewriting) and `checks.sh` (the checks behind `run.sh` and `test.sh`), sourced by the scripts |
 | `verify/expected/` | the golden outputs the deterministic checks must match byte for byte |
-| `verify/experiments/` | reverted experiments as git patches ([experiments.md](experiments.md)) |
+| `verify/experiments/` | reverted experiments as git patches, and the deleted lab branches' notebooks, tools and raw readings (`lab-notebook-*.patch`) ([experiments.md](experiments.md)) |
 | `verify/testdata/` | older versions of `ghost_test.go` and `restore_test.go`, and `mirror_test.go` without its read check, that the bug replays need |
 | `verify/tla/` | the TLA+ models of the slot protocol and of a stash set (`StashSet.tla`, A44); `verify/tla/experiments/` holds `HotCells.tla`, `DispBitmap.tla` and `SpilledBit.tla`, models of experiments not adopted (E23, E46, E53) |

@@ -81,9 +81,19 @@ const (
 // in keys one over the limit, and a light flood of one-event keys.
 var floods = []struct{ mult, weight int }{{1, limit + 1}, {2, limit + 1}, {4, limit + 1}, {8, limit + 1}, {16, limit + 1}, {16, 1}}
 
+// midFloods (gen -mid) are light floods of keys at and over SpillMin (4 and
+// 8 events, under the limit), whose histories spill to the overflow table
+// where one-event keys are shed: the floods behind the floors' maximum
+// (record/decisions.md). Each flood draws from its own stream, so adding
+// them leaves the six traces above byte for byte.
+var midFloods = []struct{ mult, weight int }{{16, 4}, {8, 4}, {16, 8}}
+
 func floodName(mult, weight uint64) string {
-	if weight == 1 {
+	switch {
+	case weight == 1:
 		return fmt.Sprintf("light%dx", mult)
+	case weight < limit:
+		return fmt.Sprintf("w%d-%dx", weight, mult)
 	}
 	return fmt.Sprintf("heavy%dx", mult)
 }
@@ -200,12 +210,17 @@ func readTrace(path string) (*trace, error) {
 	return t, nil
 }
 
-// cmdGen writes every experiment's trace into dir.
-func cmdGen(dir string, capacity int, seed uint64) error {
+// cmdGen writes every experiment's trace into dir, and with mid the light
+// floods at and over SpillMin too.
+func cmdGen(dir string, capacity int, seed uint64, mid bool) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	for _, fl := range floods {
+	all := floods
+	if mid {
+		all = append(all[:len(all):len(all)], midFloods...)
+	}
+	for _, fl := range all {
 		t := generate(capacity, fl.mult, fl.weight, seed)
 		path := filepath.Join(dir, floodName(t.Mult, t.Weight)+".trace")
 		if err := t.write(path); err != nil {

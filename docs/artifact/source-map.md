@@ -36,7 +36,7 @@ Every file of `go/`, by category. Go builds a package from one directory and req
 
 ## Command: `go/cmd/h2h/`
 
-The head-to-head harness ([head-to-head.md](head-to-head.md)): `trace.go` (part 1's flood traces, their format and generator), `clep.go` (the Clepsydra arm's five passes), `ecmarm.go` (the ECM-sketch under the floods: its passes and its sizing), `timing.go`, `tsc.go`, `tsc_amd64.s`, `tsc_other.go` (RDTSCP and the log-linear latency histogram, as `bench/h2h` has them), `report.go` (scores every arm's answers, summarizes the passes), `velocity.go` (part 2: the scorecard's velocity workload with the key count as a parameter, Clepsydra and the ECM-sketch at equal memory), `main.go`. The industry arms are the Rust crate `bench/h2h/` at the repository's root (`pingora-limits` and DashMap, pinned in its `Cargo.lock`).
+The head-to-head harness ([head-to-head.md](head-to-head.md)): `trace.go` (part 1's flood traces, their format and generator; `gen -mid` adds light floods of 4- and 8-event keys), `clep.go` (the Clepsydra arm's five passes), `ecmarm.go` (the ECM-sketch under the floods: its passes and its sizing), `timing.go`, `tsc.go`, `tsc_amd64.s`, `tsc_other.go` (RDTSCP and the log-linear latency histogram, as `bench/h2h` has them), `report.go` (scores every arm's answers, summarizes the passes), `accsum.go` (one acc pass's answers scored on one line, for readings that pool rounds), `velocity.go` (part 2: the scorecard's velocity workload with the key count as a parameter, Clepsydra and the ECM-sketch at equal memory), `main.go`. The industry arms are the Rust crate `bench/h2h/` at the repository's root (`pingora-limits` and DashMap, pinned in its `Cargo.lock`).
 
 ## Command: `go/cmd/tfbench/`
 

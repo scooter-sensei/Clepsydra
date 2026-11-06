@@ -195,38 +195,47 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
 		if testHookVictim != nil {
 			testHookVictim()
 		}
-		// The victim's history goes to the stash under the victim's own claim
-		// stripe (its hash's top bits are its fp's), so a first touch of the
-		// victim, which takes that stripe, finds it either still here or
-		// already stashed. TryLock: the caller holds its own stripe.
-		vs := victimW0 >> (64 - claimStripeBits)
-		if vs != stripe {
-			mu := &f.claimMu[vs]
-			if !mu.TryLock() {
-				return -1
-			}
-			defer mu.Unlock()
-		}
-		// A move of the victim's stripe that began after the scan may have
-		// copied the victim, and its hand-off would then fail: back off (see
-		// moveCount).
-		m := f.moveOf(victimW1 >> tagShift)
-		m.evicting.Add(1)
-		defer m.evicting.Add(-1)
-		if m.begun.Load() != m.done.Load() {
-			return -1
-		}
-		// Between the install and the stash a lock-free lookup finds the
-		// victim in neither; the move count tells it to look again.
-		m.begun.Add(1)
-		defer m.done.Add(1)
-		if !f.putNew(put, victim, victimW0, victimW1, mine[vli], w1) {
-			return -1
-		}
-		f.evictions.Add(1)
-		f.stashPut(f.slotID(lines[vli], victimW0, victimW1), victimW0, victimW1, now)
-		return victim
+		return f.evict(lines[vli], mine[vli], w1, now, stripe, put, victim, victimW0, victimW1)
 	}
+}
+
+// evict is claimAt's eviction of the slot at word index victim (in line,
+// holding victimW0/victimW1) for the new entry mine0/mine1: claimAt's return.
+// It is a function of its own so that its defers, outside claimAt's retry
+// loop, are open-coded: in the loop they were heap defers whose closures
+// escaped, three allocations an eviction.
+func (f *Filter) evict(line, mine0, mine1, now, stripe uint64, put putFunc, victim int, victimW0, victimW1 uint64) int {
+	// The victim's history goes to the stash under the victim's own claim
+	// stripe (its hash's top bits are its fp's), so a first touch of the
+	// victim, which takes that stripe, finds it either still here or
+	// already stashed. TryLock: the caller holds its own stripe.
+	vs := victimW0 >> (64 - claimStripeBits)
+	if vs != stripe {
+		mu := &f.claimMu[vs]
+		if !mu.TryLock() {
+			return -1
+		}
+		defer mu.Unlock()
+	}
+	// A move of the victim's stripe that began after the scan may have
+	// copied the victim, and its hand-off would then fail: back off (see
+	// moveCount).
+	m := f.moveOf(victimW1 >> tagShift)
+	m.evicting.Add(1)
+	defer m.evicting.Add(-1)
+	if m.begun.Load() != m.done.Load() {
+		return -1
+	}
+	// Between the install and the stash a lock-free lookup finds the
+	// victim in neither; the move count tells it to look again.
+	m.begun.Add(1)
+	defer m.done.Add(1)
+	if !f.putNew(put, victim, victimW0, victimW1, mine0, mine1) {
+		return -1
+	}
+	f.evictions.Add(1)
+	f.stashPut(f.slotID(line, victimW0, victimW1), victimW0, victimW1, now)
+	return victim
 }
 
 // putFunc installs a new key's entry in slot i (word index) if the slot still

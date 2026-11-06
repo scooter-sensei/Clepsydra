@@ -5,7 +5,7 @@ This is the language-neutral description an implementation must follow to be the
 ## Time
 
 - Time is counted in **ticks** of `Resolution` (default 1 µs). The built-in clock reads ticks since the filter was built, plus 1.
-- A tick MUST fit in 46 bits: `MaxTick` = 2^46 − 1. Construction MUST reject a caller's clock that already reads past `MaxTick`, and a horizon of `MaxTick` ticks or more. An insert, a realigning touch and a sweeping decay step MUST fail (Go: panic) on a tick past `MaxTick`, before taking any lock.
+- A tick MUST fit in 46 bits: `MaxTick` = 2^46 − 1. Construction MUST reject a caller's clock that already reads past `MaxTick`, and a horizon of `MaxTick` ticks or more. An insert, a realigning touch and a sweeping decay step MUST fail (Go: panic) on a tick past `MaxTick`, before taking any lock. A restore MUST refuse a snapshot whose continued built-in clock would read past `MaxTick`.
 - The horizon in ticks MUST be at least `2 × 24` (a unit of at least 2 ticks). A **unit** is `ceil(horizon / 24)` ticks.
 - A query's window `W` covers `[now − W, now]`: an event exactly `W` ago is inside it. A negative duration converts to 0 ticks.
 
@@ -67,7 +67,7 @@ Every touch and count returns `Seen`, `Count`, `Upper`, `Saturated`, `Restored` 
 An implementation MAY offer these; one that does MUST keep what each says.
 
 - **Merge** of quiescent filters with the same configuration: a key in both gets the two registers re-bucketed to the newer epoch and summed (an overflowing bucket sets the saturated bit) and the newer last touch; a key only the other table holds MUST be installed with the receiving filter's own stashed history of it summed in, as a first touch restores it [D24, D26].
-- **Snapshots** of a quiescent filter: a restore into a filter of the same configuration MUST answer every later call as the uninterrupted filter would, and MUST refuse a snapshot of another configuration, a truncated one, and one whose bytes were damaged (the reference ends each section with its CRC32C). A restored built-in clock MUST continue the old timeline. The byte layout is the reference implementation's (`go/snapshot.go`, version 2); a port need not read another implementation's [D27].
+- **Snapshots** of a quiescent filter: a restore into a filter of the same configuration MUST answer every later call as the uninterrupted filter would, and MUST refuse a snapshot of another configuration, a truncated one, and one whose bytes were damaged (the reference ends each section with its CRC32C). A restored built-in clock MUST continue the old timeline (the wall time since the snapshot added), and a restore that would continue it past `MaxTick` MUST be refused. The byte layout is the reference implementation's (`go/snapshot.go`, version 2); a port need not read another implementation's [D27].
 - **Resizing**: until a horizon after a resize, a read MUST add the old filter's answer to the new one's, and a key MUST leave the old table only by moving its slot words whole to the new one [D28].
 - **Conditional touch** (`TouchIfUnder`): the event MUST be recorded only when `Upper` within the window is below the limit and the answer is not `Saturated` (with the overflow table off, also not when an unseen key reads `Degraded`), and the read and the touch of one key MUST be atomic with respect to other conditional touches of it [A45].
 

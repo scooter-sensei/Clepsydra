@@ -522,3 +522,18 @@ The audit's other arms were proposed and not run; each gap is stated where its c
 | N18b | StashSet with ConstantTime's parked keys and `putBack` | A44 (not modelled) |
 | N19b | `DecayedRateAt` with hot keys read through their entries and evicted keys through the overflow table | E58 |
 | N20c | the fitted cut trained on three or more trace days and more seeds | E59 |
+
+**lab/h2h-2026-11** (from c0000a1)
+
+The head-to-head lab: the floods of [head-to-head.md](head-to-head.md) faster on the Ryzen host at the same bytes per key, with no answer worse, each arm's rule committed before its reading (6a41545; H6's 0eec769). Its notebook (`H2H-RESULTS.md`, every reading in `lab/`) is on `lab/h2h-2026-11`, each arm on a branch of its own (`lab/h2h-H0` … `lab/h2h-H6`) and their combination on `lab/h2h-stack`. The branches are kept while H1, H4 and H6 wait for decisions ([paper §8.4](../paper/08-limitations.md#84-decisions-left-to-the-user)).
+
+| Arm | Verdict | Recorded as | Code |
+|---|---|---|---|
+| H0 the eviction without heap defers | passed its rule; adopted (2883df8) | S83 | in the tree (`evict`) |
+| H1 entry-free hits (word0's bit 45 marks a key with its own overflow entries) | passed its rule; held: it halves `MaxTick`, needs a new snapshot version, and no model covers its invariant as built (E53's `SpilledBit.tla` models E53's bit) | the notebook | lab/h2h-H1 |
+| H2 SWAR overflow match on every path (E43 re-read) | failed its rule | the notebook | lab/h2h-H2 |
+| H3 a first touch's misses prefetched together | failed its rule | the notebook | lab/h2h-H3 |
+| H4 the saturation shortcut (E32 re-read) | passed its rule; held: never stress-tested alone, it moves ConstantTime's and Background's answers too (their placers search through it), and the keys that still search under saturation are a fixed 1/16 by fingerprint | the notebook | lab/h2h-H4 |
+| H5 no stores of unchanged shared words | failed its rule | the notebook | lab/h2h-H5 |
+| H6 Bloom buckets instead of floors | passed its rule; not adopted as built: its summary sums for any member, Bloom false positives included, the policy declined for floors ([decisions](../record/decisions.md#decided)), and its rule's floods held no light flood of keys at or over `SpillMin`; a max summary is the next arm | the notebook | lab/h2h-H6 (v4) |
+| the stack (H0, H1, H4, H6 v4) | reported, not judged; not mergeable as built: its snapshot version is unchanged though word0 and the overflow table's format change | the notebook | lab/h2h-stack |

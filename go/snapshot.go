@@ -211,8 +211,15 @@ func (f *Filter) WriteTo(w io.Writer) (int64, error) {
 	return s.n, s.err
 }
 
+// continued is the built-in clock's tick for a snapshot written at tick
+// oldNow and wall-clock wall (Unix ns): the old tick plus the wall time since.
+func (f *Filter) continued(oldNow uint64, wall int64) uint64 {
+	return oldNow + uint64(max(0, time.Now().UnixNano()-wall))/uint64(f.res)
+}
+
 // ReadFrom restores a snapshot WriteTo wrote into f, which New made with the
-// same Config and nothing has used yet.
+// same Config and nothing has used yet. With the built-in clock it refuses a
+// snapshot whose continued clock would be past MaxTick.
 func (f *Filter) ReadFrom(r io.Reader) (int64, error) {
 	if f.ct || f.bg || f.cms {
 		return 0, errSnapMode
@@ -231,6 +238,12 @@ func (f *Filter) ReadFrom(r io.Reader) (int64, error) {
 	}
 	oldNow, wall := s.u(), int64(s.u())
 	s.end()
+	// The built-in clock continues the old timeline (below), so a lineage of
+	// snapshots can carry it past MaxTick, where hits read wrong until an
+	// insert panics (claims A35): refuse it before anything is written.
+	if s.err == nil && f.ownClock && f.continued(oldNow, wall) > MaxTick {
+		s.fail("the continued clock is past MaxTick")
+	}
 	if s.err != nil {
 		return s.n, s.err
 	}
@@ -315,8 +328,10 @@ func (f *Filter) ReadFrom(r io.Reader) (int64, error) {
 		}
 	}
 	if s.err == nil && f.ownClock {
-		target := oldNow + uint64(max(0, time.Now().UnixNano()-wall))/uint64(f.res)
-		if cur := f.clock(); target > cur {
+		target := f.continued(oldNow, wall)
+		if target > MaxTick { // crossed while the sections were read
+			s.fail("the continued clock is past MaxTick")
+		} else if cur := f.clock(); target > cur {
 			f.clockAdd.Add(target - cur)
 			if f.stop != nil { // CoarseClock: the cached tick moves on too
 				f.coarse.Add(target - cur)

@@ -1,10 +1,11 @@
 // Command h2h is the head-to-head harness (docs/artifact/head-to-head.md):
 // Clepsydra against industry structures on one host.
 //
-//	h2h gen -dir D [-n 262144]       write part 1's traces (one per flood)
+//	h2h gen -dir D [-n 262144] [-mid]  write part 1's traces (one per flood; -mid: also 4- and 8-event floods)
 //	h2h run -trace F -pass P ...     one pass of the Clepsydra arm (JSON line), or -arm ecm
 //	h2h ecmsize -trace F -budget B   the widest ECM-sketch whose peak on F fits B bytes
 //	h2h report -dir D                score every arm's answers, summarize passes
+//	h2h accsum -trace F -answers A   one acc pass's answers scored (false allows, false denies, lows)
 //	h2h ecm [-keys 2000]             part 2: Clepsydra and the ECM-sketch
 //	h2h velcheck                     the part 2 workload at the scorecard's settings (claim D5)
 //
@@ -23,7 +24,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: h2h gen|run|report|ecm|velcheck [flags]")
+		fmt.Fprintln(os.Stderr, "usage: h2h gen|run|ecmsize|accsum|falsedeny|report|ecm|velcheck [flags]")
 		os.Exit(2)
 	}
 	fs := flag.NewFlagSet(os.Args[1], flag.ExitOnError)
@@ -44,6 +45,7 @@ func main() {
 	ecmD := fs.Int("ecm-d", 1, "ecm arm: depth")
 	ecmEps := fs.Float64("ecm-eps", 0.5, "ecm arm: eps_sw")
 	budget := fs.Int("budget", 0, "ecmsize: bytes the sketch's peak must fit")
+	mid := fs.Bool("mid", false, "gen: also the light floods of 4- and 8-event keys")
 	fs.Parse(os.Args[2:])
 	if *cpuprofile != "" {
 		fh, perr := os.Create(*cpuprofile)
@@ -56,7 +58,7 @@ func main() {
 	var err error
 	switch os.Args[1] {
 	case "gen":
-		err = cmdGen(*dir, *n, *seed)
+		err = cmdGen(*dir, *n, *seed, *mid)
 	case "run":
 		if *arm == "ecm" {
 			err = cmdRunECM(*tracePath, *pass, *round, *threads, *answers, *ecmW, *ecmD, *ecmEps)
@@ -65,6 +67,8 @@ func main() {
 		}
 	case "ecmsize":
 		err = cmdECMSize(*tracePath, *budget, *ecmD, *ecmEps)
+	case "accsum":
+		err = cmdAccSum(*tracePath, *answers)
 	case "falsedeny":
 		err = cmdFalseDeny(*tracePath, *answers)
 	case "report":

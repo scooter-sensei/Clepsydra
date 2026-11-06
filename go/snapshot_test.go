@@ -235,6 +235,52 @@ func TestSnapshotCross(t *testing.T) {
 	}
 }
 
+// TestSnapshotRefusesClockPastMaxTick: a restore continues the built-in
+// clock by the wall time since the snapshot, so a lineage of snapshots can
+// carry it past MaxTick, where a slot can no longer hold a tick and hits
+// read wrong until an insert panics (A35). A filter snapshotted 5 ticks
+// before MaxTick and restored 20 ms later (20 ticks at 1 ms) must be
+// refused before anything is written into the target; one 100,000 ticks
+// before MaxTick restores, its clock continued.
+func TestSnapshotRefusesClockPastMaxTick(t *testing.T) {
+	skipSnapModes(t)
+	snapAt := func(before uint64) *bytes.Buffer {
+		f, _ := New(snapCfg)
+		for k := range 100 {
+			f.TouchAt(snapKey(k), 60_000, f.Now())
+		}
+		f.clockAdd.Add(MaxTick - before - f.clock())
+		var buf bytes.Buffer
+		if _, err := f.WriteTo(&buf); err != nil {
+			t.Fatal(err)
+		}
+		return &buf
+	}
+
+	late := snapAt(5)
+	time.Sleep(20 * time.Millisecond)
+	g, _ := New(snapCfg)
+	if _, err := g.ReadFrom(late); err == nil {
+		t.Fatalf("a restore continuing the clock past MaxTick was accepted: clock %d, MaxTick %d", g.clock(), uint64(MaxTick))
+	}
+	if c := g.clock(); c > MaxTick/2 {
+		t.Errorf("a refused restore moved the clock to %d", c)
+	}
+	for i, w := range g.words {
+		if w != 0 {
+			t.Fatalf("a refused restore wrote the table (word %d = %#x)", i, w)
+		}
+	}
+
+	h, _ := New(snapCfg)
+	if _, err := h.ReadFrom(snapAt(100_000)); err != nil {
+		t.Fatalf("a restore 100,000 ticks before MaxTick was refused: %v", err)
+	}
+	if c := h.clock(); c < MaxTick-100_000 || c > MaxTick {
+		t.Errorf("restored clock %d, want within [MaxTick-100000, MaxTick]", c)
+	}
+}
+
 // TestSnapshotSize (TF_EXP=1): a snapshot is within 1% of Bytes() at
 // Capacity 200,000 and 1,000,000 (3 x Capacity keys over 30 s: the stash
 // allocated), and at 200,000 with the stash, the hot table and the overflow

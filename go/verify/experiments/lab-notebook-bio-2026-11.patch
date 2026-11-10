@@ -1,0 +1,348 @@
+diff --git a/BIO-RESULTS.md b/BIO-RESULTS.md
+new file mode 100755
+index 0000000..5234d96
+--- /dev/null
++++ b/BIO-RESULTS.md
+@@ -0,0 +1,209 @@
++# lab/bio-2026-11: mechanisms taken from biology
++
++From f430207. Host: the WSL2 guest of the Ryzen host (12 threads, Go 1.24.7), no
++performance counters used here: ns/op read by interleaved rounds is indicative
++only; the deterministic readings (answers, counters, lines touched) are the
++ones a verdict rests on. Each arm's rule is committed before its reading.
++
++## B1 Scent marks on full lines
++
++**The analogy.** A foraging bumblebee leaves a short-lived scent mark on a
++flower it has emptied; other bees skip marked flowers, and the mark fades at
++about the rate nectar refills. A cuckoo search is a forager: it loads the
++alternate line of each candidate entry to learn, most of the time (a line is
++full with probability ~0.66 at 85% load), that it has no room.
++
++**The mechanism.** One byte per line: "these four slots are live until unit
++U". Whoever scans a line and finds four live entries (an insert's own two
++lines, a search's leaf scan) writes the mark from the oldest last touch it
++saw. A search consults the mark before it loads a leaf line and skips the
++load while the mark holds; the first-level prefetch skips marked lines too
++(they are loaded only if the search has to go deeper). The mark fades by
++arithmetic, as slots do: a touch only extends a slot's life, so the mark stays
++a lower bound. An install lowers a line's mark when the entry going in expires
++earlier (a relocated copy keeps its old last touch); `abandon` and the sweep
++clear it. Marks older than 200 units are bulk-cleared, so a byte's unit
++(mod 255) can't alias.
++
++A marked leaf still spends search budget, so the search visits the same
++entries in the same order and decides the same: single-threaded, every answer
++and counter must be identical. Under concurrency a mark can be stale for at
++most a horizon (a scan racing an `abandon`); the cost is a usable line
++skipped, never an answer: no guarantee depends on a search finding room.
++
++Marks are consulted by searches only: hits, counts and absent-key reads never
++read them (E41's lesson). `TF_MARKS=0` leaves them out (the base arm, in the
++same binary, so both arms share one code layout).
++
++**Rule (before any reading).**
++
++1. Identity: `tfbench -exact` byte-identical to `verify/expected/exact.txt`
++   in both arms; `TestConformance` passes; `go test -short` passes plain,
++   `TF_BG=1`, `TF_CT=1`; `go test -race -short` passes.
++2. Work: on tfbench's churn stream, the distinct alternate lines a search
++   touches (prefetched, scanned or expanded), per search, fall at least 2x at
++   load 1.0 (85% slot load). Read also at 1.1 and 1.15.
++3. Speed, indicative: `InsertSteady` and `CheckAndTouchMissInsert` at most
++   0.95 of the base (median of 8 interleaved rounds); `CheckAndTouchHit`,
++   `TouchAndCount`, `ContainsAbsent` and `InsertSaturated` at most 1.03.
++4. Memory: reported as read (`Bytes()` per key at design load).
++
++A candidate if 1 and 2 hold and 3 holds; otherwise recorded as read. Not
++adopted here in any case: it costs every filter a byte per line, which is the
++owner's decision, and its concurrent behaviour has no model.
++
++## B3 A fovea for hot entries (a model)
++
++**The analogy.** A retina spends its acuity where the gaze is: cones are
++packed in the fovea, and the eye moves the fovea onto what matters. A hot
++entry is where the filter already looks hardest: the heavy keys, the ones a
++rate limit exists for. Promotion gives such a key wider counters (range) but
++the same 2.5 s unit (acuity), so `Upper` on a window shorter than a few units
++still counts a whole unit bucket at the window's edge, and `TouchIfUnder`
++admits 30–65% of a limit on 1–5 s windows (paper §4.2).
++
++**The mechanism.** A hot entry keeps its newest 4 units also as 32 sub-unit
++buckets (unit/8, 312.5 ms at a 60 s horizon; 16-bit counts, 64 B: a second
++line per hot entry). `Upper` for a window whose edge falls inside those units
++counts the sub-bucket the edge cuts instead of the unit bucket. Older buckets
++and every other key are unchanged.
++
++**The model** (`TestLabFovea`): one hot key offered Poisson traffic for 10
++horizons behind three strict limiters (admit while `Upper` < limit): an exact
++sliding log, the hot entry as it is, and the foveal entry. Windows 1, 2.5, 5,
++10 and 15 s, limits of 20–100 events/s, offered 0.8x, 1.2x and 2x the limit.
++
++**Rule (before any reading).** Worth building if, at the 1 s and 5 s windows:
++
++1. offered 2x the limit, the foveal arm admits at least 0.75 of what the
++   exact log admits;
++2. offered 0.8x the limit, its false denies (denied while its own admitted
++   events were under the limit) are at most half the base arm's;
++3. no arm admits past the limit in any window (asserted).
++
++The base arm is read alongside: if it does not land near the paper's 30–65%
++the model is not the filter and the reading is void. A model's verdict is
++"worth building" at most: the entry's protocol (HotEntry.tla) and the memory
++(0.6 B per key more once a hot table exists, or half the entries) are not
++read here.
++
++## B1b, B1c Scent marks: wider marking, and marked leaves that cost no budget
++
++Designed after B1's work reading (1.62x at load 1.0, under its 2x; 29% of
++lines marked at the end where about half are full), so these rules are
++written knowing it.
++
++**B1b** (`TF_MARKS=2`). An insert that finds its primary line full and lands
++in its alternate line marks the primary line too (B1 marked an insert's own
++lines only when both were full). Same decisions as the base, so:
++
++- answers and counters identical to the base on the three churn streams;
++- lines per search at load 1.0 at least 2x fewer than the base.
++
++**B1c** (`TF_MARKS=3`). B1b, and a marked leaf spends no search budget: the
++budget caps lines loaded, and a marked leaf loads none. This changes which
++searches succeed, so placements differ from the base and from the
++conformance vectors: a format-level change, read here only for its size.
++
++- missed 0 and false_seen 0 on the three churn streams;
++- evictions at load 1.15 at least 25% under the base's 4,577;
++- lines per search no higher than B1b's at any load.
++
++## Readings
++
++### B1 scent marks: not a candidate (clauses 2 and 3 fail)
++
++1. Identity: holds but for the memory it costs. `tfbench -exact` differs
++   from `verify/expected/exact.txt` in one line, `memory ... 19.1 B/key`
++   (18.8); every answer and counter is the same, and `TF_MARKS=0` is
++   byte-identical. `TestConformance` and `TestRegress` pass. `go test -short`
++   passes with `TF_BG=1`, `TF_CT=1` and `TF_MARKS=0`; plain, and under
++   `-race` (0 races, 448 s), one test fails, `TestMemoryOnFirstUse` (78,328
++   bytes at 85% load, want the table's 77,120): the byte per line again.
++2. Work (`TF_LAB=1 go test -run TestLabMarksWork -v`): distinct alternate
++   lines per search, base → marks:
++
++   | churn load | searches (of unseen touches) | lines per search | fewer | lines marked at the end |
++   |---|---|---|---|---|
++   | 1.00 | 17.5% | 8.21 → 5.07 | 1.62x | 29.0% |
++   | 1.10 | 32.5% | 11.10 → 5.44 | 2.04x | 52.2% |
++   | 1.15 | 44.4% | 64.88 → 21.25 | 3.05x | 70.5% |
++
++   Under the 2x the rule asked at load 1.00. Evictions (0, 0, 4,577),
++   relocations, missed and false seen identical in both arms.
++3. Speed (3 interleaved rounds, not the 8 of the rule: every pair agreed in
++   direction and the spread was under 2%; ns/op, marks/base by medians):
++   InsertSteady 481 → 578 (1.20), CheckAndTouchMissInsert 1,935 → 2,093
++   (1.08), InsertSaturated 1,400 → 1,597 (1.14), a 4M-key InsertSteady past
++   the cache 539 → 718 (1.33), InsertNearFull 6,082 → 5,720 (0.94); Hit
++   1.014, TouchAndCount 1.001, ContainsAbsent 1.001. Slower where the rule
++   asked 0.95.
++4. Memory: 18.8 → 19.1 B per key at design load.
++
++**Why it is slower with fewer lines.** A line load is not the unit of cost.
++The base issues the eight first-level loads unconditionally, so their misses
++overlap: one or two miss rounds, whatever the count. The mark check puts a
++load of its own (a byte in a 294 KB array, 1.2 MB at 4M keys) and a branch
++the predictor can't call (a mark is set on 30–70% of lines) ahead of every
++line load, so the loads that remain no longer overlap. A profile of
++InsertSteady puts `warmLine` at 2.05 s of 7.19 s in the base and 2.74 s of
++8.12 s with marks, `markByte` and `markAhead` at 0.96 s more. It is E2's
++lesson (branchless-find) the other way round. The marks pay only where a
++search goes deep enough that lines, not rounds, bound it (load 1.15).
++
++### B1b: fails (1.71x at load 1.00, under 2x)
++
++Lines per search 4.80, 5.35, 21.20 at the three loads (1.71x, 2.07x, 3.06x);
++31.5% of lines marked at the end of load 1.00 against B1's 29.0%. Answers and
++counters identical to the base. What limits the marks is not who writes them
++but that a line is learned full only when someone scans it.
++
++### B1c: fails as written (clause 3); the eviction reading holds
++
++Missed 0, false seen 0 on the three streams. Evictions at load 1.15: 4,577 →
++1,238 (−73%), relocations 932,499 → 1,000,045, for 26.96 lines per search:
++2.41x fewer than the base's 64.88 but more than B1b's 21.20, which clause 3
++barred (a rule that asked a deeper search to load no more than a shallower
++one). E31's breadth-first search at the same budget reached 2,703 evictions
++and at twice the budget 369, slower both times; this arm is under the base
++on both counts in lines. In time it is not: InsertNearFull 6,082 → 7,941 ns
++(1.31), 0.0208 → 0.0085 evictions an insert, and with every leaf marked a
++saturated table's search never spends its budget: InsertSaturated 2.08,
++MissInsert 1.85. It would need a cap of its own on marked leaves.
++
++### B3 a fovea for hot entries: passes its rule (a model): worth building
++
++`TF_LAB=1 go test -run TestLabFovea -v`; admitted as a share of what an
++exact sliding log admits, and requests denied while the arm's own admitted
++events were under the limit, as a share of offered:
++
++| window | limit | offered | admitted: base | fovea | false denies: base | fovea |
++|---|---|---|---|---|---|---|
++| 1 s | 20 | 0.8x | 0.523 | 0.909 | 0.510 | 0.147 |
++| 1 s | 20 | 2x | 0.429 | 0.833 | 0.699 | 0.561 |
++| 1 s | 100 | 0.8x | 0.502 | 0.921 | 0.501 | 0.083 |
++| 1 s | 100 | 2x | 0.406 | 0.808 | 0.703 | 0.573 |
++| 2.5 s | 100 | 0.8x | 0.632 | 0.988 | 0.370 | 0.015 |
++| 5 s | 100 | 0.8x | 0.644 | 0.996 | 0.358 | 0.007 |
++| 5 s | 100 | 2x | 0.510 | 0.951 | 0.743 | 0.413 |
++| 5 s | 500 | 0.8x | 0.627 | 1.000 | 0.373 | 0.000 |
++| 5 s | 500 | 2x | 0.501 | 0.943 | 0.746 | 0.189 |
++| 10 s | 1000 | 0.8x | 0.625 | 0.626 | 0.375 | 0.374 |
++| 15 s | 300 | 0.8x | 0.704 | 0.704 | 0.296 | 0.296 |
++
++(The 1.2x rows are in the test's output.) The base arm reads 0.41–0.64 on
++1–5 s windows, inside the paper's 30–65%, so the model is the filter's
++`Upper`. Clause 1: 0.81–0.83 at 1 s and 0.94–0.95 at 5 s, over 0.75. Clause
++2: false denies 3.5–6x under the base at 1 s, 48x and more at 5 s. Clause 3
++asserted, never tripped. Windows of 10 s and more reach past the four
++foveated units and read as the base, as designed.
++
++Limits of the reading. A model of one key: no entry protocol (the sub-bucket
++words would join `HotEntry.tla`'s writers), no memory reading (a second line
++per hot entry: 0.6 B per key more once a hot table exists, or half as many
++entries in the same bytes), no `Count`. And the limit-20 rows can't happen
++by today's promotion: a key held to 20 a second by `TouchIfUnder` is
++admitted about 20 times a unit, under the 31 that promote it, so it stays on
++its register. Those rows need promotion on an uncertain denial (`Upper` at
++the limit, `Count` under it) rather than on overflow: the next arm, with the
++number of entries that takes as its reading.
+diff --git a/lab/b1-bench.txt b/lab/b1-bench.txt
+new file mode 100644
+index 0000000..25f1262
+--- /dev/null
++++ b/lab/b1-bench.txt
+@@ -0,0 +1,72 @@
++arm0 BenchmarkCheckAndTouchMissInsert-12    	 1000000	      1935 ns/op	      5513 cycles/op
++arm0 BenchmarkInsertSaturated-12            	 1000000	      1400 ns/op
++arm0 BenchmarkInsertNearFull-12             	 1000000	      6082 ns/op	         0.02082 evict/op
++arm0 BenchmarkInsertSteady-12               	 1000000	       476.5 ns/op	      1345 cycles/op
++arm0 BenchmarkLabInsertSteadyBig-12         	 1000000	       540.3 ns/op
++arm0 BenchmarkCheckAndTouchHit-12    	 3000000	       185.3 ns/op	       524.7 cycles/op
++arm0 BenchmarkTouchAndCount-12       	 3000000	       203.4 ns/op	       571.4 cycles/op
++arm0 BenchmarkContainsAbsent-12      	 3000000	       167.9 ns/op	       472.3 cycles/op
++arm1 BenchmarkCheckAndTouchMissInsert-12    	 1000000	      2093 ns/op	      5954 cycles/op
++arm1 BenchmarkInsertSaturated-12            	 1000000	      1566 ns/op
++arm1 BenchmarkInsertNearFull-12             	 1000000	      5645 ns/op	         0.02082 evict/op
++arm1 BenchmarkInsertSteady-12               	 1000000	       574.8 ns/op	      1619 cycles/op
++arm1 BenchmarkLabInsertSteadyBig-12         	 1000000	       710.3 ns/op
++arm1 BenchmarkCheckAndTouchHit-12    	 3000000	       184.8 ns/op	       523.9 cycles/op
++arm1 BenchmarkTouchAndCount-12       	 3000000	       197.6 ns/op	       563.0 cycles/op
++arm1 BenchmarkContainsAbsent-12      	 3000000	       164.3 ns/op	       466.5 cycles/op
++arm3 BenchmarkCheckAndTouchMissInsert-12    	 1000000	      3576 ns/op	     10161 cycles/op
++arm3 BenchmarkInsertSaturated-12            	 1000000	      3010 ns/op
++arm3 BenchmarkInsertNearFull-12             	 1000000	      7839 ns/op	         0.008481 evict/op
++arm3 BenchmarkInsertSteady-12               	 1000000	       576.5 ns/op	      1627 cycles/op
++arm3 BenchmarkLabInsertSteadyBig-12         	 1000000	       788.4 ns/op
++arm3 BenchmarkCheckAndTouchHit-12    	 3000000	       184.8 ns/op	       521.7 cycles/op
++arm3 BenchmarkTouchAndCount-12       	 3000000	       195.7 ns/op	       558.7 cycles/op
++arm3 BenchmarkContainsAbsent-12      	 3000000	       164.8 ns/op	       464.5 cycles/op
++arm0 BenchmarkCheckAndTouchMissInsert-12    	 1000000	      1969 ns/op	      5560 cycles/op
++arm0 BenchmarkInsertSaturated-12            	 1000000	      1395 ns/op
++arm0 BenchmarkInsertNearFull-12             	 1000000	      6039 ns/op	         0.02082 evict/op
++arm0 BenchmarkInsertSteady-12               	 1000000	       484.3 ns/op	      1345 cycles/op
++arm0 BenchmarkLabInsertSteadyBig-12         	 1000000	       534.9 ns/op
++arm0 BenchmarkCheckAndTouchHit-12    	 3000000	       182.2 ns/op	       518.3 cycles/op
++arm0 BenchmarkTouchAndCount-12       	 3000000	       197.5 ns/op	       560.5 cycles/op
++arm0 BenchmarkContainsAbsent-12      	 3000000	       161.9 ns/op	       459.8 cycles/op
++arm1 BenchmarkCheckAndTouchMissInsert-12    	 1000000	      2328 ns/op	      6590 cycles/op
++arm1 BenchmarkInsertSaturated-12            	 1000000	      1597 ns/op
++arm1 BenchmarkInsertNearFull-12             	 1000000	      5720 ns/op	         0.02082 evict/op
++arm1 BenchmarkInsertSteady-12               	 1000000	       586.0 ns/op	      1653 cycles/op
++arm1 BenchmarkLabInsertSteadyBig-12         	 1000000	       738.7 ns/op
++arm1 BenchmarkCheckAndTouchHit-12    	 3000000	       192.2 ns/op	       543.8 cycles/op
++arm1 BenchmarkTouchAndCount-12       	 3000000	       197.5 ns/op	       562.4 cycles/op
++arm1 BenchmarkContainsAbsent-12      	 3000000	       163.3 ns/op	       466.3 cycles/op
++arm3 BenchmarkCheckAndTouchMissInsert-12    	 1000000	      3577 ns/op	     10192 cycles/op
++arm3 BenchmarkInsertSaturated-12            	 1000000	      2849 ns/op
++arm3 BenchmarkInsertNearFull-12             	 1000000	      8001 ns/op	         0.008481 evict/op
++arm3 BenchmarkInsertSteady-12               	 1000000	       584.2 ns/op	      1624 cycles/op
++arm3 BenchmarkLabInsertSteadyBig-12         	 1000000	       732.2 ns/op
++arm3 BenchmarkCheckAndTouchHit-12    	 3000000	       183.7 ns/op	       523.8 cycles/op
++arm3 BenchmarkTouchAndCount-12       	 3000000	       198.8 ns/op	       567.8 cycles/op
++arm3 BenchmarkContainsAbsent-12      	 3000000	       163.3 ns/op	       467.4 cycles/op
++arm0 BenchmarkCheckAndTouchMissInsert-12    	 1000000	      1927 ns/op	      5504 cycles/op
++arm0 BenchmarkInsertSaturated-12            	 1000000	      1406 ns/op
++arm0 BenchmarkInsertNearFull-12             	 1000000	      6103 ns/op	         0.02082 evict/op
++arm0 BenchmarkInsertSteady-12               	 1000000	       481.1 ns/op	      1352 cycles/op
++arm0 BenchmarkLabInsertSteadyBig-12         	 1000000	       539.1 ns/op
++arm0 BenchmarkCheckAndTouchHit-12    	 3000000	       181.3 ns/op	       519.1 cycles/op
++arm0 BenchmarkTouchAndCount-12       	 3000000	       196.3 ns/op	       558.0 cycles/op
++arm0 BenchmarkContainsAbsent-12      	 3000000	       164.1 ns/op	       469.9 cycles/op
++arm1 BenchmarkCheckAndTouchMissInsert-12    	 1000000	      2091 ns/op	      5944 cycles/op
++arm1 BenchmarkInsertSaturated-12            	 1000000	      1637 ns/op
++arm1 BenchmarkInsertNearFull-12             	 1000000	      5790 ns/op	         0.02082 evict/op
++arm1 BenchmarkInsertSteady-12               	 1000000	       577.9 ns/op	      1620 cycles/op
++arm1 BenchmarkLabInsertSteadyBig-12         	 1000000	       717.7 ns/op
++arm1 BenchmarkCheckAndTouchHit-12    	 3000000	       181.8 ns/op	       519.7 cycles/op
++arm1 BenchmarkTouchAndCount-12       	 3000000	       202.8 ns/op	       568.4 cycles/op
++arm1 BenchmarkContainsAbsent-12      	 3000000	       164.9 ns/op	       466.4 cycles/op
++arm3 BenchmarkCheckAndTouchMissInsert-12    	 1000000	      3607 ns/op	     10291 cycles/op
++arm3 BenchmarkInsertSaturated-12            	 1000000	      2918 ns/op
++arm3 BenchmarkInsertNearFull-12             	 1000000	      7941 ns/op	         0.008481 evict/op
++arm3 BenchmarkInsertSteady-12               	 1000000	       588.6 ns/op	      1653 cycles/op
++arm3 BenchmarkLabInsertSteadyBig-12         	 1000000	       745.2 ns/op
++arm3 BenchmarkCheckAndTouchHit-12    	 3000000	       185.5 ns/op	       526.9 cycles/op
++arm3 BenchmarkTouchAndCount-12       	 3000000	       201.6 ns/op	       571.6 cycles/op
++arm3 BenchmarkContainsAbsent-12      	 3000000	       165.3 ns/op	       469.0 cycles/op
+diff --git a/lab/b1-work.txt b/lab/b1-work.txt
+new file mode 100644
+index 0000000..7aa1527
+--- /dev/null
++++ b/lab/b1-work.txt
+@@ -0,0 +1,18 @@
++load 1.00 arm 0 marks=false: unseen touches 815403, searches 142922 (17.5%), lines/search 8.21, past the first level 5794 (4.05%), evictions 0, relocations 148716, seen 154254, missed 0, false seen 0, lines marked at the end 0.0%
++load 1.00 arm 1 marks=true: unseen touches 815403, searches 142922 (17.5%), lines/search 5.07, past the first level 5794 (4.05%), evictions 0, relocations 148716, seen 154254, missed 0, false seen 0, lines marked at the end 29.0%
++load 1.00 arm 2 marks=true: unseen touches 815403, searches 142922 (17.5%), lines/search 4.80, past the first level 5794 (4.05%), evictions 0, relocations 148716, seen 154254, missed 0, false seen 0, lines marked at the end 31.5%
++load 1.00 arm 3 marks=true: unseen touches 815403, searches 142922 (17.5%), lines/search 4.80, past the first level 5794 (4.05%), evictions 0, relocations 148716, seen 154254, missed 0, false seen 0, lines marked at the end 31.5%
++load 1.00: lines per search, fewer than the base: B1 1.62x, B1b 1.71x, B1c 1.71x
++load 1.10 arm 0 marks=false: unseen touches 897303, searches 291711 (32.5%), lines/search 11.10, past the first level 86024 (29.49%), evictions 0, relocations 379688, seen 169629, missed 0, false seen 0, lines marked at the end 0.0%
++load 1.10 arm 1 marks=true: unseen touches 897303, searches 291711 (32.5%), lines/search 5.44, past the first level 86024 (29.49%), evictions 0, relocations 379688, seen 169629, missed 0, false seen 0, lines marked at the end 52.2%
++load 1.10 arm 2 marks=true: unseen touches 897303, searches 291711 (32.5%), lines/search 5.35, past the first level 86024 (29.49%), evictions 0, relocations 379688, seen 169629, missed 0, false seen 0, lines marked at the end 52.9%
++load 1.10 arm 3 marks=true: unseen touches 897303, searches 291711 (32.5%), lines/search 5.35, past the first level 86024 (29.49%), evictions 0, relocations 379688, seen 169629, missed 0, false seen 0, lines marked at the end 52.9%
++load 1.10: lines per search, fewer than the base: B1 2.04x, B1b 2.07x, B1c 2.07x
++load 1.15 arm 0 marks=false: unseen touches 938963, searches 416794 (44.4%), lines/search 64.88, past the first level 307315 (73.73%), evictions 4577, relocations 932499, seen 176352, missed 0, false seen 0, lines marked at the end 0.0%
++load 1.15 arm 1 marks=true: unseen touches 938963, searches 416794 (44.4%), lines/search 21.25, past the first level 307315 (73.73%), evictions 4577, relocations 932499, seen 176352, missed 0, false seen 0, lines marked at the end 70.5%
++load 1.15 arm 2 marks=true: unseen touches 938963, searches 416794 (44.4%), lines/search 21.20, past the first level 307315 (73.73%), evictions 4577, relocations 932499, seen 176352, missed 0, false seen 0, lines marked at the end 70.6%
++load 1.15 arm 3 marks=true: unseen touches 938963, searches 419151 (44.6%), lines/search 26.96, past the first level 315242 (75.21%), evictions 1238, relocations 1000045, seen 176352, missed 0, false seen 0, lines marked at the end 71.1%
++load 1.15: lines per search, fewer than the base: B1 3.05x, B1b 3.06x, B1c 2.41x
++--- PASS: TestLabMarksWork (29.38s)
++PASS
++ok  	github.com/scooter-sensei/clepsydra/go	29.388s
+diff --git a/lab/b3-fovea.txt b/lab/b3-fovea.txt
+new file mode 100644
+index 0000000..eae7f0b
+--- /dev/null
++++ b/lab/b3-fovea.txt
+@@ -0,0 +1,25 @@
++    fovea_lab_test.go:72: window   limit   offered  | admitted, of the exact log's: base, fovea | denied though under the limit (of offered): base, fovea
++    fovea_lab_test.go:105:   1.0 s  20      0.8x     | 0.523 0.909 | 0.5104 0.1466
++    fovea_lab_test.go:105:   1.0 s  20      1.2x     | 0.450 0.856 | 0.6613 0.3461
++    fovea_lab_test.go:105:   1.0 s  20      2.0x     | 0.429 0.833 | 0.6989 0.5606
++    fovea_lab_test.go:105:   1.0 s  100     0.8x     | 0.502 0.921 | 0.5006 0.0834
++    fovea_lab_test.go:105:   1.0 s  100     1.2x     | 0.415 0.823 | 0.6650 0.3358
++    fovea_lab_test.go:105:   1.0 s  100     2.0x     | 0.406 0.808 | 0.7025 0.5730
++    fovea_lab_test.go:105:   2.5 s  100     0.8x     | 0.632 0.988 | 0.3699 0.0146
++    fovea_lab_test.go:105:   2.5 s  100     1.2x     | 0.519 0.915 | 0.5784 0.2570
++    fovea_lab_test.go:105:   2.5 s  100     2.0x     | 0.505 0.898 | 0.7451 0.3828
++    fovea_lab_test.go:105:   5.0 s  100     0.8x     | 0.644 0.996 | 0.3579 0.0074
++    fovea_lab_test.go:105:   5.0 s  100     1.2x     | 0.525 0.960 | 0.5700 0.2088
++    fovea_lab_test.go:105:   5.0 s  100     2.0x     | 0.510 0.951 | 0.7433 0.4134
++    fovea_lab_test.go:105:   5.0 s  500     0.8x     | 0.627 1.000 | 0.3732 0.0000
++    fovea_lab_test.go:105:   5.0 s  500     1.2x     | 0.505 0.948 | 0.5799 0.2065
++    fovea_lab_test.go:105:   5.0 s  500     2.0x     | 0.501 0.943 | 0.7457 0.1887
++    fovea_lab_test.go:105:  10.0 s  1000    0.8x     | 0.625 0.626 | 0.3746 0.3739
++    fovea_lab_test.go:105:  10.0 s  1000    1.2x     | 0.503 0.504 | 0.5792 0.5784
++    fovea_lab_test.go:105:  10.0 s  1000    2.0x     | 0.501 0.502 | 0.7412 0.7407
++    fovea_lab_test.go:105:  15.0 s  300     0.8x     | 0.704 0.704 | 0.2955 0.2955
++    fovea_lab_test.go:105:  15.0 s  300     1.2x     | 0.696 0.696 | 0.4294 0.4294
++    fovea_lab_test.go:105:  15.0 s  300     2.0x     | 0.750 0.750 | 0.4935 0.5148
++--- PASS: TestLabFovea (0.23s)
++PASS
++ok  	github.com/scooter-sensei/clepsydra/go	0.240s

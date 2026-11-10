@@ -1,0 +1,116 @@
+diff --git a/fovea_lab_test.go b/fovea_lab_test.go
+new file mode 100644
+index 0000000..4a1c235
+--- /dev/null
++++ b/fovea_lab_test.go
+@@ -0,0 +1,110 @@
++package temporalfilter
++
++import (
++	"math/rand/v2"
++	"os"
++	"sort"
++	"testing"
++)
++
++// TestLabFovea (TF_LAB=1) is a model of lab arm B3: a hot entry that also
++// keeps its newest units in sub-unit buckets. One hot key, offered Poisson
++// traffic, behind three strict limiters (admit while Upper < limit) that
++// differ only in what Upper may count as inside the window:
++//
++//	exact  every admitted event's time (a sliding log)
++//	base   the hot entry as it is: the register's buckets at the entry's
++//	       epoch, the bucket the window's edge cuts counted whole
++//	fovea  the same, but an edge inside the newest fovUnits units cuts a
++//	       sub-bucket of unit/fovSub instead
++//
++// The model keeps each limiter's admitted times and derives the counts a
++// bucket would hold from them: a hot entry's 32-bit counters are exact, and a
++// re-bucketing lands each old bucket whole inside a new one, so a bucket
++// holds exactly the events of the units it spans.
++func TestLabFovea(t *testing.T) {
++	if os.Getenv("TF_LAB") == "" {
++		t.Skip("TF_LAB=1")
++	}
++	const (
++		unit     = 2_500_000 // µs: Horizon 60 s / 24
++		horizon  = 24 * unit
++		fovSub   = 8 // 312.5 ms
++		fovUnits = 4
++		span     = 10 * horizon
++	)
++	floorDiv := func(a, b int64) int64 {
++		q := a / b
++		if a%b != 0 && a < 0 {
++			q--
++		}
++		return q
++	}
++	// since counts adm's events at or after from.
++	since := func(adm []int64, from int64) int {
++		return len(adm) - sort.Search(len(adm), func(i int) bool { return adm[i] >= from })
++	}
++	// cut is the start of what Upper counts whole for a window from..now.
++	cut := func(adm []int64, from int64, fovea bool) int64 {
++		last := adm[len(adm)-1]
++		e := floorDiv(last, unit)
++		if fovea && from >= (e-fovUnits+1)*unit {
++			return floorDiv(from, unit/fovSub) * (unit / fovSub)
++		}
++		x := floorDiv(from, unit)
++		for j := 0; j < nBuckets; j++ {
++			if s := bucketStart(e, j); s <= x {
++				return s * unit
++			}
++		}
++		return bucketStart(e, nBuckets-1) * unit
++	}
++	upper := func(adm []int64, now, w int64, arm int) int {
++		if len(adm) == 0 || now-adm[len(adm)-1] > w {
++			return 0
++		}
++		from := now - w
++		if arm == 0 {
++			return since(adm, from)
++		}
++		return since(adm, cut(adm, from, arm == 2))
++	}
++	t.Logf("%-8s %-7s %-8s | admitted, of the exact log's: base, fovea | denied though under the limit (of offered): base, fovea", "window", "limit", "offered")
++	for _, c := range []struct {
++		wMs   int64
++		limit int
++	}{{1000, 20}, {1000, 100}, {2500, 100}, {5000, 100}, {5000, 500}, {10000, 1000}, {15000, 300}} {
++		w := c.wMs * 1000
++		for _, mult := range []float64{0.8, 1.2, 2} {
++			r := rand.New(rand.NewPCG(uint64(c.wMs), uint64(c.limit)))
++			rate := mult * float64(c.limit) / float64(w) // events per µs
++			var adm [3][]int64
++			var falseDeny, total [3]int
++			offered := 0
++			for now := int64(horizon); now < horizon+span; {
++				now += int64(r.ExpFloat64()/rate) + 1
++				offered++
++				for arm := range adm {
++					a := adm[arm]
++					// keep a horizon and a register's reach of history
++					if len(a) > 0 && a[0] < now-3*horizon {
++						a = a[sort.Search(len(a), func(i int) bool { return a[i] >= now-2*horizon }):]
++					}
++					if upper(a, now, w, arm) < c.limit {
++						if since(a, now-w) >= c.limit {
++							t.Fatalf("arm %d admitted past the limit", arm)
++						}
++						a = append(a, now)
++						total[arm]++
++					} else if since(a, now-w) < c.limit {
++						falseDeny[arm]++ // its own admitted events were under the limit
++					}
++					adm[arm] = a
++				}
++			}
++			t.Logf("%5.1f s  %-7d %.1fx     | %.3f %.3f | %.4f %.4f", float64(c.wMs)/1000, c.limit, mult,
++				float64(total[1])/float64(total[0]), float64(total[2])/float64(total[0]),
++				float64(falseDeny[1])/float64(offered), float64(falseDeny[2])/float64(offered))
++		}
++	}
++}

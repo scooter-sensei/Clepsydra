@@ -1,0 +1,444 @@
+diff --git a/lab_larva_test.go b/lab_larva_test.go
+new file mode 100644
+index 0000000..172185e
+--- /dev/null
++++ b/lab_larva_test.go
+@@ -0,0 +1,438 @@
++package temporalfilter
++
++import (
++	"os"
++	"testing"
++	"time"
++
++	"github.com/scooter-sensei/clepsydra/go/internal/workload"
++)
++
++// lab/bio2-2026-11, arm B5: larval slots (a placement model).
++//
++// A line is 8 cells (words), 4 pairs. An adult takes a pair (the filter's
++// slot); a larva, a key seen once, takes one cell. The adult arm installs
++// every key as an adult: the filter's layout, placed by the filter's search
++// as written here (iterative deepening to depth 3, the pressure-scaled
++// budget, eviction of the lightest). Lines, primary and alternate lines are
++// the filter's own.
++
++const (
++	lcEmpty = iota
++	lcLarva
++	lcAdult // first word of a pair; the second is lcTail
++	lcTail
++)
++
++// larvaSpread (TF_LARVA_SPREAD=1, arm B5b): a new larva takes a cell of an
++// empty pair first, and shares a pair only when the line has none.
++var larvaSpread = os.Getenv("TF_LARVA_SPREAD") != ""
++
++type lcell struct {
++	kind uint8
++	h    uint64
++	last uint64
++	mass uint32
++}
++
++type larvaModel struct {
++	f        *Filter
++	c        []lcell
++	larval   bool
++	hT, now  uint64
++	pressure uint64
++	gone     map[uint64]lcell // evicted histories (the stash)
++
++	unseen, searches, evictions, relocations, compactions int
++	meta, metaOwn, metaMove, metaSearch, metaEvict        int
++	restored                                             int
++	metaSame                                             int // moves that stayed in the larva own line
++}
++
++func (m *larvaModel) dead(i int) bool {
++	k := m.c[i].kind
++	if k == lcEmpty {
++		return true
++	}
++	if k == lcTail {
++		i--
++	}
++	return m.now-m.c[i].last > m.hT
++}
++
++// clean frees the expired entries of a line.
++func (m *larvaModel) clean(line uint64) {
++	b := int(line) * 8
++	for i := b; i < b+8; i++ {
++		if k := m.c[i].kind; (k == lcLarva || k == lcAdult) && m.now-m.c[i].last > m.hT {
++			if k == lcAdult {
++				m.c[i+1] = lcell{}
++			}
++			m.c[i] = lcell{}
++		}
++	}
++}
++
++func (m *larvaModel) other(line, h uint64) uint64 { return m.f.alt(line, fingerprint(h)) }
++
++// freePair: a pair with both cells empty, or -1 (line cleaned by the caller).
++func (m *larvaModel) freePair(line uint64) int {
++	b := int(line) * 8
++	for p := 0; p < 4; p++ {
++		if m.c[b+2*p].kind == lcEmpty && m.c[b+2*p+1].kind == lcEmpty {
++			return b + 2*p
++		}
++	}
++	return -1
++}
++
++// freeCell: an empty cell beside a larva first (no pair is broken), else
++// any empty cell, skipping pair skip (a cell index, or -1 for none).
++func (m *larvaModel) freeCell(line uint64, skip int) int {
++	b := int(line) * 8
++	any := -1
++	for i := b; i < b+8; i++ {
++		if m.c[i].kind != lcEmpty || skip >= 0 && i/2 == skip/2 {
++			continue
++		}
++		if (m.c[i^1].kind == lcLarva) != larvaSpread {
++			return i // beside a larva; with larvaSpread, in an empty pair
++		}
++		if any < 0 {
++			any = i
++		}
++	}
++	return any
++}
++
++// compact joins two lone larvae of a line in one pair and returns the pair
++// it frees, or -1.
++func (m *larvaModel) compact(line uint64) int {
++	if !m.larval {
++		return -1
++	}
++	b := int(line) * 8
++	first := -1
++	for i := b; i < b+8; i++ {
++		if m.c[i].kind == lcLarva && m.c[i^1].kind == lcEmpty {
++			if first < 0 {
++				first = i
++				continue
++			}
++			m.c[first^1] = m.c[i]
++			m.c[i] = lcell{}
++			m.compactions++
++			return i &^ 1
++		}
++	}
++	return -1
++}
++
++func (m *larvaModel) pairFor(line uint64) int {
++	if p := m.freePair(line); p >= 0 {
++		return p
++	}
++	return m.compact(line)
++}
++
++func (m *larvaModel) putAdult(i int, e lcell) {
++	e.kind = lcAdult
++	m.c[i], m.c[i+1] = e, lcell{kind: lcTail}
++}
++
++func (m *larvaModel) take(i int) lcell {
++	e := m.c[i]
++	if e.kind == lcAdult {
++		m.c[i+1] = lcell{}
++	}
++	m.c[i] = lcell{}
++	return e
++}
++
++// roomIn finds room in line for an entry of kind k: a cell index or -1.
++func (m *larvaModel) roomIn(line uint64, k uint8) int {
++	if k == lcLarva {
++		return m.freeCell(line, -1)
++	}
++	return m.pairFor(line)
++}
++
++// relocate moves the entry at cell i of line to its other line, first
++// moving entries out of that line if it must, up to depth more steps.
++func (m *larvaModel) relocate(line uint64, i int, depth int, budget *int) bool {
++	k := m.c[i].kind
++	if k != lcLarva && k != lcAdult {
++		return false
++	}
++	if *budget <= 0 {
++		return false
++	}
++	*budget--
++	a := m.other(line, m.c[i].h)
++	m.clean(a)
++	move := func() bool {
++		d := m.roomIn(a, k)
++		if d < 0 {
++			return false
++		}
++		e := m.take(i)
++		if k == lcAdult {
++			m.putAdult(d, e)
++		} else {
++			m.c[d] = e
++		}
++		m.relocations++
++		return true
++	}
++	if move() {
++		return true
++	}
++	if depth > 0 {
++		b := int(a) * 8
++		for j := b; j < b+8; j++ {
++			if m.relocate(a, j, depth-1, budget) && move() {
++				return true
++			}
++		}
++	}
++	return false
++}
++
++// place installs e (an adult or a larva) for a key whose lines are p and
++// its other line: free room, then the search, then an eviction. It reports
++// how far it had to go: 0 room, 1 search, 2 eviction.
++func (m *larvaModel) place(e lcell) int {
++	p := m.f.primary(e.h)
++	lines := [2]uint64{p, m.other(p, e.h)}
++	put := func(i int) {
++		if e.kind == lcAdult {
++			m.putAdult(i, e)
++		} else {
++			m.c[i] = e
++		}
++	}
++	for _, line := range lines {
++		m.clean(line)
++		if i := m.roomIn(line, e.kind); i >= 0 {
++			put(i)
++			return 0
++		}
++	}
++	pr := m.pressure
++	budget := 8 + int(uint64(relocBudget-8)*(pressureOne-pr)>>pressureShift)
++	for depth := 0; depth <= relocDepth; depth++ {
++		for _, line := range lines {
++			b := int(line) * 8
++			for j := b; j < b+8; j++ {
++				if m.relocate(line, j, depth, &budget) {
++					if i := m.roomIn(line, e.kind); i >= 0 {
++						put(i)
++						m.pressure = pr - pr>>3
++						return 1
++					}
++				}
++			}
++		}
++	}
++	m.pressure = pr - pr>>3 + pressureOne>>3
++	// Eviction: the lightest unit that frees the room (oldest on ties). For
++	// a larva, any entry; for an adult, a pair's entries together.
++	best, bestScore, bestLast := -1, uint64(1<<63), uint64(0)
++	for _, line := range lines {
++		b := int(line) * 8
++		if e.kind == lcLarva {
++			for j := b; j < b+8; j++ {
++				if k := m.c[j].kind; k == lcLarva || k == lcAdult {
++					if s, l := uint64(m.c[j].mass), m.c[j].last; s < bestScore || s == bestScore && l < bestLast {
++						best, bestScore, bestLast = j, s, l
++					}
++				}
++			}
++			continue
++		}
++		for j := b; j < b+8; j += 2 {
++			var s, l uint64 = 0, 1 << 63
++			for _, x := range []int{j, j + 1} {
++				if k := m.c[x].kind; k == lcLarva || k == lcAdult {
++					s += uint64(m.c[x].mass)
++					l = min(l, m.c[x].last)
++				}
++			}
++			if s < bestScore || s == bestScore && l < bestLast {
++				best, bestScore, bestLast = j, s, l
++			}
++		}
++	}
++	evict := func(j int) {
++		if k := m.c[j].kind; k == lcLarva || k == lcAdult {
++			v := m.take(j)
++			m.gone[v.h] = v
++			m.evictions++
++		}
++	}
++	if e.kind == lcLarva {
++		evict(best)
++		put(best)
++	} else {
++		evict(best)
++		evict(best + 1)
++		put(best)
++	}
++	return 2
++}
++
++func (m *larvaModel) find(h uint64) int {
++	p := m.f.primary(h)
++	for _, line := range [2]uint64{p, m.other(p, h)} {
++		b := int(line) * 8
++		for i := b; i < b+8; i++ {
++			if k := m.c[i].kind; (k == lcLarva || k == lcAdult) && m.c[i].h == h && m.now-m.c[i].last <= m.hT {
++				return i
++			}
++		}
++	}
++	return -1
++}
++
++func (m *larvaModel) touch(h, now uint64) {
++	m.now = now
++	i := m.find(h)
++	if i < 0 {
++		m.unseen++
++		e := lcell{kind: lcAdult, h: h, last: now, mass: 1}
++		if g, ok := m.gone[h]; ok {
++			delete(m.gone, h)
++			if now-g.last <= m.hT {
++				e.mass = g.mass + 1
++				m.restored++
++			}
++		}
++		if m.larval && e.mass == 1 {
++			e.kind = lcLarva
++		}
++		if m.place(e) >= 1 {
++			m.searches++
++		}
++		return
++	}
++	m.c[i].mass++
++	m.c[i].last = now
++	if m.c[i].kind == lcAdult {
++		return
++	}
++	// A larva's second touch: its metamorphosis.
++	m.meta++
++	line := uint64(i / 8)
++	m.clean(line)
++	if m.c[i^1].kind == lcEmpty {
++		m.putAdult(i&^1, m.take(i))
++		m.metaOwn++
++		return
++	}
++	other := m.other(line, h)
++	m.clean(other)
++	for _, l := range [2]uint64{line, other} {
++		if p := m.freePair(l); p >= 0 {
++			m.putAdult(p, m.take(i))
++			m.metaMove++
++			if l == line {
++				m.metaSame++
++			}
++			return
++		}
++	}
++	// Its pair's other larva steps aside: within the line, or to its own
++	// other line.
++	bud := i ^ 1
++	d := m.freeCell(line, i)
++	if d < 0 {
++		bl := m.other(line, m.c[bud].h)
++		m.clean(bl)
++		d = m.freeCell(bl, -1)
++	}
++	if d >= 0 {
++		if d/8 == i/8 {
++			m.metaSame++
++		}
++		m.c[d] = m.take(bud)
++		m.relocations++
++		m.putAdult(i&^1, m.take(i))
++		m.metaMove++
++		return
++	}
++	for _, l := range [2]uint64{line, other} {
++		if p := m.compact(l); p >= 0 {
++			m.putAdult(p, m.take(i))
++			m.metaMove++
++			return
++		}
++	}
++	e := m.take(i)
++	e.kind = lcAdult
++	if m.place(e) == 2 {
++		m.metaEvict++
++	} else {
++		m.metaSearch++
++	}
++}
++
++func TestLabLarva(t *testing.T) {
++	if os.Getenv("TF_LAB") == "" {
++		t.Skip("set TF_LAB=1")
++	}
++	const capN, hTicks = 200_000, 60_000
++	cases := []struct {
++		load float64
++		seed uint64
++	}{{1.00, 2}, {1.10, 3}, {1.15, 4}, {1.30, 4}, {1.50, 4}, {1.75, 4}, {2.00, 4}, {2.50, 4}}
++	for _, c := range cases {
++		if os.Getenv("TF_LARVA_MAXLOAD") != "" && c.load > 1.2 {
++			break
++		}
++		f, err := New(Config{Capacity: capN, Horizon: time.Minute, Resolution: time.Millisecond})
++		if err != nil {
++			t.Fatal(err)
++		}
++		ms := [2]*larvaModel{}
++		for a := range ms {
++			ms[a] = &larvaModel{f: f, c: make([]lcell, f.lines*8), larval: a == 1, hT: hTicks, gone: map[uint64]lcell{}}
++		}
++		var larvae, adults, samples float64
++		var sampled uint64
++		workload.Churn(c.load, c.seed, capN, hTicks, mix64, func(h, w, now uint64) {
++			f.CheckAndTouchAt(h, w, now)
++			ms[0].touch(h, now)
++			ms[1].touch(h, now)
++			if now >= 3*hTicks && now%1000 == 0 && now != sampled {
++				sampled = now
++				m := ms[1]
++				for i := range m.c {
++					if k := m.c[i].kind; (k == lcLarva || k == lcAdult) && now-m.c[i].last <= hTicks {
++						if k == lcLarva {
++							larvae++
++						} else {
++							adults++
++						}
++					}
++				}
++				samples++
++			}
++		})
++		t.Logf("load %.2f filter: evictions=%d relocations=%d", c.load, f.Evictions(), f.Relocations())
++		for a, m := range ms {
++			name := "adult "
++			if a == 1 {
++				name = "larval"
++			}
++			t.Logf("load %.2f %s: unseen=%d searches=%.1f%% evictions=%d relocations=%d compactions=%d restored=%d",
++				c.load, name, m.unseen, 100*float64(m.searches)/float64(m.unseen), m.evictions, m.relocations, m.compactions, m.restored)
++		}
++		m := ms[1]
++		cells := float64(len(m.c))
++		t.Logf("load %.2f larval: of the moves, %.1f%% of metamorphoses stayed in the larva own line", c.load, 100*float64(m.metaSame)/float64(m.meta))
++		t.Logf("load %.2f larval: larvae %.1f%% of live keys; cells in use %.1f%% (adult layout: %.1f%%); metamorphoses=%d own pair %.1f%% move %.1f%% search %.2f%% eviction %.2f%%",
++			c.load, 100*larvae/(larvae+adults), 100*(larvae+2*adults)/samples/cells, 100*2*(larvae+adults)/samples/cells,
++			m.meta, 100*float64(m.metaOwn)/float64(m.meta), 100*float64(m.metaMove)/float64(m.meta),
++			100*float64(m.metaSearch)/float64(m.meta), 100*float64(m.metaEvict)/float64(m.meta))
++	}
++}

@@ -1,0 +1,486 @@
+diff --git a/cuckoo.go b/cuckoo.go
+index b65ffec..ffe6461 100644
+--- a/cuckoo.go
++++ b/cuckoo.go
+@@ -131,10 +131,13 @@ const (
+ // put installs the entry (nil: install; see putNew).
+ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int, put putFunc) int {
+ 	for {
++		var oldest [2]uint64
+ 		for li, line := range lines {
+ 			base := int(line * wordsPerLine)
++			oldest[li] = 1<<64 - 1
+ 			for s := 0; s < wordsPerLine; s += 2 {
+ 				w0 := atomic.LoadUint64(&f.words[base+s])
++				oldest[li] = min(oldest[li], w0&tsMask)
+ 				if w0 == 0 || age(now, w0&tsMask) > f.horizon {
+ 					if testHookOpenSeen != nil {
+ 						testHookOpenSeen(base + s)
+@@ -143,6 +146,9 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
+ 						if w0 != 0 {
+ 							f.slotDrop(f.slotID(line, w0, o1), o1) // the expired occupant's
+ 						}
++						if labEager && li == 1 && f.marks != nil {
++							f.markFull(lines[0], oldest[0], f.unitOf(now)) // the primary line was full
++						}
+ 						return base + s
+ 					}
+ 					return -1
+@@ -157,18 +163,32 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
+ 		// back to cheap eviction instead of searching in vain.
+ 		p := f.pressure.Load()
+ 		budget := 8 + int(uint64(relocBudget-8)*(pressureOne-uint64(p))>>pressureShift)
+-		f.warmAlts(lines)
++		nowU := f.unitOf(now)
++		if f.marks != nil {
++			f.marksAge(nowU)
++			f.markFull(lines[0], oldest[0], nowU)
++			f.markFull(lines[1], oldest[1], nowU)
++		}
++		f.warmAlts(lines, nowU, warmUnmarked)
+ 		for depth := 0; depth <= relocDepth; depth++ {
++			if depth == 1 {
++				if labWork {
++					labDeep++
++				}
++				f.warmAlts(lines, nowU, warmMarked) // the marked lines, which the first level left alone
++			}
+ 			for li, line := range lines {
+ 				base := int(line * wordsPerLine)
+ 				for s := 0; s < wordsPerLine; s += 2 {
+-					if f.relocate(base+s, line, mine[li], w1, now, depth, &budget, nil, put) {
++					if f.relocate(base+s, line, mine[li], w1, now, nowU, depth, &budget, nil, put) {
+ 						f.pressure.Store(p - p>>3) // EWMA toward "searches succeed"
++						labSearchEnd()
+ 						return base + s
+ 					}
+ 				}
+ 			}
+ 		}
++		labSearchEnd()
+ 		f.pressure.Store(p - p>>3 + pressureOne>>3) // EWMA toward "searches fail"
+ 		victim, vli, victimScore, victimW0, victimW1 := -1, 0, uint64(1<<64-1), uint64(0), uint64(0)
+ 		for li, line := range lines {
+@@ -275,20 +295,36 @@ func (f *Filter) putOver(put putFunc, i int, w0, w1, mine0, mine1 uint64) bool {
+ // warmAlts loads one word of the alternate line of every entry in lines
+ // without using it: the misses are in flight together, and the search that
+ // follows finds the lines on their way or cached.
+-func (f *Filter) warmAlts(lines [2]uint64) {
+-	f.warmLine(lines[0])
+-	f.warmLine(lines[1])
++func (f *Filter) warmAlts(lines [2]uint64, nowU int64, which int) {
++	f.warmLine(lines[0], nowU, which)
++	f.warmLine(lines[1], nowU, which)
+ }
+ 
++// warmLine's choice of lines: all, or those a scent mark calls full at nowU,
++// or the others.
++const (
++	warmAll = iota
++	warmUnmarked
++	warmMarked
++)
++
+ // warmLine loads one word of the alternate line of each entry in line.
+ // Four misses at once is about what this host keeps in flight (claims S42);
+ // a whole level of the search at once (32) is not.
+-func (f *Filter) warmLine(line uint64) {
++//
++// which picks the lines to load (warmAll, warmUnmarked, warmMarked): a
++// search's leaf level never loads a marked line, so it warms the others alone.
++func (f *Filter) warmLine(line uint64, nowU int64, which int) {
+ 	var sink uint64
+ 	base := int(line * wordsPerLine)
+ 	for s := 0; s < wordsPerLine; s += 2 {
+ 		if w0 := atomic.LoadUint64(&f.words[base+s]); w0 != 0 {
+-			sink += atomic.LoadUint64(&f.words[f.alt(line, w0>>48)*wordsPerLine])
++			a := f.alt(line, w0>>48)
++			if which != warmAll && f.markedFull(a, nowU) != (which == warmMarked) {
++				continue
++			}
++			labTouch(a)
++			sink += atomic.LoadUint64(&f.words[a*wordsPerLine])
+ 		}
+ 	}
+ 	runtime.KeepAlive(sink)
+@@ -311,6 +347,7 @@ func (f *Filter) install(i int, w0, w1, mine0, mine1 uint64) bool {
+ 		return false
+ 	}
+ 	atomic.StoreUint64(&f.words[i+1], mine1)
++	f.markLower(uint64(i/wordsPerLine), mine0&tsMask)
+ 	return true
+ }
+ 
+@@ -336,7 +373,7 @@ func (f *Filter) install(i int, w0, w1, mine0, mine1 uint64) bool {
+ // matches) looks again, and an evictor leaves the source alone. parent is
+ // the move whose copy (mine0; mine1 is busy, the parent publishes it) this
+ // one installs, nil for a new key, which put installs.
+-func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budget *int, parent *moveCount, put putFunc) bool {
++func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, nowU int64, depth int, budget *int, parent *moveCount, put putFunc) bool {
+ 	w0 := atomic.LoadUint64(&f.words[i])
+ 	if w0 == 0 {
+ 		return false
+@@ -377,11 +414,24 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
+ 		f.abandon(d) // a touch reached the source first, or the key was evicted
+ 		return false
+ 	}
+-	for s := 0; s < wordsPerLine; s += 2 {
++	// A marked line holds four live entries: the scan below would pass all
++	// four, so it is skipped and the line not loaded.
++	skip := f.markedFull(a, nowU)
++	if skip && depth == 0 && labFree {
++		*budget++ // a marked leaf costs no load: it spends no budget
++		return false
++	}
++	oldest, full := uint64(1<<64-1), true
++	if !skip {
++		labTouch(a)
++	}
++	for s := 0; s < wordsPerLine && !skip; s += 2 {
+ 		d0 := atomic.LoadUint64(&f.words[base+s])
+ 		if d0 != 0 && age(now, d0&tsMask) <= f.horizon {
++			oldest = min(oldest, d0&tsMask)
+ 			continue
+ 		}
++		full = false
+ 		m.begun.Add(1)
+ 		if m.evicting.Load() != 0 { // an eviction of this stripe is under way: it may take the source
+ 			m.done.Add(1)
+@@ -398,10 +448,20 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
+ 		}
+ 		m.done.Add(1)
+ 	}
++	if full && !skip {
++		f.markFull(a, oldest, nowU)
++	}
+ 	if depth > 0 {
+-		f.warmLine(a) // the next lines of a's entries together, not one miss at a time
++		labTouch(a)
++		// the next lines of a's entries together, not one miss at a time
++		// (at the leaf level, only those the scan will load)
++		which := warmAll
++		if depth == 1 {
++			which = warmUnmarked
++		}
++		f.warmLine(a, nowU, which)
+ 		for s := 0; s < wordsPerLine; s += 2 {
+-			if f.relocate(base+s, a, moved, busy, now, depth-1, budget, m, nil) {
++			if f.relocate(base+s, a, moved, busy, now, nowU, depth-1, budget, m, nil) {
+ 				return replace(base + s)
+ 			}
+ 		}
+@@ -413,6 +473,7 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
+ // changed before the hand-off, word0 first (a slot is never a fingerprint
+ // with an empty register). Nobody else writes a busy word1.
+ func (f *Filter) abandon(d int) {
++	f.markClear(uint64(d / wordsPerLine))
+ 	atomic.StoreUint64(&f.words[d], 0)
+ 	atomic.StoreUint64(&f.words[d+1], 0)
+ }
+diff --git a/decay.go b/decay.go
+index d3751e6..bf3e0f5 100644
+--- a/decay.go
++++ b/decay.go
+@@ -88,6 +88,7 @@ func (f *Filter) sweepLine(line, now uint64) {
+ 			testHookSweeping()
+ 		}
+ 		if atomic.CompareAndSwapUint64(&f.words[base+s], w0, 0) {
++			f.markClear(line)
+ 			atomic.StoreUint64(&f.words[base+s+1], 0)
+ 			f.slotDrop(f.slotID(line, w0, w1), w1)
+ 		} else {
+diff --git a/filter.go b/filter.go
+index 5a62bd3..ab35c27 100644
+--- a/filter.go
++++ b/filter.go
+@@ -139,6 +139,7 @@ type Config struct {
+ // serialize on a striped lock.
+ type Filter struct {
+ 	words   []uint64 // 64-byte aligned, len = lines*wordsPerLine
++	marks   []uint32 // scent marks, a byte per line (marks.go); nil: none
+ 	lines   uint64   // any size; indexed by multiply-shift, not masking
+ 	horizon uint64   // ticks
+ 	unit    uint64   // ticks per velocity register unit (Horizon/unitsPerHorizon)
+@@ -158,6 +159,7 @@ type Filter struct {
+ 
+ 	_           [64]byte
+ 	cursor      atomic.Uint64 // ContinuousDecay progress, in lines
++	marksBorn   atomic.Int64  // unit of the last bulk clear of marks
+ 	_           [56]byte
+ 	coarse      atomic.Uint64 // cached tick for CoarseClock
+ 	stop        chan struct{}
+@@ -310,6 +312,9 @@ func New(cfg Config) (*Filter, error) {
+ 	}
+ 	f.unitInv = ^uint64(0)/f.unit + 1
+ 	f.words = alignedWords(int(lines * wordsPerLine))
++	if !labNoMarks {
++		f.marks = make([]uint32, (lines+3)/4)
++	}
+ 	if f.clock == nil {
+ 		base, res := time.Now(), cfg.Resolution
+ 		f.ownClock = true
+@@ -568,7 +573,7 @@ func (f *Filter) Slots() int { return len(f.words) / 2 }
+ // Bytes is the memory the filter holds now: its table, and the stash,
+ // overflow table and hot entries once allocated (each on first use).
+ func (f *Filter) Bytes() int {
+-	n := 8 * len(f.words)
++	n := 8*len(f.words) + 4*len(f.marks)
+ 	for _, s := range [2]*stashTable{f.stash.Load(), f.room.Load()} {
+ 		if s != nil {
+ 			n += len(s.e)*int(unsafe.Sizeof(stashEntry{})) + 8*len(s.wait)
+diff --git a/marks.go b/marks.go
+new file mode 100755
+index 0000000..1814d61
+--- /dev/null
++++ b/marks.go
+@@ -0,0 +1,157 @@
++package temporalfilter
++
++import (
++	"os"
++	"sort"
++	"sync/atomic"
++)
++
++// Scent marks (lab arm B1): one byte per line saying "these four slots are
++// live until unit U", written by whoever scans the line and finds it full,
++// read by cuckoo searches only, which skip loading a leaf line while its mark
++// holds. A touch only extends a slot's life, so a mark is a lower bound; an
++// install lowers it when the entry going in expires earlier, abandon and the
++// sweep clear it. A mark is a hint: a stale one (a scan racing an abandon)
++// costs a usable line skipped, never an answer.
++//
++// A byte holds U mod markMod, plus 1 (0: no mark). A mark is at most
++// markSpan units ahead of the clock that reads it, and marks are bulk-cleared
++// every markLife units, so no byte aliases.
++const (
++	markMod  = 255
++	markSpan = unitsPerHorizon + 1
++	markLife = 200
++)
++
++// labNoMarks leaves the marks out of every filter (TF_MARKS=0: the base arm).
++// labEager (TF_MARKS=2, arm B1b) also marks a full primary line when the
++// insert lands in its alternate line. labFree (TF_MARKS=3, arm B1c) is
++// labEager with marked leaves spending no search budget, which changes
++// placements.
++var (
++	labNoMarks = os.Getenv("TF_MARKS") == "0"
++	labEager   = os.Getenv("TF_MARKS") == "2" || os.Getenv("TF_MARKS") == "3"
++	labFree    = os.Getenv("TF_MARKS") == "3"
++)
++
++func markOf(u int64) uint32 { return uint32(u%markMod) + 1 }
++
++// markAhead is how many units the mark byte m lies ahead of unit u, in
++// (-markMod/2, markMod/2].
++func markAhead(m uint32, u int64) int64 {
++	d := (int64(m) - 1 - u%markMod + markMod) % markMod
++	if d > markMod/2 {
++		d -= markMod
++	}
++	return d
++}
++
++func (f *Filter) markByte(line uint64) uint32 {
++	return atomic.LoadUint32(&f.marks[line>>2]) >> (line & 3 * 8) & 0xff
++}
++
++// markSet stores m as line's mark if the mark still reads old.
++func (f *Filter) markSet(line uint64, old, m uint32) {
++	p, sh := &f.marks[line>>2], line&3*8
++	w := atomic.LoadUint32(p)
++	if w>>sh&0xff != old {
++		return
++	}
++	atomic.CompareAndSwapUint32(p, w, w&^(0xff<<sh)|m<<sh)
++}
++
++// markedFull reports that line is known to hold four live entries at unit nowU.
++func (f *Filter) markedFull(line uint64, nowU int64) bool {
++	if f.marks == nil {
++		return false
++	}
++	m := f.markByte(line)
++	if m == 0 {
++		return false
++	}
++	d := markAhead(m, nowU)
++	return d >= 1 && d <= markSpan
++}
++
++// markFull records that line's four slots were seen live, the oldest last
++// touched at minTs: full through every unit before that of minTs+horizon.
++func (f *Filter) markFull(line, minTs uint64, nowU int64) {
++	if f.marks == nil {
++		return
++	}
++	u := min(f.unitOf(minTs+f.horizon), nowU+markSpan)
++	if u <= nowU {
++		return
++	}
++	if old := f.markByte(line); old != markOf(u) {
++		f.markSet(line, old, markOf(u))
++	}
++}
++
++// markLower lowers line's mark to the expiry of an entry going in, last
++// touched at ts, if that is earlier.
++func (f *Filter) markLower(line, ts uint64) {
++	if f.marks == nil {
++		return
++	}
++	m := f.markByte(line)
++	if m == 0 {
++		return
++	}
++	if u := f.unitOf(ts + f.horizon); markAhead(m, u) > 0 {
++		f.markSet(line, m, markOf(u))
++	}
++}
++
++// markClear removes line's mark (a slot of it was freed).
++func (f *Filter) markClear(line uint64) {
++	if f.marks == nil {
++		return
++	}
++	if m := f.markByte(line); m != 0 {
++		f.markSet(line, m, 0)
++	}
++}
++
++// marksAge clears every mark once the oldest may be markLife units old.
++func (f *Filter) marksAge(nowU int64) {
++	born := f.marksBorn.Load()
++	if nowU-born < markLife || !f.marksBorn.CompareAndSwap(born, nowU) {
++		return
++	}
++	for i := range f.marks {
++		atomic.StoreUint32(&f.marks[i], 0)
++	}
++}
++
++// Work counts for the lab's reading (single-threaded tests only): the
++// distinct alternate lines each search touches.
++var (
++	labWork     bool
++	labSeen     []uint64
++	labSearches uint64
++	labLines    uint64
++	labDeep     uint64 // searches that went past the first level
++)
++
++func labTouch(line uint64) {
++	if labWork {
++		labSeen = append(labSeen, line)
++	}
++}
++
++func labSearchEnd() {
++	if !labWork {
++		return
++	}
++	sort.Slice(labSeen, func(i, j int) bool { return labSeen[i] < labSeen[j] })
++	n := 0
++	for i, l := range labSeen {
++		if i == 0 || l != labSeen[i-1] {
++			n++
++		}
++	}
++	labSearches++
++	labLines += uint64(n)
++	labSeen = labSeen[:0]
++}
+diff --git a/marks_lab_test.go b/marks_lab_test.go
+new file mode 100755
+index 0000000..30117cf
+--- /dev/null
++++ b/marks_lab_test.go
+@@ -0,0 +1,87 @@
++package temporalfilter
++
++import (
++	"os"
++	"testing"
++	"time"
++
++	"github.com/scooter-sensei/clepsydra/go/internal/workload"
++)
++
++// TestLabMarksWork (TF_LAB=1) replays tfbench's churn stream with and without
++// scent marks and reports the distinct alternate lines a search touches.
++func TestLabMarksWork(t *testing.T) {
++	if os.Getenv("TF_LAB") == "" {
++		t.Skip("TF_LAB=1")
++	}
++	const capacity, hTicks = 200_000, 60_000
++	defer func(v, e, fr bool) { labNoMarks, labEager, labFree, labWork = v, e, fr, false }(labNoMarks, labEager, labFree)
++	for _, c := range []struct {
++		load float64
++		seed uint64
++	}{{1.0, 2}, {1.1, 3}, {1.15, 4}} {
++		var lines [4]float64
++		for arm := range 4 {
++			off := arm == 0
++			labNoMarks, labEager, labFree = off, arm >= 2, arm == 3
++			f, _ := New(Config{Capacity: capacity, Horizon: time.Minute, Resolution: time.Millisecond})
++			labWork, labSearches, labLines, labDeep, labSeen = true, 0, 0, 0, labSeen[:0]
++			inserts, seen, missed, falseSeen := 0, 0, 0, 0
++			last := map[uint64]uint64{}
++			workload.Churn(c.load, c.seed, capacity, hTicks, mix64, func(h, w, now uint64) {
++				got := f.CheckAndTouchAt(h, w, now)
++				lt, ok := last[h]
++				want := ok && now-lt <= w
++				last[h] = now
++				if got {
++					seen++
++				} else {
++					inserts++
++				}
++				if want && !got {
++					missed++
++				}
++				if !want && got {
++					falseSeen++
++				}
++			})
++			labWork = false
++			marked := 0
++			if f.marks != nil {
++				nowU := f.unitOf(4 * hTicks)
++				for l := uint64(0); l < f.lines; l++ {
++					if f.markedFull(l, nowU) {
++						marked++
++					}
++				}
++			}
++			lines[arm] = float64(labLines) / float64(labSearches)
++			t.Logf("load %.2f arm %d marks=%v: unseen touches %d, searches %d (%.1f%%), lines/search %.2f, past the first level %d (%.2f%%), evictions %d, relocations %d, seen %d, missed %d, false seen %d, lines marked at the end %.1f%%",
++				c.load, arm, !off, inserts, labSearches, 100*float64(labSearches)/float64(inserts), lines[arm],
++				labDeep, 100*float64(labDeep)/float64(labSearches), f.Evictions(), f.Relocations(), seen, missed, falseSeen, 100*float64(marked)/float64(f.lines))
++		}
++		t.Logf("load %.2f: lines per search, fewer than the base: B1 %.2fx, B1b %.2fx, B1c %.2fx", c.load, lines[0]/lines[1], lines[0]/lines[2], lines[0]/lines[3])
++	}
++}
++
++// BenchmarkLabInsertSteadyBig is BenchmarkInsertSteady on a table past the
++// cache (Capacity 4M, ~75 MiB).
++func BenchmarkLabInsertSteadyBig(b *testing.B) {
++	const n = 4 << 20
++	f, _ := New(Config{Capacity: n, Horizon: time.Minute})
++	for i := range uint64(n) {
++		f.CheckAndTouchAt(mix64(i), 0, 1000)
++	}
++	w := f.Ticks(30 * time.Second)
++	perKey := f.Ticks(time.Minute) / n
++	ctr := uint64(0)
++	for range 2 * n {
++		ctr++
++		f.CheckAndTouchAt(mix64(n+ctr), w, 1000+ctr*perKey)
++	}
++	b.ResetTimer()
++	for i := 0; i < b.N; i++ {
++		ctr++
++		f.CheckAndTouchAt(mix64(n+ctr), w, 1000+ctr*perKey)
++	}
++}

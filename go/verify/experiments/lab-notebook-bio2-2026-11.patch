@@ -1,0 +1,393 @@
+diff --git a/BIO2-RESULTS.md b/BIO2-RESULTS.md
+new file mode 100755
+index 0000000..6f774c8
+--- /dev/null
++++ b/BIO2-RESULTS.md
+@@ -0,0 +1,245 @@
++# lab/bio2-2026-11: more mechanisms taken from biology
++
++From 2959e45. Host: the WSL2 guest of the Ryzen host (12 threads, Go 1.24.7).
++Both arms here are models read by deterministic counts; nothing is timed.
++Each arm's rule is committed before its reading. lab/bio-2026-11's arms
++(B1 scent marks, B3 a fovea for hot entries) are not repeated.
++
++## The structure as an organism
++
++| Part | What it does | Its counterpart in nature | Where the counterpart does better |
++|---|---|---|---|
++| word0's exact last touch, expiry by arithmetic | "seen in the last W?" with no timer | a traplining hummingbird remembers when it emptied each flower and returns as it refills | — (the filter's is exact) |
++| the 7-bucket register | fine near now, coarse further back | scale-invariant time cells: fields widen with elapsed time | neurons also switch codes with rate: spike *timing* when events are few, spike *rate* when many (B4) |
++| every slot is 128 bits whatever the key did | one event costs what a thousand do | K-selection: full investment in every offspring | r-strategists and metamorphosis: a cheap larva, the adult body only for survivors (B5) |
++| cuckoo relocation | a move frees a slot along a path | hermit crabs' vacancy chains: a shell freed at one end rehouses a queue | the crabs queue beside the vacancy (the wait room is that already) |
++| the search budget's EWMA | stop searching where searches fail | the marginal value theorem: a forager's giving-up time follows the habitat's yield | — |
++| eviction of the lightest slot | a spray can't flush an offender | synaptic pruning: use it or lose it | — |
++| stash, then overflow table | an evicted key's history returns | immune memory: a second exposure meets the first's record; a seed bank | — |
++| hot entries, first come first served | wide counters for heavy keys | scramble competition for territories | contest competition: the stronger claimant takes the territory (B6, postulate) |
++| trust flags, `Upper` | fail closed | honest signals: a warning that can't be faked low | — |
++| ConstantTime's dithered pad | time says nothing of the key | protean behaviour: prey that move unpredictably | — |
++| `Resizable`: old table beside the new for a horizon | grow by replacement | a moult: the new cuticle under the old | modular growth: plants add segments (B7, postulate) |
++
++## B4 Spike timing for sparse keys
++
++**The analogy.** A neuron that fires rarely carries its message in *when*
++each spike falls; one that fires fast carries it in the *rate*, and single
++spike times stop mattering. The register is a rate code at every rate: a key
++with three events in a minute spends 48 bits on seven counters, six of them
++zero or one, and its events are known to 2.5–20 s. The bits could hold the
++times themselves.
++
++**The mechanism.** A register in *timing mode* holds, beside word0's exact
++last touch, the times of up to 5 older events as 8-bit offsets from the
++register's epoch boundary, in steps of q = unit/8 (40 of the register's 48
++bits; the pattern "bucket 0 empty, top bit set" tells it from a counting
++register and from a hot index under 2^37). A key starts in timing mode. The
++touch that would make a seventh event inside the horizon converts it to the
++counting register (exact: q divides the unit, so each stored event lands
++whole in one bucket). It returns to timing mode when its slot expires (idle
++for a horizon). `Upper` in timing mode counts an event unless it is
++certainly outside the window (its q-step ends before `now - W`); `Count`
++uses the step's midpoint.
++
++**The model** (`TestLabSpike`, `TF_LAB=1`). Per key: the real filter fed
++every admitted touch (the counting register, read when the key is in
++counting mode) and the list of quantized times (read in timing mode), with
++q = unit/10 = 250 ms at the model's 1 ms ticks. Three strict limiters on
++the same offered Poisson traffic: an exact sliding log, the filter's
++`TouchIfUnderAt` (base), and the model. 400 keys, 20 horizons. Rules read:
++`W = H = 60 s` with limits 3, 5 and 6; `W = 30 s` limit 3; `W = 10 s`
++limits 3 and 5 (these pass 6 events a horizon, so the key leaves timing
++mode: read as they fall); offered 0.8x, 1.2x and 2x the limit. And tfbench's
++velocity workload (`velWorkload`), the model's `Count` against the filter's,
++by window and by shape.
++
++**Rule (before any reading).** Worth building if:
++
++1. at `W = H`, limits 3, 5, 6, offered 2x: the model admits at least 0.95 of
++   what the exact log admits;
++2. at `W = H`, offered 0.8x: its false denies (denied while its own
++   admitted events in the window were under the limit) are at most a
++   quarter of the base's;
++3. no arm admits past a limit in any window (asserted);
++4. on the velocity workload no window's error is above the base's, and the
++   sparse shape's error at least halves.
++
++Void if the base already admits 0.90 or more at `W = H` (nothing to fix).
++A model's verdict is "worth building" at most: the two-word protocol with
++offsets anchored to the epoch, the hot index's top bit and the conversion
++under races are not read here.
++
++## B5 Larval slots
++
++**The analogy.** A frog does not build a frog for every egg. It lays cheap
++larvae, and the costly adult body is built only by those that survive
++(metamorphosis); most never need one. The filter builds the adult for every
++key: 128 bits, of which a key seen once uses word0 and the 12-bit tag. In a
++churn of mostly one-off keys, and in a spray of fresh keys (the attack of
++paper §3.3.1), most slots are such keys.
++
++**The mechanism.** A slot pair (two words) holds one adult (as today) or up
++to two *larvae*. A larva is one word: fingerprint 16, tag 12, displaced 1,
++last touch 35 bits; its register is implied (one event, at its last touch).
++A key's first touch installs a larva in a free word of its two lines. Its
++second touch within the horizon is its metamorphosis: it needs a whole
++pair, its own if the other word is free, else a free pair in either line,
++else a larva moved out of the way, else a search. A larva's 35-bit time
++wraps (9.5 h at 1 µs): a key that returns one wrap later, to a larva no
++sweep has cleared, reads Seen with probability W/2^35: high, never low.
++
++**The model** (`TestLabLarva`, `TF_LAB=1`). tfbench's churn stream
++(`workload.Churn`, capacity 200,000, the filter's own line count) through a
++placement model written for this arm: two lines per key as the filter
++computes them, the filter's search (iterative deepening, depth 3, budget
++500 with the pressure EWMA), eviction of the lightest. Two arms in one
++model: *adult* (every key takes a pair: the filter's layout) and *larval*.
++Loads 1.00, 1.15, 1.30, 1.50, 1.75, 2.00.
++
++**Rule (before any reading).**
++
++0. Validity: the adult arm's evictions at load 1.15 within 15% of the
++   filter's 4,577 and 0 at loads 1.00 and 1.10; else the model is not the
++   filter and the reading is void.
++1. At load 1.00 at least 40% of live keys are larvae (time-averaged over
++   the last horizon).
++2. The larval arm evicts nothing at load 1.30, and at 1.50 at most the
++   adult arm's count at 1.15.
++3. At load 1.00, metamorphoses that need more than their own pair's free
++   word (a move or a search) are at most 15% of second touches, and those
++   that need a search at most 3%.
++
++Worth building if 0–3 hold. Not read here: the hit path's cost of telling a
++larva from an adult, the slot protocol for a word that changes kind, the
++false-positive rate (unchanged identity bits; more entries per line), and
++the stash and register of a key evicted as a larva.
++
++## Postulates, not run
++
++**B6 Contest for hot entries (territories).** Hot entries are held by
++whoever came first (scramble): 1 entry per 128 slots, each kept by 32
++events a unit, so a squatter's 13 events/s a key fills the table and a
++5,000/s key is refused. A contest (the refused key takes the lightest of a
++few sampled holders' entries, whose history goes to the overflow table,
++flagged) fails on a fact of the register: a refused key can prove only 31
++events a unit, the squatter's own rate, so a claimant can't be ranked
++against a holder, and ranking by the time it took to fill (32 events in a
++fraction of a unit) lets a 32-event burst at each unit's start evict any
++holder. What nature adds is a neutral ground: a lek. A few entries (1 in
++16) are an arena with a tenure of one unit, counted exactly; at the unit's
++end an occupant with twice the events of the lightest of k sampled holders
++swaps with it, the others return to registers. Reading to take: squatters
++at 13–26/s on every entry, heavy keys arriving at 50–5,000/s; the share of
++heavy keys' events read exactly, and the squatter's cost to keep it under
++half, against today's 32 events a unit an entry.
++
++**B7 Growth by segments.** The line index is `(h * lines) >> 64`, which
++keeps keys in hash order: growing `lines` by a factor moves the keys of
++line l to lines [l·g, (l+1)·g), in order. A table could grow in place a
++stretch at a time, as a shoot adds internodes, instead of holding two
++tables for a horizon. `alt` is not order-preserving (`x(fp) - l mod
++lines`): it would have to become an involution inside a stretch (E49's
++chunks) for a displaced entry to be found by its key after the stretch
++grows. Reading to take: peak bytes over a 1.6x grow against `Resizable`'s
++1.6x + 1x.
++
++## B5b Larval slots, larvae spread
++
++Designed after B5's reading (clause 3 failed: 60.5% of metamorphoses at
++load 1.00 needed a move, because a new larva was put beside another larva
++whenever it could be), so this rule is written knowing it.
++
++**B5b** (`TF_LARVA_SPREAD=1`). A new larva takes a cell of an empty pair
++first, and shares a pair only when its line has no empty pair. Everything
++else as B5.
++
++**Rule.** B5's clauses 0 to 3 unchanged (validity; larvae at least 40% of
++live keys; no eviction at load 1.30 and at most 3,985, the adult arm's at
++1.15, at 1.50; at load 1.00 at most 15% of metamorphoses need a move or a
++search and at most 3% a search). Read also at load 1.15, as it falls.
++
++## Readings
++
++### B4 spike timing for sparse keys: passes its rule (a model): worth building
++
++`TF_LAB=1 go test -run TestLabSpike -v` (`lab/b4-spike.txt`). Admitted as a
++share of what the exact log admits, and false denies as a share of offered:
++
++| horizon | window | limit | offered | admitted: base | spike | false denies: base | spike |
++|---|---|---|---|---|---|---|---|
++| 60 s | 60 s | 3 | 0.8x | 0.931 | 1.000 | 0.111 | 0.001 |
++| 60 s | 60 s | 3 | 2x | 0.879 | 0.999 | 0.262 | 0.004 |
++| 60 s | 60 s | 5 | 0.8x | 0.918 | 0.999 | 0.149 | 0.002 |
++| 60 s | 60 s | 5 | 2x | 0.844 | 0.998 | 0.399 | 0.005 |
++| 60 s | 60 s | 6 | 0.8x | 0.916 | 0.999 | 0.156 | 0.002 |
++| 60 s | 60 s | 6 | 2x | 0.834 | 0.998 | 0.434 | 0.006 |
++| 60 s | 30 s | 3 | 0.8x | 0.883 | 0.998 | 0.191 | 0.004 |
++| 60 s | 30 s | 3 | 2x | 0.833 | 0.997 | 0.330 | 0.007 |
++| 60 s | 10 s | 3 | 0.8x | 0.867 | 0.870 | 0.233 | 0.229 |
++| 60 s | 10 s | 5 | 2x | 0.681 | 0.683 | 0.662 | 0.663 |
++| 10 s | 10 s | 5 | 0.8x | 0.916 | 0.999 | 0.154 | 0.002 |
++| 10 s | 10 s | 5 | 2x | 0.839 | 0.998 | 0.435 | 0.006 |
++
++(The 1.2x rows are in the file.) Clause 1: 0.998–0.999 at 2x, over 0.95.
++Clause 2: false denies at 0.8x 0.001–0.002 against 0.111–0.156, 70x and
++more under. Clause 3 asserted, never tripped. Clause 4: velocity error by
++window (1, 5, 15, 30, 60 s) 0.2138, 0.0567, 0.0513, 0.0436, 0.0240 →
++0.2137, 0.0566, 0.0511, 0.0434, 0.0237 (mean 0.0779 → 0.0777; the base is
++the scorecard's 0.0779, so the harness is the filter's), none above the
++base; the sparse shape 0.0460 → 0.0141 (every window at least 2.3x lower),
++83% of its queries in timing mode, the other shapes none.
++
++The void clause named no offered load: the base admits 0.83–0.88 at 2x
++(the load clause 1 reads), under its 0.90, and 0.92–0.93 at 0.8x, over it.
++Read as not void; the gap the arm closes is the false denies (11–43% of
++offered at `W = H`), not the admitted share alone.
++
++Limits of the reading. Timing mode ends at a seventh event inside the
++horizon, so it serves a rule only while `limit x Horizon / W` is 6 or
++less: "5 in 10 s" on a 60 s filter leaves it at once (1–3% of requests in
++timing mode, the base's answers), and reads 0.998 only on a filter whose
++horizon is 10 s. On the velocity scorecard it moves the mean by 0.0002: the
++error there is in keys of tens of events a horizon. One key's register, no
++slot protocol: the offsets must be anchored to the epoch (word0 and word1
++are two CASes), a touch rewrites up to five of them, and the hot index
++loses its top bit.
++
++### B5 larval slots: fails its rule (clause 3)
++
++`TF_LAB=1 go test -run TestLabLarva -v` (`lab/b5-larva.txt`).
++
++0. Validity holds. The adult arm against the filter on the same stream:
++   evictions 0, 0, 3,985 against 0, 0, 4,577 at loads 1.00, 1.10, 1.15
++   (13% under); relocations 149,325, 380,134, 927,332 against 148,716,
++   379,688, 932,499. Past 1.15 the two part (254,143 against 329,243
++   evictions at 1.30): the adult arm's counts there are the model's.
++1. Holds: 68.3% of live keys are larvae at every load to 1.75; cells in
++   use 55.8% at load 1.00 where the adult layout uses 84.8%.
++2. Holds: no eviction at 1.30 or 1.50; the first at 1.75 (4,314, with
++   97.7% of cells in use). Unseen touches that search: 0.4%, 0.9%, 1.3%,
++   3.4%, 11.5% at loads 1.00–1.50, against the adult arm's 22.6%, 41.7%,
++   56.9%, 69.9%, 77.0%.
++3. Fails: at load 1.00, 60.5% of metamorphoses need a move (15% allowed)
++   and 0.17% a search (3% allowed).
++
++### B5b larvae spread: fails its rule (clause 3)
++
++`TF_LARVA_SPREAD=1` (`lab/b5b-larva-spread.txt`). Clauses 0–2 as B5 (the
++same evictions and searches to within a few keys). Clause 3: 25.7% of
++metamorphoses at load 1.00 need a move (34.3% at 1.15), 0.17% a search.
++Under B5's 60.5%, over the 15% of the rule.
++
++Reported, not judged (`lab/b5-moves-split.txt`): the rule counted every
++move alike. Split at load 1.00, B5b: 74.1% of second touches grow in their
++own pair, 10.4% move inside their own line (no line loaded that the touch
++had not), 15.3% move to their other line, 0.17% search. B5: 39.4%, 45.6%,
++14.9%, 0.17%. A second touch that today is a hit of one line becomes, for
++one key in seven, an install in another line.
++
++What the arm shows whatever its verdict: on this stream two keys in three
++never get a second event, the table at design load is 56% full in words,
++and the search that 23–57% of new keys run at loads 1.00–1.15 is run by
++0.4–1.3% of them. What it costs is on the second touch, and the model
++can't price it: a word that changes kind under the slot protocol, the hit
++path telling a larva from an adult, and 35-bit times.
+diff --git a/lab/b4-spike.txt b/lab/b4-spike.txt
+new file mode 100644
+index 0000000..a1f95be
+--- /dev/null
++++ b/lab/b4-spike.txt
+@@ -0,0 +1,32 @@
++=== RUN   TestLabSpike
++    lab_spike_test.go:103: horizon  window limit offered | admitted/exact: base  spike | false denies: base  spike | timing-mode share
++    lab_spike_test.go:175: 1m0s     60     3     0.8     | 0.931 1.000 | 0.111 0.001 | 1.000
++    lab_spike_test.go:175: 1m0s     60     3     1.2     | 0.908 0.998 | 0.173 0.003 | 1.000
++    lab_spike_test.go:175: 1m0s     60     3     2.0     | 0.879 0.999 | 0.262 0.004 | 1.000
++    lab_spike_test.go:175: 1m0s     60     5     0.8     | 0.918 0.999 | 0.149 0.002 | 1.000
++    lab_spike_test.go:175: 1m0s     60     5     1.2     | 0.881 0.998 | 0.253 0.004 | 1.000
++    lab_spike_test.go:175: 1m0s     60     5     2.0     | 0.844 0.998 | 0.399 0.005 | 1.000
++    lab_spike_test.go:175: 1m0s     60     6     0.8     | 0.916 0.999 | 0.156 0.002 | 1.000
++    lab_spike_test.go:175: 1m0s     60     6     1.2     | 0.876 0.999 | 0.275 0.004 | 1.000
++    lab_spike_test.go:175: 1m0s     60     6     2.0     | 0.834 0.998 | 0.434 0.006 | 1.000
++    lab_spike_test.go:175: 1m0s     30     3     0.8     | 0.883 0.998 | 0.191 0.004 | 1.000
++    lab_spike_test.go:175: 1m0s     30     3     1.2     | 0.854 0.997 | 0.267 0.005 | 1.000
++    lab_spike_test.go:175: 1m0s     30     3     2.0     | 0.833 0.997 | 0.330 0.007 | 1.000
++    lab_spike_test.go:175: 1m0s     10     3     0.8     | 0.867 0.870 | 0.233 0.229 | 0.031
++    lab_spike_test.go:175: 1m0s     10     3     1.2     | 0.829 0.832 | 0.348 0.343 | 0.025
++    lab_spike_test.go:175: 1m0s     10     3     2.0     | 0.786 0.788 | 0.521 0.514 | 0.021
++    lab_spike_test.go:175: 1m0s     10     5     0.8     | 0.801 0.802 | 0.315 0.313 | 0.017
++    lab_spike_test.go:175: 1m0s     10     5     1.2     | 0.737 0.738 | 0.480 0.479 | 0.014
++    lab_spike_test.go:175: 1m0s     10     5     2.0     | 0.681 0.683 | 0.662 0.663 | 0.011
++    lab_spike_test.go:175: 10s      10     5     0.8     | 0.916 0.999 | 0.154 0.002 | 1.000
++    lab_spike_test.go:175: 10s      10     5     1.2     | 0.879 0.999 | 0.268 0.004 | 1.000
++    lab_spike_test.go:175: 10s      10     5     2.0     | 0.839 0.998 | 0.435 0.006 | 1.000
++    lab_spike_test.go:226: velocity steady  base/spike by window 1,5,15,30,60 s: 0.2150/0.2150 0.0620/0.0620 0.0399/0.0399 0.0277/0.0277 0.0139/0.0139  mean 0.0717/0.0717  queries in timing mode 0.000
++    lab_spike_test.go:226: velocity bursts  base/spike by window 1,5,15,30,60 s: 0.4258/0.4257 0.1229/0.1229 0.1070/0.1070 0.1126/0.1126 0.0696/0.0696  mean 0.1676/0.1675  queries in timing mode 0.003
++    lab_spike_test.go:226: velocity ramp    base/spike by window 1,5,15,30,60 s: 0.1740/0.1740 0.0451/0.0451 0.0267/0.0267 0.0190/0.0190 0.0092/0.0092  mean 0.0548/0.0548  queries in timing mode 0.000
++    lab_spike_test.go:226: velocity sparse  base/spike by window 1,5,15,30,60 s: 0.0187/0.0062 0.0220/0.0093 0.0543/0.0181 0.0747/0.0213 0.0605/0.0156  mean 0.0460/0.0141  queries in timing mode 0.829
++    lab_spike_test.go:226: velocity on/off  base/spike by window 1,5,15,30,60 s: 0.1998/0.1998 0.0450/0.0450 0.1003/0.1003 0.0877/0.0877 0.0438/0.0438  mean 0.0953/0.0953  queries in timing mode 0.000
++    lab_spike_test.go:226: velocity all     base/spike by window 1,5,15,30,60 s: 0.2138/0.2137 0.0567/0.0566 0.0513/0.0511 0.0436/0.0434 0.0240/0.0237  mean 0.0779/0.0777  queries in timing mode 0.168
++--- PASS: TestLabSpike (3.65s)
++PASS
++ok  	github.com/scooter-sensei/clepsydra/go	3.667s
+diff --git a/lab/b5-larva.txt b/lab/b5-larva.txt
+new file mode 100644
+index 0000000..f97af90
+--- /dev/null
++++ b/lab/b5-larva.txt
+@@ -0,0 +1,36 @@
++=== RUN   TestLabLarva
++    lab_larva_test.go:407: load 1.00 filter: evictions=0 relocations=148716
++    lab_larva_test.go:413: load 1.00 adult : unseen=635004 searches=22.6% evictions=0 relocations=149325 compactions=0 restored=0
++    lab_larva_test.go:413: load 1.00 larval: unseen=635004 searches=0.4% evictions=0 relocations=11964 compactions=332 restored=0
++    lab_larva_test.go:418: load 1.00 larval: larvae 68.3% of live keys; cells in use 55.8% (adult layout: 84.8%); metamorphoses=220462 own pair 39.4% move 60.5% search 0.17% eviction 0.00%
++    lab_larva_test.go:407: load 1.10 filter: evictions=0 relocations=379688
++    lab_larva_test.go:413: load 1.10 adult : unseen=698944 searches=41.7% evictions=0 relocations=380134 compactions=0 restored=0
++    lab_larva_test.go:413: load 1.10 larval: unseen=698944 searches=0.9% evictions=0 relocations=23134 compactions=991 restored=0
++    lab_larva_test.go:418: load 1.10 larval: larvae 68.3% of live keys; cells in use 61.5% (adult layout: 93.3%); metamorphoses=242471 own pair 36.6% move 62.9% search 0.45% eviction 0.00%
++    lab_larva_test.go:407: load 1.15 filter: evictions=4577 relocations=932499
++    lab_larva_test.go:413: load 1.15 adult : unseen=731978 searches=56.9% evictions=3985 relocations=927332 compactions=0 restored=239
++    lab_larva_test.go:413: load 1.15 larval: unseen=731739 searches=1.3% evictions=0 relocations=31758 compactions=1536 restored=0
++    lab_larva_test.go:418: load 1.15 larval: larvae 68.4% of live keys; cells in use 64.3% (adult layout: 97.7%); metamorphoses=253018 own pair 35.2% move 64.0% search 0.71% eviction 0.00%
++    lab_larva_test.go:407: load 1.30 filter: evictions=329243 relocations=648042
++    lab_larva_test.go:413: load 1.30 adult : unseen=851335 searches=69.9% evictions=254143 relocations=883978 compactions=0 restored=24699
++    lab_larva_test.go:413: load 1.30 larval: unseen=826636 searches=3.4% evictions=0 relocations=76748 compactions=5933 restored=0
++    lab_larva_test.go:418: load 1.30 larval: larvae 68.4% of live keys; cells in use 72.6% (adult layout: 110.3%); metamorphoses=285897 own pair 30.8% move 66.7% search 2.46% eviction 0.00%
++    lab_larva_test.go:407: load 1.50 filter: evictions=630249 relocations=336264
++    lab_larva_test.go:413: load 1.50 adult : unseen=1020550 searches=77.0% evictions=493636 relocations=734624 compactions=0 restored=66621
++    lab_larva_test.go:413: load 1.50 larval: unseen=953929 searches=11.5% evictions=0 relocations=227794 compactions=27297 restored=0
++    lab_larva_test.go:418: load 1.50 larval: larvae 68.4% of live keys; cells in use 83.7% (adult layout: 127.2%); metamorphoses=329810 own pair 24.9% move 64.5% search 10.56% eviction 0.00%
++    lab_larva_test.go:407: load 1.75 filter: evictions=902512 relocations=205349
++    lab_larva_test.go:413: load 1.75 adult : unseen=1238854 searches=81.7% evictions=716163 relocations=726181 compactions=0 restored=126124
++    lab_larva_test.go:413: load 1.75 larval: unseen=1113264 searches=53.2% evictions=4314 relocations=1943562 compactions=176919 restored=534
++    lab_larva_test.go:418: load 1.75 larval: larvae 68.4% of live keys; cells in use 97.7% (adult layout: 148.4%); metamorphoses=384600 own pair 15.4% move 30.9% search 53.14% eviction 0.57%
++    lab_larva_test.go:407: load 2.00 filter: evictions=1138982 relocations=170505
++    lab_larva_test.go:413: load 2.00 adult : unseen=1462055 searches=84.5% evictions=917360 relocations=776443 compactions=0 restored=190442
++    lab_larva_test.go:413: load 2.00 larval: unseen=1332270 searches=70.2% evictions=496777 relocations=2578006 compactions=117313 restored=60657
++    lab_larva_test.go:418: load 2.00 larval: larvae 63.3% of live keys; cells in use 99.2% (adult layout: 145.1%); metamorphoses=380545 own pair 13.9% move 22.8% search 31.45% eviction 31.91%
++    lab_larva_test.go:407: load 2.50 filter: evictions=1593000 relocations=154234
++    lab_larva_test.go:413: load 2.50 adult : unseen=1915628 searches=87.9% evictions=1337274 relocations=831709 compactions=0 restored=326209
++    lab_larva_test.go:413: load 2.50 larval: unseen=1794580 searches=78.6% evictions=1172083 relocations=1824575 compactions=55836 restored=205161
++    lab_larva_test.go:418: load 2.50 larval: larvae 53.5% of live keys; cells in use 99.5% (adult layout: 135.9%); metamorphoses=356169 own pair 14.5% move 22.6% search 16.24% eviction 46.75%
++--- PASS: TestLabLarva (218.40s)
++PASS
++ok  	github.com/scooter-sensei/clepsydra/go	218.435s
+diff --git a/lab/b5-moves-split.txt b/lab/b5-moves-split.txt
+new file mode 100644
+index 0000000..bc6c927
+--- /dev/null
++++ b/lab/b5-moves-split.txt
+@@ -0,0 +1,14 @@
++spread=
++    lab_larva_test.go:432: load 1.00 larval: of the moves, 45.6% of metamorphoses stayed in the larva own line
++    lab_larva_test.go:433: load 1.00 larval: larvae 68.3% of live keys; cells in use 55.8% (adult layout: 84.8%); metamorphoses=220462 own pair 39.4% move 60.5% search 0.17% eviction 0.00%
++    lab_larva_test.go:432: load 1.10 larval: of the moves, 44.7% of metamorphoses stayed in the larva own line
++    lab_larva_test.go:433: load 1.10 larval: larvae 68.3% of live keys; cells in use 61.5% (adult layout: 93.3%); metamorphoses=242471 own pair 36.6% move 62.9% search 0.45% eviction 0.00%
++    lab_larva_test.go:432: load 1.15 larval: of the moves, 43.9% of metamorphoses stayed in the larva own line
++    lab_larva_test.go:433: load 1.15 larval: larvae 68.4% of live keys; cells in use 64.3% (adult layout: 97.7%); metamorphoses=253018 own pair 35.2% move 64.0% search 0.71% eviction 0.00%
++spread=1
++    lab_larva_test.go:432: load 1.00 larval: of the moves, 10.4% of metamorphoses stayed in the larva own line
++    lab_larva_test.go:433: load 1.00 larval: larvae 68.3% of live keys; cells in use 55.8% (adult layout: 84.8%); metamorphoses=220462 own pair 74.1% move 25.7% search 0.17% eviction 0.00%
++    lab_larva_test.go:432: load 1.10 larval: of the moves, 13.0% of metamorphoses stayed in the larva own line
++    lab_larva_test.go:433: load 1.10 larval: larvae 68.3% of live keys; cells in use 61.5% (adult layout: 93.3%); metamorphoses=242471 own pair 68.2% move 31.3% search 0.44% eviction 0.00%
++    lab_larva_test.go:432: load 1.15 larval: of the moves, 14.4% of metamorphoses stayed in the larva own line
++    lab_larva_test.go:433: load 1.15 larval: larvae 68.4% of live keys; cells in use 64.3% (adult layout: 97.7%); metamorphoses=253018 own pair 65.0% move 34.3% search 0.69% eviction 0.00%
+diff --git a/lab/b5b-larva-spread.txt b/lab/b5b-larva-spread.txt
+new file mode 100644
+index 0000000..fdef27d
+--- /dev/null
++++ b/lab/b5b-larva-spread.txt
+@@ -0,0 +1,36 @@
++=== RUN   TestLabLarva
++    lab_larva_test.go:411: load 1.00 filter: evictions=0 relocations=148716
++    lab_larva_test.go:417: load 1.00 adult : unseen=635004 searches=22.6% evictions=0 relocations=149325 compactions=0 restored=0
++    lab_larva_test.go:417: load 1.00 larval: unseen=635004 searches=0.4% evictions=0 relocations=20288 compactions=954 restored=0
++    lab_larva_test.go:422: load 1.00 larval: larvae 68.3% of live keys; cells in use 55.8% (adult layout: 84.8%); metamorphoses=220462 own pair 74.1% move 25.7% search 0.17% eviction 0.00%
++    lab_larva_test.go:411: load 1.10 filter: evictions=0 relocations=379688
++    lab_larva_test.go:417: load 1.10 adult : unseen=698944 searches=41.7% evictions=0 relocations=380134 compactions=0 restored=0
++    lab_larva_test.go:417: load 1.10 larval: unseen=698944 searches=0.9% evictions=0 relocations=35107 compactions=2353 restored=0
++    lab_larva_test.go:422: load 1.10 larval: larvae 68.3% of live keys; cells in use 61.5% (adult layout: 93.3%); metamorphoses=242471 own pair 68.2% move 31.3% search 0.44% eviction 0.00%
++    lab_larva_test.go:411: load 1.15 filter: evictions=4577 relocations=932499
++    lab_larva_test.go:417: load 1.15 adult : unseen=731978 searches=56.9% evictions=3985 relocations=927332 compactions=0 restored=239
++    lab_larva_test.go:417: load 1.15 larval: unseen=731739 searches=1.3% evictions=0 relocations=45505 compactions=3744 restored=0
++    lab_larva_test.go:422: load 1.15 larval: larvae 68.4% of live keys; cells in use 64.3% (adult layout: 97.7%); metamorphoses=253018 own pair 65.0% move 34.3% search 0.69% eviction 0.00%
++    lab_larva_test.go:411: load 1.30 filter: evictions=329243 relocations=648042
++    lab_larva_test.go:417: load 1.30 adult : unseen=851335 searches=69.9% evictions=254143 relocations=883978 compactions=0 restored=24699
++    lab_larva_test.go:417: load 1.30 larval: unseen=826636 searches=3.4% evictions=0 relocations=93896 compactions=11615 restored=0
++    lab_larva_test.go:422: load 1.30 larval: larvae 68.4% of live keys; cells in use 72.6% (adult layout: 110.3%); metamorphoses=285897 own pair 55.9% move 41.7% search 2.47% eviction 0.00%
++    lab_larva_test.go:411: load 1.50 filter: evictions=630249 relocations=336264
++    lab_larva_test.go:417: load 1.50 adult : unseen=1020550 searches=77.0% evictions=493636 relocations=734624 compactions=0 restored=66621
++    lab_larva_test.go:417: load 1.50 larval: unseen=953929 searches=11.5% evictions=0 relocations=244180 compactions=41642 restored=0
++    lab_larva_test.go:422: load 1.50 larval: larvae 68.4% of live keys; cells in use 83.7% (adult layout: 127.2%); metamorphoses=329810 own pair 42.9% move 46.5% search 10.56% eviction 0.00%
++    lab_larva_test.go:411: load 1.75 filter: evictions=902512 relocations=205349
++    lab_larva_test.go:417: load 1.75 adult : unseen=1238854 searches=81.7% evictions=716163 relocations=726181 compactions=0 restored=126124
++    lab_larva_test.go:417: load 1.75 larval: unseen=1113286 searches=53.1% evictions=4390 relocations=1949175 compactions=189324 restored=556
++    lab_larva_test.go:422: load 1.75 larval: larvae 68.4% of live keys; cells in use 97.7% (adult layout: 148.4%); metamorphoses=384577 own pair 27.0% move 19.5% search 52.95% eviction 0.58%
++    lab_larva_test.go:411: load 2.00 filter: evictions=1138982 relocations=170505
++    lab_larva_test.go:417: load 2.00 adult : unseen=1462055 searches=84.5% evictions=917360 relocations=776443 compactions=0 restored=190442
++    lab_larva_test.go:417: load 2.00 larval: unseen=1332313 searches=70.1% evictions=496775 relocations=2587423 compactions=127345 restored=60700
++    lab_larva_test.go:422: load 2.00 larval: larvae 63.2% of live keys; cells in use 99.2% (adult layout: 145.1%); metamorphoses=380428 own pair 25.3% move 11.5% search 31.41% eviction 31.80%
++    lab_larva_test.go:411: load 2.50 filter: evictions=1593000 relocations=154234
++    lab_larva_test.go:417: load 2.50 adult : unseen=1915628 searches=87.9% evictions=1337274 relocations=831709 compactions=0 restored=326209
++    lab_larva_test.go:417: load 2.50 larval: unseen=1794882 searches=78.6% evictions=1172637 relocations=1825419 compactions=64861 restored=205463
++    lab_larva_test.go:422: load 2.50 larval: larvae 53.5% of live keys; cells in use 99.5% (adult layout: 135.9%); metamorphoses=355807 own pair 26.4% move 10.7% search 16.02% eviction 46.83%
++--- PASS: TestLabLarva (222.04s)
++PASS
++ok  	github.com/scooter-sensei/clepsydra/go	222.070s

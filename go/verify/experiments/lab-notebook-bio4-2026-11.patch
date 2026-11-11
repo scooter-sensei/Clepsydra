@@ -1,0 +1,1270 @@
+diff --git a/BIO4-RESULTS.md b/BIO4-RESULTS.md
+new file mode 100755
+index 0000000..99d7391
+--- /dev/null
++++ b/BIO4-RESULTS.md
+@@ -0,0 +1,485 @@
++# lab/bio4-2026-11: a fourth set of mechanisms taken from biology
++
++From 145dd52. Host: the WSL2 guest of the Ryzen host (12 threads, Go 1.24.7).
++Each arm's rule is committed before its reading. The arms and postulates of
++lab/bio-2026-11 (B1 scent marks, B3 a fovea for hot entries),
++lab/bio2-2026-11 (B4 spike timing, B5 larval slots; B6 a lek for hot
++entries, B7 growth by segments) and lab/bio3-2026-11 (B8 despotic placement,
++B9 the cuckoo chick; B10 a reclaimer with a deadline, B11 a snapshot that
++rebases) are not repeated.
++
++## The structure as a sense organ: parts not yet matched
++
++lab/bio2's table read the structure as an organism, part by part, and
++lab/bio3's as a habitat that keys compete for. This one reads it as a sense
++organ: what it resolves, when it decides, and what its older parts are still
++for.
++
++| Part | What it does | Its counterpart in nature | Where the counterpart does better |
++|---|---|---|---|
++| `TouchIfUnder`'s strict recipe: refuse while `Upper` is at the limit | `Upper` counts the bucket a window's edge cuts as whole, so a strict limiter admits 30–65% of a limit on 1–5 s windows (paper §4.2) | a hunter that samples the world at one rate, whatever is at stake | an echolocating bat calls about ten times a second while it searches and about two hundred in the last moments of an attack (the feeding buzz): resolution is bought when a decision turns on it, and dropped after (B12) |
++| the 4-bit epoch beside the register | says which unit word1 is aligned to while a touch has moved word0 and not yet word1 | the reptile's jaw joint: two bones that carry the hinge | when mammals got a second jaw joint the old hinge's bones had no load left, and became the ossicles of the middle ear: hearing got finer from parts a new joint made idle. Where both words move in one step (A33's 16-byte CAS) the epoch carries nothing (B13) |
++| the overflow table's sweep: every bucket visited when its epoch moves | keeps 2-bit slices unambiguous; 3.4–6.8 ms in one call on a 1M-key filter | a deciduous tree: every leaf at once, and bare for a season | an evergreen sheds by cohort: a needle carries its own age and the oldest cohort falls a little each year (B14, postulate) |
++| `TouchIfUnder`: a count, then a touch, under one of 64 locks | the decision makes two walks to the slot | a decision sent to the brain and back | a reflex arc: the knee decides at the first synapse (B15, postulate) |
++| a hot entry is held until its newest event is a horizon old | an idle heavy key keeps 64 B | muscle kept at full size | disuse atrophy: tissue that carries no load is resorbed, by the body and not at the muscle's request (B16, postulate) |
++| `alt`'s multiplier, 2^64 divided by the golden ratio | spreads a fingerprint's alternate lines | phyllotaxis: leaves set at the golden angle, so none shades the next | — (the same number, for the same reason) |
++| the stash, the overflow table and the hot entries are allocated on first use | a filter that is never attacked holds only its table | induced defences: a plant makes its toxin after the first bite | — |
++| the wait room and its placer; ConstantTime's pads that place waiting keys | the cuckoo search runs when the caller is not waiting on it | CAM plants take in carbon dioxide at night and spend it by day | — |
++
++## B12 The feeding buzz
++
++**The analogy.** An echolocating bat does not sample at one rate. Searching,
++it calls about ten times a second; once it has a target and the strike is a
++few hundred milliseconds away it calls about two hundred times a second, and
++then stops. It pays for resolution only where a decision turns on it. The
++filter's two earlier foveas put resolution where the traffic is: lab/bio's B3
++on the heaviest keys (a hot entry's newest units in sub-unit buckets) and
++lab/bio2's B4 on the lightest (a register that holds times while its key has
++six events or fewer in a horizon). Between them are the keys a rule like "5
++in 10 s" is written for: too busy for B4, far too light for a hot entry. What
++marks them out is not their rate. It is that a decision about them was made
++in doubt.
++
++**What a doubtful decision is.** `TouchIfUnder` refuses while `Upper` is at
++the limit. `Upper` counts the bucket the window's edge cuts as whole. A
++refusal is *uncertain* when the events certainly inside the window (the
++buckets wholly inside it, and the last touch) are under the limit: the
++register cannot say whether the key is over. Every false denial is an
++uncertain one.
++
++**The mechanism** (`TF_BUZZ=1`, `buzz.go`). On an uncertain refusal the key
++gets a *buzz entry*: 64 B in a side table of one entry per 128 slots (the
++hot table's size), allocated on the first one. It holds the key's identity,
++the slot's two words as they are then, and from then on the time of every
++event `TouchIfUnder` admits for the key: the newest 16, as 16-bit steps of
++Horizon/32768 (1.8 ms at a 60 s horizon), and the tick before which the log
++may be missing events (its start, then the newest event it has dropped).
++
++- **Trust.** An entry is trusted only while the key's slot is bit for bit
++  what the entry's last admission left (the displaced bit aside: a
++  relocation flips it). Every event the filter counts for the key changes
++  one of the two words, so while they match, the events since the entry's
++  start are exactly the logged ones. A plain `Touch`, a promotion to a hot
++  entry, an eviction whose history is shed: each changes a word, the entry
++  is dropped, and the key reads as it does today. After an admission the
++  slot must hold exactly what one event at `now` makes of the words read
++  before it (`nextReg`); if a plain touch slipped in between, it does not,
++  and the entry is dropped.
++- **The decision.** While an entry is trusted and the window starts after
++  the tick the log may be missing events before, the count is the log's: an
++  event is in the window unless its step ends before the window does
++  (`Upper`), to which the overflow table's part of `Upper` is added as
++  today. A limit of 16 or less never needs an event the log has dropped: if
++  fewer than the limit of the newest 16 are inside the window, the next
++  older one is outside it. Otherwise (the window reaches before the log's
++  start) the decision is the register's, as today, and the entry logs the
++  admission.
++- **Release.** A way is taken from an entry whose newest event is older than
++  the window it was given for and eight units more; a key with no way free
++  is refused an entry and reads as today.
++
++The register is kept as it is for every other caller; nothing on the hit
++path, the count path or a plain touch reads the table. ConstantTime filters
++keep `TouchIfUnder` as it is.
++
++**Why it cannot admit past a limit.** A trusted entry's log holds every
++event counted for the key since its start; a window that starts after the
++start (and after the newest dropped event) holds logged events only, each
++counted unless certainly outside. So the log's count is at least the
++truth, and a request is admitted only under the limit, as `Upper`
++guarantees today. The one way a counted event leaves no trace in the two
++words is the documented shedding of a history under `SpillMin`, which
++`Upper` does not see either.
++
++**Readings** (`TestLabBuzz`, `TF_LAB=1`; the filter itself, deterministic
++counts, nothing timed). Three strict limiters on the same offered Poisson
++traffic, as B3 and B4 read theirs: an exact sliding log, `TouchIfUnderAt`
++as it is (base), and the same with the buzz on. Rules (window/limit) on a
++60 s horizon: 1 s/5, 5 s/10, 10 s/3, 10 s/5, 30 s/10, 60 s/6, 60 s/16;
++offered 0.8x, 1.2x and 2x the limit; 20 horizons. Scenarios:
++
++- A: 400 contested keys in a filter of Capacity 200,000 (1,838 entries);
++- B: the same 400 keys in a filter of Capacity 12,800 (117 entries: 3.4
++  contested keys an entry);
++- C: A, with one request in ten a plain `TouchAt` (it counts, and no rule
++  is asked);
++- D: 1,000 contested keys (0.5% of Capacity, as B9's S1) beside tfbench's
++  churn stream at loads 1.00 and 1.15, so relocations, evictions and the
++  stash move the contested keys (4 horizons, the stream's length; rules
++  1 s/5 and 10 s/5);
++- E: limits past the log, 2.5 s/20 and 5 s/40 (reported, not judged).
++
++**Rule (before any reading).** Worth building if:
++
++1. no arm admits a request while the key's window already holds the limit,
++   asserted at every admission against the arm's own events, in every
++   scenario (in C the plain touches count);
++2. A, offered 2x: the buzz admits at least 0.97 of what the exact log
++   admits, for every rule;
++3. A, offered 0.8x: its false denials (refused while the key's own events in
++   the window are under the limit) are at most a quarter of the base's, for
++   every rule;
++4. B: the buzz admits no less than the base in any row (at least 0.99 of the
++   base's admissions);
++5. C: the buzz admits no less than the base (0.99);
++6. D: at load 1.00, offered 2x, at least 0.95 of the exact log; at load
++   1.15 no less than the base (0.99);
++7. `go test -short` passes with `TF_BUZZ=1`, plain and with `TF_BG=1`, and
++   the `TouchIf` tests pass under the race detector with it;
++8. memory: nothing until the first uncertain refusal, then at most 0.6 B per
++   key at design load (`Bytes()`).
++
++A rule's row is void if the base already admits 0.90 or more of the exact
++log at 2x (nothing to fix). Not read: speed (a conditional touch is already a
++lock, a count and a touch; the buzz adds a second read of the slot and one
++line of the table), `Resizable`, a model of the trust rule under
++concurrency.
++
++## B13 The middle ear
++
++**The analogy.** A reptile's jaw hinges on two bones, the articular and the
++quadrate. Mammals evolved a second hinge beside it (dentary on squamosal);
++with the load gone, the old hinge's bones shrank, moved, and became the
++malleus and the incus. Hearing got finer from parts a new joint had made
++idle: nothing was added.
++
++The register's 4-bit epoch is such a hinge. A touch moves word0 (the last
++touch) with one CAS and word1 (the register) with another, and between the
++two the register is aligned to an earlier unit than word0 says; the epoch
++tells a reader which. lab/bio3's table has the row: "redundant at rest,
++needed in motion". Since A33 a touch 8 or more units past its register moves
++both words by one 16-byte CAS (`realign2`): the second hinge. It is used
++for the long jumps only.
++
++**The mechanism.**
++
++- **B13a** (`TF_EAR=1`): every touch that starts a new unit moves both words
++  by the one CAS (the threshold in `farAhead` is 1 unit, not 8); touches
++  inside a unit keep their two. A register then never sits beside a last
++  touch of another unit, and the epoch says nothing word0 does not. Two
++  writers need care. A hot key's touch moves word0 alone (its register is
++  in its entry), and the demotion that hands the counts back to word1 must
++  not pair them with a last touch of a later unit: the demotion's CAS
++  compares word0's unit (one 16-byte CAS), and a hot key's touch into a new
++  unit compares word1 (the same). Without a 16-byte CAS (`TF_NOCAS2=1`,
++  other architectures) every unit change holds the slot as `realign` does
++  off amd64, and the arm does not demote.
++- **B13b** (`TF_EAR=2`): the 4 bits are given to the ear. They hold the
++  *onset* of the newest bucket: where in its unit its first event fell, in
++  sixteenths (156 ms at a 60 s horizon), written by the touch that starts
++  the unit, in the CAS it makes anyway. `Count` spreads the newest bucket's
++  events from the onset to the last touch, not from the unit's start
++  (D19's model "+onset newest 4b": velocity error 0.0779 to 0.0671, the 1 s
++  window 0.2138 to 0.1671). `Upper` is not changed. A hot entry keeps its
++  onset beside its counters. An onset of 0 says nothing (a demoted entry's
++  first unit, an event counted from a clock a unit behind).
++
++**Readings.** The filter itself.
++
++- `tfbench -exact`, `TestConformance` and the short suite in each mode;
++- a probe (`TF_EARPROBE=1`) that counts the register decodes whose stored
++  epoch is not the unit of the last touch it is read against (*lag*), on
++  tfbench's churn stream at load 1.15 and its velocity workload, one
++  goroutine;
++- `TestLabEar` (`TF_LAB=1`): tfbench's velocity workload on a filter per
++  mode, by window and by shape, beside D19's model of the onset; the strict
++  limiter's decisions on the same workload (`TouchIfUnderAt`, 1 s/5 and
++  5 s/20), as a digest;
++- touches that cross one unit each, timed in one binary, 3 interleaved
++  rounds: indicative only on this host.
++
++**Rule (before any reading).**
++
++B13a is sound if:
++
++1. `tfbench -exact` is byte-identical to `verify/expected/exact.txt`,
++   `TestConformance` passes, and `go test -short` passes plain, with
++   `TF_BG=1`, with `TF_CT=1` and with `TF_NOCAS2=1` (but for a test that
++   asserts a demotion, with `TF_NOCAS2=1`: named if there is one);
++2. on both streams the lag is 0 with `TF_EAR=1`, and above 0 without;
++3. the concurrent soak (`TF_STRESS=60s`) and the concurrent fuzzer (5
++   minutes) find no unflagged low answer with `TF_EAR=1`;
++4. indicative: a touch that crosses one unit costs at most 1.10 of the base.
++
++B13b is worth building if B13a is sound and:
++
++5. the velocity error on the filter is at most 0.0690, and no window reads
++   above the base's;
++6. the strict limiter's decisions are the base's, request for request (the
++   digests are equal);
++7. with `TF_EAR=2` every test of the short suite that fails pins a `Count`
++   on a window that cuts the newest bucket, or the epoch's bits (each
++   named), and the contract's tests pass: the attack tests, the
++   single-owner fuzzer (`TF_FUZZ=1e8`), the soak.
++
++Not read: a model of the slot protocol without the epoch
++(`RegisterEpoch.tla` resolves the 4 bits; a variant whose register is read
++at word0's unit); architectures without a 16-byte CAS beyond the tests under
++`TF_NOCAS2=1`; what the change does to the format (the vectors' counts, a
++snapshot version, a port without a 16-byte CAS).
++
++## Postulates, not run
++
++**B14 The evergreen: an overflow table with no sweep.** The overflow table
++is deciduous. Its entries carry a 2-bit slice, so an entry four slices old
++would read as new, and before the epoch moves every bucket is visited and
++its dead entries cleared: one call takes the whole table (3.4–6.8 ms on a
++1M-key filter, paper §8.2). Spreading that sweep over the adds (E36) keeps
++the visit and moves it: every add then loads four buckets that are not its
++own. An evergreen does neither. A needle carries its own age, and the tree
++drops its oldest cohort a little each year. A bucket's eight words use 63
++bits each; the eight spare bits can hold a stamp, the epoch (mod 256) at
++which the bucket was last cleaned. A reader decodes a bucket's slices
++against the bucket's stamp, not the table's epoch, and discards the dead by
++arithmetic, as the main table expires slots: it never needs the bucket
++clean. An add cleans and re-stamps the buckets it already loads, when their
++stamp is not the epoch's. Moving the epoch is then one store. What is left
++of the sweep is the cohort: a stamp is ambiguous after 256 slices (128
++horizons), so each move of the epoch re-stamps 1/128 of the buckets in turn.
++The stamp is spread over eight words, so a cleaner needs a count that
++readers check around their loads (a seqlock per stripe of buckets, written
++once per bucket per slice). Reading to take: the answers' digest under
++A14's floods equal to the base's; the largest call in cache lines (E51's
++counters: 42,872 for the sweep, 1,001 for E36), expected near the
++table's buckets over 128; the lines an add loads, no more than the base's.
++
++**B15 The reflex arc: a conditional touch decided at the slot.**
++`TouchIfUnder` is a decision sent to the brain and back: a count (a full
++lookup), then a touch (another), under one of 64 locks shared by every
++filter in the process, 1.48x a `TouchAndCount` (S81). A knee jerk is
++decided at the first synapse. B13a's hinge makes that possible for a key
++whose word1 is a register: read the two words, compute `Upper` from them,
++and commit the touch by one 16-byte CAS from the pair read; any other
++touch of the key changes a word and fails the CAS, so no two callers admit
++on the same count and no lock is needed. A hot key's commit is the CAS of
++its entry's bucket-0 word (its generation fails it across a change of
++unit). What stops a half-built version is that every state needs its own
++atomic commit: a key in the stash, in the wait room, or absent is decided
++under its claim stripe, and a path that keeps the lock for some states and
++drops it for others lets a locked caller's touch land after a lock-free
++caller's count. Reading to take: A45's three tests; `TouchIfUnder` from 12
++goroutines against the locked one.
++
++**B16 Disuse atrophy: idle hot entries given back.** A hot entry is handed
++back to a register only by its own key's touch, at the start of a unit
++(`demotable`). A heavy key that stops keeps 64 B until its newest event is a
++horizon old, though its counts would fit a register a few units after it
++stops; lab/bio3's model read 1,203 promotions refused with no attacker for
++that reason. Muscle that carries no load is resorbed by the body, not at the
++muscle's request. The reclaim scan (`reclaim`, run when an allocation finds
++no entry) can demote: an entry whose counts, advanced to now, fit a
++register is written back to its key's slot, found from the entry's identity
++(its primary line, fingerprint and tag), by the 16-byte CAS B13a's demotion
++uses. Reading to take: lab/bio3's S1 (1,000 heavy keys at a time living
++1–2 horizons) on the filter: promotions refused, and the share of heavy
++events counted whole.
++
++## B12b The buzz, with three faults of B12's entry mended
++
++Designed after B12's reading (`lab/b12-buzz.txt`; clauses 2, 3, 4, 5 and 6
++failed, clause 1 held everywhere), so this rule is written knowing it. The
++reading showed three faults in the entry as B12 built it, none in the idea:
++
++- **A bucket at 31 anywhere.** B12 trusted an entry only for a register
++  with no bucket at 31 (`hot`), meaning to exclude a register that can no
++  longer count. But the older buckets are wide and hold 31 events in the
++  ordinary course: a key admitted five times a second passes it in 12 s.
++  Every entry of the 1 s/5 rule was dropped at its first such admission
++  (400 of 400, all by the admission's check) and never given again. What
++  the trust rule needs is only that a counted event changes a word: a
++  register that is not full in every bucket, with the saturated bit clear.
++- **Steps read two horizons late.** A step repeats every 65,536 (two
++  horizons and a little). A ring of 16 holds 160 s of a 60 s/6 key's
++  events, so steps older than two horizons were read as new, and the log
++  refused where the register admitted: 0.798 of the exact log against the
++  base's 0.834. Events a horizon old must leave the ring when an event is
++  logged.
++- **Two ways.** With two ways a key, 9 of 400 contested keys in A and 109
++  of 1,000 in D found both taken by other contested keys and were refused
++  an entry for the whole run (D at load 1.00, 10 s/5, offered 2x: 0.948 of
++  the exact log, under clause 6's 0.95 by the keys that had no entry).
++
++**B12b** (`TF_BUZZ=2`): the entry is trusted for any register that is not
++full; an event a horizon old leaves the ring at the next admission; a key
++has eight ways (a block of four sets of two, under one lock). Everything
++else as B12.
++
++**Rule (written after B12's reading, before B12b's).** B12's clauses 1–8,
++unchanged, on the same scenarios. Reported beside them: the entries dropped
++by cause.
++
++## Readings
++
++### B12 the feeding buzz: fails its rule (clauses 2, 3, 4, 5 and 6)
++
++`TF_LAB=1 go test -run TestLabBuzz -v` (`lab/b12-buzz.txt`), at 5c2690c.
++Admitted, as a share of what the exact log admits, offered 2x the limit;
++false denials as a share of requests, offered 0.8x:
++
++| rule | A base | A buzz | A false denials, base | buzz | B base | B buzz | C base | C buzz |
++|---|---|---|---|---|---|---|---|---|
++| 1 s/5 | 0.507 | 0.513 | 0.4936 | 0.4857 | 0.507 | 0.510 | 0.441 | 0.444 |
++| 5 s/10 | 0.594 | 0.710 | 0.3582 | 0.1418 | 0.594 | 0.683 | 0.571 | 0.618 |
++| 10 s/3 | 0.786 | 0.993 | 0.2328 | 0.0138 | 0.786 | 0.847 | 0.753 | 0.873 |
++| 10 s/5 | 0.681 | 0.989 | 0.3146 | 0.0121 | 0.681 | 0.772 | 0.657 | 0.779 |
++| 30 s/10 | 0.776 | 0.983 | 0.2549 | 0.0194 | 0.776 | 0.837 | 0.741 | 0.757 |
++| 60 s/6 | 0.834 | 0.798 | 0.1558 | 0.2130 | 0.834 | 0.820 | 0.813 | 0.844 |
++| 60 s/16 | 0.787 | 0.983 | 0.1587 | 0.0216 | 0.787 | 0.844 | 0.776 | 0.783 |
++
++D (1,000 contested keys beside the churn stream; the same figures at loads
++1.00 and 1.15): 1 s/5 0.507 → 0.535, 10 s/5 0.684 → 0.948, offered 2x.
++
++1. Holds: no arm admitted a request with the limit already in its window,
++   in any row of A to E, nor from 8 goroutines (`TestLabBuzzConcurrent`: 0
++   window positions over the limit).
++2. Fails for 1 s/5, 5 s/10 and 60 s/6 (0.513, 0.710, 0.798; 0.97 asked).
++3. Fails for the same three (60 s/6 has more false denials than the base).
++4. Fails for 60 s/6 (0.820 against 0.834).
++5. Holds at 2x in every row; at 0.8x 60 s/6 reads 0.892 against 0.908.
++6. Fails: 0.948 and 0.535 at load 1.00 (0.95 asked).
++7. Not read (the arm failed before it).
++8. Holds: no table after 10,000 keys were each refused with certainty;
++   0.588 B per key of Capacity once allocated.
++
++No row is void (the base's best at 2x is 0.834). E, limits past the log:
++the buzz is the base to the request (no entry is given past a limit of 16).
++The causes are B12b's three faults, above: where none of them bites (10 s/3,
++10 s/5, 30 s/10, 60 s/16 in A) the buzz admits 0.983–0.993 of the exact log
++and its false denials fall from 16–31% of requests to 1.2–2.2%.
++
++### B12b the buzz, mended: holds its rule, worth building
++
++`TF_BUZZ=2 TF_LAB=1 go test -run TestLabBuzz -v` (`lab/b12b-buzz.txt`). The
++rule's text was in the tree before the run, but the commit that carries it
++(b60763d) was made after: the commit step failed on a path and was not
++checked before the run started. The text was not changed in between.
++
++Admitted, as a share of what the exact log admits, offered 2x; false
++denials as a share of requests, offered 0.8x:
++
++| rule | A base | A buzz | A false denials, base | buzz | B base | B buzz | C base | C buzz |
++|---|---|---|---|---|---|---|---|---|
++| 1 s/5 | 0.507 | 0.999 | 0.4936 | 0.0014 | 0.507 | 0.645 | 0.441 | 0.638 |
++| 5 s/10 | 0.594 | 0.997 | 0.3582 | 0.0029 | 0.594 | 0.707 | 0.571 | 0.631 |
++| 10 s/3 | 0.786 | 0.997 | 0.2328 | 0.0052 | 0.786 | 0.845 | 0.753 | 0.875 |
++| 10 s/5 | 0.681 | 0.996 | 0.3146 | 0.0052 | 0.681 | 0.770 | 0.657 | 0.781 |
++| 30 s/10 | 0.776 | 0.988 | 0.2549 | 0.0134 | 0.776 | 0.835 | 0.741 | 0.758 |
++| 60 s/6 | 0.834 | 0.989 | 0.1558 | 0.0336 | 0.834 | 0.877 | 0.813 | 0.857 |
++| 60 s/16 | 0.787 | 0.988 | 0.1587 | 0.0170 | 0.787 | 0.843 | 0.776 | 0.783 |
++
++| D | load | offered | base | buzz | false denials, base | buzz |
++|---|---|---|---|---|---|---|
++| 1 s/5 | 1.00 and 1.15 | 0.8x | 0.598 | 0.990 | 0.4929 | 0.0123 |
++| 1 s/5 | 1.00 and 1.15 | 2x | 0.507 | 0.989 | 0.6627 | 0.0157 |
++| 10 s/5 | 1.00 and 1.15 | 0.8x | 0.805 | 0.980 | 0.3060 | 0.0301 |
++| 10 s/5 | 1.00 and 1.15 | 2x | 0.684 | 0.975 | 0.6313 | 0.0410 |
++
++1. Holds: no admission with the limit already in the window, in any row;
++   from 8 goroutines, 0 window positions over the limit in six runs, and
++   the same under the race detector.
++2. Holds: 0.988–0.999 of the exact log in A at 2x, every rule (0.97 asked).
++3. Holds: the false denials at 0.8x are 0.3% to 22% of the base's (a
++   quarter allowed; the nearest is 60 s/6, 0.0336 against 0.1558).
++4. Holds: with 3.6 contested keys an entry the buzz admits more than the
++   base in every row (0.645–0.877 against 0.507–0.834); the 112 keys that
++   hold entries read as A, the rest as the base.
++5. Holds: with one request in ten a plain touch the buzz admits more than
++   the base in every row, by less than in A (0.638–0.875 against
++   0.441–0.813): each plain touch drops the key's entry (the words
++   changed: 8,058 to 419,512 drops a row, all by the words), and the next
++   uncertain refusal gives one back, good a window later.
++6. Holds: 0.989 and 0.975 at load 1.00 (0.95 asked); at load 1.15 the same
++   figures, above the base's. The churn's 13,000 evictions took no
++   contested key (their keys are the heaviest in their lines) and its
++   980,000 relocations dropped no entry (the displaced bit is left out of
++   the comparison). 16 of the 1,000 keys had no way free.
++7. Holds: `go test -short` passes with `TF_BUZZ=2`, plain and with
++   `TF_BG=1`; the `TouchIf` tests and `TestLabBuzzConcurrent` pass under
++   the race detector.
++8. Holds: no table after 10,000 keys were each refused with certainty;
++   0.586 B per key of Capacity once allocated.
++
++No row is void. In 60 s/6 entries are still dropped (57–333 a row, by
++kind): a key refused for a whole horizon has expired when it is next
++admitted, and starts afresh as it does today.
++
++What the arm is and is not. It makes a strict limit of 16 or less exact to a
++step (1.8 ms at a 60 s horizon) for the keys that hold an entry, on any
++window, at 0.59 B per key once a refusal has been uncertain, with the
++register, the hit path and every other caller as they are. It does nothing
++past a limit of 16 (E), nothing for `Count`, and little for a key that is
++also touched outside `TouchIfUnder`. Not read: speed; the eight ways are
++sixteen lines scanned under a lock on every conditional touch once the table
++exists, where a tag per way in one line would do; a contest for entries when
++contested keys outnumber them (B: first come, first served); `Resizable`; a
++model of the trust rule.
++
++### B13a the register follows its last touch: sound by its rule
++
++`lab/ear1-*.txt`, `lab/labear.txt`.
++
++1. Holds: `tfbench -exact` is byte-identical to `verify/expected/exact.txt`;
++   `TestConformance` passes; `go test -short` passes plain, with `TF_BG=1`
++   and with `TF_CT=1`, and under the race detector. With `TF_NOCAS2=1` one
++   test fails, the one the rule names: `TestHotDemotion` (the arm does not
++   demote without a 16-byte CAS).
++2. Holds:
++
++   | stream | touches | decodes at a lag, base | `TF_EAR=1` |
++   |---|---|---|---|
++   | churn, load 1.15 | 1,115,315 | 172,374 | 0 |
++   | velocity workload | 1,305,412 | 122,635 | 0 |
++
++   Evictions, relocations, promotions and demotions are the base's to the
++   unit (4,577 and 932,499; 526 and 249). Today the epoch is consulted for
++   9–15% of touches; with the one CAS at every unit change, never.
++3. Holds: the soak (24 workers, 60 s, 266 M operations, 79.9 M counts
++   checked) reads no low answer; the concurrent fuzzer (5 minutes, 1,175
++   cases, 777 M operations, 201 M answers checked) fails no case.
++4. Holds, indicative only: a touch that starts a new unit reads 194.0 ns
++   against 185.0 (1.05; 1.10 allowed), a touch inside a unit 0.99. Without
++   a 16-byte CAS, where every unit change holds the slot, 216.5 against
++   196.8 for the base in that mode (1.10).
++
++### B13b the freed bits as the newest bucket's onset: holds its rule, worth building
++
++`lab/ear2-*.txt`, `lab/labear.txt`.
++
++5. Holds. The scorecard's velocity error, on the filter:
++
++   | | 1 s | 5 s | 15 s | 30 s | 60 s | mean |
++   |---|---|---|---|---|---|---|
++   | base (and `TF_EAR=1`) | 0.2138 | 0.0567 | 0.0513 | 0.0436 | 0.0240 | 0.0779 |
++   | `TF_EAR=2` | 0.1671 | 0.0503 | 0.0506 | 0.0435 | 0.0239 | 0.0671 |
++
++   No window is above the base's, and each is D19's model of the onset to
++   the fourth decimal. By shape (mean of windows): bursts 0.1676 → 0.0865
++   (1 s 0.4258 → 0.0868), on/off 0.0953 → 0.0921, steady 0.0717 → 0.0689,
++   ramp 0.0548 → 0.0530, sparse 0.0460 → 0.0454. `tfbench -exact`'s burst
++   lines, a burst of n touches read in a 1 s window, go from a spread
++   (10 read as 5–10, 2,000 as 915–2,000) to the count itself (min = max)
++   for every n from 10 to 2,000.
++6. Holds: the digest of `Seen`, `Upper` and `Saturated` over the workload's
++   1.2 M answers is the base's in all three modes, and the strict limiter's
++   decisions are the base's request for request (1 s/5: 569,035 admitted;
++   5 s/20: 752,886).
++7. Holds: with `TF_EAR=2` the short suite fails one test, plain, with
++   `TF_BG=1` and with `TF_CT=1`: `TestConformance`, whose vectors pin a
++   `Count` on a window that cuts the newest bucket (32 operations of two
++   vectors, each reading 1 higher and within `Upper`). The attack tests
++   pass, the single-owner fuzzer passes (1.36e8 operations, 35.3 M answers
++   checked), the soak reads no low answer (271 M operations) and the
++   concurrent fuzzer fails no case (5 minutes, 1,121 cases, 746 M
++   operations). A first build kept a hot entry's onset in an array beside
++   the table; `TestSnapshot` caught it (1 answer of 1,545,412 changed by a
++   restore), and the onset moved into the top 4 bits of the entry's
++   bucket-0 word, which a snapshot carries.
++
++What it costs: a 16-byte CAS, or a hold, at every unit change (clause 4);
++no demotion without a 16-byte CAS; a format change (the vectors' counts, a
++snapshot of one mode read by the other, and for a port the choice between a
++16-byte CAS and a hold on every touch that starts a unit). The memory is
++unchanged: 18.8 B per key. It is the largest step toward target 7 on
++record that costs no bits (0.0779 → 0.0671; E48's 14 freed bits read
++0.0637), and the two stack. Not read, as the rule says: a model of the
++slot protocol without the epoch.
+diff --git a/lab/b12-buzz.txt b/lab/b12-buzz.txt
+new file mode 100644
+index 0000000..ed23d83
+--- /dev/null
++++ b/lab/b12-buzz.txt
+@@ -0,0 +1,91 @@
++=== RUN   TestLabBuzz
++    lab_buzz_test.go:166: M: 10,000 keys, 4 requests each at one tick under a limit of 3: buzz table allocated false, Bytes 3764736 -> 3764736
++    lab_buzz_test.go:181: A 1s/5    x0.8 | requests  1919869 exact admits  1537047 | admitted/exact base 0.598 buzz 0.604 | false denials base 0.4936 buzz 0.4857 | entries given    399 refused     355 dropped    399 held     0 | decided by a log    31011, of which the register refused   18716
++    lab_buzz_test.go:181: A 1s/5    x1.2 | requests  2878341 exact admits  1841153 | admitted/exact base 0.536 buzz 0.541 | false denials base 0.6108 buzz 0.6041 | entries given    400 refused     601 dropped    400 held     0 | decided by a log    31448, of which the register refused   17702
++    lab_buzz_test.go:181: A 1s/5    x2.0 | requests  4798820 exact admits  2092370 | admitted/exact base 0.507 buzz 0.513 | false denials base 0.6628 buzz 0.6556 | entries given    400 refused    1129 dropped    400 held     0 | decided by a log    52301, of which the register refused   21484
++    lab_buzz_test.go:183: A memory: Bytes base 3764736, buzz 3882368: 0.588 B per key of Capacity
++    lab_buzz_test.go:181: A 5s/10   x0.8 | requests   767726 exact admits   674126 | admitted/exact base 0.726 buzz 0.891 | false denials base 0.3582 buzz 0.1418 | entries given   3345 refused    2922 dropped   3117 held   228 | decided by a log   465946, of which the register refused  207470
++    lab_buzz_test.go:181: A 5s/10   x1.2 | requests  1152594 exact admits   804520 | admitted/exact base 0.642 buzz 0.773 | false denials base 0.5475 buzz 0.3443 | entries given   5465 refused    2179 dropped   5329 held   136 | decided by a log   427160, of which the register refused  216848
++    lab_buzz_test.go:181: A 5s/10   x2.0 | requests  1920825 exact admits   887643 | admitted/exact base 0.594 buzz 0.710 | false denials base 0.7193 buzz 0.4976 | entries given   5616 refused    2531 dropped   5530 held    86 | decided by a log   568456, of which the register refused  220359
++    lab_buzz_test.go:181: A 10s/3   x0.8 | requests   115732 exact admits    84616 | admitted/exact base 0.867 buzz 0.991 | false denials base 0.2328 buzz 0.0138 | entries given    392 refused     780 dropped      0 held   391 | decided by a log   109227, of which the register refused   21484
++    lab_buzz_test.go:181: A 10s/3   x1.2 | requests   173192 exact admits   101820 | admitted/exact base 0.829 buzz 0.993 | false denials base 0.3479 buzz 0.0126 | entries given    391 refused    1793 dropped      0 held   391 | decided by a log   165331, of which the register refused   39752
++    lab_buzz_test.go:181: A 10s/3   x2.0 | requests   288485 exact admits   118400 | admitted/exact base 0.786 buzz 0.993 | false denials base 0.5212 buzz 0.0172 | entries given    391 refused    4184 dropped      0 held   391 | decided by a log   276530, of which the register refused   66476
++    lab_buzz_test.go:181: A 10s/5   x0.8 | requests   192697 exact admits   154330 | admitted/exact base 0.801 buzz 0.992 | false denials base 0.3146 buzz 0.0121 | entries given    391 refused    1487 dropped      0 held   391 | decided by a log   183872, of which the register refused   55430
++    lab_buzz_test.go:181: A 10s/5   x1.2 | requests   289011 exact admits   184765 | admitted/exact base 0.737 buzz 0.991 | false denials base 0.4801 buzz 0.0164 | entries given    391 refused    3379 dropped      0 held   391 | decided by a log   276927, of which the register refused   99860
++    lab_buzz_test.go:181: A 10s/5   x2.0 | requests   480856 exact admits   209819 | admitted/exact base 0.681 buzz 0.989 | false denials base 0.6617 buzz 0.0207 | entries given    391 refused    7521 dropped      0 held   391 | decided by a log   461899, of which the register refused  149580
++    lab_buzz_test.go:181: A 30s/10  x0.8 | requests   127835 exact admits   112457 | admitted/exact base 0.823 buzz 0.986 | false denials base 0.2549 buzz 0.0194 | entries given    391 refused     846 dropped      0 held   391 | decided by a log   116813, of which the register refused   44501
++    lab_buzz_test.go:181: A 30s/10  x1.2 | requests   191381 exact admits   134307 | admitted/exact base 0.776 buzz 0.985 | false denials base 0.3857 buzz 0.0222 | entries given    391 refused    1951 dropped      0 held   391 | decided by a log   177140, of which the register refused   86529
++    lab_buzz_test.go:181: A 30s/10  x2.0 | requests   319571 exact admits   148554 | admitted/exact base 0.776 buzz 0.983 | false denials base 0.4545 buzz 0.0247 | entries given    391 refused    4555 dropped      0 held   391 | decided by a log   296297, of which the register refused  118397
++    lab_buzz_test.go:181: A 60s/6   x0.8 | requests    38207 exact admits    31724 | admitted/exact base 0.916 buzz 0.838 | false denials base 0.1558 buzz 0.2130 | entries given   1353 refused      94 dropped   1102 held   247 | decided by a log    16285, of which the register refused    1391
++    lab_buzz_test.go:181: A 60s/6   x1.2 | requests    57276 exact admits    37957 | admitted/exact base 0.876 buzz 0.809 | false denials base 0.2749 buzz 0.2658 | entries given   1679 refused     366 dropped   1384 held   294 | decided by a log    28687, of which the register refused    4243
++    lab_buzz_test.go:181: A 60s/6   x2.0 | requests    95781 exact admits    43044 | admitted/exact base 0.834 buzz 0.798 | false denials base 0.4336 buzz 0.2817 | entries given   1813 refused     743 dropped   1541 held   272 | decided by a log    49686, of which the register refused    8172
++    lab_buzz_test.go:181: A 60s/16  x0.8 | requests   103031 exact admits    94683 | admitted/exact base 0.904 buzz 0.986 | false denials base 0.1587 buzz 0.0216 | entries given    393 refused     315 dropped      2 held   391 | decided by a log    84325, of which the register refused   21062
++    lab_buzz_test.go:181: A 60s/16  x1.2 | requests   154285 exact admits   112727 | admitted/exact base 0.836 buzz 0.984 | false denials base 0.3528 buzz 0.0271 | entries given    393 refused    1238 dropped      2 held   391 | decided by a log   135142, of which the register refused   58702
++    lab_buzz_test.go:181: A 60s/16  x2.0 | requests   257114 exact admits   122380 | admitted/exact base 0.787 buzz 0.983 | false denials base 0.4898 buzz 0.0293 | entries given    392 refused    3114 dropped      1 held   391 | decided by a log   225638, of which the register refused   88026
++    lab_buzz_test.go:181: B 1s/5    x0.8 | requests  1919869 exact admits  1537047 | admitted/exact base 0.598 buzz 0.600 | false denials base 0.4936 buzz 0.4906 | entries given    265 refused   15264 dropped    265 held     0 | decided by a log    12075, of which the register refused    7167
++    lab_buzz_test.go:181: B 1s/5    x1.2 | requests  2878341 exact admits  1841153 | admitted/exact base 0.536 buzz 0.539 | false denials base 0.6108 buzz 0.6071 | entries given    283 refused   27137 dropped    283 held     0 | decided by a log    17842, of which the register refused    9836
++    lab_buzz_test.go:181: B 1s/5    x2.0 | requests  4798820 exact admits  2092370 | admitted/exact base 0.507 buzz 0.510 | false denials base 0.6628 buzz 0.6589 | entries given    330 refused   51051 dropped    330 held     0 | decided by a log    28987, of which the register refused   11569
++    lab_buzz_test.go:181: B 5s/10   x0.8 | requests   767726 exact admits   674126 | admitted/exact base 0.726 buzz 0.796 | false denials base 0.3582 buzz 0.2661 | entries given   1454 refused  159454 dropped   1345 held   109 | decided by a log   198069, of which the register refused   87976
++    lab_buzz_test.go:181: B 5s/10   x1.2 | requests  1152594 exact admits   804520 | admitted/exact base 0.642 buzz 0.723 | false denials base 0.5475 buzz 0.4225 | entries given   3114 refused  264081 dropped   3014 held   100 | decided by a log   262839, of which the register refused  133266
++    lab_buzz_test.go:181: B 5s/10   x2.0 | requests  1920825 exact admits   887643 | admitted/exact base 0.594 buzz 0.683 | false denials base 0.7193 buzz 0.5536 | entries given   3347 refused  534363 dropped   3246 held   101 | decided by a log   429270, of which the register refused  168699
++    lab_buzz_test.go:181: B 10s/3   x0.8 | requests   115732 exact admits    84616 | admitted/exact base 0.867 buzz 0.904 | false denials base 0.2328 buzz 0.1680 | entries given    135 refused   24996 dropped      0 held   115 | decided by a log    32378, of which the register refused    6361
++    lab_buzz_test.go:181: B 10s/3   x1.2 | requests   173192 exact admits   101820 | admitted/exact base 0.829 buzz 0.878 | false denials base 0.3479 buzz 0.2493 | entries given    116 refused   55001 dropped      0 held   115 | decided by a log    48763, of which the register refused   11687
++    lab_buzz_test.go:181: B 10s/3   x2.0 | requests   288485 exact admits   118400 | admitted/exact base 0.786 buzz 0.847 | false denials base 0.5212 buzz 0.3727 | entries given    115 refused  130441 dropped      0 held   115 | decided by a log    81616, of which the register refused   19601
++    lab_buzz_test.go:181: B 10s/5   x0.8 | requests   192697 exact admits   154330 | admitted/exact base 0.801 buzz 0.857 | false denials base 0.3146 buzz 0.2262 | entries given    115 refused   47521 dropped      0 held   115 | decided by a log    54104, of which the register refused   16262
++    lab_buzz_test.go:181: B 10s/5   x1.2 | requests   289011 exact admits   184765 | admitted/exact base 0.737 buzz 0.812 | false denials base 0.4801 buzz 0.3420 | entries given    115 refused  106176 dropped      0 held   115 | decided by a log    82032, of which the register refused   29644
++    lab_buzz_test.go:181: B 10s/5   x2.0 | requests   480856 exact admits   209819 | admitted/exact base 0.681 buzz 0.772 | false denials base 0.6617 buzz 0.4728 | entries given    115 refused  238005 dropped      0 held   115 | decided by a log   136220, of which the register refused   44045
++    lab_buzz_test.go:181: B 30s/10  x0.8 | requests   127835 exact admits   112457 | admitted/exact base 0.823 buzz 0.872 | false denials base 0.2549 buzz 0.1840 | entries given    115 refused   24657 dropped      0 held   115 | decided by a log    34923, of which the register refused   13375
++    lab_buzz_test.go:181: B 30s/10  x1.2 | requests   191381 exact admits   134307 | admitted/exact base 0.776 buzz 0.837 | false denials base 0.3857 buzz 0.2779 | entries given    115 refused   61025 dropped      0 held   115 | decided by a log    52300, of which the register refused   25650
++    lab_buzz_test.go:181: B 30s/10  x2.0 | requests   319571 exact admits   148554 | admitted/exact base 0.776 buzz 0.837 | false denials base 0.4545 buzz 0.3274 | entries given    115 refused  141597 dropped      0 held   115 | decided by a log    87540, of which the register refused   34820
++    lab_buzz_test.go:181: B 60s/6   x0.8 | requests    38207 exact admits    31724 | admitted/exact base 0.916 buzz 0.886 | false denials base 0.1558 buzz 0.1778 | entries given    546 refused    4628 dropped    407 held   102 | decided by a log     6582, of which the register refused     578
++    lab_buzz_test.go:181: B 60s/6   x1.2 | requests    57276 exact admits    37957 | admitted/exact base 0.876 buzz 0.851 | false denials base 0.2749 buzz 0.2727 | entries given    595 refused   12988 dropped    456 held   111 | decided by a log    10501, of which the register refused    1503
++    lab_buzz_test.go:181: B 60s/6   x2.0 | requests    95781 exact admits    43044 | admitted/exact base 0.834 buzz 0.820 | false denials base 0.4336 buzz 0.3681 | entries given    611 refused   30563 dropped    493 held   110 | decided by a log    17891, of which the register refused    3046
++    lab_buzz_test.go:181: B 60s/16  x0.8 | requests   103031 exact admits    94683 | admitted/exact base 0.904 buzz 0.928 | false denials base 0.1587 buzz 0.1193 | entries given    116 refused   12321 dropped      1 held   115 | decided by a log    25281, of which the register refused    6089
++    lab_buzz_test.go:181: B 60s/16  x1.2 | requests   154285 exact admits   112727 | admitted/exact base 0.836 buzz 0.880 | false denials base 0.3528 buzz 0.2579 | entries given    116 refused   40648 dropped      1 held   115 | decided by a log    39680, of which the register refused   17360
++    lab_buzz_test.go:181: B 60s/16  x2.0 | requests   257114 exact admits   122380 | admitted/exact base 0.787 buzz 0.844 | false denials base 0.4898 buzz 0.3559 | entries given    115 refused   95542 dropped      0 held   115 | decided by a log    66147, of which the register refused   25839
++    lab_buzz_test.go:181: C 1s/5    x0.8 | requests  1727769 exact admits  1364973 | admitted/exact base 0.568 buzz 0.572 | false denials base 0.5127 buzz 0.5076 | entries given   4040 refused     390 dropped   4040 held     0 | decided by a log    21195, of which the register refused   10885
++    lab_buzz_test.go:181: C 1s/5    x1.2 | requests  2590308 exact admits  1594533 | admitted/exact base 0.496 buzz 0.500 | false denials base 0.6200 buzz 0.6154 | entries given   5055 refused     869 dropped   5055 held     0 | decided by a log    21824, of which the register refused   11388
++    lab_buzz_test.go:181: C 1s/5    x2.0 | requests  4317557 exact admits  1697773 | admitted/exact base 0.441 buzz 0.444 | false denials base 0.6867 buzz 0.6836 | entries given   6174 refused    1076 dropped   6174 held     0 | decided by a log    18110, of which the register refused    7907
++    lab_buzz_test.go:181: C 5s/10   x0.8 | requests   691657 exact admits   601899 | admitted/exact base 0.713 buzz 0.785 | false denials base 0.3725 buzz 0.2812 | entries given  54518 refused    4853 dropped  54174 held   344 | decided by a log   217798, of which the register refused   78460
++    lab_buzz_test.go:181: C 5s/10   x1.2 | requests  1037655 exact admits   698880 | admitted/exact base 0.623 buzz 0.697 | false denials base 0.5668 buzz 0.4562 | entries given  82166 refused   10396 dropped  81844 held   322 | decided by a log   215231, of which the register refused  100633
++    lab_buzz_test.go:181: C 5s/10   x2.0 | requests  1729510 exact admits   715648 | admitted/exact base 0.571 buzz 0.618 | false denials base 0.7151 buzz 0.6325 | entries given 125654 refused   19222 dropped 125375 held   279 | decided by a log   147175, of which the register refused   65495
++    lab_buzz_test.go:181: C 10s/3   x0.8 | requests   103757 exact admits    74655 | admitted/exact base 0.858 buzz 0.932 | false denials base 0.2248 buzz 0.1051 | entries given   8247 refused     540 dropped   7926 held   317 | decided by a log    56713, of which the register refused   10525
++    lab_buzz_test.go:181: C 10s/3   x1.2 | requests   156009 exact admits    88101 | admitted/exact base 0.809 buzz 0.910 | false denials base 0.3220 buzz 0.1438 | entries given  13103 refused    1323 dropped  12769 held   334 | decided by a log    80520, of which the register refused   19146
++    lab_buzz_test.go:181: C 10s/3   x2.0 | requests   259750 exact admits    97063 | admitted/exact base 0.753 buzz 0.873 | false denials base 0.4147 buzz 0.2002 | entries given  21346 refused    2747 dropped  21020 held   326 | decided by a log   105172, of which the register refused   27001
++    lab_buzz_test.go:181: C 10s/5   x0.8 | requests   172726 exact admits   136545 | admitted/exact base 0.793 buzz 0.885 | false denials base 0.3124 buzz 0.1740 | entries given  14185 refused    1190 dropped  13834 held   351 | decided by a log    83982, of which the register refused   22387
++    lab_buzz_test.go:181: C 10s/5   x1.2 | requests   258856 exact admits   159658 | admitted/exact base 0.721 buzz 0.844 | false denials base 0.4653 buzz 0.2558 | entries given  22811 refused    2865 dropped  22452 held   359 | decided by a log   111334, of which the register refused   39013
++    lab_buzz_test.go:181: C 10s/5   x2.0 | requests   431216 exact admits   170321 | admitted/exact base 0.657 buzz 0.779 | false denials base 0.5935 buzz 0.3730 | entries given  37584 refused    5883 dropped  37241 held   343 | decided by a log   123595, of which the register refused   43045
++    lab_buzz_test.go:181: C 30s/10  x0.8 | requests   115013 exact admits   100387 | admitted/exact base 0.814 buzz 0.844 | false denials base 0.2653 buzz 0.2199 | entries given   8401 refused     620 dropped   8116 held   285 | decided by a log    31695, of which the register refused    7236
++    lab_buzz_test.go:181: C 30s/10  x1.2 | requests   172634 exact admits   116820 | admitted/exact base 0.757 buzz 0.789 | false denials base 0.4085 buzz 0.3467 | entries given  14689 refused    1650 dropped  14370 held   319 | decided by a log    37258, of which the register refused   12180
++    lab_buzz_test.go:181: C 30s/10  x2.0 | requests   287231 exact admits   119827 | admitted/exact base 0.741 buzz 0.757 | false denials base 0.5013 buzz 0.4632 | entries given  25636 refused    4128 dropped  25283 held   353 | decided by a log    28915, of which the register refused    9894
++    lab_buzz_test.go:181: C 60s/6   x0.8 | requests    34536 exact admits    28246 | admitted/exact base 0.908 buzz 0.892 | false denials base 0.1567 buzz 0.1632 | entries given   2564 refused     100 dropped   2314 held   246 | decided by a log     8477, of which the register refused     806
++    lab_buzz_test.go:181: C 60s/6   x1.2 | requests    51826 exact admits    33032 | admitted/exact base 0.862 buzz 0.869 | false denials base 0.2691 buzz 0.2269 | entries given   4262 refused     303 dropped   3958 held   302 | decided by a log    14113, of which the register refused    2614
++    lab_buzz_test.go:181: C 60s/6   x2.0 | requests    86365 exact admits    35005 | admitted/exact base 0.813 buzz 0.844 | false denials base 0.3817 buzz 0.3023 | entries given   7093 refused     775 dropped   6781 held   312 | decided by a log    16235, of which the register refused    4143
++    lab_buzz_test.go:181: C 60s/16  x0.8 | requests    92185 exact admits    84468 | admitted/exact base 0.900 buzz 0.905 | false denials base 0.1610 buzz 0.1513 | entries given   4807 refused     220 dropped   4586 held   221 | decided by a log    10845, of which the register refused    1389
++    lab_buzz_test.go:181: C 60s/16  x1.2 | requests   138807 exact admits    98252 | admitted/exact base 0.823 buzz 0.835 | false denials base 0.3713 buzz 0.3421 | entries given  10749 refused    1061 dropped  10420 held   329 | decided by a log    12646, of which the register refused    4031
++    lab_buzz_test.go:181: C 60s/16  x2.0 | requests   230416 exact admits    98937 | admitted/exact base 0.776 buzz 0.783 | false denials base 0.5371 buzz 0.5146 | entries given  18940 refused    2616 dropped  18591 held   349 | decided by a log     6572, of which the register refused    2552
++    lab_buzz_test.go:181: E 2.5s/20 x0.8 | requests  3073509 exact admits  2874431 | admitted/exact base 0.664 buzz 0.664 | false denials base 0.3790 buzz 0.3790 | entries given      0 refused       0 dropped      0 held     0 | decided by a log        0, of which the register refused       0
++    lab_buzz_test.go:181: E 2.5s/20 x1.2 | requests  4609689 exact admits  3423353 | admitted/exact base 0.561 buzz 0.561 | false denials base 0.5822 buzz 0.5822 | entries given      0 refused       0 dropped      0 held     0 | decided by a log        0, of which the register refused       0
++    lab_buzz_test.go:181: E 2.5s/20 x2.0 | requests  7679318 exact admits  3676679 | admitted/exact base 0.522 buzz 0.522 | false denials base 0.7423 buzz 0.7423 | entries given      0 refused       0 dropped      0 held     0 | decided by a log        0, of which the register refused       0
++    lab_buzz_test.go:181: E 5s/40   x0.8 | requests  3073825 exact admits  2990585 | admitted/exact base 0.646 buzz 0.646 | false denials base 0.3719 buzz 0.3719 | entries given      0 refused       0 dropped      0 held     0 | decided by a log        0, of which the register refused       0
++    lab_buzz_test.go:181: E 5s/40   x1.2 | requests  4611698 exact admits  3576158 | admitted/exact base 0.549 buzz 0.549 | false denials base 0.5737 buzz 0.5737 | entries given      0 refused       0 dropped      0 held     0 | decided by a log        0, of which the register refused       0
++    lab_buzz_test.go:181: E 5s/40   x2.0 | requests  7683630 exact admits  3753455 | admitted/exact base 0.524 buzz 0.524 | false denials base 0.7414 buzz 0.7414 | entries given      0 refused       0 dropped      0 held     0 | decided by a log        0, of which the register refused       0
++    lab_buzz_test.go:203: D load 1.00 1s/5    x0.8 | requests   959530 exact admits   768714 | admitted/exact base 0.598 buzz 0.629 | false denials base 0.4929 buzz 0.4560 | entries given    993 refused    4291 dropped    993 held     0 | decided by a log    73036, of which the register refused   44289 | evictions 0 relocations 153863
++    lab_buzz_test.go:203: D load 1.00 1s/5    x2.0 | requests  2399327 exact admits  1046883 | admitted/exact base 0.507 buzz 0.535 | false denials base 0.6627 buzz 0.6272 | entries given    999 refused   12749 dropped    999 held     0 | decided by a log   129077, of which the register refused   53208 | evictions 0 relocations 153853
++    lab_buzz_test.go:203: D load 1.00 10s/5   x0.8 | requests    96109 exact admits    77296 | admitted/exact base 0.805 buzz 0.964 | false denials base 0.3060 buzz 0.0555 | entries given    891 refused    3383 dropped      0 held   891 | decided by a log    75491, of which the register refused   22787 | evictions 0 relocations 153753
++    lab_buzz_test.go:203: D load 1.00 10s/5   x2.0 | requests   240751 exact admits   105763 | admitted/exact base 0.684 buzz 0.948 | false denials base 0.6313 buzz 0.0955 | entries given    891 refused   17376 dropped      0 held   891 | decided by a log   195669, of which the register refused   63188 | evictions 0 relocations 153893
++    lab_buzz_test.go:203: D load 1.15 1s/5    x0.8 | requests   959530 exact admits   768714 | admitted/exact base 0.598 buzz 0.629 | false denials base 0.4929 buzz 0.4560 | entries given    993 refused    4291 dropped    993 held     0 | decided by a log    73036, of which the register refused   44289 | evictions 13023 relocations 980245
++    lab_buzz_test.go:203: D load 1.15 1s/5    x2.0 | requests  2399327 exact admits  1046883 | admitted/exact base 0.507 buzz 0.535 | false denials base 0.6627 buzz 0.6272 | entries given    999 refused   12749 dropped    999 held     0 | decided by a log   129077, of which the register refused   53208 | evictions 13231 relocations 980920
++    lab_buzz_test.go:203: D load 1.15 10s/5   x0.8 | requests    96109 exact admits    77296 | admitted/exact base 0.805 buzz 0.964 | false denials base 0.3060 buzz 0.0555 | entries given    891 refused    3383 dropped      0 held   891 | decided by a log    75491, of which the register refused   22787 | evictions 12949 relocations 980599
++    lab_buzz_test.go:203: D load 1.15 10s/5   x2.0 | requests   240751 exact admits   105763 | admitted/exact base 0.684 buzz 0.948 | false denials base 0.6313 buzz 0.0955 | entries given    891 refused   17376 dropped      0 held   891 | decided by a log   195669, of which the register refused   63188 | evictions 13086 relocations 979700
++--- PASS: TestLabBuzz (247.10s)
++=== RUN   TestLabBuzzConcurrent
++    lab_buzz_test.go:295: concurrent keys   1 1s/5: admitted 299 (0.50 of limit x windows x keys), positions 299, over the limit 0; entries given 1 dropped 1, decided by a log 132, of which the register refused 51
++    lab_buzz_test.go:295: concurrent keys 200 1s/5: admitted 59080 (0.49 of limit x windows x keys), positions 59080, over the limit 0; entries given 200 dropped 200, decided by a log 26560, of which the register refused 10842
++    lab_buzz_test.go:295: concurrent keys   1 5s/10: admitted 161 (0.67 of limit x windows x keys), positions 161, over the limit 0; entries given 2 dropped 1, decided by a log 181, of which the register refused 53
++    lab_buzz_test.go:295: concurrent keys 200 5s/10: admitted 32700 (0.68 of limit x windows x keys), positions 32700, over the limit 0; entries given 398 dropped 284, decided by a log 32285, of which the register refused 11874
++    lab_buzz_test.go:295: concurrent keys   1 10s/5: admitted 54 (0.90 of limit x windows x keys), positions 54, over the limit 0; entries given 1 dropped 0, decided by a log 107, of which the register refused 37
++    lab_buzz_test.go:295: concurrent keys 200 10s/5: admitted 10238 (0.85 of limit x windows x keys), positions 10238, over the limit 0; entries given 199 dropped 0, decided by a log 19757, of which the register refused 6282
++--- PASS: TestLabBuzzConcurrent (4.75s)
++PASS
++ok  	github.com/scooter-sensei/clepsydra/go	251.855s
+diff --git a/lab/b12b-buzz.txt b/lab/b12b-buzz.txt
+new file mode 100644
+index 0000000..beaafdf
+--- /dev/null
++++ b/lab/b12b-buzz.txt
+@@ -0,0 +1,91 @@
++=== RUN   TestLabBuzz
++    lab_buzz_test.go:168: M: 10,000 keys, 4 requests each at one tick under a limit of 3: buzz table allocated false, Bytes 3764736 -> 3764736
++    lab_buzz_test.go:183: A 1s/5    x0.8 | requests  1919869 exact admits  1537047 | admitted/exact base 0.598 buzz 0.999 | false denials base 0.4936 buzz 0.0014 | entries given    400 refused       0 dropped      0 (kind 0, words 0, check 0) held   400 | decided by a log  1915675, of which the register refused 1167226
++    lab_buzz_test.go:183: A 1s/5    x1.2 | requests  2878341 exact admits  1841153 | admitted/exact base 0.536 buzz 0.999 | false denials base 0.6108 buzz 0.0016 | entries given    400 refused       0 dropped      0 (kind 0, words 0, check 0) held   400 | decided by a log  2872865, of which the register refused 1603513
++    lab_buzz_test.go:183: A 1s/5    x2.0 | requests  4798820 exact admits  2092370 | admitted/exact base 0.507 buzz 0.999 | false denials base 0.6628 buzz 0.0022 | entries given    400 refused       0 dropped      0 (kind 0, words 0, check 0) held   400 | decided by a log  4790400, of which the register refused 1962161
++    lab_buzz_test.go:185: A memory: Bytes base 3764736, buzz 3881984: 0.586 B per key of Capacity
++    lab_buzz_test.go:183: A 5s/10   x0.8 | requests   767726 exact admits   674126 | admitted/exact base 0.726 buzz 0.998 | false denials base 0.3582 buzz 0.0029 | entries given    400 refused       0 dropped      0 (kind 0, words 0, check 0) held   400 | decided by a log   759665, of which the register refused  339326
++    lab_buzz_test.go:183: A 5s/10   x1.2 | requests  1152594 exact admits   804520 | admitted/exact base 0.642 buzz 0.997 | false denials base 0.5475 buzz 0.0037 | entries given    400 refused       0 dropped      0 (kind 0, words 0, check 0) held   400 | decided by a log  1142367, of which the register refused  579479
++    lab_buzz_test.go:183: A 5s/10   x2.0 | requests  1920825 exact admits   887643 | admitted/exact base 0.594 buzz 0.997 | false denials base 0.7193 buzz 0.0042 | entries given    400 refused       0 dropped      0 (kind 0, words 0, check 0) held   400 | decided by a log  1904417, of which the register refused  761460
++    lab_buzz_test.go:183: A 10s/3   x0.8 | requests   115732 exact admits    84616 | admitted/exact base 0.867 buzz 0.997 | false denials base 0.2328 buzz 0.0052 | entries given    400 refused       0 dropped      0 (kind 0, words 0, check 0) held   400 | decided by a log   112166, of which the register refused   22175
++    lab_buzz_test.go:183: A 10s/3   x1.2 | requests   173192 exact admits   101820 | admitted/exact base 0.829 buzz 0.997 | false denials base 0.3479 buzz 0.0045 | entries given    400 refused       0 dropped      0 (kind 0, words 0, check 0) held   400 | decided by a log   169193, of which the register refused   40721
++    lab_buzz_test.go:183: A 10s/3   x2.0 | requests   288485 exact admits   118400 | admitted/exact base 0.786 buzz 0.997 | false denials base 0.5212 buzz 0.0054 | entries given    400 refused       0 dropped      0 (kind 0, words 0, check 0) held   400 | decided by a log   282935, of which the register refused   68015
++    lab_buzz_test.go:183: A 10s/5   x0.8 | requests   192697 exact admits   154330 | admitted/exact base 0.801 buzz 0.996 | false denials base 0.3146 buzz 0.0052 | entries given    400 refused       0 dropped      0 (kind 0, words 0, check 0) held   400 | decided by a log   188079, of which the register refused   56708
++    lab_buzz_test.go:183: A 10s/5   x1.2 | requests   289011 exact admits   184765 | admitted/exact base 0.737 buzz 0.996 | false denials base 0.4801 buzz 0.0058 | entries given    400 refused       0 dropped      0 (kind 0, words 0, check 0) held   400 | decided by a log   283311, of which the register refused  102110
++    lab_buzz_test.go:183: A 10s/5   x2.0 | requests   480856 exact admits   209819 | admitted/exact base 0.681 buzz 0.996 | false denials base 0.6617 buzz 0.0060 | entries given    400 refused       0 dropped      0 (kind 0, words 0, check 0) held   400 | decided by a log   472514, of which the register refused  153034
++    lab_buzz_test.go:183: A 30s/10  x0.8 | requests   127835 exact admits   112457 | admitted/exact base 0.823 buzz 0.990 | false denials base 0.2549 buzz 0.0134 | entries given    400 refused       0 dropped      0 (kind 0, words 0, check 0) held   400 | decided by a log   119616, of which the register refused   45623
++    lab_buzz_test.go:183: A 30s/10  x1.2 | requests   191381 exact admits   134307 | admitted/exact base 0.776 buzz 0.990 | false denials base 0.3857 buzz 0.0139 | entries given    400 refused       0 dropped      0 (kind 0, words 0, check 0) held   400 | decided by a log   181241, of which the register refused   88537
++    lab_buzz_test.go:183: A 30s/10  x2.0 | requests   319571 exact admits   148554 | admitted/exact base 0.776 buzz 0.988 | false denials base 0.4545 buzz 0.0144 | entries given    400 refused       0 dropped      0 (kind 0, words 0, check 0) held   400 | decided by a log   303167, of which the register refused  121100
++    lab_buzz_test.go:183: A 60s/6   x0.8 | requests    38207 exact admits    31724 | admitted/exact base 0.916 buzz 0.981 | false denials base 0.1558 buzz 0.0336 | entries given    679 refused       0 dropped    333 (kind 333, words 0, check 0) held   344 | decided by a log    27397, of which the register refused    4938
++    lab_buzz_test.go:183: A 60s/6   x1.2 | requests    57276 exact admits    37957 | admitted/exact base 0.876 buzz 0.987 | false denials base 0.2749 buzz 0.0238 | entries given    531 refused       0 dropped    138 (kind 138, words 0, check 0) held   392 | decided by a log    48655, of which the register refused   12783
++    lab_buzz_test.go:183: A 60s/6   x2.0 | requests    95781 exact admits    43044 | admitted/exact base 0.834 buzz 0.989 | false denials base 0.4336 buzz 0.0196 | entries given    456 refused       0 dropped     57 (kind 57, words 0, check 0) held   399 | decided by a log    84596, of which the register refused   24162
++    lab_buzz_test.go:183: A 60s/16  x0.8 | requests   103031 exact admits    94683 | admitted/exact base 0.904 buzz 0.989 | false denials base 0.1587 buzz 0.0170 | entries given    402 refused       0 dropped      2 (kind 2, words 0, check 0) held   400 | decided by a log    88406, of which the register refused   21773
++    lab_buzz_test.go:183: A 60s/16  x1.2 | requests   154285 exact admits   112727 | admitted/exact base 0.836 buzz 0.988 | false denials base 0.3528 buzz 0.0198 | entries given    402 refused       0 dropped      2 (kind 2, words 0, check 0) held   400 | decided by a log   138183, of which the register refused   59995
++    lab_buzz_test.go:183: A 60s/16  x2.0 | requests   257114 exact admits   122380 | admitted/exact base 0.787 buzz 0.988 | false denials base 0.4898 buzz 0.0183 | entries given    401 refused       0 dropped      1 (kind 1, words 0, check 0) held   400 | decided by a log   230843, of which the register refused   90098
++    lab_buzz_test.go:183: B 1s/5    x0.8 | requests  1919869 exact admits  1537047 | admitted/exact base 0.598 buzz 0.710 | false denials base 0.4936 buzz 0.3563 | entries given    112 refused  721834 dropped      0 (kind 0, words 0, check 0) held   112 | decided by a log   535311, of which the register refused  326211
++    lab_buzz_test.go:183: B 1s/5    x1.2 | requests  2878341 exact admits  1841153 | admitted/exact base 0.536 buzz 0.665 | false denials base 0.6108 buzz 0.4401 | entries given    112 refused 1361098 dropped      0 (kind 0, words 0, check 0) held   112 | decided by a log   805207, of which the register refused  449128
++    lab_buzz_test.go:183: B 1s/5    x2.0 | requests  4798820 exact admits  2092370 | admitted/exact base 0.507 buzz 0.645 | false denials base 0.6628 buzz 0.4778 | entries given    112 refused 2689800 dropped      0 (kind 0, words 0, check 0) held   112 | decided by a log  1341165, of which the register refused  549428
++    lab_buzz_test.go:183: B 5s/10   x0.8 | requests   767726 exact admits   674126 | admitted/exact base 0.726 buzz 0.802 | false denials base 0.3582 buzz 0.2591 | entries given    112 refused  199954 dropped      0 (kind 0, words 0, check 0) held   112 | decided by a log   212718, of which the register refused   94579
++    lab_buzz_test.go:183: B 5s/10   x1.2 | requests  1152594 exact admits   804520 | admitted/exact base 0.642 buzz 0.741 | false denials base 0.5475 buzz 0.3950 | entries given    112 refused  456807 dropped      0 (kind 0, words 0, check 0) held   112 | decided by a log   320460, of which the register refused  162447
++    lab_buzz_test.go:183: B 5s/10   x2.0 | requests  1920825 exact admits   887643 | admitted/exact base 0.594 buzz 0.707 | false denials base 0.7193 buzz 0.5195 | entries given    112 refused 1000792 dropped      0 (kind 0, words 0, check 0) held   112 | decided by a log   532465, of which the register refused  212937
++    lab_buzz_test.go:183: B 10s/3   x0.8 | requests   115732 exact admits    84616 | admitted/exact base 0.867 buzz 0.904 | false denials base 0.2328 buzz 0.1690 | entries given    140 refused   25165 dropped      0 (kind 0, words 0, check 0) held   112 | decided by a log    31756, of which the register refused    6243
++    lab_buzz_test.go:183: B 10s/3   x1.2 | requests   173192 exact admits   101820 | admitted/exact base 0.829 buzz 0.876 | false denials base 0.3479 buzz 0.2518 | entries given    113 refused   55585 dropped      0 (kind 0, words 0, check 0) held   112 | decided by a log    47544, of which the register refused   11509
++    lab_buzz_test.go:183: B 10s/3   x2.0 | requests   288485 exact admits   118400 | admitted/exact base 0.786 buzz 0.845 | false denials base 0.5212 buzz 0.3782 | entries given    112 refused  132306 dropped      0 (kind 0, words 0, check 0) held   112 | decided by a log    78992, of which the register refused   18949
++    lab_buzz_test.go:183: B 10s/5   x0.8 | requests   192697 exact admits   154330 | admitted/exact base 0.801 buzz 0.855 | false denials base 0.3146 buzz 0.2286 | entries given    113 refused   48036 dropped      0 (kind 0, words 0, check 0) held   112 | decided by a log    52729, of which the register refused   15791
++    lab_buzz_test.go:183: B 10s/5   x1.2 | requests   289011 exact admits   184765 | admitted/exact base 0.737 buzz 0.810 | false denials base 0.4801 buzz 0.3462 | entries given    112 refused  107443 dropped      0 (kind 0, words 0, check 0) held   112 | decided by a log    79804, of which the register refused   28795
++    lab_buzz_test.go:183: B 10s/5   x2.0 | requests   480856 exact admits   209819 | admitted/exact base 0.681 buzz 0.770 | false denials base 0.6617 buzz 0.4770 | entries given    112 refused  240293 dropped      0 (kind 0, words 0, check 0) held   112 | decided by a log   132945, of which the register refused   42932
++    lab_buzz_test.go:183: B 30s/10  x0.8 | requests   127835 exact admits   112457 | admitted/exact base 0.823 buzz 0.871 | false denials base 0.2549 buzz 0.1856 | entries given    112 refused   24872 dropped      0 (kind 0, words 0, check 0) held   112 | decided by a log    34075, of which the register refused   13045
++    lab_buzz_test.go:183: B 30s/10  x1.2 | requests   191381 exact admits   134307 | admitted/exact base 0.776 buzz 0.836 | false denials base 0.3857 buzz 0.2798 | entries given    112 refused   61538 dropped      0 (kind 0, words 0, check 0) held   112 | decided by a log    51071, of which the register refused   25042
++    lab_buzz_test.go:183: B 30s/10  x2.0 | requests   319571 exact admits   148554 | admitted/exact base 0.776 buzz 0.835 | false denials base 0.4545 buzz 0.3308 | entries given    112 refused  143113 dropped      0 (kind 0, words 0, check 0) held   112 | decided by a log    85335, of which the register refused   33965
++    lab_buzz_test.go:183: B 60s/6   x0.8 | requests    38207 exact admits    31724 | admitted/exact base 0.916 buzz 0.939 | false denials base 0.1558 buzz 0.1131 | entries given    218 refused    5123 dropped     93 (kind 93, words 0, check 0) held   112 | decided by a log     9140, of which the register refused    1708
++    lab_buzz_test.go:183: B 60s/6   x1.2 | requests    57276 exact admits    37957 | admitted/exact base 0.876 buzz 0.908 | false denials base 0.2749 buzz 0.2027 | entries given    164 refused   14377 dropped     43 (kind 43, words 0, check 0) held   112 | decided by a log    14055, of which the register refused    3718
++    lab_buzz_test.go:183: B 60s/6   x2.0 | requests    95781 exact admits    43044 | admitted/exact base 0.834 buzz 0.877 | false denials base 0.4336 buzz 0.3158 | entries given    125 refused   35200 dropped     12 (kind 12, words 0, check 0) held   112 | decided by a log    24024, of which the register refused    6788
++    lab_buzz_test.go:183: B 60s/16  x0.8 | requests   103031 exact admits    94683 | admitted/exact base 0.904 buzz 0.928 | false denials base 0.1587 buzz 0.1190 | entries given    114 refused   12386 dropped      2 (kind 2, words 0, check 0) held   112 | decided by a log    25585, of which the register refused    6211
++    lab_buzz_test.go:183: B 60s/16  x1.2 | requests   154285 exact admits   112727 | admitted/exact base 0.836 buzz 0.879 | false denials base 0.3528 buzz 0.2608 | entries given    114 refused   41047 dropped      2 (kind 2, words 0, check 0) held   112 | decided by a log    38698, of which the register refused   17014
++    lab_buzz_test.go:183: B 60s/16  x2.0 | requests   257114 exact admits   122380 | admitted/exact base 0.787 buzz 0.843 | false denials base 0.4898 buzz 0.3585 | entries given    112 refused   96192 dropped      0 (kind 0, words 0, check 0) held   112 | decided by a log    64561, of which the register refused   25232
++    lab_buzz_test.go:183: C 1s/5    x0.8 | requests  1727769 exact admits  1364973 | admitted/exact base 0.568 buzz 0.770 | false denials base 0.5127 buzz 0.2736 | entries given 162762 refused       0 dropped 162379 (kind 0, words 162379, check 0) held   383 | decided by a log   981729, of which the register refused  512653
++    lab_buzz_test.go:183: C 1s/5    x1.2 | requests  2590308 exact admits  1594533 | admitted/exact base 0.496 buzz 0.714 | false denials base 0.6200 buzz 0.3529 | entries given 250322 refused       0 dropped 249925 (kind 0, words 249925, check 0) held   397 | decided by a log  1235222, of which the register refused  645980
++    lab_buzz_test.go:183: C 1s/5    x2.0 | requests  4317557 exact admits  1697773 | admitted/exact base 0.441 buzz 0.638 | false denials base 0.6867 buzz 0.4551 | entries given 419912 refused       0 dropped 419512 (kind 0, words 419512, check 0) held   400 | decided by a log  1392232, of which the register refused  603012
++    lab_buzz_test.go:183: C 5s/10   x0.8 | requests   691657 exact admits   601899 | admitted/exact base 0.713 buzz 0.789 | false denials base 0.3725 buzz 0.2769 | entries given  56865 refused       0 dropped  56506 (kind 0, words 56506, check 0) held   359 | decided by a log   228353, of which the register refused   82233
++    lab_buzz_test.go:183: C 5s/10   x1.2 | requests  1037655 exact admits   698880 | admitted/exact base 0.623 buzz 0.709 | false denials base 0.5668 buzz 0.4383 | entries given  93348 refused       0 dropped  92973 (kind 0, words 92973, check 0) held   375 | decided by a log   250147, of which the register refused  116757
++    lab_buzz_test.go:183: C 5s/10   x2.0 | requests  1729510 exact admits   715648 | admitted/exact base 0.571 buzz 0.631 | false denials base 0.7151 buzz 0.6088 | entries given 156869 refused       0 dropped 156514 (kind 0, words 156514, check 0) held   355 | decided by a log   189709, of which the register refused   84452
++    lab_buzz_test.go:183: C 10s/3   x0.8 | requests   103757 exact admits    74655 | admitted/exact base 0.858 buzz 0.934 | false denials base 0.2248 buzz 0.1027 | entries given   8401 refused       0 dropped   8058 (kind 0, words 8058, check 0) held   325 | decided by a log    57687, of which the register refused   10713
++    lab_buzz_test.go:183: C 10s/3   x1.2 | requests   156009 exact admits    88101 | admitted/exact base 0.809 buzz 0.912 | false denials base 0.3220 buzz 0.1405 | entries given  13374 refused       0 dropped  13032 (kind 0, words 13032, check 0) held   341 | decided by a log    82113, of which the register refused   19512
++    lab_buzz_test.go:183: C 10s/3   x2.0 | requests   259750 exact admits    97063 | admitted/exact base 0.753 buzz 0.875 | false denials base 0.4147 buzz 0.1961 | entries given  21768 refused       0 dropped  21434 (kind 0, words 21434, check 0) held   334 | decided by a log   107304, of which the register refused   27530
++    lab_buzz_test.go:183: C 10s/5   x0.8 | requests   172726 exact admits   136545 | admitted/exact base 0.793 buzz 0.887 | false denials base 0.3124 buzz 0.1715 | entries given  14469 refused       0 dropped  14109 (kind 0, words 14109, check 0) held   359 | decided by a log    85623, of which the register refused   22787
++    lab_buzz_test.go:183: C 10s/5   x1.2 | requests   258856 exact admits   159658 | admitted/exact base 0.721 buzz 0.846 | false denials base 0.4653 buzz 0.2521 | entries given  23318 refused       0 dropped  22951 (kind 0, words 22951, check 0) held   367 | decided by a log   113420, of which the register refused   39733
++    lab_buzz_test.go:183: C 10s/5   x2.0 | requests   431216 exact admits   170321 | admitted/exact base 0.657 buzz 0.781 | false denials base 0.5935 buzz 0.3689 | entries given  38375 refused       0 dropped  38024 (kind 0, words 38024, check 0) held   351 | decided by a log   126058, of which the register refused   43870
++    lab_buzz_test.go:183: C 30s/10  x0.8 | requests   115013 exact admits   100387 | admitted/exact base 0.814 buzz 0.844 | false denials base 0.2653 buzz 0.2188 | entries given   8557 refused       0 dropped   8269 (kind 0, words 8269, check 0) held   288 | decided by a log    32273, of which the register refused    7397
++    lab_buzz_test.go:183: C 30s/10  x1.2 | requests   172634 exact admits   116820 | admitted/exact base 0.757 buzz 0.790 | false denials base 0.4085 buzz 0.3454 | entries given  14983 refused       0 dropped  14657 (kind 0, words 14657, check 0) held   326 | decided by a log    38024, of which the register refused   12429
++    lab_buzz_test.go:183: C 30s/10  x2.0 | requests   287231 exact admits   119827 | admitted/exact base 0.741 buzz 0.758 | false denials base 0.5013 buzz 0.4624 | entries given  26197 refused       0 dropped  25837 (kind 0, words 25837, check 0) held   360 | decided by a log    29476, of which the register refused   10060
++    lab_buzz_test.go:183: C 60s/6   x0.8 | requests    34536 exact admits    28246 | admitted/exact base 0.908 buzz 0.929 | false denials base 0.1567 buzz 0.1193 | entries given   2603 refused       0 dropped   2326 (kind 274, words 2052, check 0) held   267 | decided by a log     9711, of which the register refused    1352
++    lab_buzz_test.go:183: C 60s/6   x1.2 | requests    51826 exact admits    33032 | admitted/exact base 0.862 buzz 0.902 | false denials base 0.2691 buzz 0.1864 | entries given   4370 refused       0 dropped   4039 (kind 111, words 3928, check 0) held   328 | decided by a log    15540, of which the register refused    3657
++    lab_buzz_test.go:183: C 60s/6   x2.0 | requests    86365 exact admits    35005 | admitted/exact base 0.813 buzz 0.857 | false denials base 0.3817 buzz 0.2842 | entries given   7232 refused       0 dropped   6910 (kind 44, words 6866, check 0) held   322 | decided by a log    17264, of which the register refused    4911
++    lab_buzz_test.go:183: C 60s/16  x0.8 | requests    92185 exact admits    84468 | admitted/exact base 0.900 buzz 0.905 | false denials base 0.1610 buzz 0.1511 | entries given   4871 refused       0 dropped   4648 (kind 0, words 4648, check 0) held   223 | decided by a log    11179, of which the register refused    1417
++    lab_buzz_test.go:183: C 60s/16  x1.2 | requests   138807 exact admits    98252 | admitted/exact base 0.823 buzz 0.835 | false denials base 0.3713 buzz 0.3414 | entries given  10960 refused       0 dropped  10624 (kind 1, words 10623, check 0) held   336 | decided by a log    12908, of which the register refused    4141
++    lab_buzz_test.go:183: C 60s/16  x2.0 | requests   230416 exact admits    98937 | admitted/exact base 0.776 buzz 0.783 | false denials base 0.5371 buzz 0.5146 | entries given  19315 refused       0 dropped  18958 (kind 0, words 18958, check 0) held   357 | decided by a log     6689, of which the register refused    2596
++    lab_buzz_test.go:183: E 2.5s/20 x0.8 | requests  3073509 exact admits  2874431 | admitted/exact base 0.664 buzz 0.664 | false denials base 0.3790 buzz 0.3790 | entries given      0 refused       0 dropped      0 (kind 0, words 0, check 0) held     0 | decided by a log        0, of which the register refused       0
++    lab_buzz_test.go:183: E 2.5s/20 x1.2 | requests  4609689 exact admits  3423353 | admitted/exact base 0.561 buzz 0.561 | false denials base 0.5822 buzz 0.5822 | entries given      0 refused       0 dropped      0 (kind 0, words 0, check 0) held     0 | decided by a log        0, of which the register refused       0
++    lab_buzz_test.go:183: E 2.5s/20 x2.0 | requests  7679318 exact admits  3676679 | admitted/exact base 0.522 buzz 0.522 | false denials base 0.7423 buzz 0.7423 | entries given      0 refused       0 dropped      0 (kind 0, words 0, check 0) held     0 | decided by a log        0, of which the register refused       0
++    lab_buzz_test.go:183: E 5s/40   x0.8 | requests  3073825 exact admits  2990585 | admitted/exact base 0.646 buzz 0.646 | false denials base 0.3719 buzz 0.3719 | entries given      0 refused       0 dropped      0 (kind 0, words 0, check 0) held     0 | decided by a log        0, of which the register refused       0
++    lab_buzz_test.go:183: E 5s/40   x1.2 | requests  4611698 exact admits  3576158 | admitted/exact base 0.549 buzz 0.549 | false denials base 0.5737 buzz 0.5737 | entries given      0 refused       0 dropped      0 (kind 0, words 0, check 0) held     0 | decided by a log        0, of which the register refused       0
++    lab_buzz_test.go:183: E 5s/40   x2.0 | requests  7683630 exact admits  3753455 | admitted/exact base 0.524 buzz 0.524 | false denials base 0.7414 buzz 0.7414 | entries given      0 refused       0 dropped      0 (kind 0, words 0, check 0) held     0 | decided by a log        0, of which the register refused       0
++    lab_buzz_test.go:208: D load 1.00 1s/5    x0.8 | requests   959530 exact admits   768714 | admitted/exact base 0.598 buzz 0.990 | false denials base 0.4929 buzz 0.0123 | entries given    984 refused    7949 dropped      0 (kind 0, words 0, check 0) held   984 | decided by a log   934007, of which the register refused  568941 | evictions 0 relocations 153866
++    lab_buzz_test.go:208: D load 1.00 1s/5    x2.0 | requests  2399327 exact admits  1046883 | admitted/exact base 0.507 buzz 0.989 | false denials base 0.6627 buzz 0.0157 | entries given    984 refused   29691 dropped      0 (kind 0, words 0, check 0) held   984 | decided by a log  2340627, of which the register refused  959108 | evictions 0 relocations 153848
++    lab_buzz_test.go:208: D load 1.00 10s/5   x0.8 | requests    96109 exact admits    77296 | admitted/exact base 0.805 buzz 0.980 | false denials base 0.3060 buzz 0.0301 | entries given    984 refused     470 dropped      0 (kind 0, words 0, check 0) held   984 | decided by a log    83127, of which the register refused   25044 | evictions 0 relocations 153753
++    lab_buzz_test.go:208: D load 1.00 10s/5   x2.0 | requests   240751 exact admits   105763 | admitted/exact base 0.684 buzz 0.975 | false denials base 0.6313 buzz 0.0410 | entries given    984 refused    2688 dropped      0 (kind 0, words 0, check 0) held   984 | decided by a log   215706, of which the register refused   69686 | evictions 0 relocations 153893
++    lab_buzz_test.go:208: D load 1.15 1s/5    x0.8 | requests   959530 exact admits   768714 | admitted/exact base 0.598 buzz 0.990 | false denials base 0.4929 buzz 0.0123 | entries given    984 refused    7949 dropped      0 (kind 0, words 0, check 0) held   984 | decided by a log   934007, of which the register refused  568941 | evictions 13074 relocations 980014
++    lab_buzz_test.go:208: D load 1.15 1s/5    x2.0 | requests  2399327 exact admits  1046883 | admitted/exact base 0.507 buzz 0.989 | false denials base 0.6627 buzz 0.0157 | entries given    984 refused   29691 dropped      0 (kind 0, words 0, check 0) held   984 | decided by a log  2340627, of which the register refused  959108 | evictions 13084 relocations 979842
++    lab_buzz_test.go:208: D load 1.15 10s/5   x0.8 | requests    96109 exact admits    77296 | admitted/exact base 0.805 buzz 0.980 | false denials base 0.3060 buzz 0.0301 | entries given    984 refused     470 dropped      0 (kind 0, words 0, check 0) held   984 | decided by a log    83127, of which the register refused   25044 | evictions 12949 relocations 980599
++    lab_buzz_test.go:208: D load 1.15 10s/5   x2.0 | requests   240751 exact admits   105763 | admitted/exact base 0.684 buzz 0.975 | false denials base 0.6313 buzz 0.0410 | entries given    984 refused    2688 dropped      0 (kind 0, words 0, check 0) held   984 | decided by a log   215706, of which the register refused   69686 | evictions 13086 relocations 979700
++--- PASS: TestLabBuzz (248.95s)
++=== RUN   TestLabBuzzConcurrent
++    lab_buzz_test.go:300: concurrent keys   1 1s/5: admitted 520 (0.87 of limit x windows x keys), positions 520, over the limit 0; entries given 1 dropped 0, decided by a log 1219, of which the register refused 472
++    lab_buzz_test.go:300: concurrent keys 200 1s/5: admitted 104118 (0.87 of limit x windows x keys), positions 104118, over the limit 0; entries given 200 dropped 0, decided by a log 235960, of which the register refused 96649
++    lab_buzz_test.go:300: concurrent keys   1 5s/10: admitted 216 (0.90 of limit x windows x keys), positions 216, over the limit 0; entries given 1 dropped 0, decided by a log 480, of which the register refused 171
++    lab_buzz_test.go:300: concurrent keys 200 5s/10: admitted 43252 (0.90 of limit x windows x keys), positions 43252, over the limit 0; entries given 200 dropped 0, decided by a log 87932, of which the register refused 34342
++    lab_buzz_test.go:300: concurrent keys   1 10s/5: admitted 54 (0.90 of limit x windows x keys), positions 54, over the limit 0; entries given 1 dropped 0, decided by a log 107, of which the register refused 37
++    lab_buzz_test.go:300: concurrent keys 200 10s/5: admitted 10253 (0.85 of limit x windows x keys), positions 10253, over the limit 0; entries given 200 dropped 0, decided by a log 19848, of which the register refused 6315
++--- PASS: TestLabBuzzConcurrent (4.37s)
++PASS
++ok  	github.com/scooter-sensei/clepsydra/go	253.336s
+diff --git a/lab/base-short.txt b/lab/base-short.txt
+new file mode 100644
+index 0000000..2b0a9d8
+--- /dev/null
++++ b/lab/base-short.txt
+@@ -0,0 +1 @@
++ok  	github.com/scooter-sensei/clepsydra/go	26.350s
+diff --git a/lab/buzz2-bg.txt b/lab/buzz2-bg.txt
+new file mode 100644
+index 0000000..ba79887
+--- /dev/null
++++ b/lab/buzz2-bg.txt
+@@ -0,0 +1 @@
++ok  	github.com/scooter-sensei/clepsydra/go	15.066s
+diff --git a/lab/buzz2-race.txt b/lab/buzz2-race.txt
+new file mode 100644
+index 0000000..7c247dd
+--- /dev/null
++++ b/lab/buzz2-race.txt
+@@ -0,0 +1,30 @@
++=== RUN   TestLabBuzzConcurrent
++    lab_buzz_test.go:300: concurrent keys   1 1s/5: admitted 127 (0.85 of limit x windows x keys), positions 127, over the limit 0; entries given 1 dropped 0, decided by a log 290, of which the register refused 109
++    lab_buzz_test.go:300: concurrent keys 200 1s/5: admitted 25718 (0.86 of limit x windows x keys), positions 25718, over the limit 0; entries given 200 dropped 0, decided by a log 56053, of which the register refused 22911
++    lab_buzz_test.go:300: concurrent keys   1 5s/10: admitted 52 (0.87 of limit x windows x keys), positions 52, over the limit 0; entries given 1 dropped 0, decided by a log 92, of which the register refused 29
++    lab_buzz_test.go:300: concurrent keys 200 5s/10: admitted 10118 (0.84 of limit x windows x keys), positions 10118, over the limit 0; entries given 200 dropped 0, decided by a log 15800, of which the register refused 5654
++    lab_buzz_test.go:300: concurrent keys   1 10s/5: admitted 11 (0.73 of limit x windows x keys), positions 11, over the limit 0; entries given 1 dropped 0, decided by a log 10, of which the register refused 0
++    lab_buzz_test.go:300: concurrent keys 200 10s/5: admitted 2333 (0.78 of limit x windows x keys), positions 2333, over the limit 0; entries given 200 dropped 0, decided by a log 1761, of which the register refused 302
++--- PASS: TestLabBuzzConcurrent (5.79s)
++=== RUN   TestTouchIfBurst
++    touchif_test.go:46: burst keys    1 limit   10: admitted per key min 10 max 10; evictions 0, promoted 0
++    touchif_test.go:46: burst keys    1 limit  100: admitted per key min 100 max 100; evictions 0, promoted 1
++    touchif_test.go:46: burst keys    1 limit 1000: admitted per key min 1000 max 1000; evictions 0, promoted 1
++    touchif_test.go:46: burst keys 1000 limit   10: admitted per key min 10 max 10; evictions 0, promoted 0
++    touchif_test.go:46: burst keys 1000 limit  100: admitted per key min 100 max 100; evictions 0, promoted 1000
++    touchif_test.go:46: burst keys 1000 limit 1000: admitted per key min 1000 max 1000; evictions 0, promoted 1000
++--- PASS: TestTouchIfBurst (3.00s)
++=== RUN   TestTouchIfSustained
++    touchif_test.go:134: sustained keys    1 W=1s limit 100: positions 1213, over the limit 0, mean admitted per window 64.7 (min 1); evictions 0, saturated answers 0
++    touchif_test.go:134: sustained keys 1000 W=1s limit 100: positions 875427, over the limit 0, mean admitted per window 29.8 (min 1); evictions 0, saturated answers 0
++    touchif_test.go:134: sustained keys    1 W=5s limit 500: positions 1504, over the limit 0, mean admitted per window 266.0 (min 1); evictions 0, saturated answers 0
++    touchif_test.go:134: sustained keys 1000 W=5s limit 500: positions 959999, over the limit 0, mean admitted per window 147.7 (min 1); evictions 0, saturated answers 0
++--- PASS: TestTouchIfSustained (26.16s)
++=== RUN   TestTouchIfVelocity
++    touchif_test.go:187: velocity W=1s limit 5: requests 1305412, agreement with exact 0.9804 (exact admits 891508, both 870386); admitted at/over own limit 0; refused under own limit 34447, of which Upper > truth 34447
++    touchif_test.go:187: velocity W=5s limit 20: requests 1305412, agreement with exact 0.7147 (exact admits 979933, both 680213); admitted at/over own limit 0; refused under own limit 507132, of which Upper > truth 507132
++--- PASS: TestTouchIfVelocity (26.60s)
++=== RUN   TestTouchIfUnderLostHistory
++--- PASS: TestTouchIfUnderLostHistory (0.00s)
++PASS
++ok  	github.com/scooter-sensei/clepsydra/go	62.616s
+diff --git a/lab/buzz2-short.txt b/lab/buzz2-short.txt
+new file mode 100644
+index 0000000..e8aeaf5
+--- /dev/null
++++ b/lab/buzz2-short.txt
+@@ -0,0 +1 @@
++ok  	github.com/scooter-sensei/clepsydra/go	26.808s
+diff --git a/lab/ear1-bg.txt b/lab/ear1-bg.txt
+new file mode 100644
+index 0000000..6468edf
+--- /dev/null
++++ b/lab/ear1-bg.txt
+@@ -0,0 +1 @@
++ok  	github.com/scooter-sensei/clepsydra/go	14.845s
+diff --git a/lab/ear1-cfuzz.txt b/lab/ear1-cfuzz.txt
+new file mode 100644
+index 0000000..c2c3813
+--- /dev/null
++++ b/lab/ear1-cfuzz.txt
+@@ -0,0 +1,5 @@
++=== RUN   TestFuzzConcurrent
++    fuzzconc_test.go:77: 1175 cases from seed 1 in 5m0s (2.6 M ops/s): 777320433 ops, 201517812 answers checked (28845447 Saturated, 44159 low behind a live floor, 2559859 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 214, Background 236, no stash 155, no overflow 146, small overflow 307, no hot entries 147, few hot entries 290; evictions 37299959, folded 29762037, promoted 2379365, waited 9635504
++--- PASS: TestFuzzConcurrent (300.09s)
++PASS
++ok  	github.com/scooter-sensei/clepsydra/go	300.091s
+diff --git a/lab/ear1-conformance.txt b/lab/ear1-conformance.txt
+new file mode 100644
+index 0000000..300ff8d
+--- /dev/null
++++ b/lab/ear1-conformance.txt
+@@ -0,0 +1 @@
++ok  	github.com/scooter-sensei/clepsydra/go	0.021s
+diff --git a/lab/ear1-ct.txt b/lab/ear1-ct.txt
+new file mode 100644
+index 0000000..5c7cad6
+--- /dev/null
++++ b/lab/ear1-ct.txt
+@@ -0,0 +1 @@
++ok  	github.com/scooter-sensei/clepsydra/go	23.649s
+diff --git a/lab/ear1-exact.txt b/lab/ear1-exact.txt
+new file mode 100644
+index 0000000..0ef9208
+--- /dev/null
++++ b/lab/ear1-exact.txt
+@@ -0,0 +1,80 @@
++churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
++churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
++churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
++static_fpr probes=1000000000 false_positives=18  => 1.80e-08 (95% interval 1.07e-08-2.84e-08)
++spray offenders=100 exact=100  => 100%
++velocity window=1s abs_error_sum=24535 exact_sum=114779  => 0.2138
++velocity window=5s abs_error_sum=32323 exact_sum=570466  => 0.0567
++velocity window=15s abs_error_sum=84702 exact_sum=1651571  => 0.0513
++velocity window=30s abs_error_sum=142768 exact_sum=3272017  => 0.0436
++velocity window=60s abs_error_sum=150300 exact_sum=6274665  => 0.0240
++velocity mean_of_windows => 0.0779
++burst window=1s touches=10 reported_min=5 reported_max=10
++burst window=1s touches=31 reported_min=15 reported_max=31
++burst window=1s touches=62 reported_min=29 reported_max=62
++burst window=1s touches=100 reported_min=46 reported_max=100
++burst window=1s touches=500 reported_min=229 reported_max=500
++burst window=1s touches=762 reported_min=349 reported_max=762
++burst window=1s touches=1000 reported_min=458 reported_max=1000
++burst window=1s touches=1273 reported_min=583 reported_max=1273
++burst window=1s touches=2000 reported_min=915 reported_max=2000
++burst window=5s touches=10 reported_min=10 reported_max=10
++burst window=5s touches=31 reported_min=31 reported_max=31
++burst window=5s touches=62 reported_min=62 reported_max=62
++burst window=5s touches=100 reported_min=100 reported_max=100
++burst window=5s touches=500 reported_min=500 reported_max=500
++burst window=5s touches=762 reported_min=762 reported_max=762
++burst window=5s touches=1000 reported_min=1000 reported_max=1000
++burst window=5s touches=1273 reported_min=1273 reported_max=1273
++burst window=5s touches=2000 reported_min=2000 reported_max=2000
++burst window=15s touches=10 reported_min=10 reported_max=10
++burst window=15s touches=31 reported_min=31 reported_max=31
++burst window=15s touches=62 reported_min=62 reported_max=62
++burst window=15s touches=100 reported_min=100 reported_max=100
++burst window=15s touches=500 reported_min=500 reported_max=500
++burst window=15s touches=762 reported_min=762 reported_max=762
++burst window=15s touches=1000 reported_min=1000 reported_max=1000
++burst window=15s touches=1273 reported_min=1273 reported_max=1273
++burst window=15s touches=2000 reported_min=2000 reported_max=2000
++burst window=60s touches=10 reported_min=10 reported_max=10
++burst window=60s touches=31 reported_min=31 reported_max=31
++burst window=60s touches=62 reported_min=62 reported_max=62
++burst window=60s touches=100 reported_min=100 reported_max=100
++burst window=60s touches=500 reported_min=500 reported_max=500
++burst window=60s touches=762 reported_min=762 reported_max=762
++burst window=60s touches=1000 reported_min=1000 reported_max=1000
++burst window=60s touches=1273 reported_min=1273 reported_max=1273
++burst window=60s touches=2000 reported_min=2000 reported_max=2000
++steady window=1s rate=1/s reported/exact min=1.000 max=1.000
++steady window=1s rate=5/s reported/exact min=1.000 max=1.000
++steady window=1s rate=10/s reported/exact min=1.000 max=1.000
++steady window=1s rate=12/s reported/exact min=0.923 max=1.000
++steady window=1s rate=13/s reported/exact min=0.929 max=1.000
++steady window=1s rate=20/s reported/exact min=1.000 max=1.000
++steady window=1s rate=50/s reported/exact min=1.000 max=1.000
++steady window=1s rate=100/s reported/exact min=1.000 max=1.000
++steady window=5s rate=1/s reported/exact min=1.000 max=1.000
++steady window=5s rate=5/s reported/exact min=1.000 max=1.000
++steady window=5s rate=10/s reported/exact min=1.000 max=1.000
++steady window=5s rate=12/s reported/exact min=0.984 max=1.000
++steady window=5s rate=13/s reported/exact min=1.000 max=1.015
++steady window=5s rate=20/s reported/exact min=1.000 max=1.000
++steady window=5s rate=50/s reported/exact min=1.000 max=1.000
++steady window=5s rate=100/s reported/exact min=1.000 max=1.000
++steady window=15s rate=1/s reported/exact min=1.000 max=1.000
++steady window=15s rate=5/s reported/exact min=1.000 max=1.000
++steady window=15s rate=10/s reported/exact min=1.000 max=1.000
++steady window=15s rate=12/s reported/exact min=1.000 max=1.006
++steady window=15s rate=13/s reported/exact min=0.995 max=1.000
++steady window=15s rate=20/s reported/exact min=1.000 max=1.000
++steady window=15s rate=50/s reported/exact min=1.000 max=1.000
++steady window=15s rate=100/s reported/exact min=1.000 max=1.000
++steady window=60s rate=1/s reported/exact min=1.000 max=1.000
++steady window=60s rate=5/s reported/exact min=1.000 max=1.000
++steady window=60s rate=10/s reported/exact min=1.000 max=1.000
++steady window=60s rate=12/s reported/exact min=1.001 max=1.001
++steady window=60s rate=13/s reported/exact min=1.000 max=1.000
++steady window=60s rate=20/s reported/exact min=1.000 max=1.000
++steady window=60s rate=50/s reported/exact min=1.000 max=1.000
++steady window=60s rate=100/s reported/exact min=1.000 max=1.000
++memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
+diff --git a/lab/ear1-nocas2.txt b/lab/ear1-nocas2.txt
+new file mode 100644
+index 0000000..4cda59a
+--- /dev/null
++++ b/lab/ear1-nocas2.txt
+@@ -0,0 +1,7 @@
++heavy hitter: 74319 queries, 0 Saturated, 0 unflagged with Upper < exact, 312 unflagged with Count >10% low
++upper bound: 18382 queries, 0 Saturated, 0 unflagged with Upper < exact; unflagged Upper exceeds exact by 16.7% of events
++--- FAIL: TestHotDemotion (0.00s)
++    hot_test.go:117: trickle: demoted 0, in use 1
++FAIL
++FAIL	github.com/scooter-sensei/clepsydra/go	26.756s
++FAIL
+diff --git a/lab/ear1-race.txt b/lab/ear1-race.txt
+new file mode 100644
+index 0000000..3a43c28
+--- /dev/null
++++ b/lab/ear1-race.txt
+@@ -0,0 +1 @@
++ok  	github.com/scooter-sensei/clepsydra/go	474.363s
+diff --git a/lab/ear1-short.txt b/lab/ear1-short.txt
+new file mode 100644
+index 0000000..03ed316
+--- /dev/null
++++ b/lab/ear1-short.txt
+@@ -0,0 +1 @@
++ok  	github.com/scooter-sensei/clepsydra/go	26.501s
+diff --git a/lab/ear1-soak.txt b/lab/ear1-soak.txt
+new file mode 100644
+index 0000000..7a7594c
+--- /dev/null
++++ b/lab/ear1-soak.txt
+@@ -0,0 +1,5 @@
++=== RUN   TestStressSoak
++    soak_test.go:158: 24 workers, 1m0s: 266336779 ops, 79907824 counts checked (30681408 Saturated, 0 low behind a live bucket floor); evictions 25048033, restored 1305726, lost 0, promoted 254338, hot refused 7372750
++--- PASS: TestStressSoak (60.00s)
++PASS
++ok  	github.com/scooter-sensei/clepsydra/go	60.013s
+diff --git a/lab/ear2-attack.txt b/lab/ear2-attack.txt
+new file mode 100644
+index 0000000..db7635c
+--- /dev/null
++++ b/lab/ear2-attack.txt
+@@ -0,0 +1,61 @@
++=== RUN   TestAttackForgedIdentity
++    attack_test.go:72: victim never touched; attacker sent 4 forged ids x 25: unkeyed reads 100 (seen true), keyed reads 0 (seen false)
++--- PASS: TestAttackForgedIdentity (0.00s)
++=== RUN   TestAttackStripeFlood
++    attack_test.go:93: 4096 crafted ids hit 1 stripe(s) unkeyed, 256 keyed
++--- PASS: TestAttackStripeFlood (0.00s)
++=== RUN   TestAttackEvictionReset
++    attack_test.go:153: unkeyed targeted, stash false  attacker events     168; offender returns: count  1 upper   1 (true 21) seen false restored false degraded true ; evictions 3 folded 0 lost 3
++    attack_test.go:153: unkeyed targeted, stash true   attacker events     168; offender returns: count 21 upper  21 (true 21) seen true  restored true  degraded false; evictions 2 folded 0 lost 0
++    attack_test.go:153: keyed spray, no stash/sketch   attacker events   87045; offender returns: count  1 upper   1 (true 21) seen false restored false degraded true ; evictions 3424 folded 0 lost 3424
++    attack_test.go:153: keyed spray, stash only        attacker events  102753; offender returns: count  1 upper   1 (true 21) seen false restored false degraded true ; evictions 4172 folded 0 lost 3868
++    attack_test.go:153: keyed spray, stash + sketch    attacker events  102753; offender returns: count 21 upper  21 (true 21) seen true  restored false degraded true ; evictions 4172 folded 209 lost 0
++    attack_test.go:198: keyed hashing raises the cost of evicting a 20-event key from 168 to 102753 attacker events (612x; table 4818 slots)
++--- PASS: TestAttackEvictionReset (0.06s)
++=== RUN   TestAttackFloodCollateral
++    attack_test.go:270: sketch false flood  1x slots x 21 ( 101220 events): offenders Upper<true 100/200, Count low 100/200 (mean shortfall 20.0); new keys Degraded 100.0% Seen  0.00% mean Upper    0.0, denied by a strict limit of 20: 100.0%; folded 0 shed 0 lost 3993
++    attack_test.go:270: sketch false flood  2x slots x 21 ( 202440 events): offenders Upper<true 200/200, Count low 200/200 (mean shortfall 20.0); new keys Degraded 100.0% Seen  0.00% mean Upper    0.0, denied by a strict limit of 20: 100.0%; folded 0 shed 0 lost 8813
++    attack_test.go:270: sketch false flood  3x slots x 21 ( 303660 events): offenders Upper<true 200/200, Count low 200/200 (mean shortfall 20.0); new keys Degraded 100.0% Seen  0.00% mean Upper    0.0, denied by a strict limit of 20: 100.0%; folded 0 shed 0 lost 13633
++    attack_test.go:270: sketch false flood  4x slots x 21 ( 404880 events): offenders Upper<true 200/200, Count low 200/200 (mean shortfall 20.0); new keys Degraded 100.0% Seen  0.00% mean Upper    0.0, denied by a strict limit of 20: 100.0%; folded 0 shed 0 lost 18453
++    attack_test.go:270: sketch false flood  8x slots x 21 ( 809760 events): offenders Upper<true 200/200, Count low 200/200 (mean shortfall 20.0); new keys Degraded 100.0% Seen  0.00% mean Upper    0.0, denied by a strict limit of 20: 100.0%; folded 0 shed 0 lost 37733
++    attack_test.go:270: sketch false flood 16x slots x 21 (1619520 events): offenders Upper<true 200/200, Count low 200/200 (mean shortfall 20.0); new keys Degraded 100.0% Seen  0.00% mean Upper    0.0, denied by a strict limit of 20: 100.0%; folded 0 shed 0 lost 76293
++    attack_test.go:270: sketch false flood 16x slots x  1 (  77120 events): offenders Upper<true 0/200, Count low   0/200 (mean shortfall  0.0); new keys Degraded 100.0% Seen  0.00% mean Upper    0.0, denied by a strict limit of 20: 100.0%; folded 0 shed 0 lost 76293
++    attack_test.go:270: sketch true  flood  1x slots x 21 ( 101220 events): offenders Upper<true 0/200, Count low   0/200 (mean shortfall  0.0); new keys Degraded   0.0% Seen  0.01% mean Upper    0.0, denied by a strict limit of 20:   0.0%; folded 279 shed 3714 lost 0
++    attack_test.go:270: sketch true  flood  2x slots x 21 ( 202440 events): offenders Upper<true 0/200, Count low   0/200 (mean shortfall  0.0); new keys Degraded   0.1% Seen  0.12% mean Upper    0.0, denied by a strict limit of 20:   0.1%; folded 4716 shed 4097 lost 0
++    attack_test.go:270: sketch true  flood  3x slots x 21 ( 303660 events): offenders Upper<true 0/200, Count low   0/200 (mean shortfall  0.0); new keys Degraded   0.2% Seen  0.17% mean Upper    0.0, denied by a strict limit of 20:   0.2%; folded 9536 shed 4097 lost 0
++    attack_test.go:270: sketch true  flood  4x slots x 21 ( 404880 events): offenders Upper<true 0/200, Count low   0/200 (mean shortfall  0.0); new keys Degraded   0.3% Seen  0.29% mean Upper    0.1, denied by a strict limit of 20:   0.3%; folded 14356 shed 4097 lost 0
++    attack_test.go:270: sketch true  flood  8x slots x 21 ( 809760 events): offenders Upper<true 0/200, Count low 199/200 (mean shortfall 20.0); new keys Degraded   0.2% Seen  0.25% mean Upper   37.7, denied by a strict limit of 20:  99.0%; folded 33636 shed 4097 lost 0
++    attack_test.go:270: sketch true  flood 16x slots x 21 (1619520 events): offenders Upper<true 0/200, Count low 197/200 (mean shortfall 20.0); new keys Degraded   0.3% Seen  0.34% mean Upper   40.6, denied by a strict limit of 20:  99.8%; folded 72196 shed 4097 lost 0
++    attack_test.go:270: sketch true  flood 16x slots x  1 (  77120 events): offenders Upper<true 0/200, Count low   0/200 (mean shortfall  0.0); new keys Degraded   0.0% Seen  0.00% mean Upper    0.0, denied by a strict limit of 20:   0.0%; folded 0 shed 76293 lost 0
++--- PASS: TestAttackFloodCollateral (1.78s)
++=== RUN   TestAttackHeavyHitter
++    attack_test.go:341: burst false    1 ev/s:    78 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 0
++    attack_test.go:341: burst false    5 ev/s:   342 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 1
++    attack_test.go:341: burst false   12 ev/s:   832 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 4
++    attack_test.go:341: burst false   13 ev/s:   865 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 3
++    attack_test.go:341: burst false   20 ev/s:  1367 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 4
++    attack_test.go:341: burst false   31 ev/s:  1946 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 3
++    attack_test.go:341: burst false   50 ev/s:  3468 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 3
++    attack_test.go:341: burst false  100 ev/s:  6973 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 1
++    attack_test.go:341: burst false  500 ev/s: 33432 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 0
++    attack_test.go:341: burst true     1 ev/s:    57 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 2
++    attack_test.go:341: burst true     5 ev/s:   180 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 14
++    attack_test.go:341: burst true    12 ev/s:   401 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 25
++    attack_test.go:341: burst true    13 ev/s:   445 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 19
++    attack_test.go:341: burst true    20 ev/s:   708 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 20
++    attack_test.go:341: burst true    31 ev/s:  1060 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 45
++    attack_test.go:341: burst true    50 ev/s:  1804 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 43
++    attack_test.go:341: burst true   100 ev/s:  3423 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 52
++    attack_test.go:341: burst true   500 ev/s: 16938 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 60
++heavy hitter: 74319 queries, 0 Saturated, 0 unflagged with Upper < exact, 299 unflagged with Count >10% low
++--- PASS: TestAttackHeavyHitter (3.02s)
++=== RUN   TestUpperBoundRandom
++upper bound: 187219 queries, 0 Saturated, 0 unflagged with Upper < exact; unflagged Upper exceeds exact by 17.3% of events
++--- PASS: TestUpperBoundRandom (0.96s)
++=== RUN   TestHeavyHitterSpill
++--- PASS: TestHeavyHitterSpill (0.00s)
++=== RUN   TestSprayCannotEvictRepeatOffender
++    filter_test.go:334: evictions during spray: 188282
++--- PASS: TestSprayCannotEvictRepeatOffender (0.19s)
++PASS
++ok  	github.com/scooter-sensei/clepsydra/go	6.006s
+diff --git a/lab/ear2-bg.txt b/lab/ear2-bg.txt
+new file mode 100644
+index 0000000..0361b12
+--- /dev/null
++++ b/lab/ear2-bg.txt
+@@ -0,0 +1,20 @@
++heavy hitter: 74319 queries, 0 Saturated, 0 unflagged with Upper < exact, 299 unflagged with Count >10% low
++upper bound: 18382 queries, 0 Saturated, 0 unflagged with Upper < exact; unflagged Upper exceeds exact by 16.7% of events
++--- FAIL: TestConformance (0.01s)
++    --- FAIL: TestConformance/basic (0.00s)
++        conformance_test.go:313: op 42 {Op:touch Key:user:5 WindowMs:250 NowMs:9066 Want:{Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 60 {Op:touch Key:user:1 WindowMs:250 NowMs:12363 Want:{Seen:false Count:1 Upper:4 Saturated:false Restored:false Degraded:false}}: got {Seen:false Count:2 Upper:4 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 86 {Op:touch Key:user:1 WindowMs:1000 NowMs:17006 Want:{Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 87 {Op:count Key:user:4 WindowMs:1000 NowMs:17402 Want:{Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 344 {Op:touch Key:user:9 WindowMs:1000 NowMs:67132 Want:{Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:318: ... 8 ops differ in all
++    --- FAIL: TestConformance/burst (0.00s)
++        conformance_test.go:313: op 380 {Op:touch Key:hot WindowMs:1000 NowMs:3658 Want:{Seen:true Count:7 Upper:8 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:8 Upper:8 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 381 {Op:touch Key:hot WindowMs:1000 NowMs:3965 Want:{Seen:true Count:6 Upper:9 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:7 Upper:9 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 382 {Op:touch Key:hot WindowMs:1000 NowMs:4230 Want:{Seen:true Count:6 Upper:10 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:7 Upper:10 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 383 {Op:touch Key:hot WindowMs:1000 NowMs:4342 Want:{Seen:true Count:6 Upper:11 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:7 Upper:11 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 384 {Op:touch Key:hot WindowMs:1000 NowMs:4617 Want:{Seen:true Count:6 Upper:12 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:7 Upper:12 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:318: ... 24 ops differ in all
++FAIL
++FAIL	github.com/scooter-sensei/clepsydra/go	14.778s
++FAIL
+diff --git a/lab/ear2-cfuzz.txt b/lab/ear2-cfuzz.txt
+new file mode 100644
+index 0000000..05e0a1d
+--- /dev/null
++++ b/lab/ear2-cfuzz.txt
+@@ -0,0 +1,5 @@
++=== RUN   TestFuzzConcurrent
++    fuzzconc_test.go:77: 1121 cases from seed 1 in 5m0s (2.5 M ops/s): 746354765 ops, 193487362 answers checked (28136037 Saturated, 43226 low behind a live floor, 2475568 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 204, Background 224, no stash 151, no overflow 144, small overflow 289, no hot entries 138, few hot entries 276; evictions 35778323, folded 28552124, promoted 2271031, waited 9344446
++--- PASS: TestFuzzConcurrent (300.17s)
++PASS
++ok  	github.com/scooter-sensei/clepsydra/go	300.177s
+diff --git a/lab/ear2-ct.txt b/lab/ear2-ct.txt
+new file mode 100644
+index 0000000..c718bde
+--- /dev/null
++++ b/lab/ear2-ct.txt
+@@ -0,0 +1,20 @@
++heavy hitter: 74319 queries, 0 Saturated, 0 unflagged with Upper < exact, 299 unflagged with Count >10% low
++upper bound: 18382 queries, 0 Saturated, 0 unflagged with Upper < exact; unflagged Upper exceeds exact by 16.7% of events
++--- FAIL: TestConformance (0.01s)
++    --- FAIL: TestConformance/basic (0.00s)
++        conformance_test.go:313: op 42 {Op:touch Key:user:5 WindowMs:250 NowMs:9066 Want:{Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 60 {Op:touch Key:user:1 WindowMs:250 NowMs:12363 Want:{Seen:false Count:1 Upper:4 Saturated:false Restored:false Degraded:false}}: got {Seen:false Count:2 Upper:4 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 86 {Op:touch Key:user:1 WindowMs:1000 NowMs:17006 Want:{Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 87 {Op:count Key:user:4 WindowMs:1000 NowMs:17402 Want:{Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 344 {Op:touch Key:user:9 WindowMs:1000 NowMs:67132 Want:{Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:318: ... 8 ops differ in all
++    --- FAIL: TestConformance/burst (0.00s)
++        conformance_test.go:313: op 380 {Op:touch Key:hot WindowMs:1000 NowMs:3658 Want:{Seen:true Count:7 Upper:8 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:8 Upper:8 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 381 {Op:touch Key:hot WindowMs:1000 NowMs:3965 Want:{Seen:true Count:6 Upper:9 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:7 Upper:9 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 382 {Op:touch Key:hot WindowMs:1000 NowMs:4230 Want:{Seen:true Count:6 Upper:10 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:7 Upper:10 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 383 {Op:touch Key:hot WindowMs:1000 NowMs:4342 Want:{Seen:true Count:6 Upper:11 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:7 Upper:11 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 384 {Op:touch Key:hot WindowMs:1000 NowMs:4617 Want:{Seen:true Count:6 Upper:12 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:7 Upper:12 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:318: ... 24 ops differ in all
++FAIL
++FAIL	github.com/scooter-sensei/clepsydra/go	23.385s
++FAIL
+diff --git a/lab/ear2-exact.txt b/lab/ear2-exact.txt
+new file mode 100644
+index 0000000..99d3af4
+--- /dev/null
++++ b/lab/ear2-exact.txt
+@@ -0,0 +1,80 @@
++churn load=1.00 seed=2 positives=99075 missed=0 negatives=628235 false_seen=0 live_at_end=199779 evictions=0 relocations=148716  => FN 0.000% FP 0.00e+00 live/capacity 1.00
++churn load=1.10 seed=3 positives=108572 missed=0 negatives=691508 false_seen=0 live_at_end=219510 evictions=0 relocations=379688  => FN 0.000% FP 0.00e+00 live/capacity 1.10
++churn load=1.15 seed=4 positives=113040 missed=0 negatives=723513 false_seen=0 live_at_end=229599 evictions=4577 relocations=932499  => FN 0.000% FP 0.00e+00 live/capacity 1.15
++static_fpr probes=1000000000 false_positives=18  => 1.80e-08 (95% interval 1.07e-08-2.84e-08)
++spray offenders=100 exact=100  => 100%
++velocity window=1s abs_error_sum=19185 exact_sum=114779  => 0.1671
++velocity window=5s abs_error_sum=28672 exact_sum=570466  => 0.0503
++velocity window=15s abs_error_sum=83577 exact_sum=1651571  => 0.0506
++velocity window=30s abs_error_sum=142448 exact_sum=3272017  => 0.0435
++velocity window=60s abs_error_sum=150267 exact_sum=6274665  => 0.0239
++velocity mean_of_windows => 0.0671
++burst window=1s touches=10 reported_min=10 reported_max=10
++burst window=1s touches=31 reported_min=31 reported_max=31
++burst window=1s touches=62 reported_min=62 reported_max=62
++burst window=1s touches=100 reported_min=100 reported_max=100
++burst window=1s touches=500 reported_min=500 reported_max=500
++burst window=1s touches=762 reported_min=762 reported_max=762
++burst window=1s touches=1000 reported_min=1000 reported_max=1000
++burst window=1s touches=1273 reported_min=1273 reported_max=1273
++burst window=1s touches=2000 reported_min=2000 reported_max=2000
++burst window=5s touches=10 reported_min=10 reported_max=10
++burst window=5s touches=31 reported_min=31 reported_max=31
++burst window=5s touches=62 reported_min=62 reported_max=62
++burst window=5s touches=100 reported_min=100 reported_max=100
++burst window=5s touches=500 reported_min=500 reported_max=500
++burst window=5s touches=762 reported_min=762 reported_max=762
++burst window=5s touches=1000 reported_min=1000 reported_max=1000
++burst window=5s touches=1273 reported_min=1273 reported_max=1273
++burst window=5s touches=2000 reported_min=2000 reported_max=2000
++burst window=15s touches=10 reported_min=10 reported_max=10
++burst window=15s touches=31 reported_min=31 reported_max=31
++burst window=15s touches=62 reported_min=62 reported_max=62
++burst window=15s touches=100 reported_min=100 reported_max=100
++burst window=15s touches=500 reported_min=500 reported_max=500
++burst window=15s touches=762 reported_min=762 reported_max=762
++burst window=15s touches=1000 reported_min=1000 reported_max=1000
++burst window=15s touches=1273 reported_min=1273 reported_max=1273
++burst window=15s touches=2000 reported_min=2000 reported_max=2000
++burst window=60s touches=10 reported_min=10 reported_max=10
++burst window=60s touches=31 reported_min=31 reported_max=31
++burst window=60s touches=62 reported_min=62 reported_max=62
++burst window=60s touches=100 reported_min=100 reported_max=100
++burst window=60s touches=500 reported_min=500 reported_max=500
++burst window=60s touches=762 reported_min=762 reported_max=762
++burst window=60s touches=1000 reported_min=1000 reported_max=1000
++burst window=60s touches=1273 reported_min=1273 reported_max=1273
++burst window=60s touches=2000 reported_min=2000 reported_max=2000
++steady window=1s rate=1/s reported/exact min=1.000 max=1.000
++steady window=1s rate=5/s reported/exact min=1.000 max=1.000
++steady window=1s rate=10/s reported/exact min=1.000 max=1.000
++steady window=1s rate=12/s reported/exact min=0.923 max=1.000
++steady window=1s rate=13/s reported/exact min=0.929 max=1.000
++steady window=1s rate=20/s reported/exact min=1.000 max=1.000
++steady window=1s rate=50/s reported/exact min=1.000 max=1.000
++steady window=1s rate=100/s reported/exact min=1.000 max=1.000
++steady window=5s rate=1/s reported/exact min=1.000 max=1.000
++steady window=5s rate=5/s reported/exact min=1.000 max=1.000
++steady window=5s rate=10/s reported/exact min=1.000 max=1.000
++steady window=5s rate=12/s reported/exact min=0.984 max=1.000
++steady window=5s rate=13/s reported/exact min=1.000 max=1.015
++steady window=5s rate=20/s reported/exact min=1.000 max=1.000
++steady window=5s rate=50/s reported/exact min=1.000 max=1.000
++steady window=5s rate=100/s reported/exact min=1.000 max=1.000
++steady window=15s rate=1/s reported/exact min=1.000 max=1.000
++steady window=15s rate=5/s reported/exact min=1.000 max=1.000
++steady window=15s rate=10/s reported/exact min=1.000 max=1.000
++steady window=15s rate=12/s reported/exact min=1.000 max=1.006
++steady window=15s rate=13/s reported/exact min=0.995 max=1.000
++steady window=15s rate=20/s reported/exact min=1.000 max=1.000
++steady window=15s rate=50/s reported/exact min=1.000 max=1.000
++steady window=15s rate=100/s reported/exact min=1.000 max=1.000
++steady window=60s rate=1/s reported/exact min=1.000 max=1.000
++steady window=60s rate=5/s reported/exact min=1.000 max=1.000
++steady window=60s rate=10/s reported/exact min=1.000 max=1.000
++steady window=60s rate=12/s reported/exact min=1.001 max=1.001
++steady window=60s rate=13/s reported/exact min=1.000 max=1.000
++steady window=60s rate=20/s reported/exact min=1.000 max=1.000
++steady window=60s rate=50/s reported/exact min=1.000 max=1.000
++steady window=60s rate=100/s reported/exact min=1.000 max=1.000
++memory capacity=200000 slots=235296 bytes=3764736  => 18.8 B/key
+diff --git a/lab/ear2-fuzz.txt b/lab/ear2-fuzz.txt
+new file mode 100644
+index 0000000..80f7b0a
+--- /dev/null
++++ b/lab/ear2-fuzz.txt
+@@ -0,0 +1,5 @@
++=== RUN   TestFuzzUpper
++    fuzz_test.go:84: 115 cases from seed 1 in 23s (5.8 M ops/s): 135857873 ops, 35277647 answers checked (3903253 Saturated, 48876 low behind a live floor, 42962 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 29, Background 23, no stash 14, no overflow 9, small overflow 33, no hot entries 16, few hot entries 36; evictions 10136207, folded 9074388, promoted 490621, waited 4541913
++--- PASS: TestFuzzUpper (23.36s)
++PASS
++ok  	github.com/scooter-sensei/clepsydra/go	23.368s
+diff --git a/lab/ear2-short.txt b/lab/ear2-short.txt
+new file mode 100644
+index 0000000..0f45969
+--- /dev/null
++++ b/lab/ear2-short.txt
+@@ -0,0 +1,20 @@
++heavy hitter: 74319 queries, 0 Saturated, 0 unflagged with Upper < exact, 299 unflagged with Count >10% low
++upper bound: 18382 queries, 0 Saturated, 0 unflagged with Upper < exact; unflagged Upper exceeds exact by 16.7% of events
++--- FAIL: TestConformance (0.02s)
++    --- FAIL: TestConformance/basic (0.00s)
++        conformance_test.go:313: op 42 {Op:touch Key:user:5 WindowMs:250 NowMs:9066 Want:{Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 60 {Op:touch Key:user:1 WindowMs:250 NowMs:12363 Want:{Seen:false Count:1 Upper:4 Saturated:false Restored:false Degraded:false}}: got {Seen:false Count:2 Upper:4 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 86 {Op:touch Key:user:1 WindowMs:1000 NowMs:17006 Want:{Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 87 {Op:count Key:user:4 WindowMs:1000 NowMs:17402 Want:{Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 344 {Op:touch Key:user:9 WindowMs:1000 NowMs:67132 Want:{Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:318: ... 8 ops differ in all
++    --- FAIL: TestConformance/burst (0.00s)
++        conformance_test.go:313: op 380 {Op:touch Key:hot WindowMs:1000 NowMs:3658 Want:{Seen:true Count:7 Upper:8 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:8 Upper:8 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 381 {Op:touch Key:hot WindowMs:1000 NowMs:3965 Want:{Seen:true Count:6 Upper:9 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:7 Upper:9 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 382 {Op:touch Key:hot WindowMs:1000 NowMs:4230 Want:{Seen:true Count:6 Upper:10 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:7 Upper:10 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 383 {Op:touch Key:hot WindowMs:1000 NowMs:4342 Want:{Seen:true Count:6 Upper:11 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:7 Upper:11 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:313: op 384 {Op:touch Key:hot WindowMs:1000 NowMs:4617 Want:{Seen:true Count:6 Upper:12 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:7 Upper:12 Saturated:false Restored:false Degraded:false}
++        conformance_test.go:318: ... 24 ops differ in all
++FAIL
++FAIL	github.com/scooter-sensei/clepsydra/go	26.569s
++FAIL
+diff --git a/lab/ear2-soak.txt b/lab/ear2-soak.txt
+new file mode 100644
+index 0000000..54a1636
+--- /dev/null
++++ b/lab/ear2-soak.txt
+@@ -0,0 +1,5 @@
++=== RUN   TestStressSoak
++    soak_test.go:158: 24 workers, 1m0s: 270837288 ops, 81258855 counts checked (31596908 Saturated, 0 low behind a live bucket floor); evictions 25460543, restored 1323980, lost 0, promoted 246624, hot refused 8033594
++--- PASS: TestStressSoak (60.01s)
++PASS
++ok  	github.com/scooter-sensei/clepsydra/go	60.024s
+diff --git a/lab/labear.txt b/lab/labear.txt
+new file mode 100644
+index 0000000..714fc6c
+--- /dev/null
++++ b/lab/labear.txt
+@@ -0,0 +1,41 @@
++=== RUN   TestLabEar
++    lab_ear_test.go:48: lag TF_EAR=0 churn load 1.15: 1115315 touches, 1186057 decodes, 172374 at a lag (evictions 4577, relocations 932499)
++    lab_ear_test.go:56: lag TF_EAR=0 velocity workload: 1305412 touches, 1543043 decodes, 122635 at a lag (promoted 526, demoted 249)
++    lab_ear_test.go:48: lag TF_EAR=1 churn load 1.15: 1115315 touches, 819216 decodes, 0 at a lag (evictions 4577, relocations 932499)
++    lab_ear_test.go:56: lag TF_EAR=1 velocity workload: 1305412 touches, 1416699 decodes, 0 at a lag (promoted 526, demoted 249)
++    lab_ear_test.go:85: TF_EAR=0: promoted 526, demoted 249, hot refused 0; digest of every answer's Seen, Upper and Saturated 35662246b827b0e7
++    lab_ear_test.go:85: TF_EAR=1: promoted 526, demoted 249, hot refused 0; digest of every answer's Seen, Upper and Saturated 35662246b827b0e7
++    lab_ear_test.go:85: TF_EAR=2: promoted 526, demoted 249, hot refused 0; digest of every answer's Seen, Upper and Saturated 35662246b827b0e7
++    lab_ear_test.go:96: velocity steady  TF_EAR=0 by window 1,5,15,30,60 s: 0.2150 0.0620 0.0399 0.0277 0.0139  mean 0.0717
++    lab_ear_test.go:96: velocity steady  TF_EAR=1 by window 1,5,15,30,60 s: 0.2150 0.0620 0.0399 0.0277 0.0139  mean 0.0717
++    lab_ear_test.go:96: velocity steady  TF_EAR=2 by window 1,5,15,30,60 s: 0.2011 0.0620 0.0399 0.0277 0.0139  mean 0.0689
++    lab_ear_test.go:96: velocity bursts  TF_EAR=0 by window 1,5,15,30,60 s: 0.4258 0.1229 0.1070 0.1126 0.0696  mean 0.1676
++    lab_ear_test.go:96: velocity bursts  TF_EAR=1 by window 1,5,15,30,60 s: 0.4258 0.1229 0.1070 0.1126 0.0696  mean 0.1676
++    lab_ear_test.go:96: velocity bursts  TF_EAR=2 by window 1,5,15,30,60 s: 0.0868 0.0638 0.1007 0.1117 0.0696  mean 0.0865
++    lab_ear_test.go:96: velocity ramp    TF_EAR=0 by window 1,5,15,30,60 s: 0.1740 0.0451 0.0267 0.0190 0.0092  mean 0.0548
++    lab_ear_test.go:96: velocity ramp    TF_EAR=1 by window 1,5,15,30,60 s: 0.1740 0.0451 0.0267 0.0190 0.0092  mean 0.0548
++    lab_ear_test.go:96: velocity ramp    TF_EAR=2 by window 1,5,15,30,60 s: 0.1652 0.0451 0.0267 0.0190 0.0092  mean 0.0530
++    lab_ear_test.go:96: velocity sparse  TF_EAR=0 by window 1,5,15,30,60 s: 0.0187 0.0220 0.0543 0.0747 0.0605  mean 0.0460
++    lab_ear_test.go:96: velocity sparse  TF_EAR=1 by window 1,5,15,30,60 s: 0.0187 0.0220 0.0543 0.0747 0.0605  mean 0.0460
++    lab_ear_test.go:96: velocity sparse  TF_EAR=2 by window 1,5,15,30,60 s: 0.0166 0.0211 0.0540 0.0747 0.0605  mean 0.0454
++    lab_ear_test.go:96: velocity on/off  TF_EAR=0 by window 1,5,15,30,60 s: 0.1998 0.0450 0.1003 0.0877 0.0438  mean 0.0953
++    lab_ear_test.go:96: velocity on/off  TF_EAR=1 by window 1,5,15,30,60 s: 0.1998 0.0450 0.1003 0.0877 0.0438  mean 0.0953
++    lab_ear_test.go:96: velocity on/off  TF_EAR=2 by window 1,5,15,30,60 s: 0.1852 0.0432 0.1003 0.0877 0.0438  mean 0.0921
++    lab_ear_test.go:96: velocity all     TF_EAR=0 by window 1,5,15,30,60 s: 0.2138 0.0567 0.0513 0.0436 0.0240  mean 0.0779
++    lab_ear_test.go:96: velocity all     TF_EAR=1 by window 1,5,15,30,60 s: 0.2138 0.0567 0.0513 0.0436 0.0240  mean 0.0779
++    lab_ear_test.go:96: velocity all     TF_EAR=2 by window 1,5,15,30,60 s: 0.1671 0.0503 0.0506 0.0435 0.0239  mean 0.0671
++    lab_ear_test.go:122: strict limiter 1s/5: admitted 569035 569035 569035, digests ba00e642c4c2c5a4 ba00e642c4c2c5a4 ba00e642c4c2c5a4
++    lab_ear_test.go:122: strict limiter 5s/20: admitted 752886 752886 752886, digests 6e40e61cac2e5037 6e40e61cac2e5037 6e40e61cac2e5037
++    lab_ear_test.go:181: timing sparse base               ns/touch 181.8 185.0 187.9 (median 1.00 of the base's)
++    lab_ear_test.go:181: timing sparse TF_EAR=1           ns/touch 190.7 194.0 217.3 (median 1.05 of the base's)
++    lab_ear_test.go:181: timing sparse TF_EAR=2           ns/touch 191.9 194.1 207.0 (median 1.05 of the base's)
++    lab_ear_test.go:181: timing sparse base, no CAS2      ns/touch 189.1 196.8 204.6 (median 1.06 of the base's)
++    lab_ear_test.go:181: timing sparse TF_EAR=1, no CAS2  ns/touch 211.2 216.5 220.4 (median 1.17 of the base's)
++    lab_ear_test.go:181: timing dense  base               ns/touch 127.8 133.4 134.4 (median 1.00 of the base's)
++    lab_ear_test.go:181: timing dense  TF_EAR=1           ns/touch 128.6 132.5 144.2 (median 0.99 of the base's)
++    lab_ear_test.go:181: timing dense  TF_EAR=2           ns/touch 130.4 138.1 149.5 (median 1.04 of the base's)
++    lab_ear_test.go:181: timing dense  base, no CAS2      ns/touch 126.3 128.2 128.5 (median 0.96 of the base's)
++    lab_ear_test.go:181: timing dense  TF_EAR=1, no CAS2  ns/touch 126.4 132.6 132.7 (median 0.99 of the base's)
++--- PASS: TestLabEar (21.24s)
++PASS
++ok  	github.com/scooter-sensei/clepsydra/go	21.246s
+diff --git a/lab/run-b13-first.sh b/lab/run-b13-first.sh
+new file mode 100755
+index 0000000..3b721b6
+--- /dev/null
++++ b/lab/run-b13-first.sh
+@@ -0,0 +1,22 @@
++#!/bin/bash
++# B13a's identity checks: the short suite in each mode, tfbench -exact, the vectors.
++O=$HOME/lab-bio4-out
++mkdir -p $O
++G=$HOME/bin/g4.sh
++run() { # run <label> <env> <cmd>
++	local t0=$SECONDS
++	$G "$2 $3" >"$O/$1.txt" 2>&1
++	echo "$1: exit $? ($((SECONDS - t0)) s): $(tail -1 "$O/$1.txt")"
++}
++run base-short "" "go test -short -count=1 ."
++run ear1-short "TF_EAR=1" "go test -short -count=1 ."
++run ear1-bg "TF_EAR=1 TF_BG=1" "go test -short -count=1 ."
++run ear1-ct "TF_EAR=1 TF_CT=1" "go test -short -count=1 ."
++run ear1-nocas2 "TF_EAR=1 TF_NOCAS2=1" "go test -short -count=1 ."
++run ear1-conformance "TF_EAR=1" "go test -count=1 -run '^TestConformance\$' ."
++run ear1-exact "TF_EAR=1" "go run ./cmd/tfbench -exact"
++cmp "$O/ear1-exact.txt" "$HOME/lab-bio4/go/verify/expected/exact.txt" && echo "ear1 exact: identical"
++run ear2-short "TF_EAR=2" "go test -short -count=1 ."
++run ear2-exact "TF_EAR=2" "go run ./cmd/tfbench -exact"
++diff "$O/ear2-exact.txt" "$HOME/lab-bio4/go/verify/expected/exact.txt"
++grep -n "^--- FAIL\|^FAIL\|panic" "$O"/ear*-*.txt "$O"/base-short.txt | head -60
+diff --git a/lab/run-rest.sh b/lab/run-rest.sh
+new file mode 100644
+index 0000000..758a504
+--- /dev/null
++++ b/lab/run-rest.sh
+@@ -0,0 +1,27 @@
++#!/bin/bash
++# The remaining readings of B12b (clause 7) and B13 (clauses 1-7).
++O=$HOME/lab-bio4-out
++G=$HOME/bin/g4.sh
++RACE='CGO_ENABLED=1 CC=$HOME/bin/zcc GOFLAGS=-ldflags=-linkmode=external'
++run() { # run <label> <env> <cmd>
++	local t0=$SECONDS
++	$G "export $2; $3" >"$O/$1.txt" 2>&1
++	echo "$1: exit $? ($((SECONDS - t0)) s): $(grep -c '^--- FAIL' "$O/$1.txt") failed: $(tail -1 "$O/$1.txt" | cut -c1-90)"
++}
++run labear "TF_LAB=1" "go test -count=1 -timeout 30m -run '^TestLabEar\$' -v ."
++run buzz2-short "TF_BUZZ=2" "go test -short -count=1 ."
++run buzz2-bg "TF_BUZZ=2 TF_BG=1" "go test -short -count=1 ."
++run buzz2-race "TF_BUZZ=2 TF_LAB=1 $RACE" "go test -race -short -count=1 -run 'TouchIf|TestLabBuzzConcurrent' -v ."
++run ear1-nocas2 "TF_EAR=1 TF_NOCAS2=1" "go test -short -count=1 ."
++run ear1-race "TF_EAR=1 $RACE" "go test -race -short -count=1 -timeout 30m ."
++run ear2-short "TF_EAR=2" "go test -short -count=1 ."
++run ear2-bg "TF_EAR=2 TF_BG=1" "go test -short -count=1 ."
++run ear2-ct "TF_EAR=2 TF_CT=1" "go test -short -count=1 ."
++run ear2-exact "TF_EAR=2" "go run ./cmd/tfbench -exact"
++run ear2-attack "TF_EAR=2 TF_EXP=1" "go test -count=1 -run 'Attack|TestSpray|TestUpper|TestHeavy' -v ."
++run ear2-fuzz "TF_EAR=2 TF_FUZZ=1e8" "go test -count=1 -timeout 60m -run '^TestFuzzUpper\$' -v ."
++run ear1-soak "TF_EAR=1 TF_STRESS=60s" "go test -count=1 -timeout 30m -run '^TestStressSoak\$' -v ."
++run ear2-soak "TF_EAR=2 TF_STRESS=60s" "go test -count=1 -timeout 30m -run '^TestStressSoak\$' -v ."
++run ear1-cfuzz "TF_EAR=1 TF_CFUZZ=5m" "go test -count=1 -timeout 30m -run '^TestFuzzConcurrent\$' -v ."
++run ear2-cfuzz "TF_EAR=2 TF_CFUZZ=5m" "go test -count=1 -timeout 30m -run '^TestFuzzConcurrent\$' -v ."
++grep -n "^--- FAIL\|^    --- FAIL" "$O"/buzz2-*.txt "$O"/ear1-nocas2.txt "$O"/ear1-race.txt "$O"/ear2-*.txt "$O"/ear1-soak.txt "$O"/ear1-cfuzz.txt | cut -c1-200 | head -40

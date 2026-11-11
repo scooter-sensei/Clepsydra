@@ -1,0 +1,547 @@
+diff --git a/BIO3-RESULTS.md b/BIO3-RESULTS.md
+new file mode 100755
+index 0000000..41c0a87
+--- /dev/null
++++ b/BIO3-RESULTS.md
+@@ -0,0 +1,449 @@
++# lab/bio3-2026-11: a third set of mechanisms taken from biology
++
++From a3cf1ba. Host: the WSL2 guest of the Ryzen host (12 threads, Go 1.24.7).
++Each arm's rule is committed before its reading. The arms of lab/bio-2026-11
++(B1 scent marks, B3 a fovea for hot entries) and lab/bio2-2026-11 (B4 spike
++timing, B5 larval slots; the postulates B6 a lek for hot entries and B7
++growth by segments) are not repeated.
++
++## The structure as an ecosystem: parts not yet matched
++
++lab/bio2's table matched the parts to organisms one by one. This one reads
++the table as a habitat that keys compete for, and adds the parts the
++earlier table left out.
++
++| Part | What it does | Its counterpart in nature | Where the counterpart does better |
++|---|---|---|---|
++| primary line, then alternate line | a key's two sites; a read tries the primary first, so a key in its alternate costs a second line | good habitat and marginal habitat | the ideal despotic distribution: dominants hold the good sites and subordinates are pushed to the margin. The filter's search pushes out whoever sits first in slot order (B8) |
++| the cuckoo search's choice of whom to move | first movable entry, slot 0 first | a vacancy chain started by whoever is nearest | territorial contests are settled by resource-holding power, not position (B8) |
++| a hot entry: a 64 B line in a side table, 1 per 128 slots, first come first served | wide counters for a heavy key, somewhere else | a nurse organ apart from the body (a placenta, a honey stomach shared by the hive) | the cuckoo chick: it grows where it hatched and pushes a nest-mate out; the nest is the resource, not a second site (B9) |
++| a register that overflows when every hot entry is taken (`HotRefused`) | the heavy key counts low, flagged | a territory system with more claimants than territories: floaters | where the resource is the nest itself there are no floaters: every chick has a nest-mate to push (B9) |
++| the reclaimer: 4 lines a call, 1/64 of touches, paced by the clock | frees expired slots; answers never depend on it | grooming while awake | hibernators rouse on a timer to do the upkeep that can't wait (interbout arousals): a deadline, not a pace (B10, postulate) |
++| a snapshot's clock continues the old timeline toward `MaxTick` | a lineage of snapshots ages | the soma ages | the germ line resets its clock: the offspring starts at zero (B11, postulate) |
++| the 4-bit epoch beside a 46-bit last touch | says which unit word1 is aligned to between a touch's two CASes | a checkpoint between two steps of the cell cycle | — (redundant at rest, needed in motion) |
++| `fp = 0` never stored (a key hashing to it gets 1) | a free word0 is 0 | a reserved codon (stop) | the code has three stop codons and uses them as punctuation: a word0 with `fp = 0` and other bits set matches no lookup, so it can mark a slot that is not an entry (B9 uses it) |
++
++## B8 Despotic placement
++
++**The analogy.** Where habitat differs in quality, animals do not spread
++evenly (the ideal free distribution); the dominant ones take the good sites
++and push the others to the margin (the ideal despotic distribution,
++Fretwell 1972). A key's primary line is the good site: a read finds it
++with one line. Its alternate line is the margin: a read loads the primary,
++misses, and loads the alternate, a second DRAM miss on a table past the
++cache. Who lives at the margin today is decided by slot order: an insert
++that finds both lines full moves the first entry it can (slot 0 of the
++primary line first), whatever its history. 18.9% of keys sit in their
++alternate line [D11], and a key touched a thousand times is as likely to
++be one of them as a key touched once.
++
++**The mechanism** (`TF_DESPOT=1`, in `claimAt`). The search tries its
++candidates in order of what the move does for reads, instead of slot
++order. The candidates are the eight entries of the two full lines, already
++loaded; the score reads only their words:
++
++- an entry in its alternate line (displaced bit set) would go *home* by the
++  move: the heaviest first;
++- then entries at home, which the move would send to the margin: the
++  lightest first (fewest events in the horizon, `mass`, as the eviction
++  scores them), oldest on ties.
++
++The same order is used at each depth of the iterative deepening for the
++first step of a path; deeper steps keep slot order. Nothing else changes:
++the same lines are warmed, the same budget is spent, the hand-off and move
++counts are untouched. Homing (E6) moved entries home with extra moves on
++inserts and hits; this adds no move, it chooses among the moves a search
++already makes.
++
++**Readings** (`TestLabDespot`, `TF_LAB=1`; the real filter, deterministic
++counts). Two streams at Capacity 200,000, 60 s horizon, 1 ms ticks:
++
++- *churn*: tfbench's stream (`workload.Churn`): a repeat is a key drawn
++  uniformly from those born in the last 1.5 horizons, so a key's past says
++  nothing of its future;
++- *80/20*: the same arrivals, but a fifth of the keys are marked popular
++  at birth and a repeat is one of those with probability 0.8.
++
++Read per arm: the share of hits (touches of a key the table holds) that
++find it in its alternate line; the share of live keys in their alternate
++line at the end; searches, the lines a search scans (budget spent),
++relocations, evictions; a digest of every answer (`Seen`, `Count`).
++
++**Rule (before any reading).** Worth timing if:
++
++1. on the 80/20 stream at load 1.00, hits found in the alternate line fall
++   to at most half the base's share;
++2. on the churn stream at load 1.00, that share is not above the base's
++   (at most 1.02 of it);
++3. at load 1.00 on both streams the answers' digest equals the base's (no
++   eviction there, so placement must not move an answer), and at load 1.15
++   evictions, relocations and lines scanned per search are each at most
++   1.10 of the base's;
++4. no key missed where the base misses none.
++
++If 1–4 hold, a timing reading follows (3 interleaved rounds in one binary,
++indicative only on this host): worth building if InsertSteady and
++MissInsert read at most 1.05 of the base.
++
++## B9 The cuckoo chick
++
++**The analogy.** A hot entry is an organ kept apart from the body: a
++heavy key's counters live in a side table, one 64 B entry per 128 slots,
++given to whoever asks first and refused when all are taken. lab/bio2's B6
++proposed a contest for them. The bird the table is named after does
++neither. A cuckoo chick needs more than its share of the nest, and it
++takes it where it is: it pushes a nest-mate over the rim. The nest-mate is
++the resource.
++
++**The mechanism.** A key whose register would overflow takes a second
++slot *of its own line* as its extension: a free slot, else the lightest
++line-mate that is a plain entry, which leaves as a search's step would
++move it (to its alternate line, by a path if need be) or, failing that, as
++an eviction would (to the stash). The extension holds the high parts of
++the seven counters. Its word0 has `fp = 0` with other bits set, which no
++key's lookup matches (a key whose hash gives 0 stores 1) and no free slot
++reads (a free word0 is 0), so lookups and the false-positive rate are
++unchanged; that leaves about 100 bits, 14 more per counter (bucket 0 to
++524,287 a unit). A hot key's touch stays in one cache line. A pair is
++pinned: searches don't move it; it is given up as a hot entry is (the
++rate falls, or the key expires). There is no hot table, and no refusal
++while a line has a plain mate: a line holds 4 slots, so a key with a pair
++beside it (3 slots) always has a fourth that is plain or free.
++
++**The model** (`TestLabChick`, `TF_LAB=1`). A placement model as lab/bio2's
++(`TestLabLarva`): the filter's lines, primary and alternate lines, its
++search as written there (iterative deepening to depth 3, the
++pressure-scaled budget), eviction of the lightest. Promotion at a 32nd
++event in one unit; release when a unit ends with 15 events or fewer in it,
++or at expiry (both arms alike). Two arms:
++
++- *table*: a hot table of slots/128 entries, first come first served;
++- *chick*: the mechanism above.
++
++Streams (Capacity 200,000, 60 s horizon, 1 ms ticks, 4 horizons):
++tfbench's churn at loads 1.00 and 1.15, with
++
++- S0: nothing added (validity);
++- S1: 1,000 heavy keys at a time (0.5% of Capacity), each at 20–200
++  events/s (log-uniform), living 1–2 horizons and replaced as they end;
++- S2: S1 after squatters: twice the hot table's entries in keys at
++  14 events/s each, from the start.
++
++Read: the share of the heavy keys' events that arrive while their key has
++wide counters or its unit holds 31 or fewer (*counted whole*); promotions,
++how each got its second slot (free, mate moved, mate evicted, refused);
++evictions and relocations, by who was evicted.
++
++**Rule (before any reading).** Worth building (a model's verdict) if:
++
++0. validity: on S0 the model's evictions are 0 at load 1.00 and within 15%
++   of the filter's 4,577 at 1.15, both arms; else void;
++1. on S2 the chick arm counts at least 0.99 of the heavy keys' events
++   whole. Void if the table arm counts more than 0.50 there (the scenario
++   shows no problem);
++2. on S1 at load 1.00 the chick arm evicts nothing (as the table arm),
++   and of the promotions that must move a mate at most 3% evict it;
++3. on S1 at load 1.15 its evictions are at most 1.10 of the table arm's;
++4. on S2 at load 1.00 no key that is not a squatter is evicted, and no
++   promotion is refused.
++
++Not read: the slot protocol for a pair (two slots changing hands, the
++touch's CASes on low and high parts), the sweep and the stash of a pair,
++the counters' real widths, speed.
++
++## B8b Earned territory
++
++Designed after B8's reading (clause 1 failed: hits found in the alternate
++line fell 0.1988 → 0.1827 on the 80/20 stream, not by half), so this rule
++is written knowing it. What the reading showed: 32–38% of live keys sit in
++their alternate line at load 1.00, but only 14–23% of first touches run a
++search; most displaced keys were *placed* in their alternate line, at
++their first touch, because their primary line was full and the other had
++room. A key is cold when it settles. The despot's choice at a search comes
++too early: a territory is contested once the claimant has shown what it
++is, not when it hatches.
++
++**The mechanism** (`TF_DESPOT` as bits: 1 B8's order, 2 homing, 4 the
++challenge). A touch that finds its key in its alternate line, and leaves
++it with 2, 4, 8, ... events in the horizon (`mass` a power of two), tries
++to take it home:
++
++- *homing* (2): if the primary line has a free or expired slot, the entry
++  moves there (`relocate`'s copy and hand-off, the source freed). The
++  lookup has just read both lines, so the attempt loads no new line;
++- *the challenge* (4): if the primary line is full, its lightest entry, if
++  it has at most half the claimant's events, is moved to its own other
++  line when that has room (one more line), and the claimant then goes
++  home.
++
++E6's homing tried on every hit found in the alternate line and at every
++insert (hits on full tables +18 ns from failed attempts); this tries at
++most log2 of a key's events, and never for a key seen once.
++
++**Rule (written after B8's reading, before B8b's).** Arms 2, 6 and 7
++against 0, as B8 read them. Worth timing if, for an arm:
++
++1. on the 80/20 stream at load 1.00, hits found in the alternate line are
++   at most half the base's share (0.0994);
++2. on the churn stream at load 1.00 the share is under the base's;
++3. the moves it adds (attempts that move an entry) are at most 5% of hits
++   on both streams at load 1.00;
++4. at load 1.00 the answers' digest equals the base's; at load 1.15
++   evictions are at most 1.10 of the base's and no key is missed;
++5. `go test -short` passes with the arm on for every filter the tests
++   make (`TF_DESPOT` in the environment).
++
++The arm to time is the one with the fewest bits that holds 1–5.
++
++## B9b The chick, with the hot table's bytes
++
++Designed after B9's reading (clause 3 failed: at load 1.15 on S1 the chick
++arm evicted 33,037 keys against the table arm's 16,022), so this rule is
++written knowing it. The two arms did not hold the same bytes: the table
++arm has its slots and a hot table of slots/128 entries of 64 B, which is
++1/32 of the table's bytes again; the chick arm has the slots alone, and at
++load 1.15 (97.8% of slots, past the search's reach) each extension is a
++slot the churn wanted.
++
++**B9b** (`TF_CHICK_BYTES=1`). The chick arm's table has 33/32 of the
++lines (Capacity 206,250 for a stream sized to 200,000): both arms hold the
++same bytes once the hot table is allocated. Everything else as B9.
++
++**Rule (written after B9's reading, before B9b's).** B9's clauses, the
++table arm as B9 read it:
++
++1. on S2 the chick arm counts at least 0.99 of the heavy keys' events
++   whole;
++2. on S1 at load 1.00 it evicts nothing, and of the promotions that must
++   move a mate at most 3% evict it;
++3. on S1 at load 1.15 its evictions are at most 1.10 of the table arm's
++   (16,022), and on S2 at load 1.15 at most 1.10 of the table arm's there
++   (48,190);
++4. on S2 at load 1.00 no key that is not a squatter is evicted, and no
++   promotion is refused.
++
++Worth building (a model's verdict) if 1–4 hold.
++
++## Postulates, not run
++
++**B10 Arousal: a reclaimer with a deadline.** Paper §8.3: if every line is
++provably visited once per horizon, timestamps shrink to 32 bits and 14
++bits a slot come free (E48: a 50-bit register, velocity error 0.0779 →
++0.0637); the caveat is an idle filter, where a reclaimer paced by calls
++stops. A hibernating ground squirrel does not groom, and it does not need
++a keeper to wake it either: it rouses on its own timer, does the upkeep,
++and goes back. The reclaimer needs no ticker, only a deadline: aliasing
++needs a line unvisited for half the timestamp's range (2^31 ms, 24.8
++days), so a call that finds the pass older than a quarter of the range
++sweeps 64 lines instead of 4, and one that finds it older than three
++eighths finishes the pass before it answers. An idle filter pays nothing;
++its first call after 9 idle days pays one pass (a few ms per million
++lines, the overflow table's sweep stall, E36). After an idle gap longer
++than a horizon every entry is dead, so that pass can be a clear. Reading
++to take: a clock driven through idle gaps of every length, the oldest
++unvisited line never past the bound; the largest call.
++
++**B11 Germ-line reset: a snapshot that rebases.** A restored clock
++continues the old timeline, so a lineage of snapshots ages toward
++`MaxTick` (2.2 years at 1 µs) whatever its processes' uptime, and "there
++is no rebase" (paper §8.1). The soma ages; the germ line resets, and the
++offspring starts at zero. A restore can subtract a base from every
++timestamp it reads: the base a multiple of two horizons (48 units), so the
++registers' 4-bit epochs (unit mod 16) and the overflow table's 2-bit
++slices (Horizon/2 mod 4) decode as before, and entries older than the
++base's horizon are dropped as the sweep would drop them. Reading to take:
++the answers' digest before the snapshot and after a rebasing restore,
++equal; the restored clock under three horizons.
++
++## Readings
++
++### B8 despotic placement: fails its rule (clauses 1 and 2)
++
++`TF_LAB=1 go test -run TestLabDespot -v` (`lab/b8-despot.txt`).
++
++| stream | load | arm | hits in the alternate line | live keys displaced | searches per first touch | scanned per search | relocations | evictions |
++|---|---|---|---|---|---|---|---|---|
++| churn | 1.00 | base | 0.2192 | 0.3786 | 0.2251 | 3.08 | 148,716 | 0 |
++| churn | 1.00 | despot | 0.2243 | 0.3690 | 0.2279 | 3.32 | 150,988 | 0 |
++| churn | 1.15 | base | 0.2936 | 0.4793 | 0.5695 | 79.83 | 932,499 | 4,577 |
++| churn | 1.15 | despot | 0.2931 | 0.4625 | 0.5705 | 80.13 | 934,679 | 4,632 |
++| 80/20 | 1.00 | base | 0.1988 | 0.3237 | 0.1377 | 2.17 | 83,783 | 0 |
++| 80/20 | 1.00 | despot | 0.1827 | 0.3133 | 0.1407 | 2.40 | 85,642 | 0 |
++| 80/20 | 1.15 | base | 0.2652 | 0.4182 | 0.3179 | 4.63 | 248,802 | 0 |
++| 80/20 | 1.15 | despot | 0.2401 | 0.4048 | 0.3198 | 4.86 | 251,075 | 0 |
++
++Clause 1 fails: 0.1827 is 0.92 of the base, where the rule asked 0.50.
++Clause 2 fails by a hair: 0.2243 is 1.023 of 0.2192 (1.02 allowed); on
++that stream a key's past says nothing of its future, and the order's
++taste for sending entries home costs 8% more candidates a search (3.08 →
++3.32; 2.17 → 2.40 on 80/20) for no better reads. Clauses 3 and 4 hold:
++digests equal at load 1.00 on both streams, no key missed or falsely seen
++in any arm; at load 1.15 evictions 1.012, relocations 1.002 and scanned
++per search 1.004 of the base. No timing reading: the rule does not reach
++it.
++
++Two facts of the base the reading brought out. The share of live keys in
++their alternate line on these streams is 0.32–0.38 at load 1.00 and
++0.42–0.48 at 1.15, against D11's 18.9% at 85% slot load: the churn
++stream's slots are reused, and a key that arrives to a full primary line
++goes to its alternate with no search. And hits are found in the alternate
++line *less* often than keys sit there (0.20–0.22 against 0.32–0.38):
++repeats favour keys born earlier, which found their primary line emptier.
++
++### B8b earned territory: fails its rule (clause 1, every arm)
++
++`TF_LAB=1 go test -run TestLabDespot -v` (`lab/b8b-earned.txt`). Arms by
++`TF_DESPOT`'s bits: 0 the base, 2 homing, 6 homing and the challenge, 7
++those with B8's order.
++
++| stream | load | arm | hits in the alternate line | of the base | tries | went home (free slot) | (challenge) | moves per hit | evictions |
++|---|---|---|---|---|---|---|---|---|---|
++| 80/20 | 1.00 | 0 | 0.1988 | | | | | | 0 |
++| 80/20 | 1.00 | 2 | 0.1681 | 0.85 | 40,737 | 14,028 | | 0.038 | 0 |
++| 80/20 | 1.00 | 6 | 0.1473 | 0.74 | 38,812 | 12,783 | 10,398 | 0.092 | 0 |
++| 80/20 | 1.00 | 7 | 0.1308 | 0.66 | 38,883 | 11,630 | 11,119 | 0.093 | 0 |
++| churn | 1.00 | 0 | 0.2192 | | | | | | 0 |
++| churn | 1.00 | 2 | 0.2092 | 0.95 | 56,994 | 15,033 | | 0.045 | 0 |
++| churn | 1.00 | 6 | 0.2049 | 0.93 | 57,736 | 14,825 | 12,216 | 0.117 | 0 |
++| churn | 1.00 | 7 | 0.2106 | 0.96 | 62,481 | 14,452 | 14,187 | 0.128 | 0 |
++| churn | 1.15 | 0 | 0.2936 | | | | | | 4,577 |
++| churn | 1.15 | 2 | 0.2943 | 1.00 | 88,899 | 3,405 | | 0.009 | 4,578 |
++| churn | 1.15 | 6 | 0.2929 | 1.00 | 89,120 | 3,227 | 4,770 | 0.033 | 4,646 |
++| churn | 1.15 | 7 | 0.2909 | 0.99 | 91,678 | 3,329 | 5,070 | 0.035 | 4,671 |
++
++(The 80/20 stream at load 1.15 is in the file: 0.2652 → 0.2498, 0.2331,
++0.2076.) A challenge is two moves.
++
++1. Fails for every arm: 0.85, 0.74 and 0.66 of the base on the 80/20
++   stream, where the rule asked 0.50.
++2. Holds: every arm is under the base on the churn stream at load 1.00.
++3. Holds for arm 2 (0.038 and 0.045 moves per hit); fails for arms 6 and 7
++   (0.092–0.128).
++4. Holds: the digests equal the base's at load 1.00 on both streams, no
++   key missed or falsely seen in any arm, evictions at load 1.15 at most
++   1.02 of the base's.
++5. `go test -short` passes with `TF_DESPOT=2` and `6`. With `7` the
++   conformance vectors' end counters differ (evictions 933 against 961,
++   relocations 12 against 10): B8's order changes placements, which the
++   vectors pin.
++
++**Why the family fails.** On the 80/20 stream there are 365,482 hits on
++604,049 keys: 0.6 hits a key. Most hits are a key's first or second
++repeat, and those find the key where its first touch put it. Homing has
++little to work with: of 40,737 tries, 14,028 found a free slot at home
++(34%), since a primary line that was full when the key arrived is mostly
++still full. A stream skewed enough for homing to matter (a few keys with
++thousands of hits) is one whose hot keys' lines are in the cache, where a
++second line costs nothing; E6 read no hit gain on a cached table. The
++second line is paid for on a DRAM miss, DRAM misses fall on keys touched
++rarely, and a key touched rarely has no history to rank it by. The
++despot's information arrives when it is no longer needed. What decides a
++cold key's first repeat is its first placement, and putting it at home
++when its primary line is full costs an insert a move (a miss) to save a
++read a miss: no gain.
++
++### B9 the cuckoo chick: fails its rule (clause 3, and clause 4 by 5 keys)
++
++`TF_LAB=1 go test -run TestLabChick -v` (`lab/b9-chick.txt`). The hot
++table has 1,838 entries (slots/128); in S2 there are 3,676 squatters.
++
++| stream | load | arm | heavy events counted whole | promotions refused (heavy) | evictions | second slot: free | mate moved | mate evicted | wide counters held at the end |
++|---|---|---|---|---|---|---|---|---|---|
++| S0 | 1.00 | both | | | 0 | | | | |
++| S0 | 1.15 | both | | | 3,985 | | | | |
++| S1 | 1.00 | table | 0.9899 | 1,203 | 0 | | | | 1,811 |
++| S1 | 1.00 | chick | 1.0000 | 0 | 0 | 1,601 | 1,526 | 0 | 1,789 |
++| S1 | 1.15 | table | 0.9940 | 721 | 16,022 | | | | 1,717 |
++| S1 | 1.15 | chick | 1.0000 | 0 | 33,037 | 1,207 | 1,668 | 255 | 1,704 |
++| S2 | 1.00 | table | 0.1626 | 95,059 | 0 | | | | 1,838 |
++| S2 | 1.00 | chick | 1.0000 | 0 | 9 | 5,158 | 1,647 | 3 | 5,449 |
++| S2 | 1.15 | table | 0.1655 | 95,094 | 48,190 | | | | 1,838 |
++| S2 | 1.15 | chick | 1.0000 | 0 | 101,584 | 4,821 | 1,372 | 620 | 5,379 |
++
++0. Validity holds: 0 and 3,985 on S0, both arms (the filter: 0 and 4,577;
++   3,985 is lab/bio2's adult arm to the key).
++1. Holds, and is not void: under squatters the chick arm counts every
++   heavy event whole; the table arm counts 16% whole and refuses 95,059
++   promotions of heavy keys (and 176,448 of the squatters it has no entry
++   for).
++2. Holds: on S1 at load 1.00 no eviction, and none of the 1,526
++   promotions that moved a mate had to evict it.
++3. Fails: at load 1.15 on S1 the chick arm evicts 33,037 keys against
++   16,022 (2.06; 1.10 allowed).
++4. Fails by 5 keys: on S2 at load 1.00, 3 churn keys and 2 heavy keys are
++   evicted (with 4 squatters): 3 mates a promotion could not move, and 6
++   pairs taken by inserts that found both their lines pinned. No
++   promotion is refused in any row.
++
++Not in the rule, and the table arm's reading matters by itself: with no
++attacker at all (S1), 1,000 heavy keys at a time, 0.5% of Capacity, fill
++a hot table of 0.78% of the slots, because an entry is held for a horizon
++after its key's last event: 1,203 promotions refused at load 1.00. The
++model's release rule (15 or fewer events in a finished unit) never fired;
++the filter's demotion rule is another, so this row is the model's.
++
++### B9b the chick, with the hot table's bytes: fails its rule (clause 4, by 6 keys)
++
++`TF_CHICK_BYTES=1 TF_LAB=1 go test -run TestLabChick -v`
++(`lab/b9b-chick-bytes.txt`). The chick arm: 33/32 of the lines and no hot
++table; its S2 has 3,790 squatters (twice the 1,895 entries a hot table of
++its size would have).
++
++| stream | load | arm | heavy events counted whole | promotions refused (heavy) | evictions | second slot: free | mate moved | mate evicted |
++|---|---|---|---|---|---|---|---|---|
++| S0 | 1.15 | table | | | 3,985 | | | |
++| S0 | 1.15 | chick | | | 0 | | | |
++| S1 | 1.00 | table | 0.9899 | 1,203 | 0 | | | |
++| S1 | 1.00 | chick | 1.0000 | 0 | 0 | 1,701 | 1,426 | 0 |
++| S1 | 1.15 | table | 0.9940 | 721 | 16,022 | | | |
++| S1 | 1.15 | chick | 1.0000 | 0 | 1 | 1,277 | 1,852 | 1 |
++| S2 | 1.00 | table | 0.1626 | 95,059 | 0 | | | |
++| S2 | 1.00 | chick | 1.0000 | 0 | 11 | 5,348 | 1,568 | 6 |
++| S2 | 1.15 | table | 0.1655 | 95,094 | 48,190 | | | |
++| S2 | 1.15 | chick | 1.0000 | 0 | 42,467 | 4,979 | 1,589 | 357 |
++
++1. Holds: 1.0000 on S2 at both loads.
++2. Holds: no eviction on S1 at load 1.00; no mate evicted.
++3. Holds: on S1 at load 1.15 one eviction against 16,022; on S2 at load
++   1.15 42,467 against 48,190 (0.88).
++4. Fails by 6 keys: on S2 at load 1.00, 6 churn keys are evicted, each a
++   mate a promotion could not move in a line beside squatters' pairs (and
++   5 squatters' pairs are taken by inserts). No promotion is refused.
++
++Read with care: clause 3's margin is the bytes, not the chick. S0 has no
++hot key, and there the 33/32 table alone takes evictions at load 1.15 from
++3,985 to 0: a filter that never promotes spends the hot table's bytes on
++nothing, and one that does spends them at 1/32 of the table whether 2 or
++2,000 keys are hot. What the chick adds is that the bytes are slots until
++a key needs them: under squatters 5,585 keys hold wide counters where the
++table has 1,838 entries, with 11 evictions.
++
++What the 6 keys are. An evicted key's history goes to the stash and comes
++back at its next touch (the filter misses none at load 1.15 with 4,577
++evictions), so they are 6 stash round trips in 4 horizons against 95,059
++heavy keys' promotions refused, 84% of their events counted in a
++saturated register. The rule said none, and the rule stands: the verdict
++is the user's to weigh. A mechanism that would remove them, not read: a
++promotion that can't move a mate waits a unit (a `HotRefused` that
++retries), or moves the claimant itself to its other line and extends
++there.
++
++Not read, and most of the work of building it: the slot protocol for a
++pair (a touch's CAS on the low word and carry into the extension, with no
++entry lock; two slots changing hands in one hand-off; an eviction or a
++sweep that must take both), the hot paths that must learn `fp = 0`
++(claim's free-slot test, the victim scan, `warmLine`, the sweep, the
++snapshot), the stash and the overflow table for a history with wide
++counts, and what demotion becomes. The contention of a hot key (S37) is
++unchanged: its touches still write one line.
++
++## Summary
++
++| Arm | Analogy | Kind | Verdict |
++|---|---|---|---|
++| B8 despotic placement | the ideal despotic distribution: dominants at the good site | the filter, counted | fails its rule: hits in the alternate line 0.92 of the base where 0.50 was asked |
++| B8b earned territory | a territory contested once the claimant has shown what it is | the filter, counted | fails its rule: 0.66–0.85 of the base; the challenge adds 0.09–0.13 moves a hit. The cause is structural: the second line is paid by cold keys, which have no rank |
++| B9 the cuckoo chick | the chick takes a nest-mate's place where it hatched | a placement model | fails its rule: no refusal under squatters (heavy events counted whole 0.16 → 1.00) and nothing lost at design load, but 2.06 of the evictions at load 1.15 |
++| B9b the chick, at equal bytes | — | a placement model | fails its rule by 6 evicted keys in 4 horizons under squatters; evictions at load 1.15 1 against 16,022 (S1) and 0.88 (S2), most of it the bytes |
++| B10 arousal: a reclaimer with a deadline | interbout arousals of hibernators | postulate | not run |
++| B11 germ-line reset: a snapshot that rebases | the germ line resets the clock the soma keeps | postulate | not run |
+diff --git a/lab/b8-despot.txt b/lab/b8-despot.txt
+new file mode 100644
+index 0000000..d9d7de6
+--- /dev/null
++++ b/lab/b8-despot.txt
+@@ -0,0 +1,12 @@
++=== RUN   TestLabDespot
++    lab_despot_test.go:120: churn load 1.00 despot=false ops 969657 hits 334653 in-alt 73354 (0.2192) | live 199781 displaced 0.3786 | first 635004 searches 142922 (0.2251) scanned/search 3.08 reloc 148716 evict 0 | missed 0 falseSeen 0 digest a78673851a368b2a
++    lab_despot_test.go:120: churn load 1.00 despot=true  ops 969657 hits 334653 in-alt 75056 (0.2243) | live 199781 displaced 0.3690 | first 635004 searches 144742 (0.2279) scanned/search 3.32 reloc 150988 evict 0 | missed 0 falseSeen 0 digest a78673851a368b2a
++    lab_despot_test.go:120: churn load 1.15 despot=false ops 1115315 hits 383396 in-alt 112568 (0.2936) | live 229315 displaced 0.4793 | first 731919 searches 416794 (0.5695) scanned/search 79.83 reloc 932499 evict 4577 | missed 0 falseSeen 0 digest 140da52179f6f7cf
++    lab_despot_test.go:120: churn load 1.15 despot=true  ops 1115315 hits 383378 in-alt 112387 (0.2931) | live 229305 displaced 0.4625 | first 731937 searches 417546 (0.5705) scanned/search 80.13 reloc 934679 evict 4632 | missed 0 falseSeen 0 digest 140da52179f6f7cf
++    lab_despot_test.go:120: 80/20 load 1.00 despot=false ops 969531 hits 365482 in-alt 72667 (0.1988) | live 183305 displaced 0.3237 | first 604049 searches 83206 (0.1377) scanned/search 2.17 reloc 83783 evict 0 | missed 0 falseSeen 0 digest d6c94a788bf649b6
++    lab_despot_test.go:120: 80/20 load 1.00 despot=true  ops 969531 hits 365482 in-alt 66791 (0.1827) | live 183305 displaced 0.3133 | first 604049 searches 84999 (0.1407) scanned/search 2.40 reloc 85642 evict 0 | missed 0 falseSeen 0 digest d6c94a788bf649b6
++    lab_despot_test.go:120: 80/20 load 1.15 despot=false ops 1114886 hits 420219 in-alt 111424 (0.2652) | live 211092 displaced 0.4182 | first 694667 searches 220859 (0.3179) scanned/search 4.63 reloc 248802 evict 0 | missed 0 falseSeen 0 digest 8235b475d5a2bbe2
++    lab_despot_test.go:120: 80/20 load 1.15 despot=true  ops 1114886 hits 420219 in-alt 100907 (0.2401) | live 211092 displaced 0.4048 | first 694667 searches 222160 (0.3198) scanned/search 4.86 reloc 251075 evict 0 | missed 0 falseSeen 0 digest 8235b475d5a2bbe2
++--- PASS: TestLabDespot (9.78s)
++PASS
++ok  	github.com/scooter-sensei/clepsydra/go	9.792s
+diff --git a/lab/b8b-earned.txt b/lab/b8b-earned.txt
+new file mode 100644
+index 0000000..63856a8
+--- /dev/null
++++ b/lab/b8b-earned.txt
+@@ -0,0 +1,24 @@
++=== RUN   TestLabDespot
++    lab_despot_test.go:121: churn load 1.00 arm 0 ops 969657 hits 334653 in-alt 73354 (0.2192) | live 199781 displaced 0.3786 | first 635004 searches 142922 (0.2251) scanned/search 3.08 reloc 148716 evict 0 | missed 0 falseSeen 0 digest a78673851a368b2a | tries 0 homed 0 challenged 0 (moves/hit 0.0000)
++    lab_despot_test.go:121: churn load 1.00 arm 1 ops 969657 hits 334653 in-alt 75056 (0.2243) | live 199781 displaced 0.3690 | first 635004 searches 144742 (0.2279) scanned/search 3.32 reloc 150988 evict 0 | missed 0 falseSeen 0 digest a78673851a368b2a | tries 0 homed 0 challenged 0 (moves/hit 0.0000)
++    lab_despot_test.go:121: churn load 1.00 arm 2 ops 969657 hits 334653 in-alt 69995 (0.2092) | live 199781 displaced 0.3551 | first 635004 searches 143805 (0.2265) scanned/search 3.49 reloc 164792 evict 0 | missed 0 falseSeen 0 digest a78673851a368b2a | tries 56994 homed 15033 challenged 0 (moves/hit 0.0449)
++    lab_despot_test.go:121: churn load 1.00 arm 6 ops 969657 hits 334653 in-alt 68580 (0.2049) | live 199781 displaced 0.3471 | first 635004 searches 144599 (0.2277) scanned/search 3.90 reloc 190085 evict 0 | missed 0 falseSeen 0 digest a78673851a368b2a | tries 57736 homed 14825 challenged 12216 (moves/hit 0.1173)
++    lab_despot_test.go:121: churn load 1.00 arm 7 ops 969657 hits 334653 in-alt 70479 (0.2106) | live 199781 displaced 0.3390 | first 635004 searches 147303 (0.2320) scanned/search 4.34 reloc 196905 evict 0 | missed 0 falseSeen 0 digest a78673851a368b2a | tries 62481 homed 14452 challenged 14187 (moves/hit 0.1280)
++    lab_despot_test.go:121: churn load 1.15 arm 0 ops 1115315 hits 383396 in-alt 112568 (0.2936) | live 229315 displaced 0.4793 | first 731919 searches 416794 (0.5695) scanned/search 79.83 reloc 932499 evict 4577 | missed 0 falseSeen 0 digest 140da52179f6f7cf | tries 0 homed 0 challenged 0 (moves/hit 0.0000)
++    lab_despot_test.go:121: churn load 1.15 arm 1 ops 1115315 hits 383378 in-alt 112387 (0.2931) | live 229305 displaced 0.4625 | first 731937 searches 417546 (0.5705) scanned/search 80.13 reloc 934679 evict 4632 | missed 0 falseSeen 0 digest 140da52179f6f7cf | tries 0 homed 0 challenged 0 (moves/hit 0.0000)
++    lab_despot_test.go:121: churn load 1.15 arm 2 ops 1115315 hits 383379 in-alt 112826 (0.2943) | live 229337 displaced 0.4791 | first 731936 searches 416851 (0.5695) scanned/search 79.76 reloc 934659 evict 4578 | missed 0 falseSeen 0 digest 140da52179f6f7cf | tries 88899 homed 3405 challenged 0 (moves/hit 0.0089)
++    lab_despot_test.go:121: churn load 1.15 arm 6 ops 1115315 hits 383372 in-alt 112281 (0.2929) | live 229312 displaced 0.4775 | first 731943 searches 417025 (0.5698) scanned/search 80.29 reloc 945312 evict 4646 | missed 0 falseSeen 0 digest 140da52179f6f7cf | tries 89120 homed 3227 challenged 4770 (moves/hit 0.0333)
++    lab_despot_test.go:121: churn load 1.15 arm 7 ops 1115315 hits 383411 in-alt 111526 (0.2909) | live 229322 displaced 0.4629 | first 731904 searches 417573 (0.5705) scanned/search 80.27 reloc 946733 evict 4671 | missed 0 falseSeen 0 digest 140da52179f6f7cf | tries 91678 homed 3329 challenged 5070 (moves/hit 0.0351)
++    lab_despot_test.go:121: 80/20 load 1.00 arm 0 ops 969531 hits 365482 in-alt 72667 (0.1988) | live 183305 displaced 0.3237 | first 604049 searches 83206 (0.1377) scanned/search 2.17 reloc 83783 evict 0 | missed 0 falseSeen 0 digest d6c94a788bf649b6 | tries 0 homed 0 challenged 0 (moves/hit 0.0000)
++    lab_despot_test.go:121: 80/20 load 1.00 arm 1 ops 969531 hits 365482 in-alt 66791 (0.1827) | live 183305 displaced 0.3133 | first 604049 searches 84999 (0.1407) scanned/search 2.40 reloc 85642 evict 0 | missed 0 falseSeen 0 digest d6c94a788bf649b6 | tries 0 homed 0 challenged 0 (moves/hit 0.0000)
++    lab_despot_test.go:121: 80/20 load 1.00 arm 2 ops 969531 hits 365482 in-alt 61420 (0.1681) | live 183305 displaced 0.2927 | first 604049 searches 83707 (0.1386) scanned/search 2.67 reloc 98293 evict 0 | missed 0 falseSeen 0 digest d6c94a788bf649b6 | tries 40737 homed 14028 challenged 0 (moves/hit 0.0384)
++    lab_despot_test.go:121: 80/20 load 1.00 arm 6 ops 969531 hits 365482 in-alt 53847 (0.1473) | live 183305 displaced 0.2838 | first 604049 searches 84149 (0.1393) scanned/search 3.09 reloc 118401 evict 0 | missed 0 falseSeen 0 digest d6c94a788bf649b6 | tries 38812 homed 12783 challenged 10398 (moves/hit 0.0919)
++    lab_despot_test.go:121: 80/20 load 1.00 arm 7 ops 969531 hits 365482 in-alt 47792 (0.1308) | live 183305 displaced 0.2788 | first 604049 searches 86393 (0.1430) scanned/search 3.43 reloc 120973 evict 0 | missed 0 falseSeen 0 digest d6c94a788bf649b6 | tries 38883 homed 11630 challenged 11119 (moves/hit 0.0927)
++    lab_despot_test.go:121: 80/20 load 1.15 arm 0 ops 1114886 hits 420219 in-alt 111424 (0.2652) | live 211092 displaced 0.4182 | first 694667 searches 220859 (0.3179) scanned/search 4.63 reloc 248802 evict 0 | missed 0 falseSeen 0 digest 8235b475d5a2bbe2 | tries 0 homed 0 challenged 0 (moves/hit 0.0000)
++    lab_despot_test.go:121: 80/20 load 1.15 arm 1 ops 1114886 hits 420219 in-alt 100907 (0.2401) | live 211092 displaced 0.4048 | first 694667 searches 222160 (0.3198) scanned/search 4.86 reloc 251075 evict 0 | missed 0 falseSeen 0 digest 8235b475d5a2bbe2 | tries 0 homed 0 challenged 0 (moves/hit 0.0000)
++    lab_despot_test.go:121: 80/20 load 1.15 arm 2 ops 1114886 hits 420219 in-alt 104972 (0.2498) | live 211092 displaced 0.4073 | first 694667 searches 220586 (0.3175) scanned/search 4.93 reloc 260873 evict 0 | missed 0 falseSeen 0 digest 8235b475d5a2bbe2 | tries 64877 homed 12675 challenged 0 (moves/hit 0.0302)
++    lab_despot_test.go:121: 80/20 load 1.15 arm 6 ops 1114886 hits 420219 in-alt 97962 (0.2331) | live 211092 displaced 0.4004 | first 694667 searches 221770 (0.3192) scanned/search 5.23 reloc 283880 evict 0 | missed 0 falseSeen 0 digest 8235b475d5a2bbe2 | tries 63410 homed 12058 challenged 10847 (moves/hit 0.0803)
++    lab_despot_test.go:121: 80/20 load 1.15 arm 7 ops 1114886 hits 420219 in-alt 87223 (0.2076) | live 211092 displaced 0.3896 | first 694667 searches 223751 (0.3221) scanned/search 5.56 reloc 286307 evict 0 | missed 0 falseSeen 0 digest 8235b475d5a2bbe2 | tries 62587 homed 10730 challenged 11058 (moves/hit 0.0782)
++--- PASS: TestLabDespot (24.91s)
++PASS
++ok  	github.com/scooter-sensei/clepsydra/go	24.917s
+diff --git a/lab/b9-chick.txt b/lab/b9-chick.txt
+new file mode 100644
+index 0000000..f373ef1
+--- /dev/null
++++ b/lab/b9-chick.txt
+@@ -0,0 +1,16 @@
++=== RUN   TestLabChick
++    lab_chick_test.go:404: S0 load 1.00 table | evictions churn 0 heavy 0 squat 0 (pairs 0) reloc 149325 searches 143422 | heavy events 0 whole 0.0000 promoted 0 refused 0 | squat events 0 whole 0.0000 promoted 0 refused 0 | second slot: free 0 moved 0 evicted 0 | released 0 hot at end 0 (table 1838)
++    lab_chick_test.go:404: S0 load 1.00 chick | evictions churn 0 heavy 0 squat 0 (pairs 0) reloc 149325 searches 143422 | heavy events 0 whole 0.0000 promoted 0 refused 0 | squat events 0 whole 0.0000 promoted 0 refused 0 | second slot: free 0 moved 0 evicted 0 | released 0 hot at end 0 (table 1838)
++    lab_chick_test.go:404: S0 load 1.15 table | evictions churn 3985 heavy 0 squat 0 (pairs 0) reloc 927332 searches 416411 | heavy events 0 whole 0.0000 promoted 0 refused 0 | squat events 0 whole 0.0000 promoted 0 refused 0 | second slot: free 0 moved 0 evicted 0 | released 0 hot at end 0 (table 1838)
++    lab_chick_test.go:404: S0 load 1.15 chick | evictions churn 3985 heavy 0 squat 0 (pairs 0) reloc 927332 searches 416411 | heavy events 0 whole 0.0000 promoted 0 refused 0 | squat events 0 whole 0.0000 promoted 0 refused 0 | second slot: free 0 moved 0 evicted 0 | released 0 hot at end 0 (table 1838)
++    lab_chick_test.go:404: S1 load 1.00 table | evictions churn 0 heavy 0 squat 0 (pairs 0) reloc 158712 searches 151415 | heavy events 18221923 whole 0.9899 promoted 3127 refused 1203 | squat events 0 whole 0.0000 promoted 0 refused 0 | second slot: free 0 moved 0 evicted 0 | released 0 hot at end 1811 (table 1838)
++    lab_chick_test.go:404: S1 load 1.00 chick | evictions churn 0 heavy 0 squat 0 (pairs 0) reloc 172699 searches 159777 | heavy events 18221923 whole 1.0000 promoted 3127 refused 0 | squat events 0 whole 0.0000 promoted 0 refused 0 | second slot: free 1601 moved 1526 evicted 0 | released 0 hot at end 1789 (table 1838)
++    lab_chick_test.go:404: S1 load 1.15 table | evictions churn 16022 heavy 0 squat 0 (pairs 0) reloc 1002983 searches 430322 | heavy events 17904989 whole 0.9940 promoted 3130 refused 721 | squat events 0 whole 0.0000 promoted 0 refused 0 | second slot: free 0 moved 0 evicted 0 | released 0 hot at end 1717 (table 1838)
++    lab_chick_test.go:404: S1 load 1.15 chick | evictions churn 33037 heavy 0 squat 0 (pairs 0) reloc 1031308 searches 437856 | heavy events 17904989 whole 1.0000 promoted 3130 refused 0 | squat events 0 whole 0.0000 promoted 0 refused 0 | second slot: free 1207 moved 1668 evicted 255 | released 0 hot at end 1704 (table 1838)
++    lab_chick_test.go:404: S2 load 1.00 table | evictions churn 0 heavy 0 squat 0 (pairs 0) reloc 181601 searches 169564 | heavy events 18221923 whole 0.1626 promoted 0 refused 95059 | squat events 12425868 whole 0.9402 promoted 1838 refused 176448 | second slot: free 0 moved 0 evicted 0 | released 0 hot at end 1838 (table 1838)
++    lab_chick_test.go:404: S2 load 1.00 chick | evictions churn 3 heavy 2 squat 4 (pairs 6) reloc 239764 searches 203464 | heavy events 18221923 whole 1.0000 promoted 3128 refused 0 | squat events 12425868 whole 1.0000 promoted 3680 refused 0 | second slot: free 5158 moved 1647 evicted 3 | released 0 hot at end 5449 (table 1838)
++    lab_chick_test.go:404: S2 load 1.15 table | evictions churn 48190 heavy 0 squat 0 (pairs 0) reloc 1027059 searches 450449 | heavy events 17904989 whole 0.1655 promoted 0 refused 95094 | squat events 12425868 whole 0.9402 promoted 1838 refused 176448 | second slot: free 0 moved 0 evicted 0 | released 0 hot at end 1838 (table 1838)
++    lab_chick_test.go:404: S2 load 1.15 chick | evictions churn 101576 heavy 1 squat 7 (pairs 8) reloc 980965 searches 466487 | heavy events 17904989 whole 1.0000 promoted 3130 refused 0 | squat events 12425868 whole 1.0000 promoted 3683 refused 0 | second slot: free 4821 moved 1372 evicted 620 | released 0 hot at end 5379 (table 1838)
++--- PASS: TestLabChick (64.56s)
++PASS
++ok  	github.com/scooter-sensei/clepsydra/go	64.575s
+diff --git a/lab/b9b-chick-bytes.txt b/lab/b9b-chick-bytes.txt
+new file mode 100644
+index 0000000..0f06ffe
+--- /dev/null
++++ b/lab/b9b-chick-bytes.txt
+@@ -0,0 +1,16 @@
++=== RUN   TestLabChick
++    lab_chick_test.go:411: S0 load 1.00 table | evictions churn 0 heavy 0 squat 0 (pairs 0) reloc 149325 searches 143422 | heavy events 0 whole 0.0000 promoted 0 refused 0 | squat events 0 whole 0.0000 promoted 0 refused 0 | second slot: free 0 moved 0 evicted 0 | released 0 hot at end 0 (table 1838)
++    lab_chick_test.go:411: S0 load 1.00 chick | evictions churn 0 heavy 0 squat 0 (pairs 0) reloc 121409 searches 118722 | heavy events 0 whole 0.0000 promoted 0 refused 0 | squat events 0 whole 0.0000 promoted 0 refused 0 | second slot: free 0 moved 0 evicted 0 | released 0 hot at end 0 (table 1895)
++    lab_chick_test.go:411: S0 load 1.15 table | evictions churn 3985 heavy 0 squat 0 (pairs 0) reloc 927332 searches 416411 | heavy events 0 whole 0.0000 promoted 0 refused 0 | squat events 0 whole 0.0000 promoted 0 refused 0 | second slot: free 0 moved 0 evicted 0 | released 0 hot at end 0 (table 1838)
++    lab_chick_test.go:411: S0 load 1.15 chick | evictions churn 0 heavy 0 squat 0 (pairs 0) reloc 479144 searches 336192 | heavy events 0 whole 0.0000 promoted 0 refused 0 | squat events 0 whole 0.0000 promoted 0 refused 0 | second slot: free 0 moved 0 evicted 0 | released 0 hot at end 0 (table 1895)
++    lab_chick_test.go:411: S1 load 1.00 table | evictions churn 0 heavy 0 squat 0 (pairs 0) reloc 158712 searches 151415 | heavy events 18221923 whole 0.9899 promoted 3127 refused 1203 | squat events 0 whole 0.0000 promoted 0 refused 0 | second slot: free 0 moved 0 evicted 0 | released 0 hot at end 1811 (table 1838)
++    lab_chick_test.go:411: S1 load 1.00 chick | evictions churn 0 heavy 0 squat 0 (pairs 0) reloc 139511 searches 132723 | heavy events 18221923 whole 1.0000 promoted 3127 refused 0 | squat events 0 whole 0.0000 promoted 0 refused 0 | second slot: free 1701 moved 1426 evicted 0 | released 0 hot at end 1805 (table 1895)
++    lab_chick_test.go:411: S1 load 1.15 table | evictions churn 16022 heavy 0 squat 0 (pairs 0) reloc 1002983 searches 430322 | heavy events 17904989 whole 0.9940 promoted 3130 refused 721 | squat events 0 whole 0.0000 promoted 0 refused 0 | second slot: free 0 moved 0 evicted 0 | released 0 hot at end 1717 (table 1838)
++    lab_chick_test.go:411: S1 load 1.15 chick | evictions churn 1 heavy 0 squat 0 (pairs 0) reloc 643042 searches 375642 | heavy events 17904989 whole 1.0000 promoted 3130 refused 0 | squat events 0 whole 0.0000 promoted 0 refused 0 | second slot: free 1277 moved 1852 evicted 1 | released 0 hot at end 1716 (table 1895)
++    lab_chick_test.go:411: S2 load 1.00 table | evictions churn 0 heavy 0 squat 0 (pairs 0) reloc 181601 searches 169564 | heavy events 18221923 whole 0.1626 promoted 0 refused 95059 | squat events 12425868 whole 0.9402 promoted 1838 refused 176448 | second slot: free 0 moved 0 evicted 0 | released 0 hot at end 1838 (table 1838)
++    lab_chick_test.go:411: S2 load 1.00 chick | evictions churn 6 heavy 0 squat 5 (pairs 5) reloc 188337 searches 169135 | heavy events 18221923 whole 1.0000 promoted 3127 refused 0 | squat events 12811226 whole 1.0000 promoted 3795 refused 0 | second slot: free 5348 moved 1568 evicted 6 | released 0 hot at end 5585 (table 1895)
++    lab_chick_test.go:411: S2 load 1.15 table | evictions churn 48190 heavy 0 squat 0 (pairs 0) reloc 1027059 searches 450449 | heavy events 17904989 whole 0.1655 promoted 0 refused 95094 | squat events 12425868 whole 0.9402 promoted 1838 refused 176448 | second slot: free 0 moved 0 evicted 0 | released 0 hot at end 1838 (table 1838)
++    lab_chick_test.go:411: S2 load 1.15 chick | evictions churn 42462 heavy 2 squat 3 (pairs 5) reloc 1032117 searches 437207 | heavy events 17904989 whole 1.0000 promoted 3132 refused 0 | squat events 12811226 whole 1.0000 promoted 3793 refused 0 | second slot: free 4979 moved 1589 evicted 357 | released 0 hot at end 5495 (table 1895)
++--- PASS: TestLabChick (55.82s)
++PASS
++ok  	github.com/scooter-sensei/clepsydra/go	55.826s

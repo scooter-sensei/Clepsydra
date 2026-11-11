@@ -1,0 +1,697 @@
+diff --git a/buzz.go b/buzz.go
+new file mode 100755
+index 0000000..606aa61
+--- /dev/null
++++ b/buzz.go
+@@ -0,0 +1,313 @@
++package temporalfilter
++
++import (
++	"math/bits"
++	"sync/atomic"
++	"unsafe"
++)
++
++// The feeding buzz (lab/bio4-2026-11, arm B12; TF_BUZZ=1).
++//
++// TouchIfUnder refuses while Upper is at the limit, and Upper counts the
++// bucket the window's edge cuts as whole. A refusal is uncertain when the
++// events certainly inside the window (certain) are under the limit. On an
++// uncertain refusal the key gets a buzz entry: the slot's two words as they
++// are, and from then on the tick of every event TouchIfUnder admits for it,
++// the newest buzzCap of them in 16-bit steps of Horizon/32768.
++//
++// An entry is trusted only while the key's slot holds, bit for bit, what the
++// entry's last admission left (the displaced bit aside, which a relocation
++// flips). Every event the filter counts for a key whose word1 is a register
++// with no bucket full changes one of the two words: the count of some
++// bucket, or the last touch. So while they match, the events since the
++// entry's start are the logged ones, and a window that starts after the
++// tick the log may miss events before is decided by the log: an event is
++// inside unless its step ends before the window starts. Anything else that
++// counts for the key (a plain touch, a promotion, an eviction whose history
++// is shed or spilled) changes a word, the entry is dropped, and the key is
++// decided by its register again, as without the arm.
++//
++// The table is allocated on the first uncertain refusal: one entry of 64 B
++// per 128 slots, in sets of two. Nothing but TouchIfUnder reads it.
++
++const (
++	buzzCap     = 16 // events a log holds; a limit up to it is decided by the log alone
++	buzzWays    = 2
++	buzzStripes = 64
++	buzzBlock   = 4  // B12b: sets a key may use (a power of two): 8 ways, two lines each
++	buzzNShift  = 46 // meta: before (46 bits) | n (5) | head (4) | units to release (5)
++	buzzHShift  = 51
++	buzzUShift  = 55
++)
++
++type buzzEntry struct {
++	id     uint64    // the key's identity (stashID); 0: free
++	w0, w1 uint64    // the key's slot as the entry's last admission, or its start, left it
++	meta   uint64    // the tick at or before which the log may miss events, the ring's fill and head, the release span
++	ev     [4]uint64 // a ring of buzzCap steps (tick / q, mod 2^16)
++}
++
++func (e *buzzEntry) before() uint64 { return e.meta & tsMask }
++func (e *buzzEntry) n() int         { return int(e.meta >> buzzNShift & 31) }
++func (e *buzzEntry) head() int      { return int(e.meta >> buzzHShift & 15) }
++func (e *buzzEntry) units() uint64  { return e.meta >> buzzUShift & 31 }
++
++func (e *buzzEntry) step(k int) uint64 { return e.ev[k/4] >> (16 * (k % 4)) & 0xFFFF }
++
++// tick returns the first tick of the step stored at ring position k, decoded
++// against ref, a tick no event of the log is after (steps cover two
++// horizons, and an entry whose newest event is a horizon old is not read).
++func (e *buzzEntry) tick(k int, ref, q uint64) uint64 {
++	rq := ref / q
++	d := (rq - e.step(k)) & 0xFFFF
++	if d > rq {
++		return 0
++	}
++	return (rq - d) * q
++}
++
++// count is the log's answer for [now-window, now]: upper counts an event
++// unless its step ends before the window starts, sure only those whose step
++// starts inside it.
++func (e *buzzEntry) count(now, window, q uint64) (upper, sure int) {
++	ref := max(now, e.w0&tsMask)
++	from := now - min(now, window)
++	for k := range e.n() {
++		lo := e.tick((e.head()-1-k)&15, ref, q)
++		if lo+q-1 >= from {
++			upper++
++		}
++		if lo >= from {
++			sure++
++		}
++	}
++	return upper, sure
++}
++
++// covers: every event the log may miss is outside [now-window, now].
++func (e *buzzEntry) covers(now, window uint64) bool {
++	return now >= window && e.before() < now-window
++}
++
++// log records an admitted event at tick t. A full ring drops its oldest
++// step, and the log may from then on miss events up to that step's end.
++func (e *buzzEntry) log(t, q, horizon uint64) {
++	before, n, head := e.before(), e.n(), e.head()
++	if labBuzz2 != 0 {
++		// B12b: events a horizon old leave the ring, so no step is read two
++		// horizons after its event (steps repeat every 65536).
++		for ; n > 0; n-- {
++			if e.tick((head-n)&15, max(t, e.w0&tsMask), q)+q-1+horizon >= t {
++				break
++			}
++		}
++	}
++	if n == buzzCap {
++		before = max(before, e.tick(head, max(t, e.w0&tsMask), q)+q-1) & tsMask
++	} else {
++		n++
++	}
++	sh := 16 * uint(head%4)
++	e.ev[head/4] = e.ev[head/4]&^(0xFFFF<<sh) | (t/q&0xFFFF)<<sh
++	e.meta = before | uint64(n)<<buzzNShift | uint64((head+1)&15)<<buzzHShift | e.units()<<buzzUShift
++}
++
++type buzzTable struct {
++	e  []buzzEntry
++	n  uint64 // sets
++	q  uint64 // ticks per step
++	mu [buzzStripes]paddedMutex
++	// given: entries handed out; refused: uncertain refusals that found no
++	// way free; dropped: entries whose slot no longer matched; decided:
++	// conditional touches the log decided; saved: of those, admitted where
++	// the register's Upper refused.
++	given, refused, dropped, decided, saved atomic.Uint64
++	// Why entries were dropped: the slot no longer a register the words
++	// answer for (or gone); its words changed; the admission's check failed.
++	dropKind, dropWords, dropCheck atomic.Uint64
++}
++
++func (t *buzzTable) set(id uint64) ([]buzzEntry, *paddedMutex) {
++	i, _ := bits.Mul64(mix64(id^0x9e3779b97f4a7c15), t.n)
++	if labBuzz2 != 0 {
++		// B12b: a block of buzzBlock sets (one lock stripe), so a key has
++		// 2*buzzBlock ways.
++		i &^= buzzBlock - 1
++		return t.e[i*buzzWays : (i+buzzBlock)*buzzWays : (i+buzzBlock)*buzzWays], &t.mu[i/buzzBlock%buzzStripes]
++	}
++	return t.e[i*buzzWays : (i+1)*buzzWays : (i+1)*buzzWays], &t.mu[i%buzzStripes]
++}
++
++// buzzTable returns the table, allocated on first use: one entry per 128
++// slots.
++func (f *Filter) buzzTable() *buzzTable {
++	if t := f.buzz.Load(); t != nil {
++		return t
++	}
++	f.skMu.Lock()
++	defer f.skMu.Unlock()
++	if t := f.buzz.Load(); t != nil {
++		return t
++	}
++	sets := max(8, f.lines*slotsPerLine/(128*buzzWays))
++	if labBuzz2 != 0 {
++		sets &^= buzzBlock - 1
++	}
++	w := alignedWords(int(sets * buzzWays * uint64(unsafe.Sizeof(buzzEntry{})/8)))
++	prefault(w)
++	t := &buzzTable{e: unsafe.Slice((*buzzEntry)(unsafe.Pointer(&w[0])), sets*buzzWays), n: sets, q: max(1, (f.horizon+1<<15-1)>>15)}
++	f.buzz.Store(t)
++	return t
++}
++
++// certain is the number of events of the register w1 (last touched at last)
++// that lie inside [now-window, now] wherever they fall in their buckets: the
++// buckets wholly inside it, and the last touch.
++func (f *Filter) certain(w1, last, now, window uint64) int {
++	if age(now, last) > window {
++		return 0
++	}
++	v, _ := f.viewOf(0, w1, last)
++	unit := float64(f.unit)
++	from := float64(now) - float64(window)
++	n := 0
++	for j := range nBuckets {
++		lo := float64(bucketStart(v.e, j)) * unit
++		if from > lo {
++			break
++		}
++		n += int(v.c[j])
++	}
++	return max(1, n)
++}
++
++// touchIfBuzz is TouchIfUnderAt with the buzz (the caller holds h's
++// conditional stripe). Its first half is CountAt and the strict recipe, as
++// without the arm; it keeps the slot's words and the overflow table's part
++// of Upper.
++func (f *Filter) touchIfBuzz(h, window, limit, now uint64) (Result, bool) {
++	fp, tg := fingerprint(h), tag(h)
++	w0, w1, src := f.read(h, now, -1)
++	last := w0 & tsMask
++	live := src != 0 && age(now, last) <= f.horizon
++	var r Result
++	if live {
++		r = f.estimateAt(h, w1, last, now, window, w0&satBit != 0)
++		r.Seen = r.Count > 0
++	} else {
++		r.Degraded = f.lostRecently(now)
++	}
++	over := r.Upper
++	if f.sketchLive(now) {
++		f.addSketch(&r, h, window, now)
++	}
++	over = r.Upper - over
++	refuse := r.Saturated || f.skW == 0 && r.Degraded && !r.Seen || uint64(max(r.Upper, 0)) >= limit
++
++	// A register the two words answer for: no hot entry, no bucket full.
++	plain := live && !isHot(w1) && w0&satBit == 0 && (labBuzz2 == 0 && !hot(w1) || labBuzz2 != 0 && ^w1&regMask != 0)
++	win := min(window, f.horizon)
++	uncertain := func() bool {
++		return plain && limit <= buzzCap && !r.Saturated && uint64(f.certain(w1, last, now, win)+over) < limit
++	}
++	t := f.buzz.Load()
++	if t == nil {
++		if !refuse {
++			return f.TouchAt(h, window, now), true
++		}
++		if !uncertain() {
++			return r, false
++		}
++		t = f.buzzTable()
++	}
++	id := f.stashID(h, fp, tg)
++	set, mu := t.set(id)
++	mu.Lock()
++	defer mu.Unlock()
++	var e *buzzEntry
++	for i := range set {
++		if set[i].id == id {
++			e = &set[i]
++		}
++	}
++	if e != nil && !(plain && (w0^e.w0)&^dispBit == 0 && w1 == e.w1) {
++		if !plain {
++			t.dropKind.Add(1)
++		} else {
++			t.dropWords.Add(1)
++		}
++		*e, e = buzzEntry{}, nil // something else counted for the key, or its slot is gone
++		t.dropped.Add(1)
++	}
++	if e != nil && e.covers(now, win) {
++		up, _ := e.count(now, win, t.q)
++		was := refuse
++		r.Upper = up + over
++		r.Count = min(r.Count, r.Upper)
++		refuse = r.Saturated || uint64(r.Upper) >= limit
++		t.decided.Add(1)
++		if was && !refuse {
++			t.saved.Add(1)
++		}
++	}
++	if refuse {
++		if e == nil && uncertain() {
++			way := -1
++			for i := range set {
++				if set[i].id == 0 || age(now, set[i].w0&tsMask) > set[i].units()*f.unit {
++					way = i
++					break
++				}
++			}
++			if way < 0 {
++				t.refused.Add(1)
++			} else {
++				units := min(31, (win+f.unit-1)/f.unit+8)
++				set[way] = buzzEntry{id: id, w0: w0, w1: w1, meta: max(now, last) | units<<buzzUShift}
++				t.given.Add(1)
++			}
++		}
++		return r, false
++	}
++	res := f.TouchAt(h, window, now)
++	if e != nil {
++		// The slot must now hold what one event at now makes of the words
++		// read above: a plain touch between the two reads leaves another
++		// count, and the log would miss it.
++		n0, n1, nsrc := f.read(h, now, -1)
++		want, ovf := f.nextReg(w1, tg, last, now, false)
++		stamp := max(now, last)
++		if nsrc != 0 && !ovf && n1 == want && n0&tsMask == stamp && n0>>48 == fp && n0&satBit == 0 && (labBuzz2 != 0 || !hot(n1)) {
++			e.log(stamp, t.q, f.horizon)
++			e.w0, e.w1 = n0, n1
++		} else {
++			*e = buzzEntry{}
++			t.dropped.Add(1)
++			t.dropCheck.Add(1)
++		}
++	}
++	return res, true
++}
++
++// buzzInUse counts the entries held now.
++func (f *Filter) buzzInUse() int {
++	t := f.buzz.Load()
++	if t == nil {
++		return 0
++	}
++	n := 0
++	for s := uint64(0); s < t.n; s++ {
++		mu := &t.mu[s%buzzStripes]
++		if labBuzz2 != 0 {
++			mu = &t.mu[s/buzzBlock%buzzStripes]
++		}
++		mu.Lock()
++		for i := range buzzWays {
++			if t.e[s*buzzWays+uint64(i)].id != 0 {
++				n++
++			}
++		}
++		mu.Unlock()
++	}
++	return n
++}
+diff --git a/filter.go b/filter.go
+index 5a62bd3..63bb8bf 100644
+--- a/filter.go
++++ b/filter.go
+@@ -216,6 +216,7 @@ type Filter struct {
+ 	ownClock   bool                       // the built-in clock: ReadFrom re-anchors it (claims D27)
+ 	clockAdd   atomic.Uint64              // ticks the built-in clock is moved on by
+ 	roomMu     [stashStripes]paddedMutex
++	buzz       atomic.Pointer[buzzTable] // lab/bio4-2026-11 B12: buzz entries, nil until the first uncertain refusal
+ }
+ 
+ // Test hooks, if set: testHookCopied runs between a relocation's copy and
+@@ -583,5 +584,8 @@ func (f *Filter) Bytes() int {
+ 	if t := f.hot.Load(); t != nil {
+ 		n += len(t.e) * int(unsafe.Sizeof(hotEntry{}))
+ 	}
++	if t := f.buzz.Load(); t != nil {
++		n += len(t.e) * int(unsafe.Sizeof(buzzEntry{}))
++	}
+ 	return n
+ }
+diff --git a/lab_buzz.go b/lab_buzz.go
+new file mode 100644
+index 0000000..4d64ce8
+--- /dev/null
++++ b/lab_buzz.go
+@@ -0,0 +1,21 @@
++package temporalfilter
++
++import "os"
++
++// lab/bio4-2026-11's switches for arms B12 and B12b, the feeding buzz
++// (BIO4-RESULTS.md). Unset, the filter is the committed one. They are read
++// once; the lab's tests set them between filters.
++var (
++	// labBuzz (TF_BUZZ), arm B12: TouchIfUnder gives a key an exact log of
++	// its admitted events on an uncertain refusal (buzz.go).
++	labBuzz = os.Getenv("TF_BUZZ") != ""
++	// labBuzz2 (TF_BUZZ=2), arm B12b: an entry answers for any register
++	// that is not full (B12: none with a bucket at 31), an event a horizon
++	// old leaves the log, and a key has eight ways (B12: two).
++	labBuzz2 = func() int {
++		if os.Getenv("TF_BUZZ") == "2" {
++			return 1
++		}
++		return 0
++	}()
++)
+diff --git a/lab_buzz_test.go b/lab_buzz_test.go
+new file mode 100755
+index 0000000..1a1089f
+--- /dev/null
++++ b/lab_buzz_test.go
+@@ -0,0 +1,310 @@
++package temporalfilter
++
++import (
++	"fmt"
++	"math/rand/v2"
++	"os"
++	"sort"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/scooter-sensei/clepsydra/go/internal/workload"
++)
++
++// lab/bio4-2026-11, arm B12: the feeding buzz (buzz.go), read on the filter
++// itself.
++
++type buzzRule struct{ w, limit uint64 }
++
++func (ru buzzRule) String() string { return fmt.Sprintf("%gs/%d", float64(ru.w)/1000, ru.limit) }
++
++// buzzRow is one reading: the same requests offered to an exact sliding
++// log, to the filter's TouchIfUnderAt (base) and to the same with the buzz.
++type buzzRow struct {
++	events                                  int
++	admitted                                [3]int // exact, base, buzz
++	falseDeny                               [2]int // base, buzz: refused while the key's own events in the window are under the limit
++	given, refused, dropped, decided, saved uint64
++	dropKind, dropWords, dropCheck          uint64
++	held                                    int
++	evictions, relocations                  uint64
++	bytesBase, bytesBuzz                    int
++}
++
++// labWithin counts the events of ts (sorted) inside [now-w, now].
++func labWithin(ts []uint64, w, now uint64) int {
++	return len(ts) - sort.Search(len(ts), func(j int) bool { return ts[j]+w >= now })
++}
++
++// buzzOffer offers nkeys keys' Poisson requests, at mult times the rule's
++// rate, to the three limiters for horizons horizons of 60 s (1 ms ticks) in
++// filters of Capacity capN. One request in 1/plainFrac is a plain TouchAt in
++// every arm (it counts, and no rule is asked). With churnLoad the two
++// filters also take tfbench's churn stream at that load (its 4 horizons). It
++// fails the test if an arm admits a request while the key's window already
++// holds the limit.
++func buzzOffer(t *testing.T, capN, nkeys int, ru buzzRule, mult float64, horizons int, plainFrac, churnLoad float64, churnSeed uint64) (row buzzRow) {
++	const hT = 60_000
++	defer func(b bool) { labBuzz = b }(labBuzz)
++	newF := func() *Filter {
++		f, err := New(Config{Capacity: capN, Horizon: time.Minute, Resolution: time.Millisecond})
++		if err != nil {
++			t.Fatal(err)
++		}
++		return f
++	}
++	fb, fz := newF(), newF()
++	r := rand.New(rand.NewPCG(4, ru.w+ru.limit))
++	type ev struct {
++		t     uint64
++		k     int
++		plain bool
++	}
++	var evs []ev
++	rate := mult * float64(ru.limit) / float64(ru.w)
++	end := float64(horizons * hT)
++	for k := range nkeys {
++		for x := r.ExpFloat64() / rate; x < end; x += r.ExpFloat64() / rate {
++			evs = append(evs, ev{uint64(x) + 1, k, plainFrac > 0 && r.Float64() < plainFrac})
++		}
++	}
++	sort.SliceStable(evs, func(i, j int) bool { return evs[i].t < evs[j].t })
++	var own [3][][]uint64 // per arm, per key: the ticks of its events (admitted, or plain)
++	for a := range own {
++		own[a] = make([][]uint64, nkeys)
++	}
++	limit := int(ru.limit)
++	offer := func(e ev) {
++		h := mix64(uint64(e.k) + 1<<50)
++		if e.plain {
++			for a := range own {
++				own[a][e.k] = append(own[a][e.k], e.t)
++			}
++			labBuzz = false
++			fb.TouchAt(h, ru.w, e.t)
++			fz.TouchAt(h, ru.w, e.t)
++			return
++		}
++		row.events++
++		if labWithin(own[0][e.k], ru.w, e.t) < limit {
++			own[0][e.k] = append(own[0][e.k], e.t)
++			row.admitted[0]++
++		}
++		for a, f := range [2]*Filter{fb, fz} {
++			labBuzz = a == 1
++			in := labWithin(own[a+1][e.k], ru.w, e.t)
++			if _, ok := f.TouchIfUnderAt(h, ru.w, ru.limit, e.t); ok {
++				if in >= limit {
++					t.Fatalf("%v x%.1f arm %d: admitted with %d events in the window (key %d, tick %d)", ru, mult, a+1, in, e.k, e.t)
++				}
++				own[a+1][e.k] = append(own[a+1][e.k], e.t)
++				row.admitted[a+1]++
++			} else if in < limit {
++				row.falseDeny[a]++
++			}
++		}
++		labBuzz = false
++	}
++	if churnLoad > 0 {
++		i := 0
++		workload.Churn(churnLoad, churnSeed, capN, hT, mix64, func(h, w, now uint64) {
++			for ; i < len(evs) && evs[i].t <= now; i++ {
++				offer(evs[i])
++			}
++			fb.CheckAndTouchAt(h, w, now)
++			fz.CheckAndTouchAt(h, w, now)
++		})
++		for ; i < len(evs); i++ {
++			offer(evs[i])
++		}
++	} else {
++		for _, e := range evs {
++			offer(e)
++		}
++	}
++	if tb := fz.buzz.Load(); tb != nil {
++		row.given, row.refused, row.dropped = tb.given.Load(), tb.refused.Load(), tb.dropped.Load()
++		row.decided, row.saved = tb.decided.Load(), tb.saved.Load()
++		row.dropKind, row.dropWords, row.dropCheck = tb.dropKind.Load(), tb.dropWords.Load(), tb.dropCheck.Load()
++	}
++	if fb.buzz.Load() != nil {
++		t.Fatalf("the base arm's filter holds a buzz table")
++	}
++	row.held = fz.buzzInUse()
++	row.evictions, row.relocations = fz.Evictions(), fz.Relocations()
++	row.bytesBase, row.bytesBuzz = fb.Bytes(), fz.Bytes()
++	return row
++}
++
++func (row buzzRow) String() string {
++	ex := float64(row.admitted[0])
++	n := float64(row.events)
++	return fmt.Sprintf("requests %8d exact admits %8d | admitted/exact base %.3f buzz %.3f | false denials base %.4f buzz %.4f | entries given %6d refused %7d dropped %6d (kind %d, words %d, check %d) held %5d | decided by a log %8d, of which the register refused %7d",
++		row.events, row.admitted[0], float64(row.admitted[1])/ex, float64(row.admitted[2])/ex,
++		float64(row.falseDeny[0])/n, float64(row.falseDeny[1])/n,
++		row.given, row.refused, row.dropped, row.dropKind, row.dropWords, row.dropCheck, row.held, row.decided, row.saved)
++}
++
++var buzzRules = []buzzRule{{1_000, 5}, {5_000, 10}, {10_000, 3}, {10_000, 5}, {30_000, 10}, {60_000, 6}, {60_000, 16}}
++
++func TestLabBuzz(t *testing.T) {
++	if os.Getenv("TF_LAB") == "" {
++		t.Skip("set TF_LAB=1")
++	}
++	only := os.Getenv("TF_BUZZ_SCENARIO") // one of A B C D E M; empty: all
++
++	if only == "" || only == "M" {
++		// Memory: nothing until the first uncertain refusal.
++		defer func(b bool) { labBuzz = b }(labBuzz)
++		labBuzz = true
++		f, _ := New(Config{Capacity: 200_000, Horizon: time.Minute, Resolution: time.Millisecond})
++		b0 := f.Bytes()
++		for k := range 10_000 { // admitted, and refused with certainty (one tick: the register is exact)
++			for range 4 {
++				f.TouchIfUnderAt(mix64(uint64(k)+1<<51), 60_000, 3, 1000)
++			}
++		}
++		t.Logf("M: 10,000 keys, 4 requests each at one tick under a limit of 3: buzz table allocated %v, Bytes %d -> %d",
++			f.buzz.Load() != nil, b0, f.Bytes())
++		if f.buzz.Load() != nil || f.Bytes() != b0 {
++			t.Errorf("M: memory before any uncertain refusal")
++		}
++		labBuzz = false
++	}
++
++	scen := func(name string, capN, nkeys, horizons int, plain float64, rules []buzzRule, mults []float64) {
++		if only != "" && only != name {
++			return
++		}
++		for _, ru := range rules {
++			for _, mult := range mults {
++				row := buzzOffer(t, capN, nkeys, ru, mult, horizons, plain, 0, 0)
++				t.Logf("%s %-7v x%.1f | %v", name, ru, mult, row)
++				if name == "A" && mult == 2 && ru == rules[0] {
++					t.Logf("%s memory: Bytes base %d, buzz %d: %.3f B per key of Capacity", name, row.bytesBase, row.bytesBuzz,
++						float64(row.bytesBuzz-row.bytesBase)/float64(capN))
++				}
++			}
++		}
++	}
++	mults := []float64{0.8, 1.2, 2}
++	scen("A", 200_000, 400, 20, 0, buzzRules, mults)
++	scen("B", 12_800, 400, 20, 0, buzzRules, mults)
++	scen("C", 200_000, 400, 20, 0.1, buzzRules, mults)
++	scen("E", 200_000, 400, 20, 0, []buzzRule{{2_500, 20}, {5_000, 40}}, mults)
++	if only == "X" { // one rule of A, to look at a reading
++		scen("X", 200_000, 400, 20, 0, []buzzRule{{60_000, 6}, {1_000, 5}}, []float64{2})
++	}
++
++	if only == "" || only == "D" {
++		for _, c := range []struct {
++			load float64
++			seed uint64
++		}{{1.0, 2}, {1.15, 4}} {
++			for _, ru := range []buzzRule{{1_000, 5}, {10_000, 5}} {
++				for _, mult := range []float64{0.8, 2} {
++					row := buzzOffer(t, 200_000, 1000, ru, mult, 4, 0, c.load, c.seed)
++					t.Logf("D load %.2f %-7v x%.1f | %v | evictions %d relocations %d", c.load, ru, mult, row, row.evictions, row.relocations)
++				}
++			}
++		}
++	}
++}
++
++// TestLabBuzzConcurrent (TF_LAB=1): G goroutines on a shared clock, as
++// TestTouchIfSustained, with the buzz on and limits a log can decide: the
++// admitted events per key must stay within the limit at every window
++// position, and logs must have decided some of them.
++func TestLabBuzzConcurrent(t *testing.T) {
++	if os.Getenv("TF_LAB") == "" {
++		t.Skip("set TF_LAB=1")
++	}
++	defer func(b bool) { labBuzz = b }(labBuzz)
++	labBuzz = true
++	const G, hTicks = 8, 60_000
++	for _, c := range []buzzRule{{1_000, 5}, {5_000, 10}, {10_000, 5}} {
++		for _, nk := range []int{1, 200} {
++			f, _ := New(Config{Capacity: 200_000, Horizon: time.Minute, Resolution: time.Millisecond})
++			logs := make([][]uint64, G) // per goroutine: key<<32 | tick
++			var wg, done sync.WaitGroup
++			step := make([]chan uint64, G)
++			for g := range G {
++				step[g] = make(chan uint64, 1)
++				wg.Add(1)
++				go func() {
++					defer wg.Done()
++					r := rand.New(rand.NewPCG(uint64(g), 3))
++					for now := range step[g] {
++						// each key is asked about twice its limit per window
++						for range 1 + r.IntN(2) {
++							k := r.IntN(nk)
++							if r.Float64() < 2*float64(c.limit)*float64(nk)/(float64(c.w)*1.5*G) {
++								if _, ok := f.TouchIfUnderAt(mix64(uint64(k)+1<<43), c.w, c.limit, now); ok {
++									logs[g] = append(logs[g], uint64(k)<<32|now)
++								}
++							}
++						}
++						done.Done()
++					}
++				}()
++			}
++			ticks := uint64(2 * hTicks)
++			if testing.Short() {
++				ticks = hTicks / 2
++			}
++			for now := uint64(1); now <= ticks; now++ {
++				done.Add(G)
++				for g := range G {
++					step[g] <- now
++				}
++				done.Wait()
++			}
++			for g := range G {
++				close(step[g])
++			}
++			wg.Wait()
++			per := make([][]uint64, nk)
++			total := 0
++			for g := range G {
++				for _, x := range logs[g] {
++					per[x>>32] = append(per[x>>32], x&(1<<32-1))
++					total++
++				}
++			}
++			over, positions := 0, 0
++			for k := range per {
++				ts := per[k]
++				sort.Slice(ts, func(a, b int) bool { return ts[a] < ts[b] })
++				lo := 0
++				for hi := range ts {
++					for ts[lo]+c.w < ts[hi] {
++						lo++
++					}
++					j := hi
++					for j+1 < len(ts) && ts[j+1] == ts[hi] {
++						j++
++					}
++					positions++
++					if j-lo+1 > int(c.limit) {
++						over++
++					}
++				}
++			}
++			tb := f.buzz.Load()
++			var decided, saved, given, dropped uint64
++			if tb != nil {
++				decided, saved, given, dropped = tb.decided.Load(), tb.saved.Load(), tb.given.Load(), tb.dropped.Load()
++			}
++			// the most an exact log could admit: the limit per window, per key
++			t.Logf("concurrent keys %3d %v: admitted %d (%.2f of limit x windows x keys), positions %d, over the limit %d; entries given %d dropped %d, decided by a log %d, of which the register refused %d",
++				nk, c, total, float64(total)/(float64(c.limit)*float64(ticks)/float64(c.w)*float64(nk)), positions, over, given, dropped, decided, saved)
++			if over != 0 {
++				t.Errorf("concurrent keys %d %v: over the limit at %d window positions", nk, c, over)
++			}
++			if decided == 0 {
++				t.Errorf("concurrent keys %d %v: no decision was made by a log", nk, c)
++			}
++		}
++	}
++}
+diff --git a/touchif.go b/touchif.go
+index f661471..4e3c4af 100644
+--- a/touchif.go
++++ b/touchif.go
+@@ -26,6 +26,9 @@ func (f *Filter) TouchIfUnderAt(h, window, limit, now uint64) (Result, bool) {
+ 	mu := &condMu[h>>(64-6)]
+ 	mu.Lock()
+ 	defer mu.Unlock()
++	if labBuzz && !f.ct {
++		return f.touchIfBuzz(h, window, limit, now) // lab/bio4-2026-11 B12
++	}
+ 	r := f.CountAt(h, window, now)
+ 	if r.Saturated || f.skW == 0 && r.Degraded && !r.Seen || uint64(max(r.Upper, 0)) >= limit {
+ 		return r, false

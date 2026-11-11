@@ -1,0 +1,551 @@
+diff --git a/hot.go b/hot.go
+index 8fa3cfb..f7b1f6d 100644
+--- a/hot.go
++++ b/hot.go
+@@ -6,6 +6,8 @@ import (
+ 	"sync"
+ 	"sync/atomic"
+ 	"unsafe"
++
++	"github.com/scooter-sensei/clepsydra/go/internal/cpu"
+ )
+ 
+ // Hot entries. A key whose register would overflow (more than 31 events in
+@@ -49,6 +51,11 @@ const (
+ 	hotCount  = 1<<32 - 1
+ 	hotClosed = 1 << 32
+ 	hotGen    = 1 << 33
++	// B13b (TF_EAR=2): the word's top 4 bits hold the onset of bucket 0's
++	// first event, in sixteenths of its unit (the generation keeps 27 bits),
++	// so a reader takes it with the count and a snapshot carries it.
++	hotOnShift = 60
++	hotOnMask  = 15 << hotOnShift
+ )
+ 
+ // isHot reports whether word1 points at a hot entry instead of holding a
+@@ -101,7 +108,12 @@ func (e *hotEntry) lock() uint64 {
+ }
+ 
+ func (e *hotEntry) unlock(ver uint64) {
+-	e.c0.Store(e.c0.Load()&^hotClosed + hotGen)
++	c := e.c0.Load()
++	if labEar == 2 {
++		e.c0.Store((c&^hotClosed+hotGen)&^hotOnMask | c&hotOnMask)
++	} else {
++		e.c0.Store(c&^hotClosed + hotGen)
++	}
+ 	e.ver.Store(ver + 1)
+ }
+ 
+@@ -112,13 +124,18 @@ type view struct {
+ 	c   [nBuckets]uint64
+ 	sat int64
+ 	hot bool
++	on  uint64 // B13b (TF_EAR=2): bucket 0's onset, in sixteenths of its unit; 0 says nothing
+ }
+ 
+ // load reads the entry's state; the caller holds it or validates the
+ // version around the call.
+ func (e *hotEntry) load() (v view) {
+ 	v.e, v.sat, v.hot = e.epoch.Load(), e.sat.Load(), true
+-	v.c[0] = e.c0.Load() & hotCount
++	c0 := e.c0.Load()
++	v.c[0] = c0 & hotCount
++	if labEar == 2 {
++		v.on = c0 >> hotOnShift
++	}
+ 	for j := 1; j < nBuckets; j++ {
+ 		v.c[j] = uint64(e.c[j-1].Load())
+ 	}
+@@ -133,7 +150,11 @@ func (e *hotEntry) store(v *view) {
+ 			v.c[j], v.sat = math.MaxUint32, max(v.sat, v.e)
+ 		}
+ 		if j == 0 {
+-			e.c0.Store(e.c0.Load()&^hotCount | v.c[0])
++			c0 := e.c0.Load()&^hotCount | v.c[0]
++			if labEar == 2 {
++				c0 = c0&^hotOnMask | v.on<<hotOnShift
++			}
++			e.c0.Store(c0)
+ 		} else {
+ 			e.c[j-1].Store(uint32(v.c[j]))
+ 		}
+@@ -163,8 +184,9 @@ func (t *hotTable) read(idx, id uint64) (view, bool) {
+ // at a unit older than the entry's go to the bucket that covers it. If slot
+ // is the word1 that points here (old), a touch that starts a new unit with
+ // every bucket at most half the register's width hands the counts back to
+-// the slot as a register and frees the entry (demote).
+-func (t *hotTable) add(idx, id, n uint64, u int64, slot *uint64, old uint64) bool {
++// the slot as a register and frees the entry (demote). on is the events'
++// onset in u (B13b); f the filter (B13: a demotion compares word0's unit).
++func (t *hotTable) add(f *Filter, idx, id, n uint64, u int64, on uint64, slot *uint64, old uint64) bool {
+ 	e := &t.e[idx]
+ 	for { // the usual case, a touch in the entry's own unit: one CAS
+ 		c := e.c0.Load()
+@@ -189,6 +211,9 @@ func (t *hotTable) add(idx, id, n uint64, u int64, slot *uint64, old uint64) boo
+ 	}
+ 	v := e.load()
+ 	if u >= v.e {
++		if u > v.e {
++			v.on = on // these events start bucket 0
++		}
+ 		advanceWide(&v.c, v.e, u)
+ 		v.e = u
+ 		v.c[0] += n
+@@ -206,7 +231,10 @@ func (t *hotTable) add(idx, id, n uint64, u int64, slot *uint64, old uint64) boo
+ 			r[j] = v.c[j]
+ 		}
+ 		nw := old&^(1<<tagShift-1) | uint64(v.e)&epochMask<<48 | r.pack()
+-		if atomic.CompareAndSwapUint64(slot, old, nw) {
++		if labEar == 2 {
++			nw = nw&^(epochMask<<48) | v.on<<48
++		}
++		if labEar == 0 && atomic.CompareAndSwapUint64(slot, old, nw) || labEar != 0 && f.demoteAligned(slot, old, nw, u) {
+ 			e.id.Store(0)
+ 			e.unlock(ver)
+ 			t.putFree(idx)
+@@ -219,6 +247,23 @@ func (t *hotTable) add(idx, id, n uint64, u int64, slot *uint64, old uint64) boo
+ 	return true
+ }
+ 
++// demoteAligned (B13) is a demotion's CAS of word1 (slot) from the hot
++// pointer old to the register nw, aligned to unit u, taken only while
++// word0's last touch is in u: one 16-byte CAS of both words. Without the
++// epoch a register must never sit beside a last touch of another unit, and
++// a touch of the hot key into a later unit moves word0 alone (it compares
++// word1 by the same CAS: touch). Without a 16-byte CAS the arm does not
++// demote: a hold of word1 does not stop a touch that has read the pointer
++// from moving word0.
++func (f *Filter) demoteAligned(slot *uint64, old, nw uint64, u int64) bool {
++	if !cpu.HasCAS2 {
++		return false
++	}
++	p0 := (*uint64)(unsafe.Add(unsafe.Pointer(slot), -8))
++	w0 := atomic.LoadUint64(p0)
++	return f.unitOf(w0&tsMask) == u && cpu.CAS2(p0, w0, old, w0, nw)
++}
++
+ // demotable: v fits a register at half of every bucket's width (so the key
+ // isn't promoted again at once), and no event of the register's span is
+ // missing.
+@@ -387,9 +432,13 @@ func (f *Filter) hotEntryFor(i int, w0, old, tg, last, now uint64) (w1, idx, id
+ 	if w0&satBit != 0 { // it overflowed before: its counts up to now are floors
+ 		v.sat = v.e
+ 	}
++	if labEar == 2 {
++		v.on = old >> 48 & epochMask
++	}
+ 	if u := f.unitOf(now); u > v.e {
+ 		advanceWide(&v.c, v.e, u)
+ 		v.e = u
++		v.on = f.onsetOf(now, u) // this touch starts bucket 0 (B13b; unread otherwise)
+ 	}
+ 	v.c[0]++
+ 	if idx = f.hotAlloc(id, &v, now); idx == 0 {
+@@ -417,6 +466,9 @@ func (f *Filter) viewOf(id, w1, last uint64) (v view, ok bool) {
+ 	v.c[5] = (w1 >> 31) & 0xFF
+ 	v.c[6] = (w1 >> 39) & 0x1FF
+ 	v.sat = satNone
++	if labEar == 2 {
++		v.on = w1 >> 48 & epochMask
++	}
+ 	return v, true
+ }
+ 
+@@ -456,7 +508,11 @@ func (f *Filter) slotDrop(id, w1 uint64) {
+ // may then be handed back to it as a register (demote).
+ func (f *Filter) hotAdd(w1, id, now uint64, slot *uint64) bool {
+ 	t := f.hot.Load()
+-	return t != nil && t.add(hotIdx(w1), id, 1, f.unitOf(now), slot, w1)
++	if t == nil {
++		return false
++	}
++	u := f.unitOf(now)
++	return t.add(f, hotIdx(w1), id, 1, u, f.onsetOf(now, u), slot, w1)
+ }
+ 
+ // advanceWide is register.advance for a hot entry's uncapped counts.
+diff --git a/lab_ear.go b/lab_ear.go
+new file mode 100644
+index 0000000..f916e1e
+--- /dev/null
++++ b/lab_ear.go
+@@ -0,0 +1,24 @@
++package temporalfilter
++
++import (
++	"os"
++	"strconv"
++	"sync/atomic"
++)
++
++// lab/bio4-2026-11's switches for arm B13, the middle ear (BIO4-RESULTS.md).
++// Unset, the filter is the committed one. They are read once; the lab's
++// tests set them between filters.
++var (
++	// labEar (TF_EAR). 1: a touch that starts a new unit moves the slot's
++	// two words together, as realign does for a jump of 8 units or more, so
++	// a register is never read at a unit other than its last touch's and
++	// its 4 epoch bits say nothing. 2: also, those bits hold the onset of
++	// the newest bucket's first event, in sixteenths of its unit, and Count
++	// spreads that bucket from its onset.
++	labEar, _ = strconv.Atoi(os.Getenv("TF_EAR"))
++	// labProbe (TF_EARPROBE): regEpoch counts its decodes, and those whose
++	// stored epoch is not its reference's (the register read at a lag).
++	labProbe            = os.Getenv("TF_EARPROBE") != ""
++	labDecodes, labLags atomic.Uint64
++)
+diff --git a/lab_ear_test.go b/lab_ear_test.go
+new file mode 100755
+index 0000000..3134556
+--- /dev/null
++++ b/lab_ear_test.go
+@@ -0,0 +1,185 @@
++package temporalfilter
++
++import (
++	"fmt"
++	"hash/fnv"
++	"math"
++	"os"
++	"sort"
++	"testing"
++	"time"
++
++	"github.com/scooter-sensei/clepsydra/go/internal/cpu"
++	"github.com/scooter-sensei/clepsydra/go/internal/workload"
++)
++
++// lab/bio4-2026-11, arm B13: the middle ear (TF_EAR), read on the filter
++// itself. Each reading makes a fresh filter per mode.
++func TestLabEar(t *testing.T) {
++	if os.Getenv("TF_LAB") == "" {
++		t.Skip("set TF_LAB=1")
++	}
++	defer func(e int, p bool) { labEar, labProbe = e, p }(labEar, labProbe)
++	newF := func(capN int) *Filter {
++		f, err := New(Config{Capacity: capN, Horizon: time.Minute, Resolution: time.Millisecond})
++		if err != nil {
++			t.Fatal(err)
++		}
++		return f
++	}
++	hs := make([]uint64, 2000)
++	for k := range hs {
++		hs[k] = mix64(uint64(k) + 1<<50)
++	}
++
++	// The lag: register decodes whose stored epoch is not the unit of the
++	// last touch they are read against. One goroutine.
++	labProbe = true
++	for _, mode := range []int{0, 1} {
++		labEar = mode
++		labDecodes.Store(0)
++		labLags.Store(0)
++		f := newF(200_000)
++		ops := 0
++		workload.Churn(1.15, 4, 200_000, 60_000, mix64, func(h, w, now uint64) {
++			f.TouchAt(h, w, now)
++			ops++
++		})
++		t.Logf("lag TF_EAR=%d churn load 1.15: %d touches, %d decodes, %d at a lag (evictions %d, relocations %d)",
++			mode, ops, labDecodes.Load(), labLags.Load(), f.Evictions(), f.Relocations())
++		labDecodes.Store(0)
++		labLags.Store(0)
++		f = newF(200_000)
++		ops = 0
++		velWorkload(func(k int, tk uint64) { f.CheckAndTouchAt(hs[k], 0, tk); ops++ },
++			func(k int, ts []uint64, wi int, now uint64) { f.VelocityCountAt(hs[k], velWins[wi], now) })
++		t.Logf("lag TF_EAR=%d velocity workload: %d touches, %d decodes, %d at a lag (promoted %d, demoted %d)",
++			mode, ops, labDecodes.Load(), labLags.Load(), f.Promoted(), f.Demoted())
++	}
++	labProbe = false
++
++	// The velocity error by window and by shape, and what Upper says, per
++	// mode.
++	shapes := []string{"steady", "bursts", "ramp", "sparse", "on/off", "all"}
++	var errBy [3][6][5]float64
++	var exact [6][5]float64
++	var upDig [3]uint64
++	for mode := range 3 {
++		labEar = mode
++		f := newF(200_000)
++		dig := fnv.New64a()
++		velWorkload(func(k int, tk uint64) { f.CheckAndTouchAt(hs[k], 0, tk) },
++			func(k int, ts []uint64, wi int, now uint64) {
++				w := velWins[wi]
++				ex := float64(len(ts) - sort.Search(len(ts), func(j int) bool { return ts[j]+w >= now }))
++				r := f.CountAt(hs[k], w, now)
++				fmt.Fprintf(dig, "%v %d %v;", r.Seen, r.Upper, r.Saturated)
++				for _, sh := range []int{k % 5, 5} {
++					errBy[mode][sh][wi] += math.Abs(float64(r.Count) - ex)
++					if mode == 0 {
++						exact[sh][wi] += ex
++					}
++				}
++			})
++		upDig[mode] = dig.Sum64()
++		t.Logf("TF_EAR=%d: promoted %d, demoted %d, hot refused %d; digest of every answer's Seen, Upper and Saturated %016x",
++			mode, f.Promoted(), f.Demoted(), f.HotRefused(), upDig[mode])
++	}
++	for sh, name := range shapes {
++		for mode := range 3 {
++			line, mean := "", 0.0
++			for wi := range 5 {
++				e := errBy[mode][sh][wi] / exact[sh][wi]
++				mean += e / 5
++				line += fmt.Sprintf(" %.4f", e)
++			}
++			t.Logf("velocity %-7s TF_EAR=%d by window 1,5,15,30,60 s:%s  mean %.4f", name, mode, line, mean)
++		}
++	}
++	if upDig[1] != upDig[0] || upDig[2] != upDig[0] {
++		t.Errorf("Seen, Upper or Saturated differ between modes: %x %x %x", upDig[0], upDig[1], upDig[2])
++	}
++
++	// The strict limiter's decisions on the same requests, per mode.
++	for _, c := range []struct{ w, limit uint64 }{{1_000, 5}, {5_000, 20}} {
++		var digs [3]uint64
++		var adm [3]int
++		for mode := range 3 {
++			labEar = mode
++			f := newF(200_000)
++			dig := fnv.New64a()
++			velWorkload(func(k int, tk uint64) {
++				_, ok := f.TouchIfUnderAt(hs[k], c.w, c.limit, tk)
++				if ok {
++					adm[mode]++
++					dig.Write([]byte{1})
++				} else {
++					dig.Write([]byte{0})
++				}
++			}, func(int, []uint64, int, uint64) {})
++			digs[mode] = dig.Sum64()
++		}
++		t.Logf("strict limiter %gs/%d: admitted %d %d %d, digests %016x %016x %016x", float64(c.w)/1000, c.limit,
++			adm[0], adm[1], adm[2], digs[0], digs[1], digs[2])
++		if digs[1] != digs[0] || digs[2] != digs[0] {
++			t.Errorf("strict limiter %gs/%d: decisions differ between modes", float64(c.w)/1000, c.limit)
++		}
++	}
++
++	// Indicative timing: every key touched once a round. sparse: the clock
++	// moves one unit a round, so every touch starts a new unit; dense: one
++	// tick a round. 3 interleaved rounds per arm.
++	if os.Getenv("TF_EAR_NOTIME") != "" {
++		return
++	}
++	const nk = 200_000
++	keys := make([]uint64, nk)
++	for k := range keys {
++		keys[k] = mix64(uint64(k) + 1<<52)
++	}
++	type arm struct {
++		name string
++		mode int
++		cas2 bool
++	}
++	arms := []arm{{"base", 0, true}, {"TF_EAR=1", 1, true}, {"TF_EAR=2", 2, true}, {"base, no CAS2", 0, false}, {"TF_EAR=1, no CAS2", 1, false}}
++	had := cpu.HasCAS2
++	defer func() { cpu.HasCAS2 = had }()
++	for _, step := range []struct {
++		name string
++		d    uint64
++	}{{"sparse", 2500}, {"dense", 1}} {
++		res := make([][]float64, len(arms))
++		for range 3 {
++			for ai, a := range arms {
++				if !had && a.cas2 {
++					continue
++				}
++				labEar, cpu.HasCAS2 = a.mode, a.cas2
++				f := newF(2 * nk)
++				now := uint64(1)
++				for _, h := range keys {
++					f.CheckAndTouchAt(h, 0, now)
++				}
++				t0 := time.Now()
++				const rounds = 8
++				for range rounds {
++					now += step.d
++					for _, h := range keys {
++						f.CheckAndTouchAt(h, 0, now)
++					}
++				}
++				res[ai] = append(res[ai], float64(time.Since(t0).Nanoseconds())/(rounds*nk))
++			}
++		}
++		cpu.HasCAS2 = had
++		for ai, a := range arms {
++			if len(res[ai]) == 0 {
++				continue
++			}
++			sort.Float64s(res[ai])
++			t.Logf("timing %-6s %-18s ns/touch %5.1f %5.1f %5.1f (median %.2f of the base's)", step.name, a.name,
++				res[ai][0], res[ai][1], res[ai][2], res[ai][1]/func() float64 { x := append([]float64(nil), res[0]...); sort.Float64s(x); return x[1] }())
++		}
++	}
++}
+diff --git a/merge.go b/merge.go
+index 39851a7..ecb40b4 100644
+--- a/merge.go
++++ b/merge.go
+@@ -112,5 +112,16 @@ func sumRegisters(a, b view, tg uint64) (w1 uint64, over bool) {
+ 	for i := range nBuckets {
+ 		over = ra.add(i, rb[i]) || over
+ 	}
+-	return tg<<tagShift | uint64(e)&epochMask<<48 | ra.pack(), over
++	field := uint64(e) & epochMask
++	if labEar == 2 { // B13b: the onset of the register whose unit is the newer; the earlier of two in one unit (0 says nothing)
++		switch {
++		case a.e == b.e:
++			field = min(a.on, b.on)
++		case a.e > b.e:
++			field = a.on
++		default:
++			field = b.on
++		}
++	}
++	return tg<<tagShift | field<<48 | ra.pack(), over
+ }
+diff --git a/register.go b/register.go
+index b66451c..f6c9eba 100644
+--- a/register.go
++++ b/register.go
+@@ -125,10 +125,19 @@ func (r *register) advance(u0, u1 int64) (overflow bool) {
+ // lastTouch, which the register was last aligned to (a racing touch may
+ // leave it one unit either side).
+ func regEpoch(w1 uint64, ref int64) int64 {
++	if labEar == 2 {
++		return ref // B13b: a register is aligned to its last touch's unit; the 4 bits hold an onset
++	}
+ 	d := (ref - int64(w1>>48)) & epochMask
+ 	if d > epochMask/2 {
+ 		d -= epochMask + 1
+ 	}
++	if labProbe {
++		labDecodes.Add(1)
++		if d != 0 {
++			labLags.Add(1)
++		}
++	}
+ 	return ref - d
+ }
+ 
+@@ -138,13 +147,49 @@ func regEpoch(w1 uint64, ref int64) int64 {
+ // overflow reports that an event spilled out of its bucket or was dropped
+ // (the slot's saturated bit must then be set).
+ func (f *Filter) nextReg(old, tg, last, now uint64, reset bool) (w1 uint64, overflow bool) {
+-	return f.nextRegU(old, tg, f.unitOf(last), f.unitOf(now), reset)
++	lastU, nowU := f.unitOf(last), f.unitOf(now)
++	w1, overflow = f.nextRegU(old, tg, lastU, nowU, reset)
++	if labEar == 2 {
++		w1 = f.earOnset(w1, old, tg, lastU, nowU, now, reset)
++	}
++	return w1, overflow
++}
++
++// earOnset (B13b) sets the 4 bits that were w1's epoch to the onset of
++// bucket 0's first event, in sixteenths of its unit, for w1 made from old by
++// an event at now (unit nowU; old's last touch in lastU): now's own, when
++// the event starts the bucket (a new register, or a later unit than the
++// last touch's); within one unit, the earlier of the old onset and now's (a
++// caller whose clock is behind); 0, which says nothing, for an event
++// counted from a unit before the register's.
++func (f *Filter) earOnset(w1, old, tg uint64, lastU, nowU int64, now uint64, reset bool) uint64 {
++	on := f.onsetOf(now, nowU)
++	switch {
++	case reset || old>>tagShift != tg || nowU > lastU:
++	case nowU == lastU:
++		on = min(on, old>>48&epochMask)
++	default:
++		on = 0
++	}
++	return w1&^(epochMask<<48) | on<<48
++}
++
++// onsetOf is where in its unit u the tick now falls, in sixteenths.
++func (f *Filter) onsetOf(now uint64, u int64) uint64 {
++	return (now - uint64(u)*f.unit) * 16 / f.unit
++}
++
++// sameUnit: old, a register last touched in unit lastU, is aligned to nowU.
++func sameUnit(old uint64, lastU, nowU int64) bool {
++	if labEar == 2 {
++		return lastU == nowU
++	}
++	return old>>48&epochMask == uint64(nowU)&epochMask && regEpoch(old, lastU) == nowU
+ }
+ 
+ // nextRegU is nextReg with last's and now's units.
+ func (f *Filter) nextRegU(old, tg uint64, lastU, nowU int64, reset bool) (w1 uint64, overflow bool) {
+-	if !reset && old>>tagShift == tg && old>>48&epochMask == uint64(nowU)&epochMask &&
+-		regEpoch(old, lastU) == nowU {
++	if !reset && old>>tagShift == tg && sameUnit(old, lastU, nowU) {
+ 		// Fast path, same unit: increment the first bucket with room in
+ 		// place (spilling as add does). Buckets are contiguous from bit 0,
+ 		// so the lowest zero bit of the register lies in that bucket.
+@@ -237,6 +282,9 @@ func (f *Filter) bump(i int, fpd, tg, now uint64, nu int64, last uint64, lu int6
+ 			refU = f.unitOf(ref)
+ 		}
+ 		nw, over := f.nextRegU(old, tg, refU, nu, reset)
++		if labEar == 2 {
++			nw = f.earOnset(nw, old, tg, refU, nu, now, reset)
++		}
+ 		if over {
+ 			if pw, ok := f.promote(i, w0, old, tg, ref, now); ok {
+ 				return pw, ref, false, true
+@@ -413,6 +461,21 @@ func (f *Filter) estimate(id, w1, last, now, window uint64, sat bool) (r Result,
+ 			est += float64(c)
+ 			continue
+ 		}
++		if labEar == 2 && j == 0 && v.on != 0 && float64(c)-a > 0 {
++			// B13b: bucket 0's events lie from its onset to the last touch
++			// (hi), not from the unit's start: all inside a window that
++			// starts at or before the onset, else spread over [on, hi].
++			on := lo + float64(v.on)*unit/16
++			switch {
++			case from <= on:
++				est += float64(c)
++			case hi > on:
++				est += a + (float64(c)-a)*max(0, min(1, (hi-from)/(hi-on)))
++			default:
++				est += a
++			}
++			break
++		}
+ 		if from < hi {
+ 			est += a + (float64(c)-a)*(hi-from)/(hi-lo)
+ 		}
+diff --git a/touch.go b/touch.go
+index a0620c0..c75b972 100644
+--- a/touch.go
++++ b/touch.go
+@@ -311,7 +311,16 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 			w1, over, ok = f.realign(h, i, w0, old, tg, now)
+ 			ref = now
+ 		} else {
+-			if now > last && !atomic.CompareAndSwapUint64(&f.words[i], w0, w0&^tsMask|now) {
++			if labEar != 0 && nu > lu && now > last && cpu.HasCAS2 {
++				// B13: only a hot key's touch gets here into a new unit (a
++				// register's goes through realign), and its CAS compares
++				// word1 too (old, the pointer farAhead read): a demotion
++				// meanwhile has put a register there, aligned to w0's unit,
++				// which the last touch must not leave without it.
++				if !cpu.CAS2(&f.words[i], w0, old, w0&^tsMask|now, old) {
++					continue
++				}
++			} else if now > last && !atomic.CompareAndSwapUint64(&f.words[i], w0, w0&^tsMask|now) {
+ 				continue
+ 			}
+ 			if nu > lu && testHookStamped != nil {
+@@ -363,6 +372,9 @@ func (f *Filter) farAhead(i int, nu, lu int64, stale bool) (old uint64, far, wai
+ 	if isHot(old) { // its own full unit; but a reset must hold the slot (realign)
+ 		return old, stale, false
+ 	}
++	if labEar != 0 { // B13: the register moves with the last touch at every unit change
++		return old, true, false
++	}
+ 	return old, nu-regEpoch(old, lu) > epochMask/2, false
+ }
+ 

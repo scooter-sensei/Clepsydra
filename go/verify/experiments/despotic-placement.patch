@@ -1,0 +1,296 @@
+diff --git a/cuckoo.go b/cuckoo.go
+index b65ffec..e5eefc4 100644
+--- a/cuckoo.go
++++ b/cuckoo.go
+@@ -1,7 +1,9 @@
+ package temporalfilter
+ 
+ import (
++	"os"
+ 	"runtime"
++	"strconv"
+ 	"sync/atomic"
+ )
+ 
+@@ -158,14 +160,19 @@ func (f *Filter) claimAt(lines, mine [2]uint64, w1, now, stripe uint64, mode int
+ 		p := f.pressure.Load()
+ 		budget := 8 + int(uint64(relocBudget-8)*(pressureOne-uint64(p))>>pressureShift)
+ 		f.warmAlts(lines)
++		labSearches.Add(1)
++		order := [8]uint8{0, 1, 2, 3, 4, 5, 6, 7} // li<<2 | slot: slot order
++		if labDespot&1 != 0 {
++			f.despotOrder(lines, now, &order)
++		}
+ 		for depth := 0; depth <= relocDepth; depth++ {
+-			for li, line := range lines {
+-				base := int(line * wordsPerLine)
+-				for s := 0; s < wordsPerLine; s += 2 {
+-					if f.relocate(base+s, line, mine[li], w1, now, depth, &budget, nil, put) {
+-						f.pressure.Store(p - p>>3) // EWMA toward "searches succeed"
+-						return base + s
+-					}
++			for _, c := range order {
++				li := int(c >> 2)
++				line := lines[li]
++				i := int(line*wordsPerLine) + int(c&3)*2
++				if f.relocate(i, line, mine[li], w1, now, depth, &budget, nil, put) {
++					f.pressure.Store(p - p>>3) // EWMA toward "searches succeed"
++					return i
+ 				}
+ 			}
+ 		}
+@@ -345,6 +352,7 @@ func (f *Filter) relocate(i int, line, mine0, mine1, now uint64, depth int, budg
+ 		return false
+ 	}
+ 	*budget--
++	labScanned.Add(1)
+ 	w1 := atomic.LoadUint64(&f.words[i+1])
+ 	if w1>>tagShift == tagBusy || atomic.LoadUint64(&f.words[i]) != w0 {
+ 		return false // being installed or realigned, or touched since: a copy would pair stale words
+@@ -416,3 +424,98 @@ func (f *Filter) abandon(d int) {
+ 	atomic.StoreUint64(&f.words[d], 0)
+ 	atomic.StoreUint64(&f.words[d+1], 0)
+ }
++
++// lab/bio3-2026-11, arms B8 and B8b: despotic placement. labDespot is
++// TF_DESPOT's bits: 1 the search's order (B8), 2 homing and 4 the challenge
++// (B8b).
++var (
++	labDespot, _  = strconv.Atoi(os.Getenv("TF_DESPOT"))
++	labSearches   atomic.Uint64 // searches begun
++	labScanned    atomic.Uint64 // entries a search tried to move (budget spent)
++	labTries      atomic.Uint64 // B8b: touches that tried to take their key home
++	labHomed      atomic.Uint64 // ... and did, into a free slot
++	labChallenged atomic.Uint64 // ... after moving a lighter entry out of the primary line
++)
++
++// earn is B8b: a touch found its key in slot i of its alternate line and
++// left it with register w1. At 2, 4, 8, ... events in the horizon the entry
++// tries to go home: into a free slot of its primary line, which the lookup
++// has just read, or (the challenge) into the slot of that line's lightest
++// entry, if that one has at most half its events and room in its own other
++// line.
++func (f *Filter) earn(i int, w1, now uint64) {
++	if isHot(w1) {
++		return
++	}
++	m := f.mass(0, w1, now, now)
++	if m < 2 || m&(m-1) != 0 {
++		return
++	}
++	labTries.Add(1)
++	a := uint64(i / wordsPerLine)
++	budget := 1
++	if f.relocate(i, a, 0, 0, now, 0, &budget, nil, nil) {
++		labHomed.Add(1)
++		return
++	}
++	if labDespot&4 == 0 {
++		return
++	}
++	w0 := atomic.LoadUint64(&f.words[i])
++	if w0 == 0 || w0&dispBit == 0 {
++		return
++	}
++	p := f.alt(a, w0>>48)
++	base := int(p * wordsPerLine)
++	loser, least := -1, m/2+1
++	for s := 0; s < wordsPerLine; s += 2 {
++		l0 := atomic.LoadUint64(&f.words[base+s])
++		l1 := atomic.LoadUint64(&f.words[base+s+1])
++		if l0 == 0 || l1>>tagShift == tagBusy || isHot(l1) {
++			continue
++		}
++		if lm := f.mass(0, l1, l0&tsMask, now); lm < least {
++			loser, least = base+s, lm
++		}
++	}
++	if loser < 0 {
++		return
++	}
++	budget = 1
++	if !f.relocate(loser, p, 0, 0, now, 0, &budget, nil, nil) {
++		return
++	}
++	budget = 1
++	if f.relocate(i, a, 0, 0, now, 0, &budget, nil, nil) {
++		labChallenged.Add(1)
++	}
++}
++
++// despotOrder sorts a search's eight first-step candidates by what moving
++// each does for reads: entries in their alternate line first (the move takes
++// them home), the heaviest first; then entries at home (the move sends them
++// to their alternate line), the lightest first, oldest on ties.
++func (f *Filter) despotOrder(lines [2]uint64, now uint64, order *[8]uint8) {
++	var key [8]uint64
++	for c := range order {
++		line := lines[c>>2]
++		i := int(line*wordsPerLine) + (c&3)*2
++		w0 := atomic.LoadUint64(&f.words[i])
++		v1 := atomic.LoadUint64(&f.words[i+1])
++		ts := w0 & tsMask
++		var m uint64
++		if w0 != 0 && v1>>tagShift != tagBusy {
++			m = min(f.mass(f.slotID(line, w0, v1), v1, ts, now), 1<<16-1)
++		}
++		if w0&dispBit != 0 {
++			key[c] = (1<<16-1-m)<<46 | ts
++		} else {
++			key[c] = 1<<63 | m<<46 | ts
++		}
++	}
++	for a := 1; a < 8; a++ { // insertion sort, stable
++		for b := a; b > 0 && key[order[b]] < key[order[b-1]]; b-- {
++			order[b], order[b-1] = order[b-1], order[b]
++		}
++	}
++}
+diff --git a/lab_despot_test.go b/lab_despot_test.go
+new file mode 100755
+index 0000000..828049c
+--- /dev/null
++++ b/lab_despot_test.go
+@@ -0,0 +1,128 @@
++package temporalfilter
++
++import (
++	"hash/fnv"
++	"math/rand/v2"
++	"os"
++	"sort"
++	"testing"
++	"time"
++
++	"github.com/scooter-sensei/clepsydra/go/internal/workload"
++)
++
++// lab/bio3-2026-11, arm B8: despotic placement (the real filter, counted).
++
++// churn8020 is workload.Churn with a fifth of the keys popular at birth and
++// a repeat one of those with probability 0.8.
++func churn8020(load float64, seed uint64, capacity int, hTicks uint64, hash func(uint64) uint64, op func(h, window, now uint64)) {
++	r := rand.New(rand.NewPCG(seed, 1))
++	const newFrac = 0.6
++	ratePerMs := load * float64(capacity) / (newFrac * float64(hTicks)) / 1.375
++	type born struct{ h, t uint64 }
++	var keys, pop []born
++	var next uint64
++	pick := func(l []born, now uint64) uint64 {
++		lo := sort.Search(len(l), func(i int) bool { return l[i].t+hTicks*3/2 > now })
++		return l[lo+r.IntN(len(l)-lo)].h
++	}
++	for now := uint64(1); now < 4*hTicks; now++ {
++		n := int(ratePerMs)
++		if r.Float64() < ratePerMs-float64(n) {
++			n++
++		}
++		for range n {
++			var h uint64
++			if len(keys) == 0 || r.Float64() < newFrac {
++				next++
++				h = hash(next)
++				keys = append(keys, born{h, now})
++				if r.Float64() < 0.2 {
++					pop = append(pop, born{h, now})
++				}
++			} else if len(pop) > 0 && r.Float64() < 0.8 {
++				h = pick(pop, now)
++			} else {
++				h = pick(keys, now)
++			}
++			op(h, workload.Windows[r.IntN(len(workload.Windows))], now)
++		}
++	}
++}
++
++func TestLabDespot(t *testing.T) {
++	if os.Getenv("TF_LAB") == "" {
++		t.Skip("set TF_LAB=1")
++	}
++	const capN, hTicks = 200_000, 60_000
++	type stream func(load float64, seed uint64, capacity int, hTicks uint64, hash func(uint64) uint64, op func(h, window, now uint64))
++	defer func(d int) { labDespot = d }(labDespot)
++	for _, st := range []struct {
++		name string
++		run  stream
++	}{{"churn", workload.Churn}, {"80/20", churn8020}} {
++		for _, c := range []struct {
++			load float64
++			seed uint64
++		}{{1.0, 2}, {1.15, 4}} {
++			for _, despot := range []int{0, 1, 2, 6, 7} {
++				labDespot = despot
++				f, err := New(Config{Capacity: capN, Horizon: time.Minute, Resolution: time.Millisecond})
++				if err != nil {
++					t.Fatal(err)
++				}
++				s0, n0 := labSearches.Load(), labScanned.Load()
++				t0, h0, c0 := labTries.Load(), labHomed.Load(), labChallenged.Load()
++				last := map[uint64]uint64{}
++				var ops, hits, altHits, first, missed, falseSeen int
++				dig := fnv.New64a()
++				var buf [9]byte
++				st.run(c.load, c.seed, capN, hTicks, mix64, func(h, w, now uint64) {
++					ops++
++					fp, tg := fingerprint(h), tag(h)
++					if i, fpd := f.locateAt(h, fp, tg); i >= 0 && age(now, f.words[i]&tsMask) <= f.horizon {
++						hits++
++						if fpd&1 == 1 {
++							altHits++
++						}
++					} else {
++						first++
++					}
++					r := f.TouchAt(h, w, now)
++					lt, ok := last[h]
++					want := ok && now-lt <= w
++					last[h] = now
++					if want && !r.Seen {
++						missed++
++					}
++					if !want && r.Seen {
++						falseSeen++
++					}
++					buf[0] = 0
++					if r.Seen {
++						buf[0] = 1
++					}
++					for k := 0; k < 8; k++ {
++						buf[1+k] = byte(uint64(r.Count) >> (8 * k))
++					}
++					dig.Write(buf[:])
++				})
++				end := uint64(4*hTicks - 1)
++				var live, disp int
++				for i := 0; i < len(f.words); i += 2 {
++					if w0 := f.words[i]; w0 != 0 && age(end, w0&tsMask) <= f.horizon {
++						live++
++						if w0&dispBit != 0 {
++							disp++
++						}
++					}
++				}
++				se, sc := labSearches.Load()-s0, labScanned.Load()-n0
++				t.Logf("%-5s load %.2f arm %d ops %d hits %d in-alt %d (%.4f) | live %d displaced %.4f | first %d searches %d (%.4f) scanned/search %.2f reloc %d evict %d | missed %d falseSeen %d digest %016x | tries %d homed %d challenged %d (moves/hit %.4f)",
++					st.name, c.load, despot, ops, hits, altHits, float64(altHits)/float64(hits), live, float64(disp)/float64(live),
++					first, se, float64(se)/float64(first), float64(sc)/float64(max(se, 1)), f.Relocations(), f.Evictions(), missed, falseSeen, dig.Sum64(),
++					labTries.Load()-t0, labHomed.Load()-h0, labChallenged.Load()-c0, float64(labHomed.Load()-h0+2*(labChallenged.Load()-c0))/float64(hits))
++			}
++		}
++	}
++}
+diff --git a/touch.go b/touch.go
+index a0620c0..c8a2300 100644
+--- a/touch.go
++++ b/touch.go
+@@ -340,6 +340,9 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 		if f.sketchLive(now) && (wantCount || !r.Seen || f.ct) {
+ 			f.addSketch(&r, h, window, now)
+ 		}
++		if labDespot&6 != 0 && fpd&1 == 1 && !f.ct {
++			f.earn(i, w1, now)
++		}
+ 		return r
+ 	}
+ }

@@ -1,0 +1,425 @@
+diff --git a/lab_chick_test.go b/lab_chick_test.go
+new file mode 100755
+index 0000000..04fb54a
+--- /dev/null
++++ b/lab_chick_test.go
+@@ -0,0 +1,419 @@
++package temporalfilter
++
++import (
++	"math"
++	"math/rand/v2"
++	"os"
++	"sort"
++	"testing"
++	"time"
++
++	"github.com/scooter-sensei/clepsydra/go/internal/workload"
++)
++
++// lab/bio3-2026-11, arm B9: the cuckoo chick (a placement model).
++//
++// A line is 4 slots. A key takes one; a hot key (32 events in one unit)
++// takes wide counters: in the table arm a hot-table entry (slots/128, first
++// come first served), in the chick arm a second slot of its own line, its
++// extension, pushing a line-mate out if it must. Lines, primary and
++// alternate lines are the filter's; the search is the filter's as written
++// in lab/bio2's TestLabLarva (iterative deepening to depth 3, the
++// pressure-scaled budget, eviction of the lightest).
++
++const (
++	ckEmpty = iota
++	ckKey
++	ckExt // a hot key's extension; h is its owner's
++)
++
++const (
++	clChurn = iota
++	clHeavy
++	clSquat
++	nClass
++)
++
++type cslot struct {
++	kind uint8
++	cls  uint8
++	hot  bool
++	h    uint64
++	last uint64
++	mass uint32
++	unit int64
++	ucnt uint32
++}
++
++type chickModel struct {
++	f        *Filter
++	s        []cslot
++	chick    bool
++	hT, unit uint64
++	now      uint64
++	pressure uint64
++	gone     map[uint64]cslot
++	hotFree  int
++
++	unseen, searches, relocations, restored int
++	evictions                               [nClass]int
++	pairEvictions                           int
++	events, whole                           [nClass]int
++	promoted, refused                       [nClass]int
++	byFree, byMove, byEvict                 int
++	released                                int
++}
++
++func (m *chickModel) other(line, h uint64) uint64 { return m.f.alt(line, fingerprint(h)) }
++
++// drop frees slot i (a key) with its extension or hot-table entry.
++func (m *chickModel) drop(i int) cslot {
++	e := m.s[i]
++	if e.hot {
++		m.unhot(i)
++	}
++	m.s[i] = cslot{}
++	return e
++}
++
++// unhot gives up key i's wide counters.
++func (m *chickModel) unhot(i int) {
++	if !m.s[i].hot {
++		return
++	}
++	m.s[i].hot = false
++	if !m.chick {
++		m.hotFree++
++		return
++	}
++	b := i &^ 3
++	for j := b; j < b+4; j++ {
++		if m.s[j].kind == ckExt && m.s[j].h == m.s[i].h {
++			m.s[j] = cslot{}
++		}
++	}
++}
++
++func (m *chickModel) clean(line uint64) {
++	b := int(line) * 4
++	for i := b; i < b+4; i++ {
++		if m.s[i].kind == ckKey && m.now-m.s[i].last > m.hT {
++			m.drop(i)
++		}
++	}
++}
++
++func (m *chickModel) room(line uint64) int {
++	b := int(line) * 4
++	for i := b; i < b+4; i++ {
++		if m.s[i].kind == ckEmpty {
++			return i
++		}
++	}
++	return -1
++}
++
++// movable: a key a search may move (in the chick arm a pair is pinned).
++func (m *chickModel) movable(i int) bool {
++	return m.s[i].kind == ckKey && !(m.chick && m.s[i].hot)
++}
++
++func (m *chickModel) relocate(line uint64, i, depth int, budget *int) bool {
++	if !m.movable(i) {
++		return false
++	}
++	if *budget <= 0 {
++		return false
++	}
++	*budget--
++	a := m.other(line, m.s[i].h)
++	m.clean(a)
++	move := func() bool {
++		d := m.room(a)
++		if d < 0 {
++			return false
++		}
++		m.s[d], m.s[i] = m.s[i], cslot{}
++		m.relocations++
++		return true
++	}
++	if move() {
++		return true
++	}
++	if depth > 0 {
++		b := int(a) * 4
++		for j := b; j < b+4; j++ {
++			if m.relocate(a, j, depth-1, budget) && move() {
++				return true
++			}
++		}
++	}
++	return false
++}
++
++func (m *chickModel) budget() int {
++	return 8 + int(uint64(relocBudget-8)*(pressureOne-m.pressure)>>pressureShift)
++}
++
++func (m *chickModel) evict(i int) {
++	if m.s[i].hot && m.chick {
++		m.pairEvictions++
++	}
++	v := m.drop(i)
++	v.hot = false
++	m.gone[v.h] = v
++	m.evictions[v.cls]++
++}
++
++// place installs e: free room, the search, an eviction. 0 room, 1 search,
++// 2 eviction.
++func (m *chickModel) place(e cslot) int {
++	p := m.f.primary(e.h)
++	lines := [2]uint64{p, m.other(p, e.h)}
++	for _, line := range lines {
++		m.clean(line)
++		if i := m.room(line); i >= 0 {
++			m.s[i] = e
++			return 0
++		}
++	}
++	pr := m.pressure
++	budget := m.budget()
++	for depth := 0; depth <= relocDepth; depth++ {
++		for _, line := range lines {
++			b := int(line) * 4
++			for j := b; j < b+4; j++ {
++				if m.relocate(line, j, depth, &budget) {
++					if i := m.room(line); i >= 0 {
++						m.s[i] = e
++						m.pressure = pr - pr>>3
++						return 1
++					}
++				}
++			}
++		}
++	}
++	m.pressure = pr - pr>>3 + pressureOne>>3
++	best, bestScore, bestLast := -1, uint64(1<<63), uint64(0)
++	for _, line := range lines {
++		b := int(line) * 4
++		for j := b; j < b+4; j++ {
++			if m.s[j].kind != ckKey {
++				continue
++			}
++			if s, l := uint64(m.s[j].mass), m.s[j].last; s < bestScore || s == bestScore && l < bestLast {
++				best, bestScore, bestLast = j, s, l
++			}
++		}
++	}
++	m.evict(best)
++	m.s[best] = e
++	return 2
++}
++
++func (m *chickModel) find(h uint64) int {
++	p := m.f.primary(h)
++	for _, line := range [2]uint64{p, m.other(p, h)} {
++		b := int(line) * 4
++		for i := b; i < b+4; i++ {
++			if m.s[i].kind == ckKey && m.s[i].h == h && m.now-m.s[i].last <= m.hT {
++				return i
++			}
++		}
++	}
++	return -1
++}
++
++// promote gives key i wide counters, or reports that it was refused.
++func (m *chickModel) promote(i int) bool {
++	if !m.chick {
++		if m.hotFree == 0 {
++			return false
++		}
++		m.hotFree--
++		m.s[i].hot = true
++		return true
++	}
++	line := uint64(i / 4)
++	m.clean(line)
++	ext := func(d int) bool {
++		m.s[d] = cslot{kind: ckExt, h: m.s[i].h}
++		m.s[i].hot = true
++		return true
++	}
++	if d := m.room(line); d >= 0 {
++		m.byFree++
++		return ext(d)
++	}
++	// The line-mates that are plain entries, the lightest first.
++	b := int(line) * 4
++	var mates []int
++	for j := b; j < b+4; j++ {
++		if j != i && m.movable(j) {
++			mates = append(mates, j)
++		}
++	}
++	sort.SliceStable(mates, func(x, y int) bool {
++		a, c := m.s[mates[x]], m.s[mates[y]]
++		return a.mass < c.mass || a.mass == c.mass && a.last < c.last
++	})
++	if len(mates) == 0 {
++		return false // cannot be: a key beside a pair has a fourth slot that is plain or free
++	}
++	budget := m.budget()
++	for depth := 0; depth <= relocDepth; depth++ {
++		for _, j := range mates {
++			if m.relocate(line, j, depth, &budget) {
++				m.byMove++
++				return ext(m.room(line))
++			}
++		}
++	}
++	j := mates[0]
++	m.evict(j)
++	m.byEvict++
++	return ext(j)
++}
++
++func (m *chickModel) touch(h, now uint64, cls uint8) {
++	m.now = now
++	u := int64(now / m.unit)
++	i := m.find(h)
++	if i < 0 {
++		m.unseen++
++		e := cslot{kind: ckKey, cls: cls, h: h, last: now, mass: 1, unit: u, ucnt: 1}
++		if g, ok := m.gone[h]; ok {
++			delete(m.gone, h)
++			if now-g.last <= m.hT {
++				e.mass = g.mass + 1
++				if g.unit == u {
++					e.ucnt = g.ucnt + 1
++				}
++				m.restored++
++			}
++		}
++		if m.place(e) >= 1 {
++			m.searches++
++		}
++		i = m.find(h)
++	} else {
++		e := &m.s[i]
++		e.mass++
++		e.last = now
++		if u != e.unit {
++			prev := uint32(0)
++			if u == e.unit+1 {
++				prev = e.ucnt
++			}
++			if e.hot && prev <= 15 {
++				m.unhot(i)
++				m.released++
++			}
++			e.unit, e.ucnt = u, 0
++		}
++		e.ucnt++
++	}
++	if e := &m.s[i]; !e.hot && e.ucnt == 32 {
++		if m.promote(i) {
++			m.promoted[cls]++
++		} else {
++			m.refused[cls]++
++		}
++	}
++	m.events[cls]++
++	if m.s[i].hot || m.s[i].ucnt <= 31 {
++		m.whole[cls]++
++	}
++}
++
++func TestLabChick(t *testing.T) {
++	if os.Getenv("TF_LAB") == "" {
++		t.Skip("set TF_LAB=1")
++	}
++	const capN, hTicks = 200_000, 60_000
++	type heavy struct {
++		h    uint64
++		p    float64 // events per tick
++		ends uint64
++	}
++	for _, sc := range []string{"S0", "S1", "S2"} {
++		for _, c := range []struct {
++			load float64
++			seed uint64
++		}{{1.00, 2}, {1.15, 4}} {
++			for _, chick := range []bool{false, true} {
++				tableN := capN
++				if chick && os.Getenv("TF_CHICK_BYTES") != "" {
++					tableN = capN * 33 / 32 // B9b: the hot table's bytes as lines
++				}
++				f, err := New(Config{Capacity: tableN, Horizon: time.Minute, Resolution: time.Millisecond})
++				if err != nil {
++					t.Fatal(err)
++				}
++				m := &chickModel{f: f, s: make([]cslot, f.lines*4), chick: chick, hT: hTicks, unit: hTicks / unitsPerHorizon,
++					gone: map[uint64]cslot{}, hotFree: f.hotN}
++				if chick {
++					m.hotFree = 0
++				}
++				r := rand.New(rand.NewPCG(c.seed, 99))
++				var hk []heavy
++				var nextHeavy uint64
++				newHeavy := func(now uint64) heavy {
++					nextHeavy++
++					rate := 20 * math.Pow(10, r.Float64()) // 20-200 events/s, log-uniform
++					return heavy{mix64(1<<40 + nextHeavy), rate / 1000, now + hTicks + uint64(r.IntN(hTicks))}
++				}
++				nSquat := 0
++				if sc == "S2" {
++					nSquat = 2 * f.hotN
++				}
++				const squatEvery = 71 // ms between a squatter's events: 14.08/s
++				var done uint64
++				side := func(now uint64) { // the heavy keys' and squatters' events of ticks done+1..now
++					for done < now {
++						done++
++						tk := done
++						for k := int(tk % squatEvery); k < nSquat; k += squatEvery {
++							m.touch(mix64(1<<41+uint64(k)), tk, clSquat)
++						}
++						if sc == "S0" || tk < 2*hTicks/unitsPerHorizon {
++							continue
++						}
++						if hk == nil {
++							for range capN / 200 {
++								hk = append(hk, newHeavy(tk))
++							}
++						}
++						for x := range hk {
++							if hk[x].ends <= tk {
++								hk[x] = newHeavy(tk)
++							}
++							if r.Float64() < hk[x].p {
++								m.touch(hk[x].h, tk, clHeavy)
++							}
++						}
++					}
++				}
++				workload.Churn(c.load, c.seed, capN, hTicks, mix64, func(h, w, now uint64) {
++					side(now)
++					m.touch(h, now, clChurn)
++				})
++				arm := "table"
++				if chick {
++					arm = "chick"
++				}
++				hotNow := 0
++				for i := range m.s {
++					if m.s[i].kind == ckKey && m.s[i].hot {
++						hotNow++
++					}
++				}
++				t.Logf("%s load %.2f %s | evictions churn %d heavy %d squat %d (pairs %d) reloc %d searches %d | heavy events %d whole %.4f promoted %d refused %d | squat events %d whole %.4f promoted %d refused %d | second slot: free %d moved %d evicted %d | released %d hot at end %d (table %d)",
++					sc, c.load, arm, m.evictions[clChurn], m.evictions[clHeavy], m.evictions[clSquat], m.pairEvictions, m.relocations, m.searches,
++					m.events[clHeavy], float64(m.whole[clHeavy])/float64(max(m.events[clHeavy], 1)), m.promoted[clHeavy], m.refused[clHeavy],
++					m.events[clSquat], float64(m.whole[clSquat])/float64(max(m.events[clSquat], 1)), m.promoted[clSquat], m.refused[clSquat],
++					m.byFree, m.byMove, m.byEvict, m.released, hotNow, f.hotN)
++			}
++		}
++	}
++}

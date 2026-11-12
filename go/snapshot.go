@@ -10,11 +10,13 @@ import (
 	"time"
 )
 
-// Snapshot format, version 2 (claims D27; version 1 was E38's unversioned
-// stream, never in the library). A stream of little-endian 64-bit words in
-// six sections, each ended by a check word:
+// Snapshot format, version 3 (claims D27, D29; version 1 was E38's
+// unversioned stream, never in the library; version 2 held each register's
+// unit in word1's bits 48-51, which version 3 gives to the onset). A
+// stream of little-endian 64-bit words in seven sections (six in version
+// 2), each ended by a check word:
 //
-//	0 header:   magic "CLEPSNP1", version (2), the Config's shape (11 words:
+//	0 header:   magic "CLEPSNP1", version (3), the Config's shape (11 words:
 //	            lines, horizon, unit, resolution, stash sets, hot entries,
 //	            overflow bytes, overflow choices, floors per bucket, SpillMin,
 //	            count-min bytes), the clock anchor (tick, wall-clock ns)
@@ -30,16 +32,18 @@ import (
 //	            demoted
 //	5 overflow: presence; if 1: the table's words, epoch, until, saturated
 //	            mark, floored
+//	6 buzz:     presence; if 1: entries (id, word0, word1, meta, the ring's
+//	            four words); version 3 only (claims A46)
 //
 // A check word holds the CRC32C (Castagnoli) of its section's bytes (every
 // word since the previous check word) in bits 0-31 and the section number
-// in bits 32-39; nothing follows section 5. ReadFrom refuses a bad magic,
+// in bits 32-39; nothing follows section 6 (5 in version 2). ReadFrom refuses a bad magic,
 // another version or Config, a short stream, a check word that doesn't
 // match and trailing bytes; the filter it read into is then unspecified and
 // is to be discarded. The check words catch accidental damage (every
 // truncation and single-bit flip tried), not a crafted stream: a snapshot
 // is trusted input.
-const snapVersion = 2
+const snapVersion = 3
 
 var castagnoli = crc32.MakeTable(crc32.Castagnoli)
 
@@ -205,6 +209,21 @@ func (f *Filter) WriteTo(w io.Writer) (int64, error) {
 		s.u(0)
 	}
 	s.end()
+	if t := f.buzz.Load(); t != nil {
+		s.u(1)
+		for i := range t.b {
+			b := &t.b[i]
+			for j := range b.ids {
+				e := &b.e[j]
+				for _, x := range [...]uint64{b.ids[j], e.w0, e.w1, e.meta, e.ev[0], e.ev[1], e.ev[2], e.ev[3]} {
+					s.u(x)
+				}
+			}
+		}
+	} else {
+		s.u(0)
+	}
+	s.end()
 	if s.err == nil {
 		s.err = bw.Flush()
 	}
@@ -228,8 +247,9 @@ func (f *Filter) ReadFrom(r io.Reader) (int64, error) {
 	if s.u() != snapMagic {
 		s.fail("bad magic")
 	}
-	if v := s.u(); v != snapVersion {
-		s.fail(fmt.Sprintf("version %d, want %d", v, snapVersion))
+	v := s.u()
+	if v != snapVersion && v != 2 {
+		s.fail(fmt.Sprintf("version %d, want %d or 2", v, snapVersion))
 	}
 	for _, x := range f.snapShape() {
 		if s.u() != x {
@@ -250,6 +270,11 @@ func (f *Filter) ReadFrom(r io.Reader) (int64, error) {
 	for i := range f.words {
 		f.words[i] = s.u()
 	}
+	if v == 2 {
+		for i := 0; i < len(f.words); i += 2 {
+			f.words[i], f.words[i+1] = f.fromV2(f.words[i], f.words[i+1])
+		}
+	}
 	s.end()
 	f.cursor.Store(s.u())
 	f.evictions.Store(s.u())
@@ -269,6 +294,9 @@ func (f *Filter) ReadFrom(r io.Reader) (int64, error) {
 		st := newStashTable(f.stashN, &f.stashMu)
 		for i := range st.e {
 			st.e[i].id, st.e[i].w0, st.e[i].w1 = s.u(), s.u(), s.u()
+			if v == 2 {
+				st.e[i].w0, st.e[i].w1 = f.fromV2(st.e[i].w0, st.e[i].w1)
+			}
 		}
 		for i := range st.wait {
 			st.wait[i].Store(s.u())
@@ -289,7 +317,11 @@ func (f *Filter) ReadFrom(r io.Reader) (int64, error) {
 			e.id.Store(s.u())
 			e.epoch.Store(int64(s.u()))
 			e.sat.Store(int64(s.u()))
-			e.c0.Store(s.u())
+			c0 := s.u()
+			if v == 2 {
+				c0 &^= hotOnMask // generation bits there; an onset of 0 says nothing
+			}
+			e.c0.Store(c0)
 			for j := 0; j < len(e.c); j += 2 {
 				x := s.u()
 				e.c[j].Store(uint32(x))
@@ -322,6 +354,23 @@ func (f *Filter) ReadFrom(r io.Reader) (int64, error) {
 		g.floored.Store(s.u())
 	}
 	s.end()
+	if v >= 3 && s.u() == 1 {
+		t := f.buzzTable()
+		for i := range t.b {
+			b := &t.b[i]
+			for j := range b.ids {
+				e := &b.e[j]
+				b.ids[j], e.w0, e.w1, e.meta = s.u(), s.u(), s.u(), s.u()
+				for k := range e.ev {
+					e.ev[k] = s.u()
+				}
+			}
+			t.mark(uint64(i))
+		}
+	}
+	if v >= 3 {
+		s.end()
+	}
 	if s.err == nil {
 		if _, err := s.r.ReadByte(); err != io.EOF {
 			s.fail("trailing bytes")
@@ -339,4 +388,31 @@ func (f *Filter) ReadFrom(r io.Reader) (int64, error) {
 		}
 	}
 	return s.n, s.err
+}
+
+// fromV2 is a version 2 snapshot's slot pair (w0, w1) as version 3 holds it.
+// A register there kept 4 bits of its unit, read against its last touch's
+// (as regEpoch did): it is moved to that unit, where a quiescent filter's
+// registers are already, and its onset is 0, which says nothing, so it
+// answers as it did. One ahead of its last touch (never at rest) keeps its
+// unit, its last touch moved to that unit's start.
+func (f *Filter) fromV2(w0, w1 uint64) (uint64, uint64) {
+	if w0 == 0 || w1 == 0 || w1>>tagShift == tagBusy || isHot(w1) {
+		return w0, w1
+	}
+	u := f.unitOf(w0 & tsMask)
+	d := (u - int64(w1>>onsetShift)) & onsetMask
+	if d > onsetMask/2 {
+		d -= onsetMask + 1
+	}
+	r := unpack(w1 & regMask)
+	switch e := u - d; {
+	case e < u:
+		if r.advance(e, u) {
+			w0 |= satBit
+		}
+	case e > u:
+		w0 = w0&^tsMask | uint64(e)*f.unit
+	}
+	return w0, w1&^(onsetMask<<onsetShift|regMask) | r.pack()
 }

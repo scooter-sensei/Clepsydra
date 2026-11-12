@@ -193,7 +193,7 @@ func TestSnapshotCorrupt(t *testing.T) {
 		flips++
 	}
 	t.Logf("snapshot %d bytes, sections ending at %v; truncations %d and bit flips %d tried, accepted %d", len(snap), ends, cuts, flips, accepted)
-	if accepted != 0 || len(ends) != 6 {
+	if accepted != 0 || len(ends) != 7 {
 		t.Errorf("a corrupted or truncated snapshot was accepted (%d), or the sections were not found (%d)", accepted, len(ends))
 	}
 }
@@ -233,6 +233,78 @@ func TestSnapshotCross(t *testing.T) {
 	if hr != hu || nr != nu {
 		t.Errorf("answers differ after a restore across builds")
 	}
+}
+
+// TestSnapshotV2: a version 2 snapshot, before claims D29 (snapHalf's,
+// written by 0df8d1d into testdata/snapshot-v2.bin, with the stash, the
+// overflow table and hot entries in use), restores. Its registers kept 4
+// bits of their unit; each is moved to its last touch's unit with an onset
+// of 0, which says nothing, so the restored filter answers as the version 2
+// filter did: v2Answers' hash is the one that build printed for its own
+// filter. Then the second half: every answer's fields but Count are this
+// build's uninterrupted run's (Count reads a bucket open at the snapshot
+// without its onset).
+func TestSnapshotV2(t *testing.T) {
+	skipSnapModes(t)
+	data, err := os.ReadFile("testdata/snapshot-v2.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, _ := New(snapCfg)
+	if _, err := g.ReadFrom(bytes.NewReader(data)); err != nil {
+		t.Fatal(err)
+	}
+	const v2Hash, v2N = 0x164ff3f1b71acfa5, 30000 // 0df8d1d's v2Answers of snapHalf()
+	if h, n := v2Answers(g); h != v2Hash || n != v2N {
+		t.Errorf("restored from version 2: answers %d, hash %#x; version 2's own: %d, %#x", n, h, v2N, v2Hash)
+	}
+	if g.Promoted() == 0 || g.Evictions() == 0 || g.folded.Load() == 0 {
+		t.Errorf("the fixture's hot entries, stash or overflow table are not in use")
+	}
+	hr, nr := snapRestBut(g, false)
+	hu, nu := snapRestBut(snapHalf(), false)
+	if hr != hu || nr != nu {
+		t.Errorf("after a version 2 restore, answers but Count: %d %#x; uninterrupted: %d %#x", nr, hr, nu, hu)
+	}
+}
+
+// v2Answers hashes CountAt of every workload key at every window, at three
+// clocks after snapHalf's half (TestSnapshotV2).
+func v2Answers(f *Filter) (uint64, int) {
+	h := fnv.New64a()
+	n := 0
+	for _, now := range []uint64{149_999, 150_700, 152_400} {
+		for k := range 2000 {
+			for _, w := range velWins {
+				fmt.Fprintf(h, "%v;", f.CountAt(snapKey(k), w, now))
+				n++
+			}
+		}
+	}
+	return h.Sum64(), n
+}
+
+// snapRestBut is snapRest, Count left out of the hash unless count.
+func snapRestBut(f *Filter, count bool) (uint64, int) {
+	h := fnv.New64a()
+	n := 0
+	put := func(r Result) {
+		if !count {
+			r.Count = 0
+		}
+		fmt.Fprintf(h, "%v", r)
+		n++
+	}
+	velWorkload(func(k int, at uint64) {
+		if at >= 150_000 {
+			put(f.TouchAt(snapKey(k), 60_000, at))
+		}
+	}, func(k int, _ []uint64, wi int, now uint64) {
+		if now >= 150_000 {
+			put(f.CountAt(snapKey(k), velWins[wi], now))
+		}
+	})
+	return h.Sum64(), n
 }
 
 // TestSnapshotRefusesClockPastMaxTick: a restore continues the built-in

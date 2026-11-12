@@ -14,14 +14,15 @@ Every file of `go/`, by category. Go builds a package from one directory and req
 | `ct.go` | ConstantTime's pads, and the placement steps the pads and the Background placer both run | [§3.8](../paper/03-design.md#38-constant-time-mode), [§3.4](../paper/03-design.md#34-background-placement) |
 | `batch.go` | the batches: prefetched chunks of keys, each touched from the slot found | [§4.1](../paper/04-operations.md#41-operations) |
 | `decay.go` | the decay sweep: `ContinuousDecay` and its inline steps | [§3.9](../paper/03-design.md#39-reclaiming-slots) |
-| `register.go` | the velocity register: packing, advance, spill, the estimate | [§3.7](../paper/03-design.md#37-the-velocity-register) |
-| `hot.go` | hot entries: promotion, the lock-free add, demotion, reclaim | [§3.6](../paper/03-design.md#36-hot-entries) |
+| `register.go` | the velocity register: packing, advance, spill, the onset, the estimate, `unpoint` (D29) | [§3.7](../paper/03-design.md#37-the-velocity-register) |
+| `hot.go` | hot entries: promotion, the lock-free add, demotion pinned to word0's unit (`demoteSlot`), reclaim | [§3.6](../paper/03-design.md#36-hot-entries) |
 | `ghost.go` | the overflow ghost table: two buckets, floors, epochs | [§3.5](../paper/03-design.md#35-the-overflow-table) |
 | `overflow.go` | the count-min overflow sketch the ghost table replaced, kept for the experiments | [record/decisions.md](../record/decisions.md#overflow) |
 | `merge.go` | `Merge`: one quiescent filter's keys added to another | [§4.1](../paper/04-operations.md#41-operations) |
-| `snapshot.go` | snapshots: `WriteTo` and `ReadFrom`, the format's six sections and their CRC32C check words, the built-in clock's re-anchoring | [§4.1](../paper/04-operations.md#41-operations) |
+| `snapshot.go` | snapshots: `WriteTo` and `ReadFrom`, the format's seven sections and their CRC32C check words (version 3; version 2 read and converted), the built-in clock's re-anchoring | [§4.1](../paper/04-operations.md#41-operations) |
 | `resize.go` | `Resizable`: a filter whose Capacity changes, the old filter read beside the new for a horizon, keys moved on their next touch | [§4.1](../paper/04-operations.md#41-operations) |
-| `touchif.go` | `TouchIfUnder`, `TouchIfUnderAt`: a touch only while the key is under a limit, serialized per key by 64 stripes | [§4.2](../paper/04-operations.md#using-the-trust-flags) |
+| `touchif.go` | `TouchIfUnder`, `TouchIfUnderAt`: a touch only while the key is under a limit, serialized per key by 64 stripes; for a limit of 16 or less, buzz entries decide (A45, A46) | [§4.2](../paper/04-operations.md#using-the-trust-flags) |
+| `buzz.go` | buzz entries: an exact log of a key's admitted conditional touches, given on a refusal in doubt, for limits of 16 or less (A46) | [§4.2](../paper/04-operations.md#using-the-trust-flags) |
 | `go.mod` | the module, `github.com/scooter-sensei/clepsydra/go`: Go 1.24.7 at least, toolchain go1.27.3 | — |
 
 ## Internal packages: `go/internal/`
@@ -46,10 +47,10 @@ The head-to-head harness ([head-to-head.md](head-to-head.md)): `trace.go` (part 
 
 | Category | Files |
 |---|---|
-| Smoke and unit | `smoke_test.go` (every public operation once, three configs), `filter_test.go`, `register_test.go`, `disp_test.go` (the displaced bit), `batch_test.go`, `ghost_test.go`, `hot_test.go`, `background_test.go`, `ctwait_test.go` (ConstantTime's waiting keys), `merge_test.go` (`Merge`, D24), `snapshot_test.go` (D27; `TestSnapshotCross` with `SNAP_OUT`/`SNAP_IN` across builds), `resize_test.go` (D28), `touchif_test.go` (A45), `hashbatch_test.go` (`HashUint64s` equals `HashUint64`, D25), `mass_exp_test.go` (`TF_EXP=1`: `mass` from word1 equals the view's, S76) |
+| Smoke and unit | `smoke_test.go` (every public operation once, three configs), `filter_test.go`, `register_test.go`, `disp_test.go` (the displaced bit), `batch_test.go`, `ghost_test.go`, `hot_test.go`, `background_test.go`, `ctwait_test.go` (ConstantTime's waiting keys), `merge_test.go` (`Merge`, D24), `snapshot_test.go` (D27; `TestSnapshotCross` with `SNAP_OUT`/`SNAP_IN` across builds; `TestSnapshotV2` restores `testdata/snapshot-v2.bin`, a version 2 snapshot 0df8d1d wrote, D29), `resize_test.go` (D28), `touchif_test.go` (A45), `buzz_test.go` (A46; `TestBuzzReading` with `TF_EXP=1`), `hashbatch_test.go` (`HashUint64s` equals `HashUint64`, D25), `mass_exp_test.go` (`TF_EXP=1`: `mass` from word1 equals the view's, S76) |
 | Conformance | `conformance_test.go` (`spec/vectors/`, `-update` regenerates them) |
 | Regression of fixed bugs | `regress_test.go`, `dup_test.go`, `reloc_race_test.go`, `abandon_test.go`, `read_race_test.go`, `restore_test.go`, `lost_test.go`, `movecopy_test.go`, `restorewait_test.go` (A37), `mirror_test.go` (A39), `hotdrop_test.go` (A40), `merge_stash_test.go` (D26) |
-| Concurrency races on hooks | `gaprace_test.go` (A21), `roomrace_test.go` (A20, A24), `split_race_test.go` (971dc4a, 64ebd85, A23), `sweep_race_test.go` (A26), `install_race_test.go` (A27), `tagstripe_test.go` (A28–A30), `hotspill_test.go` (A32, A38), `stash_race_test.go` (A6), `cas2_amd64_test.go`, `cas2_other_test.go` (realign both ways, A33) |
+| Concurrency races on hooks | `gaprace_test.go` (A21), `roomrace_test.go` (A20, A24), `split_race_test.go` (971dc4a, 64ebd85, A23), `sweep_race_test.go` (A26), `install_race_test.go` (A27), `tagstripe_test.go` (A28–A30), `hotspill_test.go` (A32, A38), `stash_race_test.go` (A6), `cas2_amd64_test.go`, `cas2_other_test.go` (realign both ways, A33), `slotunit_race_test.go` (demote, stamp and unpoint pinned to word0's unit, D29) |
 | Fuzzers and soak | `fuzz_test.go` (`TestFuzzUpper`), `fuzzconc_test.go` (`TestFuzzConcurrent`), `soak_test.go` (`TestStressSoak`), `tagamp_test.go` (the tag amplifier, `TF_CFUZZ_TAGS`, `TF_STRESS_TAGS`) |
 | Attacks | `attack_test.go` |
 | Deterministic experiments (`verify/expected/`) | `placement_test.go` (the placement oracle, D8–D11), `rate_test.go` (A15), `velbound_test.go` (D18), `velinfo_test.go` (D19), `secexp_test.go` (A9–A11), `floodexp_test.go` (A14) |

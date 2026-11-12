@@ -69,7 +69,7 @@ func TestRealignCAS2(t *testing.T) {
 			t.Fatalf("setup: K in %v", sl)
 		}
 		i := sl[0]
-		full := uint64(tg)<<tagShift | uint64(f.unitOf(sweepT0))&epochMask<<48 | regMask // every bucket full
+		full := uint64(tg)<<tagShift | uint64(f.unitOf(sweepT0))&onsetMask<<onsetShift | regMask // every bucket full
 		atomic.StoreUint64(&f.words[i+1], full)
 		w0 := atomic.LoadUint64(&f.words[i])
 		if moved { // a touch of K at the next tick, after realign's read

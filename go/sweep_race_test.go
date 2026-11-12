@@ -32,7 +32,7 @@ const sweepT0 = 60_000 // a unit boundary (units of 2,500 ticks)
 // TestSweepRacingReinsertKeepsKey: the decay sweep clears K's expired slot.
 // Between its first and last write to the slot, K's next touch, 32 units
 // on, puts K back in the slot with a fresh register bit-identical to the old
-// one (one event, K's tag, a unit with the same 4 epoch bits). The sweep
+// one (one event, K's tag, the same 4 bits: a unit's, an onset since D29). The sweep
 // must leave the new register alone. Before (claims A26), the sweep cleared
 // word0, then CASed word1 from the old register to 0, which took the new
 // one: K's fingerprint was left with an empty register, a slot no lookup

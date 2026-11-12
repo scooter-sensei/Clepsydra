@@ -6,6 +6,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"unsafe"
+
+	"github.com/scooter-sensei/clepsydra/go/internal/cpu"
 )
 
 // Hot entries. A key whose register would overflow (more than 31 events in
@@ -45,10 +47,16 @@ type hotEntry struct {
 // one CAS while hotClosed is clear (add). A writer closes it on taking the
 // entry and reopens it with the next generation on leaving, so a CAS that
 // read the word before a change of owner or unit fails.
+//
+// The word's top 4 bits hold bucket 0's onset, as a register's onset field
+// does (claims D29), so a reader takes it with the count and a snapshot
+// carries it; the generation keeps the 27 bits between.
 const (
-	hotCount  = 1<<32 - 1
-	hotClosed = 1 << 32
-	hotGen    = 1 << 33
+	hotCount   = 1<<32 - 1
+	hotClosed  = 1 << 32
+	hotGen     = 1 << 33
+	hotOnShift = 60
+	hotOnMask  = onsetMask << hotOnShift
 )
 
 // isHot reports whether word1 points at a hot entry instead of holding a
@@ -101,15 +109,18 @@ func (e *hotEntry) lock() uint64 {
 }
 
 func (e *hotEntry) unlock(ver uint64) {
-	e.c0.Store(e.c0.Load()&^hotClosed + hotGen)
+	c := e.c0.Load()
+	e.c0.Store((c&^hotClosed+hotGen)&^hotOnMask | c&hotOnMask) // the generation wraps inside its bits
 	e.ver.Store(ver + 1)
 }
 
-// view is a register's state, narrow or hot: bucket counts at unit e and,
-// for a hot entry, the newest unit whose events may be missing.
+// view is a register's state, narrow or hot: bucket counts at unit e,
+// bucket 0's onset in sixteenths of its unit (0 says nothing) and, for a hot
+// entry, the newest unit whose events may be missing.
 type view struct {
 	e   int64
 	c   [nBuckets]uint64
+	on  uint64
 	sat int64
 	hot bool
 }
@@ -118,7 +129,8 @@ type view struct {
 // version around the call.
 func (e *hotEntry) load() (v view) {
 	v.e, v.sat, v.hot = e.epoch.Load(), e.sat.Load(), true
-	v.c[0] = e.c0.Load() & hotCount
+	c0 := e.c0.Load()
+	v.c[0], v.on = c0&hotCount, c0>>hotOnShift
 	for j := 1; j < nBuckets; j++ {
 		v.c[j] = uint64(e.c[j-1].Load())
 	}
@@ -133,7 +145,7 @@ func (e *hotEntry) store(v *view) {
 			v.c[j], v.sat = math.MaxUint32, max(v.sat, v.e)
 		}
 		if j == 0 {
-			e.c0.Store(e.c0.Load()&^hotCount | v.c[0])
+			e.c0.Store(e.c0.Load()&^(hotCount|hotOnMask) | v.c[0] | v.on<<hotOnShift)
 		} else {
 			e.c[j-1].Store(uint32(v.c[j]))
 		}
@@ -159,12 +171,13 @@ func (t *hotTable) read(idx, id uint64) (view, bool) {
 	}
 }
 
-// add counts n events at unit u into entry idx if it belongs to id. Events
-// at a unit older than the entry's go to the bucket that covers it. If slot
-// is the word1 that points here (old), a touch that starts a new unit with
-// every bucket at most half the register's width hands the counts back to
-// the slot as a register and frees the entry (demote).
-func (t *hotTable) add(idx, id, n uint64, u int64, slot *uint64, old uint64) bool {
+// add counts n events at now (unit u) into entry idx of f's table t if it
+// belongs to id. Events at a unit older than the entry's go to the bucket
+// that covers it. If slot is the word1 that points here (old), a touch that
+// starts a new unit with every bucket at most half the register's width
+// hands the counts back to the slot as a register and frees the entry
+// (demote).
+func (t *hotTable) add(f *Filter, idx, id, n uint64, u int64, now uint64, slot *uint64, old uint64) bool {
 	e := &t.e[idx]
 	for { // the usual case, a touch in the entry's own unit: one CAS
 		c := e.c0.Load()
@@ -188,11 +201,15 @@ func (t *hotTable) add(idx, id, n uint64, u int64, slot *uint64, old uint64) boo
 		}
 	}
 	v := e.load()
-	if u >= v.e {
+	switch {
+	case u > v.e:
 		advanceWide(&v.c, v.e, u)
-		v.e = u
+		v.e, v.on = u, f.onsetOf(now, u) // these events start bucket 0
 		v.c[0] += n
-	} else {
+	case u == v.e:
+		v.c[0] += n
+		v.on = min(v.on, f.onsetOf(now, u)) // a caller behind the onset
+	default:
 		var x [nBuckets]uint64
 		x[0] = n
 		advanceWide(&x, u, v.e)
@@ -205,8 +222,8 @@ func (t *hotTable) add(idx, id, n uint64, u int64, slot *uint64, old uint64) boo
 		for j := range r {
 			r[j] = v.c[j]
 		}
-		nw := old&^(1<<tagShift-1) | uint64(v.e)&epochMask<<48 | r.pack()
-		if atomic.CompareAndSwapUint64(slot, old, nw) {
+		nw := old&^(1<<tagShift-1) | v.on<<onsetShift | r.pack()
+		if f.demoteSlot(slot, old, nw, u) {
 			e.id.Store(0)
 			e.unlock(ver)
 			t.putFree(idx)
@@ -216,6 +233,34 @@ func (t *hotTable) add(idx, id, n uint64, u int64, slot *uint64, old uint64) boo
 	}
 	e.store(&v)
 	e.unlock(ver)
+	return true
+}
+
+// demoteSlot is a demotion's swap of word1 (slot) from the hot pointer p to
+// the register nw, at unit u, taken only while word0's last touch is in u: by
+// one 16-byte CAS of both words, word0 compared as loaded, or else under a
+// hold of word1, word0 read under it. A register must never sit beside a
+// last touch of another unit, and a touch of the hot key into a later unit
+// moves word0 while word1 points here (touch's stamp, which compares word1
+// or holds it in turn). A demotion that loses the race is left for a later
+// unit.
+func (f *Filter) demoteSlot(slot *uint64, p, nw uint64, u int64) bool {
+	p0 := (*uint64)(unsafe.Add(unsafe.Pointer(slot), -8))
+	if cpu.HasCAS2 {
+		w0 := atomic.LoadUint64(p0)
+		return f.unitOf(w0&tsMask) == u && cpu.CAS2(p0, w0, p, w0, nw)
+	}
+	m := f.moveOf(p >> tagShift)
+	m.begun.Add(1)
+	defer m.done.Add(1)
+	if !atomic.CompareAndSwapUint64(slot, p, busy) {
+		return false
+	}
+	if f.unitOf(atomic.LoadUint64(p0)&tsMask) != u {
+		atomic.StoreUint64(slot, p)
+		return false
+	}
+	atomic.StoreUint64(slot, nw)
 	return true
 }
 
@@ -379,7 +424,7 @@ func (f *Filter) hotEntryFor(i int, w0, old, tg, last, now uint64) (w1, idx, id 
 		return 0, 0, 0
 	}
 	id = f.slotID(uint64(i/wordsPerLine), w0, old)
-	v := view{e: regEpoch(old, f.unitOf(last)), sat: satNone, hot: true}
+	v := view{e: f.unitOf(last), on: old >> onsetShift & onsetMask, sat: satNone, hot: true}
 	r := unpack(old & regMask)
 	for j := range r {
 		v.c[j] = r[j]
@@ -387,9 +432,14 @@ func (f *Filter) hotEntryFor(i int, w0, old, tg, last, now uint64) (w1, idx, id 
 	if w0&satBit != 0 { // it overflowed before: its counts up to now are floors
 		v.sat = v.e
 	}
-	if u := f.unitOf(now); u > v.e {
+	switch u := f.unitOf(now); {
+	case u > v.e:
 		advanceWide(&v.c, v.e, u)
-		v.e = u
+		v.e, v.on = u, f.onsetOf(now, u) // this touch starts bucket 0
+	case u == v.e:
+		v.on = min(v.on, f.onsetOf(now, u))
+	default:
+		v.on = 0 // an event from an earlier unit, counted at v.e
 	}
 	v.c[0]++
 	if idx = f.hotAlloc(id, &v, now); idx == 0 {
@@ -408,7 +458,7 @@ func (f *Filter) viewOf(id, w1, last uint64) (v view, ok bool) {
 		}
 		return view{}, false
 	}
-	v.e = regEpoch(w1, f.unitOf(last))
+	v.e, v.on = f.unitOf(last), w1>>onsetShift&onsetMask
 	v.c[0] = w1 & 0x1F
 	v.c[1] = (w1 >> 5) & 0x1F
 	v.c[2] = (w1 >> 10) & 0x3F
@@ -456,7 +506,7 @@ func (f *Filter) slotDrop(id, w1 uint64) {
 // may then be handed back to it as a register (demote).
 func (f *Filter) hotAdd(w1, id, now uint64, slot *uint64) bool {
 	t := f.hot.Load()
-	return t != nil && t.add(hotIdx(w1), id, 1, f.unitOf(now), slot, w1)
+	return t != nil && t.add(f, hotIdx(w1), id, 1, f.unitOf(now), now, slot, w1)
 }
 
 // advanceWide is register.advance for a hot entry's uncapped counts.

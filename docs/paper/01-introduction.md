@@ -21,7 +21,7 @@ The useful window differs by rule ("5 cards in 10 s", "1,000 requests a minute")
 The table is any number of 64-byte lines, each holding 4 slots of two 64-bit words ([3 Design](03-design.md)):
 
 - **word0** holds a 16-bit fingerprint, two flag bits and the key's **exact** last-touch time (46 bits).
-- **word1** holds a 12-bit tag, a 4-bit epoch and the **velocity register**: 7 buckets that are 1, 1, 1–2, 2–4, 4–8, 8 and 8 units wide (a unit is `Horizon/24`), so resolution is fine near now and coarse further back.
+- **word1** holds a 12-bit tag, a 4-bit onset (where in its unit the newest bucket's first event fell) and the **velocity register**: 7 buckets that are 1, 1, 1–2, 2–4, 4–8, 8 and 8 units wide (a unit is `Horizon/24`), so resolution is fine near now and coarse further back.
 
 Because the exact timestamp and the counter of a key share one line, a hit reads one line and updates it with a CAS per word. A key lives in one of two candidate lines (a bounded cuckoo search moves entries to make room). When the table is full, eviction takes the slot with the fewest events, so a spray of fresh keys can't flush a repeat offender. What leaves the table is not forgotten within the horizon: an evicted key's history waits in a **stash**, a history the stash drops goes to an **overflow table** of 21-bit entries, and a key too heavy for its register moves to a **hot entry** of 32-bit counters.
 
@@ -45,7 +45,7 @@ On the scorecard's churn workload (capacity 200k, horizon 60 s), deterministic a
 - **Missed keys:** 0 at 85%, 94% and 97.8% slot load (1.15x capacity) [D1].
 - **False positives:** 0 of 723,513 negatives on the churn workload; 18 in 1e9 never-inserted probes (1.8e-8) [D2, D3].
 - **Memory:** 18.8 B per key at design load; 31.1 B per key under a heavy flood [D6, D17, A14].
-- **Velocity error:** 0.078 averaged over 1–60 s windows and 5 traffic shapes, against a floor of ~0.058 for any estimator reading this register [D5, D18].
+- **Velocity error:** 0.067 averaged over 1–60 s windows and 5 traffic shapes (0.078 before the newest bucket's onset took the bits its unit had held), against a floor of ~0.058 for any estimator reading the counts alone [D5, D18, D29].
 - **Counts** stay exact from 10 to 5,000 events/s per key [A15]; a 4x heavy flood turns away 0.29% of new keys under a strict limit, and every offender keeps its full count [A14].
 
 Speed, contention and timing results are in [7 Evaluation](07-evaluation.md) and [6 Security](06-security.md).

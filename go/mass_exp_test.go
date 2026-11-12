@@ -48,7 +48,7 @@ func TestMassMatchesView(t *testing.T) {
 				reg |= c << bucketShift[j]
 			}
 		}
-		w1 := (next()%(1<<tagBits-1))<<tagShift | (next()&epochMask)<<48 | reg
+		w1 := (next()%(1<<tagBits-1))<<tagShift | (next()&onsetMask)<<onsetShift | reg
 		last := 3*h + next()%(10*h)
 		if next()%4 == 0 {
 			last = last/u*u + []uint64{0, 1, u - 1}[next()%3] // on, just past, just before a unit boundary

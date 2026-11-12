@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Model checks of the slot protocol (verify/tla/*.tla) with TLC.
 #
-#   verify/tla.sh [model...]   WaitRoom, RegisterEpoch, Relocate, RoomWays, SlotHold,
+#   verify/tla.sh [model...]   WaitRoom, RegisterEpoch, SlotUnit, Relocate, RoomWays, SlotHold,
 #                              TagStripe, BumpABA, HotEntry, StashSet
 #                              (default: all): the protocol as committed at
 #                              a few sizes, then each guard undone (each
@@ -14,7 +14,9 @@
 # line per run and exits non-zero if a run's outcome isn't the one wanted.
 # TLA_BIG=1 adds the large sizes the claims cite (WaitRoom 2 touchers x 2
 # rounds, 72 M states; RegisterEpoch 3 touchers, 52 M states: tens of
-# minutes each). TLC_WORKERS (default 4) sets TLC's threads.
+# minutes each; SlotUnit 3 touchers, 4.7-61 M states, more by hold from a
+# hot pointer: hours, and state files past a /tmp held in memory, so set
+# TMPDIR to a disk). TLC_WORKERS (default 4) sets TLC's threads.
 set -uo pipefail
 cd "$(dirname "$0")/tla"
 J=${TLA2TOOLS:-$HOME/tools/tla/tla2tools.jar}
@@ -89,6 +91,27 @@ registerepoch() {
 		[ "${TLA_BIG:-}" = 1 ] && run ok RegisterEpoch "$v ($what), 3 touchers" "$inv" "Touchers = $(procs t 3)" "$c" "Variant = \"$v\"" "H = 24"
 	done
 	run violation RegisterEpoch "cas2NoReread: ReaderRight" ReaderRight "Touchers = $(procs t 2)" "$c" 'Variant = "cas2NoReread"' "H = 24"
+}
+
+# SlotUnit (claims D29): a register stores no unit and is read at word0's;
+# realign, stamp, demote and unpoint keep the pair at one unit.
+slotunit() {
+	local inv="Aligned ReaderRight" c='Clocks = {1, 2, 3}' v s r
+	for v in cas2 hold; do
+		for s in reg ptr; do
+			for r in FALSE TRUE; do
+				[ $s = reg ] && [ $r = TRUE ] && continue
+				run ok SlotUnit "$v, start $s, reclaim $r, 2 touchers" "$inv" "Touchers = $(procs t 2)" "$c" "Variant = \"$v\"" "Start = \"$s\"" "Reclaim = $r"
+				[ "${TLA_BIG:-}" = 1 ] && run ok SlotUnit "$v, start $s, reclaim $r, 3 touchers" "$inv" "Touchers = $(procs t 3)" "$c" "Variant = \"$v\"" "Start = \"$s\"" "Reclaim = $r"
+			done
+		done
+	done
+	for r in Aligned ReaderRight; do
+		run violation SlotUnit "lockfreeUnit (no stored unit, no realign): $r" "$r" "Touchers = $(procs t 2)" "$c" 'Variant = "lockfreeUnit"' 'Start = "reg"' 'Reclaim = FALSE'
+	done
+	run violation SlotUnit "plainStamp" "$inv" "Touchers = $(procs t 2)" "$c" 'Variant = "plainStamp"' 'Start = "ptr"' 'Reclaim = FALSE'
+	run violation SlotUnit "plainDemote" "$inv" "Touchers = $(procs t 2)" "$c" 'Variant = "plainDemote"' 'Start = "ptr"' 'Reclaim = FALSE'
+	run violation SlotUnit "plainUnpoint" "$inv" "Touchers = $(procs t 2)" "$c" 'Variant = "plainUnpoint"' 'Start = "ptr"' 'Reclaim = TRUE'
 }
 
 # Relocate (claims A23): a relocation's copy, hidden until its hand-off,
@@ -232,11 +255,12 @@ stashset() {
 }
 
 models=("$@")
-[ ${#models[@]} -gt 0 ] || models=(WaitRoom RegisterEpoch Relocate RoomWays SlotHold TagStripe BumpABA HotEntry StashSet)
+[ ${#models[@]} -gt 0 ] || models=(WaitRoom RegisterEpoch SlotUnit Relocate RoomWays SlotHold TagStripe BumpABA HotEntry StashSet)
 for m in "${models[@]}"; do
 	case $m in
 	WaitRoom) waitroom ;;
 	RegisterEpoch) registerepoch ;;
+	SlotUnit) slotunit ;;
 	Relocate) relocate ;;
 	RoomWays) roomways ;;
 	SlotHold) slothold ;;

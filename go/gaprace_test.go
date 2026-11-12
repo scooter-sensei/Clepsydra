@@ -12,7 +12,8 @@ import (
 // register as the new unit's and X then aged Y's event with it by g units
 // (past the horizon, X's reset dropped it): the last two units read
 // Upper 1 for two events. Y must count in the current unit. (With
-// realign's 16-byte CAS, X moves both words at once for g >= 8.)
+// realign's 16-byte CAS, X moves both words at once for g >= 8; since
+// claims D29 the register stores no unit, and X moves both for any g >= 1.)
 func TestTouchesRacingAfterGap(t *testing.T) {
 	if forceCT {
 		t.Skip("ConstantTime touches of a key run one at a time under its stripe")

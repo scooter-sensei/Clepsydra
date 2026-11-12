@@ -7,7 +7,7 @@ import (
 )
 
 // Merge adds g's keys to f: for a key in both, the two registers are
-// re-bucketed to the newer one's epoch and summed bucket by bucket (an
+// re-bucketed to the newer one's unit and summed bucket by bucket (an
 // overflow sets the saturated bit), and the last touch is the newer one; a
 // key only g's table holds goes in as a first touch would (which may evict),
 // with f's own stashed history of it, if f evicted it, summed in the same
@@ -101,7 +101,7 @@ func (f *Filter) Merge(g *Filter) error {
 	return nil
 }
 
-// sumRegisters re-buckets views a and b to the newer epoch and adds them
+// sumRegisters re-buckets views a and b to the newer unit and adds them
 // bucket by bucket: the merged register word for tag tg, and whether a
 // bucket overflowed (the caller sets the saturated bit).
 func sumRegisters(a, b view, tg uint64) (w1 uint64, over bool) {
@@ -112,5 +112,14 @@ func sumRegisters(a, b view, tg uint64) (w1 uint64, over bool) {
 	for i := range nBuckets {
 		over = ra.add(i, rb[i]) || over
 	}
-	return tg<<tagShift | uint64(e)&epochMask<<48 | ra.pack(), over
+	// Bucket 0 is the newer register's (the older one's events advance out
+	// of it): its onset, or the earlier of two in one unit (0 says nothing).
+	on := a.on
+	switch {
+	case a.e == b.e:
+		on = min(a.on, b.on)
+	case b.e > a.e:
+		on = b.on
+	}
+	return tg<<tagShift | on<<onsetShift | ra.pack(), over
 }

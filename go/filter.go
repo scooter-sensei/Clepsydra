@@ -8,7 +8,7 @@
 // four 2-word slots:
 //
 //	word0: fp(16) | displaced(1) | saturated(1) | lastTouch(46) // freshness, CheckAndTouch
-//	word1: tag(12) | epoch(4) | b0..b6 (7 buckets, 48 bits)    // velocity register
+//	word1: tag(12) | onset(4) | b0..b6 (7 buckets, 48 bits)    // velocity register, at word0's unit
 //
 // The velocity register keeps 7 buckets whose widths grow with age (1, 1,
 // 1-2, 2-4, 4-8, 8, 8 units of Horizon/24): fine resolution near now, coarse
@@ -216,6 +216,7 @@ type Filter struct {
 	ownClock   bool                       // the built-in clock: ReadFrom re-anchors it (claims D27)
 	clockAdd   atomic.Uint64              // ticks the built-in clock is moved on by
 	roomMu     [stashStripes]paddedMutex
+	buzz       atomic.Pointer[buzzTable] // conditional touches' exact logs (buzz.go), nil until the first uncertain refusal
 }
 
 // Test hooks, if set: testHookCopied runs between a relocation's copy and
@@ -234,8 +235,10 @@ type Filter struct {
 // or expired, before its word1; testHookSweepSeen after the decay sweep
 // reads slot i's word0, before its word1; testHookSweepRead after it reads
 // word1, before its hold; testHookHotAdding after bump checks slot i's
-// words and finds a hot pointer, before it adds to the entry.
-var testHookCopied, testHookVictim, testHookTaken, testHookStamped, testHookPlacing, testHookSweeping func()
+// words and finds a hot pointer, before it adds to the entry;
+// testHookStamping after a hot key's touch into a later unit reads word0
+// and the pointer, before its stamp.
+var testHookCopied, testHookVictim, testHookTaken, testHookStamped, testHookStamping, testHookPlacing, testHookSweeping func()
 var testHookPicked, testHookInstalling, testHookBumping, testHookBumped, testHookOpenSeen, testHookSweepSeen, testHookSweepRead, testHookHotAdding func(i int)
 
 // forceCT turns ConstantTime on in every filter (tests: TF_CT=1).
@@ -566,7 +569,8 @@ func (f *Filter) Occupancy(now uint64) int {
 func (f *Filter) Slots() int { return len(f.words) / 2 }
 
 // Bytes is the memory the filter holds now: its table, and the stash,
-// overflow table and hot entries once allocated (each on first use).
+// overflow table, hot entries and buzz entries (with their blocks' bitmap)
+// once allocated (each on first use).
 func (f *Filter) Bytes() int {
 	n := 8 * len(f.words)
 	for _, s := range [2]*stashTable{f.stash.Load(), f.room.Load()} {
@@ -582,6 +586,9 @@ func (f *Filter) Bytes() int {
 	}
 	if t := f.hot.Load(); t != nil {
 		n += len(t.e) * int(unsafe.Sizeof(hotEntry{}))
+	}
+	if t := f.buzz.Load(); t != nil {
+		n += len(t.b)*int(unsafe.Sizeof(buzzBlock{})) + 8*len(t.used) // the blocks and their bitmap
 	}
 	return n
 }

@@ -22,8 +22,10 @@ import (
 //     event of the cut bucket spread uniformly;
 //   - anchored: the newest bucket's last event, which lies exactly at the
 //     slot's lastTouch, counts whole and only the other events are spread
-//     (what estimate does now, re-derived from the key's register: it must
-//     equal filter);
+//     (estimate until the onset, claims D29);
+//   - onset: anchored, and the newest bucket's events spread from its onset
+//     rather than its unit's start (what estimate does now, re-derived from
+//     the key's register: it must equal filter);
 //   - median: anchored, and the cut bucket's share is the median of
 //     Binomial(events, window's share of the bucket), the best guess under
 //     absolute error if events are uniform within a bucket;
@@ -86,7 +88,7 @@ func TestVelocityBound(t *testing.T) {
 	times := make([][]uint64, nkeys)
 	wins := []uint64{1_000, 5_000, 15_000, 30_000, 60_000}
 	flat := []uint64{2500, 1250, 625, 250, 100} // H/24 (today's unit), H/48, H/96, H/240, H/600
-	names := []string{"filter", "spread (until 10-22)", "anchored (re-derived)", "median (anchored)", "model floor"}
+	names := []string{"filter", "spread (until 10-22)", "anchored (until D29)", "onset (re-derived)", "median (anchored)", "model floor"}
 	for _, u := range flat {
 		names = append(names, "flat "+time.Duration(u*uint64(time.Millisecond)).String())
 	}
@@ -122,13 +124,13 @@ func TestVelocityBound(t *testing.T) {
 			v, ok = f.viewOf(f.stashID(hs[k], fingerprint(hs[k]), tag(hs[k])), w1, last)
 		}
 		in := ok && age(now, last) <= min(w, f.horizon)
-		for _, mode := range []int{0, 1, 2} {
+		for _, mode := range []int{0, 1, 2, 3} { // spread, anchored, onset, median
 			est, mad := 0.0, 0.0
 			if in {
-				est, mad = f.regEstimate(v, last, now, w, mode >= 1, mode == 2)
+				est, mad = f.regEstimate(v, last, now, w, mode >= 1, mode == 3, mode == 2)
 			}
 			got = append(got, round(est, in))
-			if mode == 2 {
+			if mode == 3 {
 				got = append(got, mad) // the floor is an expected |error|, scored as is
 			}
 		}
@@ -154,7 +156,7 @@ func TestVelocityBound(t *testing.T) {
 		}
 		t.Logf("%-22s%s %s", name, line, pad7(mean))
 	}
-	if a, b := errSum[0], errSum[2]; !slices.Equal(a, b) {
+	if a, b := errSum[0], errSum[3]; !slices.Equal(a, b) {
 		t.Errorf("re-derived estimate differs from the filter's: %v vs %v", b, a)
 	}
 }
@@ -162,11 +164,12 @@ func TestVelocityBound(t *testing.T) {
 func pad7(x float64) string { return fmt.Sprintf("%7.4f", x) }
 
 // regEstimate is estimate's interpolation (register.go) for a register view,
-// with two options: anchor (the newest bucket's last event, at lastTouch,
-// counts whole) and median (the cut bucket's share is the median of
-// Binomial(events, share) instead of its mean). mad is the expected
-// |error| of that median under the uniform model.
-func (f *Filter) regEstimate(v view, last, now, window uint64, anchor, median bool) (est, mad float64) {
+// with three options: anchor (the newest bucket's last event, at lastTouch,
+// counts whole), median (the cut bucket's share is the median of
+// Binomial(events, share) instead of its mean) and onset (the newest
+// bucket's events lie from its onset, as estimate reads it). mad is the
+// expected |error| of that median under the uniform model.
+func (f *Filter) regEstimate(v view, last, now, window uint64, anchor, median, onset bool) (est, mad float64) {
 	window = min(window, f.horizon)
 	e := v.e
 	unit := float64(f.unit)
@@ -195,6 +198,18 @@ func (f *Filter) regEstimate(v view, last, now, window uint64, anchor, median bo
 		if from <= lo {
 			est += float64(c)
 			continue
+		}
+		if onset && j == 0 && v.on != 0 && float64(c) > a {
+			on := lo + float64(v.on)*unit/16
+			switch {
+			case from <= on:
+				est += float64(c)
+			case hi > on:
+				est += a + (float64(c)-a)*max(0, min(1, (hi-from)/(hi-on)))
+			default:
+				est += a
+			}
+			break
 		}
 		if from < hi {
 			p := (hi - from) / (hi - lo)

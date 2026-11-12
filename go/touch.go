@@ -193,23 +193,26 @@ func (f *Filter) addSketch(r *Result, h, window, now uint64) {
 // function it cost the cache-resident hit 1.05x and the touch batch 1.08x
 // (placement-randomized, 6 layouts, cycles/op).
 //
-// A register keeps 4 bits of its unit and is read against the slot's last
-// touch (word0), so word0 must never run 8 units or more ahead of it where
-// a touch or a read can see the pair. A touch that moves word0 first and
-// the register after keeps that only for a jump of under 8 units from the
-// register's own unit: it then moves word0 lock-free and counts with bump,
-// which reads the register against word0 as it is then. A touch 8 or more
-// units past the register's unit (a key idle a third of the horizon, or
-// past it) moves word0 and the register together under word1 busy
-// (realign). Before realign, such a touch moved word0 first: a second touch
-// of the key between its two writes read the old register as the new
-// unit's, and the first then aged that touch's event by the gap, or, past
-// the horizon, reset it away (claims A21). A hot entry keeps its own full
-// unit: its key's touches count lock-free, except one that finds the slot
-// past the horizon, whose reset goes through realign too. Before, it moved
-// word0, then reset word1 by a CAS from the hot pointer; a touch after its
-// word0 found the key live and added to the entry, which leaves word1 as it
-// was, and the reset dropped that event (claims A30).
+// A register is read at the unit of the slot's last touch (word0), so the
+// two must change unit together where a touch or a read can see the pair
+// (claims D29). A touch inside the last touch's unit moves word0 lock-free
+// and counts with bump, which reads the register against word0 as it is
+// then. A touch that starts a unit moves word0 and the register together
+// (realign): by one 16-byte CAS of both words, or else under word1 busy.
+// Before, the register kept 4 bits of its unit and only a jump of 8 units or
+// more went through realign (a touch that moved word0 first, the register
+// after, then read a register at a lag by its stored unit; before realign,
+// a second touch of the key between those two writes read the old register
+// as the new unit's, and the first then aged that touch's event by the gap,
+// or, past the horizon, reset it away: claims A21). A hot entry keeps its
+// own full unit: its key's touches count lock-free, and one that starts a
+// unit moves word0 only while word1 still points to the entry (stamp), so
+// that a demotion, which puts a register at its unit there, and the touch
+// can't cross; one that finds the slot past the horizon resets through
+// realign. Before, it moved word0, then reset word1 by a CAS from the hot
+// pointer; a touch after its word0 found the key live and added to the
+// entry, which leaves word1 as it was, and the reset dropped that event
+// (claims A30).
 func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 	ct := i0 == ctInside
 	if !ct {
@@ -308,10 +311,22 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 			runtime.Gosched()
 			continue // another touch is realigning the slot
 		} else if far {
-			w1, over, ok = f.realign(h, i, w0, old, tg, now)
+			if cpu.HasCAS2 && old>>tagShift == tg && !isHot(old) { // realign's usual case, without its call
+				checkTick(now)
+				w1, over, ok = f.realign2U(i, w0, old, tg, now, nu, lu)
+			} else {
+				w1, over, ok = f.realign(h, i, w0, old, tg, now, nu, lu)
+			}
 			ref = now
 		} else {
-			if now > last && !atomic.CompareAndSwapUint64(&f.words[i], w0, w0&^tsMask|now) {
+			if nu > lu { // a hot key into a new unit: word0 moves only while word1 still points to the entry
+				if testHookStamping != nil {
+					testHookStamping()
+				}
+				if !f.stamp(i, w0, old, tg, now) {
+					continue
+				}
+			} else if now > last && !atomic.CompareAndSwapUint64(&f.words[i], w0, w0&^tsMask|now) {
 				continue
 			}
 			if nu > lu && testHookStamped != nil {
@@ -348,10 +363,11 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 const ctInside = -2
 
 // farAhead: a touch in unit nu would move slot i's last touch (in unit lu)
-// 8 or more units past its register's unit (old: the register read, or a
-// hot entry's word1, which counts lock-free whatever the gap). wait: word1
-// is busy, so its unit can't be read; a touch that moved word0 on now could
-// leave it 8 units past the register the holder publishes.
+// to a later unit, and word1 (old) must move with it: a register always
+// (realign), a hot entry's pointer only when the key is past the horizon (a
+// reset; else the entry keeps its own full unit and the touch moves word0
+// alone, by stamp). wait: word1 is busy, held by a writer that may publish a
+// register at the old unit.
 func (f *Filter) farAhead(i int, nu, lu int64, stale bool) (old uint64, far, wait bool) {
 	if nu <= lu {
 		return 0, false, false
@@ -360,14 +376,36 @@ func (f *Filter) farAhead(i int, nu, lu int64, stale bool) (old uint64, far, wai
 	if old>>tagShift == tagBusy {
 		return old, false, true
 	}
-	if isHot(old) { // its own full unit; but a reset must hold the slot (realign)
+	if isHot(old) {
 		return old, stale, false
 	}
-	return old, nu-regEpoch(old, lu) > epochMask/2, false
+	return old, true, false
 }
 
-// realign is touch's count of a touch at now 8 or more units past the unit of
-// slot i's register (old, read against word0 w0), or past the horizon of
+// stamp moves slot i's last touch (w0) to now, in a later unit, while word1
+// still holds p, a hot entry's pointer of tag tg: by one 16-byte CAS of both
+// words, or else under a hold of word1. A demotion meanwhile has put a
+// register there, at word0's unit, which the last touch must not leave
+// without it (demoteSlot pins that unit the same way). False: a word
+// changed; look again.
+func (f *Filter) stamp(i int, w0, p, tg, now uint64) bool {
+	n0 := w0&^tsMask | now
+	if cpu.HasCAS2 {
+		return cpu.CAS2(&f.words[i], w0, p, n0, p)
+	}
+	m := f.moveOf(tg)
+	m.begun.Add(1)
+	defer m.done.Add(1)
+	if !atomic.CompareAndSwapUint64(&f.words[i+1], p, busy) {
+		return false
+	}
+	ok := atomic.CompareAndSwapUint64(&f.words[i], w0, n0)
+	atomic.StoreUint64(&f.words[i+1], p)
+	return ok
+}
+
+// realign is touch's count of a touch at now in a later unit than slot i's
+// last touch (word0 w0) and register (old), or past the horizon of
 // the slot of a hot key (old points to its entry, which it gives up and
 // starts afresh): word0 moves to now and word1 to the register, advanced to
 // now's unit with the touch counted. With CMPXCHG16B (amd64) both move by
@@ -375,13 +413,13 @@ func (f *Filter) farAhead(i int, nu, lu int64, stale bool) (old uint64, far, wai
 // published; while word1 is busy, a lookup that misses the slot looks
 // again: the hold counts as a move of the key's stripe. ok is false if the
 // slot changed meanwhile.
-func (f *Filter) realign(h uint64, i int, w0, old, tg, now uint64) (w1 uint64, over, ok bool) {
+func (f *Filter) realign(h uint64, i int, w0, old, tg, now uint64, nu, lu int64) (w1 uint64, over, ok bool) {
 	checkTick(now)
 	if old>>tagShift != tg || isHot(old) && age(now, w0&tsMask) <= f.horizon {
 		return 0, false, false
 	}
 	if cpu.HasCAS2 {
-		return f.realign2(i, w0, old, tg, now)
+		return f.realign2U(i, w0, old, tg, now, nu, lu)
 	}
 	m := f.moveOf(tg)
 	m.begun.Add(1)
@@ -397,14 +435,16 @@ func (f *Filter) realign(h uint64, i int, w0, old, tg, now uint64) (w1 uint64, o
 		testHookStamped()
 	}
 	last := w0 & tsMask
-	w1, over = f.nextReg(old, tg, last, now, age(now, last) > f.horizon)
+	w1, over = f.nextRegU(old, tg, last, now, lu, nu, age(now, last) > f.horizon)
 	if over {
 		if pw, ok := f.promoteHeld(i, w0, old, tg, last, now); ok {
 			w1, over = pw, false
 		}
 	}
 	atomic.StoreUint64(&f.words[i+1], w1)
-	f.slotDrop(f.slotID(uint64(i/wordsPerLine), w0, old), old) // a stale hot key's reset
+	if isHot(old) {
+		f.slotDrop(f.slotID(uint64(i/wordsPerLine), w0, old), old) // a stale hot key's reset
+	}
 	return w1, over, true
 }
 
@@ -416,9 +456,14 @@ func (f *Filter) realign(h uint64, i int, w0, old, tg, now uint64) (w1 uint64, o
 // its entry first and publishes it by the same CAS, and closes it again if
 // the CAS fails.
 func (f *Filter) realign2(i int, w0, old, tg, now uint64) (w1 uint64, over, ok bool) {
+	return f.realign2U(i, w0, old, tg, now, f.unitOf(now), f.unitOf(w0&tsMask))
+}
+
+// realign2U is realign2 with now's unit nu and the last touch's, lu.
+func (f *Filter) realign2U(i int, w0, old, tg, now uint64, nu, lu int64) (w1 uint64, over, ok bool) {
 	last := w0 & tsMask
 	n0 := w0&^tsMask | now
-	w1, over = f.nextReg(old, tg, last, now, age(now, last) > f.horizon)
+	w1, over = f.nextRegU(old, tg, last, now, lu, nu, age(now, last) > f.horizon)
 	var idx, id uint64
 	if over {
 		if pw, x, y := f.hotEntryFor(i, w0, old, tg, last, now); pw != 0 {
@@ -434,7 +479,9 @@ func (f *Filter) realign2(i int, w0, old, tg, now uint64) (w1 uint64, over, ok b
 	if idx != 0 {
 		f.promoted.Add(1)
 	}
-	f.slotDrop(f.slotID(uint64(i/wordsPerLine), w0, old), old) // a stale hot key's reset
+	if isHot(old) {
+		f.slotDrop(f.slotID(uint64(i/wordsPerLine), w0, old), old) // a stale hot key's reset
+	}
 	if testHookStamped != nil {
 		testHookStamped()
 	}

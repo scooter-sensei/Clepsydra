@@ -7,6 +7,10 @@ import "time"
 // can't be used: touch takes them on a first touch.
 var condMu [1 << 6]paddedMutex
 
+// buzzOff turns buzz entries off in every filter (tests: the register's own
+// decisions, beside them).
+var buzzOff bool
+
 // TouchIfUnder records an occurrence of key now only if the key is under
 // limit within window by the strict fail-closed recipe (Upper below limit,
 // not Saturated, and without an overflow table not an unseen key read
@@ -21,11 +25,17 @@ func (f *Filter) TouchIfUnder(key string, window time.Duration, limit uint64) (R
 // read and the touch), so concurrent callers never admit more than limit
 // in any window; plain touches of the key are not, and count against it.
 // Upper counts a bucket the window cuts as a whole, so on windows shorter
-// than a few units it admits fewer than limit.
+// than a few units it would admit fewer than limit: for a limit of 16 or
+// less, a key refused in doubt gets an exact log of its admitted events, by
+// which later requests are decided while nothing else counts for it (buzz
+// entries, buzz.go; claims A46).
 func (f *Filter) TouchIfUnderAt(h, window, limit, now uint64) (Result, bool) {
 	mu := &condMu[h>>(64-6)]
 	mu.Lock()
 	defer mu.Unlock()
+	if limit <= buzzCap && !f.ct && !buzzOff {
+		return f.touchIfBuzz(h, window, limit, now)
+	}
 	r := f.CountAt(h, window, now)
 	if r.Saturated || f.skW == 0 && r.Degraded && !r.Seen || uint64(max(r.Upper, 0)) >= limit {
 		return r, false

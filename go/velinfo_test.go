@@ -206,10 +206,12 @@ func simRound(est float64, in bool) float64 {
 // recent events target 7 (velocity error <= 0.05, tfbench's vel MAE) needs,
 // beyond TestVelocityBound's model floor. It replays tfbench's velocity
 // workload and scores models built from each key's exact event times: the
-// register as laid out (no counter limits; it must equal the filter), the
+// register as laid out (no counter limits; the filter until claims D29), the
 // register plus side information a few more bits could carry (the offset of
-// each bucket's first event, the exact times of the key's last m events),
-// and wider geometries. Each model is estimate's interpolation (register.go)
+// each bucket's first event, the exact times of the key's last m events;
+// with the newest bucket's offset in 4 bits it must equal the filter, which
+// keeps it in the bits its register's unit took before D29), and wider
+// geometries. Each model is estimate's interpolation (register.go)
 // with the side information used where it applies. Then the filter's error
 // by traffic shape, as a share of each window's total.
 func TestVelocityInformation(t *testing.T) {
@@ -343,10 +345,10 @@ func TestVelocityInformation(t *testing.T) {
 		}
 		t.Logf("%-20s%s", shapes[sh], line)
 	}
-	for wi := range 5 {
+	for wi := range 5 { // the filter is the register with its newest bucket's 4-bit onset (claims D29)
 		for sh := range nshapes {
-			if errSum[0][sh][wi] != errSum[1][sh][wi] {
-				t.Errorf("the register model differs from the filter: shape %d window %d: %v vs %v", sh, wi, errSum[1][sh][wi], errSum[0][sh][wi])
+			if errSum[0][sh][wi] != errSum[3][sh][wi] {
+				t.Errorf("the register model with its onset differs from the filter: shape %d window %d: %v vs %v", sh, wi, errSum[3][sh][wi], errSum[0][sh][wi])
 			}
 		}
 	}

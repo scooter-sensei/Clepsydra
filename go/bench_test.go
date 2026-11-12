@@ -74,6 +74,75 @@ func BenchmarkTouchIfUnder(b *testing.B) {
 	c.report(b)
 }
 
+// A touch that starts a unit on every call: TouchAndCount's keys, each
+// touched once a round, the clock a unit on each round, so each touch moves
+// the slot's last touch and register together (realign; claims D29).
+func BenchmarkTouchNewUnit(b *testing.B) {
+	f, hs := benchFilter(b)
+	b.ResetTimer()
+	c := startCycles()
+	for i := 0; i < b.N; i++ {
+		f.CheckAndTouchAt(hs[i&(benchKeys-1)], 0, 1000+f.unit*uint64(1+i>>20))
+	}
+	c.report(b)
+}
+
+// TouchIfUnderAt under 1 s / 5 on 1,024 of TouchAndCount's keys, each asked
+// about twice its limit: refused in doubt, a key gets a buzz entry, and
+// most calls are then decided by its log (claims A46). An admitted call
+// touches, so admitted/op says how much of the cost is admissions.
+func BenchmarkTouchIfUnderBuzz(b *testing.B) {
+	f, hs := benchFilter(b)
+	w := f.Ticks(time.Second)
+	admitted := 0
+	b.ResetTimer()
+	c := startCycles()
+	for i := 0; i < b.N; i++ {
+		if _, ok := f.TouchIfUnderAt(hs[i&1023], w, 5, 2000+100*uint64(i)); ok {
+			admitted++
+		}
+	}
+	c.report(b)
+	b.ReportMetric(float64(admitted)/float64(b.N), "admitted/op")
+}
+
+// TouchIfUnderAt under a limit a log could decide (16) that no key reaches,
+// once one key's uncertain refusal has allocated a buzz table: what every
+// such call pays to find it holds no entry (claims A46).
+func BenchmarkTouchIfUnderTable(b *testing.B) {
+	f, hs := benchFilter(b)
+	w := f.Ticks(time.Second)
+	h := mix64(1 << 62) // 1 event in unit 0, 1 in unit 1, asked where 1 s cuts unit 0: refused in doubt
+	f.TouchIfUnderAt(h, w, 2, 1_000_000)
+	f.TouchIfUnderAt(h, w, 2, 2_600_000)
+	f.TouchIfUnderAt(h, w, 2, 3_000_000)
+	b.ResetTimer()
+	c := startCycles()
+	for i := 0; i < b.N; i++ {
+		f.TouchIfUnderAt(hs[i&(benchKeys-1)], w, 16, 4_000_000+uint64(i>>10))
+	}
+	c.report(b)
+}
+
+// BenchmarkTouchIfUnderTable once 16,384 keys' uncertain refusals have put
+// entries in every block, so each call reads its block's owners.
+func BenchmarkTouchIfUnderTableFull(b *testing.B) {
+	f, hs := benchFilter(b)
+	w := f.Ticks(time.Second)
+	for k := range uint64(1 << 14) {
+		h := mix64(1<<62 + k)
+		f.TouchIfUnderAt(h, w, 2, 1_000_000)
+		f.TouchIfUnderAt(h, w, 2, 2_600_000)
+		f.TouchIfUnderAt(h, w, 2, 3_000_000)
+	}
+	b.ResetTimer()
+	c := startCycles()
+	for i := 0; i < b.N; i++ {
+		f.TouchIfUnderAt(hs[i&(benchKeys-1)], w, 16, 4_000_000+uint64(i>>10))
+	}
+	c.report(b)
+}
+
 func BenchmarkVelocityCount(b *testing.B) {
 	f, hs := benchFilter(b)
 	w := f.Ticks(30 * time.Second)

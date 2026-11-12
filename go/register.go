@@ -4,6 +4,8 @@ import (
 	"math/bits"
 	"runtime"
 	"sync/atomic"
+
+	"github.com/scooter-sensei/clepsydra/go/internal/cpu"
 )
 
 // Velocity register: 7 counters packed into the low 48 bits of word1.
@@ -120,53 +122,79 @@ func (r *register) advance(u0, u1 int64) (overflow bool) {
 	return overflow
 }
 
-// regEpoch recovers the register's full unit index from its 4 stored bits,
-// using a reference unit known to be within 8 of it: the unit of the slot's
-// lastTouch, which the register was last aligned to (a racing touch may
-// leave it one unit either side).
-func regEpoch(w1 uint64, ref int64) int64 {
-	d := (ref - int64(w1>>48)) & epochMask
-	if d > epochMask/2 {
-		d -= epochMask + 1
+// The register's unit is the unit of the slot's last touch (word0). It
+// stores none: a touch that starts a unit moves the last touch and the
+// register together (realign: one 16-byte CAS, or a hold of word1), and
+// every other writer of word1 keeps the pair at one unit (claims D29). So a
+// reader that loads the two words of one moment reads the register at the
+// right unit, and a register is never read at a lag. Before, word1 kept 4
+// bits of its unit and was read against word0's (a touch moved word0, then
+// word1, with a CAS each), and a touch 8 or more units on held the slot.
+//
+// The 4 bits that held the unit hold the newest bucket's onset instead:
+// where in its unit its first event fell, in sixteenths, written by the
+// event that starts the bucket (lowered by a caller whose clock is behind
+// it). estimate spreads that bucket's events from the onset to the last
+// touch, not from the unit's start. 0 says nothing: a bucket that took an
+// event counted from an earlier unit (a lagging clock), a register restored
+// from a snapshot that had none.
+
+// onsetOf is where the tick now falls in its unit u, in sixteenths.
+func (f *Filter) onsetOf(now uint64, u int64) uint64 {
+	return uint64(f.unitOf(16 * (now - uint64(u)*f.unit)))
+}
+
+// lowerOnset is w1 with its onset lowered to on, if on is earlier.
+func lowerOnset(w1, on uint64) uint64 {
+	if on < w1>>onsetShift&onsetMask {
+		w1 = w1&^(onsetMask<<onsetShift) | on<<onsetShift
 	}
-	return ref - d
+	return w1
 }
 
 // nextReg returns word1 after counting one event at now in old, the
-// register of key tg last touched at last. reset (or a tag mismatch) starts
-// a fresh register. A full register in the current unit comes back as is.
-// overflow reports that an event spilled out of its bucket or was dropped
-// (the slot's saturated bit must then be set).
+// register of key tg last touched at last; the result is at the unit of
+// max(now, last), the last touch the slot will hold. reset (or a tag
+// mismatch) starts a fresh register. A full register in the current unit
+// comes back as is. overflow reports that an event spilled out of its
+// bucket or was dropped (the slot's saturated bit must then be set).
 func (f *Filter) nextReg(old, tg, last, now uint64, reset bool) (w1 uint64, overflow bool) {
-	return f.nextRegU(old, tg, f.unitOf(last), f.unitOf(now), reset)
+	return f.nextRegU(old, tg, last, now, f.unitOf(last), f.unitOf(now), reset)
 }
 
-// nextRegU is nextReg with last's and now's units.
-func (f *Filter) nextRegU(old, tg uint64, lastU, nowU int64, reset bool) (w1 uint64, overflow bool) {
-	if !reset && old>>tagShift == tg && old>>48&epochMask == uint64(nowU)&epochMask &&
-		regEpoch(old, lastU) == nowU {
+// nextRegU is nextReg with last's and now's units, lastU and nowU.
+func (f *Filter) nextRegU(old, tg, last, now uint64, lastU, nowU int64, reset bool) (w1 uint64, overflow bool) {
+	if !reset && old>>tagShift == tg && lastU == nowU {
 		// Fast path, same unit: increment the first bucket with room in
 		// place (spilling as add does). Buckets are contiguous from bit 0,
-		// so the lowest zero bit of the register lies in that bucket.
+		// so the lowest zero bit of the register lies in that bucket. The
+		// onset stays: an event at or after the last touch is after it.
 		free := ^old & regMask
 		if free == 0 {
 			return old, true // every bucket full
 		}
 		b := bits.TrailingZeros64(free)
-		return old + 1<<bucketBase[b], b >= bucketBits0
+		w1 = old + 1<<bucketBase[b]
+		if now < last { // a caller behind the last touch may be behind the onset too
+			w1 = lowerOnset(w1, f.onsetOf(now, nowU))
+		}
+		return w1, b >= bucketBits0
 	}
 	var r register
-	e := nowU
-	if !reset && old>>tagShift == tg {
+	e := max(nowU, lastU)
+	keep := !reset && old>>tagShift == tg
+	if keep {
 		r = unpack(old & regMask)
-		e = regEpoch(old, lastU)
-		if nowU > e {
-			overflow = r.advance(e, nowU)
-			e = nowU
-		} // else a caller with a slightly stale clock: count at e
+		if nowU > lastU {
+			overflow = r.advance(lastU, nowU)
+		} // else a caller with a stale clock: count at e
+	}
+	on := uint64(0) // an event from a unit before e: its bucket's onset says nothing
+	if nowU == e && (!keep || nowU > lastU) {
+		on = f.onsetOf(now, nowU) // the event starts the newest bucket
 	}
 	overflow = r.add(0, 1) || overflow
-	return tg<<tagShift | uint64(e)&epochMask<<48 | r.pack(), overflow
+	return tg<<tagShift | on<<onsetShift | r.pack(), overflow
 }
 
 // hot reports whether some bucket of w1 holds satPerUnit or more events.
@@ -216,17 +244,30 @@ func (f *Filter) bump(i int, fpd, tg, now uint64, nu int64, last uint64, lu int6
 			return 0, 0, false, false
 		}
 		ref = w0 & tsMask
-		if isHot(old) && !reset {
-			if testHookHotAdding != nil {
-				testHookHotAdding(i)
+		if isHot(old) {
+			id := f.slotID(uint64(i/wordsPerLine), w0, old)
+			if !reset {
+				if testHookHotAdding != nil {
+					testHookHotAdding(i)
+				}
+				if f.hotAdd(old, id, now, &f.words[i+1]) {
+					return old, ref, false, true
+				}
+				if atomic.LoadUint64(&f.words[i+1]) != old {
+					continue // word1 changed (a demotion, or the slot changed hands): look again
+				}
 			}
-			if f.hotAdd(old, f.slotID(uint64(i/wordsPerLine), w0, old), now, &f.words[i+1]) {
-				return old, ref, false, true
+			// The entry aged out with the key's history (or the caller
+			// resets it): start afresh, at the unit word0 has when the
+			// register replaces the pointer.
+			if nw, ref, ok := f.unpoint(i, w0, old, fpd, tg, now, nu); ok {
+				if reset {
+					f.slotDrop(id, old)
+				}
+				return nw, ref, false, true
 			}
-			if atomic.LoadUint64(&f.words[i+1]) != old {
-				continue // word1 changed (a demotion, or the slot changed hands): look again
-			}
-			reset = true // the entry aged out with the key's history: start afresh
+			reset = false // a word changed: a concurrent touch may have reset it; merge
+			continue
 		}
 		refU := lu
 		switch ref {
@@ -236,7 +277,7 @@ func (f *Filter) bump(i int, fpd, tg, now uint64, nu int64, last uint64, lu int6
 		default:
 			refU = f.unitOf(ref)
 		}
-		nw, over := f.nextRegU(old, tg, refU, nu, reset)
+		nw, over := f.nextRegU(old, tg, ref, now, refU, nu, reset)
 		if over {
 			if pw, ok := f.promote(i, w0, old, tg, ref, now); ok {
 				return pw, ref, false, true
@@ -259,6 +300,35 @@ func (f *Filter) bump(i int, fpd, tg, now uint64, nu int64, last uint64, lu int6
 		}
 		reset = false // a concurrent touch already reset it; merge
 	}
+}
+
+// unpoint replaces slot i's word1, old, a hot pointer whose entry is gone,
+// by a fresh register holding the event at now (unit nu), at the unit of
+// the last touch word0 has when it goes in: by one 16-byte CAS from w0 and
+// old, or else under a hold of word1, word0 read under it. A plain CAS of
+// word1 would not do: a touch of the key into a later unit moves word0 while
+// word1 still points to the entry (touch's stamp), and the register would be
+// read at that unit. ok is false if a word changed: look again.
+func (f *Filter) unpoint(i int, w0, old, fpd, tg, now uint64, nu int64) (w1, ref uint64, ok bool) {
+	if cpu.HasCAS2 {
+		ref = w0 & tsMask
+		w1, _ = f.nextRegU(old, tg, ref, now, f.unitOf(ref), nu, true)
+		return w1, ref, cpu.CAS2(&f.words[i], w0, old, w0, w1)
+	}
+	m := f.moveOf(tg)
+	m.begun.Add(1)
+	defer m.done.Add(1)
+	if !atomic.CompareAndSwapUint64(&f.words[i+1], old, busy) {
+		return 0, 0, false
+	}
+	if w0 = atomic.LoadUint64(&f.words[i]); w0>>47 != fpd {
+		atomic.StoreUint64(&f.words[i+1], old)
+		return 0, 0, false
+	}
+	ref = w0 & tsMask
+	w1, _ = f.nextRegU(old, tg, ref, now, f.unitOf(ref), nu, true)
+	atomic.StoreUint64(&f.words[i+1], w1)
+	return w1, ref, true
 }
 
 // strayed reports whether bump's count, a CAS of slot i's word1 (word index)
@@ -306,7 +376,7 @@ func (f *Filter) mass(id, w1, last, now uint64) uint64 {
 	if reg == 0 {
 		return 0
 	}
-	e := regEpoch(w1, f.unitOf(last))
+	e := f.unitOf(last)
 	oldest := int64(now-min(now, f.horizon)) / int64(f.unit) // as viewMass
 	if e+1 <= oldest {
 		return 0
@@ -338,15 +408,15 @@ func (f *Filter) viewMass(v *view, now uint64) uint64 {
 }
 
 // estimate interpolates the count in (now-window, now] straight from the
-// buckets as they were laid out at the register's own epoch: no re-bucketing
+// buckets as they were laid out at the register's own unit: no re-bucketing
 // to now, so no resolution is lost to merging. Two facts from word0 make it
 // exact at the extremes: nothing happened after last, so a window ending
 // before it holds zero and one reaching it holds at least one; and the
 // newest non-empty bucket's events all lie in [its start, last], one of them
 // at last. The one bucket the window's trailing edge cuts is assumed uniform
 // for Count (if it is the newest, the event at last counts whole and the
-// rest are spread: velocity MAE 0.0807 -> 0.0779) and counted whole for
-// Upper.
+// rest are spread: velocity MAE 0.0807 -> 0.0779; from the bucket's onset,
+// when it has one: 0.0779 -> 0.0671) and counted whole for Upper.
 //
 // sat is the slot's saturated bit: some event overflowed its bucket within
 // the register's span. The bucket it overflowed from still covers its time
@@ -371,7 +441,7 @@ func (f *Filter) estimate(id, w1, last, now, window uint64, sat bool) (r Result,
 			if c0 == 1 && now == last && window > 0 {
 				return Result{Count: 1, Upper: 1, Saturated: false}, true
 			}
-			e := regEpoch(w1, f.unitOf(last))
+			e := f.unitOf(last)
 			if int64(now-window) <= e*int64(f.unit) {
 				n := max(1, int(c0))
 				return Result{Count: n, Upper: n, Saturated: sat && c0 >= satPerUnit}, true
@@ -412,6 +482,22 @@ func (f *Filter) estimate(id, w1, last, now, window uint64, sat bool) (r Result,
 		if from <= lo {
 			est += float64(c)
 			continue
+		}
+		if j == 0 && v.on != 0 && float64(c) > a {
+			// The newest bucket's events lie from its onset to the last
+			// touch (hi), not from the unit's start: all inside a window
+			// that starts at or before the onset, else spread over
+			// [onset, hi] (claims D29).
+			on := lo + float64(v.on)*unit/16
+			switch {
+			case from <= on:
+				est += float64(c)
+			case hi > on:
+				est += a + (float64(c)-a)*max(0, min(1, (hi-from)/(hi-on)))
+			default:
+				est += a
+			}
+			break
 		}
 		if from < hi {
 			est += a + (float64(c)-a)*(hi-from)/(hi-lo)

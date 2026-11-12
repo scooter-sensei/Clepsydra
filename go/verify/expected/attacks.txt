@@ -31,12 +31,12 @@ burst false  100 ev/s:  6973 queries,   0.0% Saturated; unflagged: Upper < exact
 burst false  500 ev/s: 33432 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 0
 burst true     1 ev/s:    57 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 2
 burst true     5 ev/s:   180 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 14
-burst true    12 ev/s:   401 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 26
-burst true    13 ev/s:   445 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 22
-burst true    20 ev/s:   708 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 23
+burst true    12 ev/s:   401 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 25
+burst true    13 ev/s:   445 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 19
+burst true    20 ev/s:   708 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 20
 burst true    31 ev/s:  1060 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 45
-burst true    50 ev/s:  1804 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 46
-burst true   100 ev/s:  3423 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 54
-burst true   500 ev/s: 16938 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 61
-heavy hitter: 74319 queries, 0 Saturated, 0 unflagged with Upper < exact, 312 unflagged with Count >10% low
+burst true    50 ev/s:  1804 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 43
+burst true   100 ev/s:  3423 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 52
+burst true   500 ev/s: 16938 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 60
+heavy hitter: 74319 queries, 0 Saturated, 0 unflagged with Upper < exact, 299 unflagged with Count >10% low
 upper bound: 187219 queries, 0 Saturated, 0 unflagged with Upper < exact; unflagged Upper exceeds exact by 17.3% of events

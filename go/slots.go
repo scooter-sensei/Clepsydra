@@ -15,11 +15,17 @@ const (
 	dispBit = 1 << 47
 	// satBit marks a slot whose register overflowed (an event spilled to an
 	// older bucket or was dropped) within its span; see estimate.
-	satBit    = 1 << 46
-	tsMask    = satBit - 1
-	tagBits   = 12
-	tagShift  = 64 - tagBits
-	epochMask = 0xf
+	satBit   = 1 << 46
+	tsMask   = satBit - 1
+	tagBits  = 12
+	tagShift = 64 - tagBits
+	// word1's bits 48-51, between the tag and the register: the onset of
+	// the register's newest bucket, where in its unit the bucket's first
+	// event fell, in sixteenths (0 says nothing). The register itself is
+	// always at the unit of word0's last touch: every touch that starts a
+	// unit moves both words together (realign), so no unit is stored.
+	onsetShift = 48
+	onsetMask  = 0xf
 	// busy is word1 while a slot is being handed over (install), while a
 	// touch moves its register and last touch together (realign), and in a
 	// relocation's copy until the hand-off (relocate).

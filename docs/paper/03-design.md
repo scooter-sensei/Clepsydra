@@ -8,7 +8,7 @@ The table is any number of 64-byte-aligned lines (multiply-shift indexing, no po
 
 ```
 word0: fp(16) | displaced(1) | saturated(1) | lastTouch(46)   freshness, exact to 1 tick (default 1µs: 2^46 µs ≈ 2.23 years)
-word1: tag(12) | epoch(4) | 7 velocity buckets (48)  age-graded counter, or the index of a hot entry
+word1: tag(12) | onset(4) | 7 velocity buckets (48)  age-graded counter, or the index of a hot entry
 ```
 
 - **Identity** = 16-bit `fp` + 12-bit `tag` = 28 bits, both in the same line (one tag value is reserved for slots changing hands). The primary line uses hash bits 0..35, disjoint from the identity bits.
@@ -86,7 +86,7 @@ A key whose register would overflow (more than 31 events in its newest unit, 12.
 
 - Its 7 buckets move to a hot entry (64 B, 32-bit counters) in a side table of one per 128 slots (`Config.Hot`; at least 16), and word1 keeps the key's tag with the entry's index in the register bits and bucket 0 empty, which no register has. Counts stay exact at any realistic rate [A15].
 - A touch in the entry's own unit adds with one CAS on bucket 0's word (count, closed bit, generation); a writer (new unit, demotion, reclaim) closes that word and reopens it with a new generation, so no CAS lands across a change of owner or unit [A31].
-- An entry is demoted back to a register once a new unit starts with every bucket at most half the register's width, and reclaimed once its newest event is past the horizon.
+- An entry is demoted back to a register once a new unit starts with every bucket at most half the register's width (only while the slot's last touch is in that unit, since the register goes in at it [D29]), and reclaimed once its newest event is past the horizon.
 - A touch counts in an entry by its key's identity, not through the slot, so a history that leaves the stash takes its entry with it: the spill closes the entry and spills its last state, and a touch that found the key's slot before then fails its add and looks again. The stash's lightest way leaves through the spill too, even with no events in the horizon, which is how a hot history weighs while its touch has moved word0 and not yet added [A32].
 - With every entry in use a key saturates as before (`HotRefused`).
 
@@ -96,17 +96,17 @@ A key whose register would overflow (more than 31 events in its newest unit, 12.
 
 - Bucket boundaries only coarsen as time passes, so advancing any distance is one re-bucketing pass with no per-tick work and no sweep.
 - Counter widths grow with bucket width (5, 5, 6, 7, 8, 8, 9 bits). A full bucket **spills** into older ones, unless the key is promoted to a hot entry.
-- The 4-bit epoch is resolved against `lastTouch`'s unit.
+- The register stores no unit: it is at `lastTouch`'s unit. A touch that starts a unit realigns it, moving both words together ([5 Concurrency](05-concurrency.md#realign)), so a reader never pairs a register with a last touch of another unit [D29]. Until D29 the register kept 4 bits of its unit, read against `lastTouch`'s, and only a touch 8 or more units on realigned; the others moved word0, then word1, and the 4 bits said which unit the register was at in between.
+- Those 4 bits hold the newest bucket's **onset** instead: where in its unit the bucket's first event fell, in sixteenths (156 ms at a 60 s horizon), written by the event that starts the bucket, in the write it makes anyway; 0 says nothing. A hot entry keeps its onset beside its counters [D29].
 - Same-unit increments pick the first non-full bucket with one TrailingZeros instead of a loop (hot-key hit 44 → 32 ns as first recorded; 34.0 → 26.1 re-measured) [S8].
-- A touch 8 or more units past its register's unit realigns it: every touch of a key touched less often than every 8 units (20 s at a 60 s horizon) moves both words together ([5 Concurrency](05-concurrency.md#realign)).
 
 ### Count limits
 
-[D7, A15] With hot entries (the default), steady traffic reads 1.000 of the exact count at 5–60 s windows from 10 to 5,000 events/s per key, and bursts of up to 2,000 events in one tick read exactly in windows of 5 s and more. Windows shorter than one unit (2.5 s at a 60 s horizon) are approximate at any rate: a 10-event burst reads as 5–10 in a 1 s window. Without hot entries (`Hot < 0`, or every entry in use), the register alone holds 31 events per unit: steady traffic reads within 1% up to 12 events/s (15–60 s windows; within 2% at 5 s) and then `Saturated`, at 13/s 0.94–0.99 of the truth, at 100/s 0.12–0.22. A register alone holds at most 1,273 events per key in a burst and 762 per horizon for steady traffic (exact up to about 725) [D7]; the v1 linear layout held 255 per sub-window.
+[D7, A15] With hot entries (the default), steady traffic reads 1.000 of the exact count at 5–60 s windows from 10 to 5,000 events/s per key, and bursts of up to 2,000 events in one tick read exactly in windows of 5 s and more. Windows shorter than one unit (2.5 s at a 60 s horizon) are approximate at any rate, though a burst of 10 to 2,000 events reads its own size in a 1 s window, its bucket spread from its onset (before D29 a 10-event burst read as 5–10, a 2,000-event one as 915–2,000). Without hot entries (`Hot < 0`, or every entry in use), the register alone holds 31 events per unit: steady traffic reads within 1% up to 12 events/s (15–60 s windows; within 2% at 5 s) and then `Saturated`, at 13/s 0.94–0.99 of the truth, at 100/s 0.12–0.22. A register alone holds at most 1,273 events per key in a burst and 762 per horizon for steady traffic (exact up to about 725) [D7]; the v1 linear layout held 255 per sub-window.
 
 ### Estimating a count
 
-`VelocityCount` reads the buckets as laid out at the register's own epoch (no re-bucketing), sums those inside W and interpolates the one W's edge cuts, assuming uniform density; in the newest bucket the event at `lastTouch` counts whole and only the others are spread. The estimate is gated by exact facts (`estimate` in `go/register.go`):
+`VelocityCount` reads the buckets as laid out at the register's own unit (no re-bucketing), sums those inside W and interpolates the one W's edge cuts, assuming uniform density; in the newest bucket the event at `lastTouch` counts whole and only the others are spread, from the bucket's onset to `lastTouch` rather than from its unit's start (all of them inside a window that starts at or before the onset): velocity error 0.0779 → 0.0671, the 1 s window 0.2138 → 0.1671 [D29]. The estimate is gated by exact facts (`estimate` in `go/register.go`):
 
 - The count is 0 once `W < now − lastTouch`, and at least 1 otherwise.
 - The newest non-empty bucket's events end at `lastTouch`.
@@ -133,7 +133,7 @@ The dyadic register roughly halves short-window error (mean over shapes at 1 s: 
 
 **Laplace register** (prototyped; negative result). It stores *k* exponentially decayed sums (log-encoded, 16 bits each). Decay is pure clock arithmetic, with no epochs or shifts, so it matches "decay proportional to clock ticks" most literally. For any query W, it fits weights by least squares so that Σ aⱼ·e^(−age/τⱼ) ≈ 1[age ≤ W]. It loses: with 3–4 exponentials you can't make a sharp box, so the mean error is 1.7× the linear register's (0.268 vs 0.154; corrected from "2×") [D12, X10]. It is still a good fit if you want EWMA rates (recency-weighted velocity) rather than hard windows.
 
-**What shipped.** An age-graded variant of the dyadic register with `Horizon/24` units and counter widths 5, 5, 6, 7, 8, 8, 9 (`go/register.go`), which scores 0.078 on the scorecard's velocity metric against the linear register's 0.129 [D5, R3] (0.081 until the newest bucket's last event counted whole, commit eed54e6; before that the 1 s window dominated the error, 0.227 of a 0.0807 mean). A pure dyadic H/32 geometry has the same mean but a worse 60 s error (0.038 vs 0.024) [E15]; a piecewise-linear density in the cut bucket is slightly worse than uniform (0.0834 vs 0.0809) [E12]. Most of what remains is the register's information: under a uniform model of events within a bucket no estimator reading it gets below ~0.058 on this workload, and 0.05 would need about 1.25 s resolution near now [D18]. A few more bits of side information (each bucket's first-event offset, or the exact times of the last few events) reach 0.058–0.070 [D19].
+**What shipped.** An age-graded variant of the dyadic register with `Horizon/24` units and counter widths 5, 5, 6, 7, 8, 8, 9 (`go/register.go`), which scores 0.067 on the scorecard's velocity metric against the linear register's 0.129 [D5, R3] (0.078 until the newest bucket was spread from its onset, D29; 0.081 until the newest bucket's last event counted whole, commit eed54e6; before that the 1 s window dominated the error, 0.227 of a 0.0807 mean). A pure dyadic H/32 geometry has the same mean but a worse 60 s error (0.038 vs 0.024) [E15]; a piecewise-linear density in the cut bucket is slightly worse than uniform (0.0834 vs 0.0809) [E12]. Most of what remains is the register's information: under a uniform model of events within a bucket no estimator reading it gets below ~0.058 on this workload, and 0.05 would need about 1.25 s resolution near now [D18]. A few more bits of side information (each bucket's first-event offset, or the exact times of the last few events) reach 0.058–0.070 [D19].
 
 ## 3.8 Constant-time mode
 

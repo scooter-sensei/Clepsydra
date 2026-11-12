@@ -21,7 +21,7 @@ This is the language-neutral description an implementation must follow to be the
 
 ```
 word0: fp(16) | displaced(1) | saturated(1) | lastTouch(46)
-word1: tag(12) | epoch(4) | 7 velocity buckets (48)        or, for a hot key: tag, the hot entry's index, bucket 0 empty
+word1: tag(12) | onset(4) | 7 velocity buckets (48)        or, for a hot key: tag, the hot entry's index, bucket 0 empty
 ```
 
 - A key's identity is its 16-bit fingerprint and 12-bit tag (28 bits). One tag value is reserved as **busy**, for slots changing hands.
@@ -32,8 +32,9 @@ word1: tag(12) | epoch(4) | 7 velocity buckets (48)        or, for a hot key: ta
 
 - 7 buckets, 1, 1, 1–2, 2–4, 4–8, 8 and 8 units wide, with counters of 5, 5, 6, 7, 8, 8 and 9 bits. Bucket boundaries only coarsen as time passes; advancing any distance is one re-bucketing pass.
 - A full bucket spills into older ones, unless the key is promoted to a hot entry.
-- The 4-bit epoch is resolved against `lastTouch`'s unit.
-- An estimate reads the buckets at the register's own epoch, sums those inside `W` and interpolates the one bucket `W`'s edge cuts assuming uniform density; in the newest bucket the event at `lastTouch` counts whole. The count MUST be 0 once `W < now − lastTouch` and at least 1 otherwise. `Upper` counts the cut bucket whole.
+- The register stores no unit: it MUST be at `lastTouch`'s unit wherever a reader can load the two words together, so a touch that starts a unit MUST move `lastTouch` and the register together (the reference: one 16-byte compare-and-swap of both words, or else a hold of word1), and every other writer that puts a register beside a `lastTouch` it did not move (a demotion, the reset of a hot key whose entry is gone) MUST do so only while `lastTouch` is in the register's unit [D29].
+- The 4-bit **onset** is where in its unit the newest bucket's first event fell, in sixteenths (rounded down), written by the event that starts the bucket and lowered by a later event in the same unit with an earlier tick; 0 says nothing (an event counted from an earlier unit by a lagging clock, a register restored from a version 2 snapshot). A hot entry keeps its onset beside its counters.
+- An estimate reads the buckets at the register's own unit, sums those inside `W` and interpolates the one bucket `W`'s edge cuts assuming uniform density; in the newest bucket the event at `lastTouch` counts whole, and with an onset the bucket's other events are spread over `[onset, lastTouch]` instead of from the unit's start (all of them inside a window that starts at or before the onset). The count MUST be 0 once `W < now − lastTouch` and at least 1 otherwise. `Upper` counts the cut bucket whole.
 
 ## Placement and eviction
 
@@ -66,10 +67,10 @@ Every touch and count returns `Seen`, `Count`, `Upper`, `Saturated`, `Restored` 
 
 An implementation MAY offer these; one that does MUST keep what each says.
 
-- **Merge** of quiescent filters with the same configuration: a key in both gets the two registers re-bucketed to the newer epoch and summed (an overflowing bucket sets the saturated bit) and the newer last touch; a key only the other table holds MUST be installed with the receiving filter's own stashed history of it summed in, as a first touch restores it [D24, D26].
-- **Snapshots** of a quiescent filter: a restore into a filter of the same configuration MUST answer every later call as the uninterrupted filter would, and MUST refuse a snapshot of another configuration, a truncated one, and one whose bytes were damaged (the reference ends each section with its CRC32C). A restored built-in clock MUST continue the old timeline (the wall time since the snapshot added), and a restore that would continue it past `MaxTick` MUST be refused. The byte layout is the reference implementation's (`go/snapshot.go`, version 2); a port need not read another implementation's [D27].
+- **Merge** of quiescent filters with the same configuration: a key in both gets the two registers re-bucketed to the newer one's unit and summed (an overflowing bucket sets the saturated bit), the newer register's onset (the earlier of two in one unit), and the newer last touch; a key only the other table holds MUST be installed with the receiving filter's own stashed history of it summed in, as a first touch restores it [D24, D26]. The reference does not carry the other filter's buzz entries; the receiving filter's stay, each trusted only while its key's words are unchanged, so a key the merge changed is decided by its register again [A46].
+- **Snapshots** of a quiescent filter: a restore into a filter of the same configuration MUST answer every later call as the uninterrupted filter would, conditional touches included, and MUST refuse a snapshot of another configuration, a truncated one, and one whose bytes were damaged (the reference ends each section with its CRC32C). A restored built-in clock MUST continue the old timeline (the wall time since the snapshot added), and a restore that would continue it past `MaxTick` MUST be refused. The byte layout is the reference implementation's (`go/snapshot.go`, version 3, which also reads version 2: each register moved to its last touch's unit with onset 0, answering as it did); a port need not read another implementation's [D27, D29].
 - **Resizing**: until a horizon after a resize, a read MUST add the old filter's answer to the new one's, and a key MUST leave the old table only by moving its slot words whole to the new one [D28].
-- **Conditional touch** (`TouchIfUnder`): the event MUST be recorded only when `Upper` within the window is below the limit and the answer is not `Saturated` (with the overflow table off, also not when an unseen key reads `Degraded`), and the read and the touch of one key MUST be atomic with respect to other conditional touches of it [A45].
+- **Conditional touch** (`TouchIfUnder`): the event MUST be recorded only when an upper bound of the key's events within the window is below the limit and the answer is not `Saturated` (with the overflow table off, also not when an unseen key reads `Degraded`), and the read and the touch of one key MUST be atomic with respect to other conditional touches of it [A45]. The bound is `Upper`, or, in the reference for a limit of 16 or less, a **buzz entry**'s: a key refused while the events certainly inside the window (the buckets wholly inside it, and the last touch) were under the limit gets an exact log of the events conditional touches then admit for it, which bounds the window only while the key's slot words are bit for bit what the log's last admission left (the displaced bit aside) and the window starts after the log does; the overflow table's part of `Upper` is added [A46].
 
 ## Defaults at a glance
 
@@ -84,5 +85,6 @@ An implementation MAY offer these; one that does MUST keep what each says.
 | overflow table | 5 units of 16 B per 9 slots, 2 candidate buckets, 3 floors |
 | `SpillMin` | 4 |
 | hot entries | one per 128 slots, at least 16 |
+| buzz entries | one per 128 slots in blocks of 8 ways, on the first uncertain refusal; limits of 16 or less |
 | wait room | one entry per 128 slots, at least 16 sets |
 | decay | one table pass per horizon, ≤ 4 lines per call; inline on 1/64 of touches, 1 line |

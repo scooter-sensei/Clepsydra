@@ -1,0 +1,80 @@
+name: cpp
+
+# The C++ port (cpp/): sanity and regression with GCC and Clang on Linux, the
+# suite under ASan and UBSan, and the suite with MSVC on Windows (/W4 /WX for
+# the library), on every push and pull request that touches
+# it or what it is checked against (the format's vectors, the Go reference's
+# expected outputs).
+on:
+  push:
+    paths: ["cpp/**", "spec/**", "go/verify/expected/**", ".github/workflows/cpp.yml"]
+  pull_request:
+    paths: ["cpp/**", "spec/**", "go/verify/expected/**", ".github/workflows/cpp.yml"]
+
+defaults:
+  run:
+    working-directory: cpp
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        cxx: [g++, clang++]
+    env:
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get install -y ninja-build
+      - run: ./test.sh sanity
+      - run: ./test.sh regression
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-report-${{ matrix.cxx }}
+          path: cpp/verify-report/
+
+  # Undefined behaviour and memory errors (Go rules both out; C++ doesn't):
+  # the suite under AddressSanitizer and UndefinedBehaviorSanitizer, with the
+  # standard library's bounds checks, in each mode.
+  sanitize:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get install -y ninja-build
+      - name: build
+        run: |
+          cmake -S . -B build/san -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCLEPSYDRA_SANITIZE=address,undefined
+          cmake --build build/san --target clepsydra_test --parallel
+      - name: suite
+        run: |
+          build/san/clepsydra_test -short
+          TF_CT=1 build/san/clepsydra_test -short
+          TF_BG=1 build/san/clepsydra_test -short
+          TF_NOCAS2=1 build/san/clepsydra_test -short
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash # -eo pipefail: every command's exit counts (pwsh reports only the last)
+        working-directory: cpp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: build
+        run: |
+          command -v ninja >/dev/null || choco install ninja -y --no-progress
+          cmake -S . -B build/rel -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCLEPSYDRA_WERROR=ON
+          cmake --build build/rel --parallel
+      - name: suite
+        run: |
+          build/rel/clepsydra_test.exe -short
+          build/rel/clepsydra_test.exe -run '^TestConformance$' -v
+      - name: modes
+        run: |
+          TF_CT=1 build/rel/clepsydra_test.exe -short
+          TF_BG=1 build/rel/clepsydra_test.exe -short
+          TF_NOCAS2=1 build/rel/clepsydra_test.exe -short

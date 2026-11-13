@@ -1,10 +1,12 @@
 package temporalfilter
 
 import (
+	"math/rand/v2"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // Concurrent adds to a small ghost table across many slice boundaries. An
@@ -15,20 +17,57 @@ import (
 // three histories after every add: each must keep its count in Upper,
 // through its own entry or a floor, unless the shared clock has moved far
 // enough during the read for the history to have rightly aged out.
+//
+// The interleaving is made to happen rather than waited for: on one add pass
+// in 16 a worker stops in the window (testHookGhostAdding: the pass has
+// loaded the epoch and not yet its buckets; testHookGhostFloor, one raise in
+// 4: a floor raise likewise) and yields until other adds have moved the
+// epoch on one to three slices, then a few times more so the mover can write
+// its entry for the new slice. The scan that follows decodes against the
+// stale epoch (an entry one slice newer reads as four slices old, two or
+// three newer as live but old) thousands of times a run, where preemption
+// alone landed there a few dozen times. The workers run on every processor:
+// the stops reach the guards there as often as on 2 (GOMAXPROCS(2), which
+// waited for preemption), and a dropped guard shows in more reads. The test
+// fails if no stop ever saw the epoch move, since it would no longer test
+// the race (docs/artifact/claims.md, A47, has the measurements).
 func TestGhostEpochRace(t *testing.T) {
 	rounds := 40
 	if testing.Short() {
 		rounds = 8
 	}
-	// More goroutines than processors, so an add can be preempted between
-	// reading the epoch and scanning its bucket; 4 buckets and a clock that
-	// moves 200 ticks per add keep about 75 histories live (of 92 entries)
-	// and cross a slice boundary every 25 adds.
-	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(2))
+	// 4 buckets and a clock that moves 200 ticks per add keep about 75
+	// histories live (of 92 entries) and cross a slice boundary every 25 adds.
 	const horizon, n, workers, per = 10_000, 5, 8, 4000
-	var lost atomic.Int64
+	var lost, stops, stale atomic.Int64
+	t.Cleanup(func() { testHookGhostAdding, testHookGhostFloor = nil, nil })
 	for round := range rounds {
 		g := newGhost(4*64, horizon, 1+round%2, 1+round%3) // one and two candidate buckets, one to three floors
+		// stop holds the calling worker in its window on one pass in every,
+		// until the epoch has moved on one to three slices (2 ms at most).
+		// math/rand/v2's functions draw from the runtime's per-thread
+		// generator: no state shared between the workers.
+		stop := func(every uint64) {
+			x := rand.Uint64()
+			if x%every != 0 {
+				return
+			}
+			stops.Add(1)
+			ep, moves := g.epoch.Load(), 1+(x>>32)%3
+			deadline := time.Now().Add(2 * time.Millisecond)
+			for g.epoch.Load() < ep+moves {
+				if time.Now().After(deadline) {
+					return
+				}
+				runtime.Gosched()
+			}
+			for range 3 { // the mover writes its entry for the new slice
+				runtime.Gosched()
+			}
+			stale.Add(1)
+		}
+		testHookGhostAdding = func() { stop(16) }
+		testHookGhostFloor = func() { stop(4) }
 		var clock atomic.Uint64
 		clock.Store(horizon)
 		var wg sync.WaitGroup
@@ -62,9 +101,73 @@ func TestGhostEpochRace(t *testing.T) {
 			}()
 		}
 		wg.Wait()
+		testHookGhostAdding, testHookGhostFloor = nil, nil
 	}
+	t.Logf("%d stops in the window, %d across an epoch move", stops.Load(), stale.Load())
 	if lost.Load() > 0 {
 		t.Fatalf("%d reads found a live history below its count", lost.Load())
+	}
+	if stale.Load() == 0 {
+		t.Fatal("no worker stopped in its window saw the epoch move: the race went untested")
+	}
+}
+
+// TestGhostAddAcrossEpoch: TestGhostEpochRace's interleaving, made to happen
+// once and checked exactly. An add loads the epoch; before it scans its
+// bucket another add moves the epoch on a slice and writes an entry for the
+// new slice there. Decoded against the epoch the first add loaded, that entry
+// is four slices old, dead: the first add must not take its place (the
+// defect of changes 28, an add that read the epoch once).
+func TestGhostAddAcrossEpoch(t *testing.T) {
+	const horizon = 10_000             // slices of 5,000 ticks
+	g := newGhost(64, horizon, 2, 3)   // one bucket: the histories meet in it
+	g.add(1, 5, 52_000, false, 52_000) // slice 10: the epoch is 11
+	fired := false
+	testHookGhostAdding = func() {
+		testHookGhostAdding = nil
+		fired = true
+		g.add(2, 7, 55_000, false, 55_000) // slice 11: the epoch moves on; history 2 takes the first free entry
+	}
+	t.Cleanup(func() { testHookGhostAdding = nil })
+	g.add(3, 9, 54_999, false, 54_999) // slice 10, the epoch loaded before the move
+	testHookGhostAdding = nil
+	if !fired {
+		t.Fatal("the hook didn't run: the add's window is gone")
+	}
+	for _, h := range []struct{ id, want uint64 }{{1, 5}, {2, 7}, {3, 9}} {
+		if r, ok := g.estimate(h.id, horizon, 55_000); !ok || r.Count != int(h.want) {
+			t.Errorf("history %d reads %+v, want %d events", h.id, r, h.want)
+		}
+	}
+}
+
+// TestGhostFloorAcrossEpoch: the same for a floor. A raise loads the epoch;
+// before it loads the floor another raise moves the epoch on a slice and
+// lifts the floor in the new slice. Decoded against the stale epoch the
+// higher floor is dead, and writing the first raise's count over it would
+// lower it (42cc598: "raiseFloor could lower a floor the same way"): every
+// key reading the bucket must still see the higher floor in Upper.
+func TestGhostFloorAcrossEpoch(t *testing.T) {
+	const horizon = 10_000             // slices of 5,000 ticks
+	g := newGhost(64, horizon, 1, 1)   // one bucket, one floor that every fingerprint reads
+	g.add(1, 5, 52_000, false, 52_000) // slice 10: the epoch is 11
+	fired := false
+	testHookGhostFloor = func() {
+		testHookGhostFloor = nil
+		fired = true
+		g.advance(11)                      // slice 11: the epoch moves on
+		g.raiseFloor(0, 2, 20, 11, 55_000) // a history of 20 events leaves to the floor
+	}
+	t.Cleanup(func() { testHookGhostFloor = nil })
+	g.raiseFloor(0, 3, 4, 10, 54_999) // a history of 4 events, slice 10, the epoch loaded before the move
+	testHookGhostFloor = nil
+	if !fired {
+		t.Fatal("the hook didn't run: the raise's window is gone")
+	}
+	for _, id := range []uint64{1, 99} {
+		if r, ok := g.estimate(id, horizon, 55_000); !ok || r.Upper < 20 {
+			t.Errorf("key %d reads %+v: the floor of 20 was lowered", id, r)
+		}
 	}
 }
 

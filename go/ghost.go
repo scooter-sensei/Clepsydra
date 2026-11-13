@@ -173,6 +173,9 @@ outer:
 		if sl+3 < ep { // older than the live slices (a caller far behind the others)
 			return
 		}
+		if h := testHookGhostAdding; h != nil {
+			h()
+		}
 		// One pass over both buckets: a matching entry to merge into, else
 		// the less loaded bucket's free or dead entry, else the lightest live
 		// entry of either.
@@ -274,6 +277,9 @@ func (g *ghost) raiseFloor(base int, fp, n, sl, now uint64) {
 	w, sh := &g.words[base], g.floorShift(fp)
 	for {
 		ep := g.epoch.Load() // as in add: a floor written after the epoch moved must not read as dead
+		if h := testHookGhostFloor; h != nil {
+			h()
+		}
 		old := atomic.LoadUint64(w)
 		e := old >> sh & ghSubMask
 		c, fsl := uint64(0), sl
@@ -322,9 +328,14 @@ func (g *ghost) advance(ns uint64) {
 	g.epoch.Store(ns + 1)
 }
 
-// testHookGhostRead, if set, runs after estimate loads its buckets, before
-// it checks the epoch again.
-var testHookGhostRead func()
+// Test hooks, if set: testHookGhostRead runs after estimate loads its
+// buckets, before it checks the epoch again; testHookGhostAdding after an
+// add's pass loads the epoch, before it scans its buckets; testHookGhostFloor
+// after a floor raise loads the epoch, before it loads the floor. The last
+// two open the window an epoch move must not slip into: what the pass loads
+// next it decodes against an epoch that may no longer be current
+// (TestGhostAddAcrossEpoch, TestGhostFloorAcrossEpoch, TestGhostEpochRace).
+var testHookGhostRead, testHookGhostAdding, testHookGhostFloor func()
 
 // estimate is id's dropped events within window: matching entries count in
 // Count and Upper, the floors in Upper only. It loads both candidate lines

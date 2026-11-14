@@ -20,21 +20,19 @@ using namespace helpers;
 // its own entry or a floor, unless the shared clock has moved far enough
 // during the read for the history to have rightly aged out.
 //
-// Go makes that interleaving likely by running its 8 goroutines on 2 Ps
-// (GOMAXPROCS(2)), hoping the scheduler preempts an add between reading the
-// epoch and scanning its bucket. Here it is made to happen: on one pass in 16
-// a worker stops in the window (testHookGhostAdding: the add has loaded the
-// epoch and not yet its bucket; testHookGhostFloor, one raise in 4: a floor
-// raise likewise) and yields until other adds have moved the epoch on one to
-// three slices, then a few times more so the mover can write its entry for
-// the new slice. The scan that follows decodes against the stale epoch, the
-// interleaving the test is for (an entry one slice newer reads as four slices
-// old, two or three newer as live but old), thousands of times a run instead
-// of whenever a preemption happens to land there. The 8 threads run on every
-// core: on 2 CPUs, as Go's goroutines, the adds overlap less and the guards
-// reject a third as often. The test fails if no stop ever saw the epoch move,
-// since it would no longer test the race. (cpp/README.md, The overflow
-// table's race tests, has the measurements.)
+// The interleaving is made to happen rather than waited for: on one add pass
+// in 16 a worker stops in the window (testHookGhostAdding: the pass has
+// loaded the epoch and not yet its buckets; testHookGhostFloor, one raise in
+// 4: a floor raise likewise) and yields until other adds have moved the
+// epoch on one to three slices, then a few times more so the mover can write
+// its entry for the new slice. The scan that follows decodes against the
+// stale epoch (an entry one slice newer reads as four slices old, two or
+// three newer as live but old) thousands of times a run, where preemption
+// alone landed there a few dozen times. The workers run on every processor:
+// confined to 2 CPUs, as GOMAXPROCS(2) once confined the reference's, they
+// overlap less and the guards reject a third as often. The test fails if no
+// stop ever saw the epoch move, since it would no longer test the race
+// (claims A47; cpp/README.md, The overflow table's race tests).
 TEST(TestGhostEpochRace) {
   Hooks hooks;
   int rounds = check::short_() ? 8 : 40;
@@ -105,8 +103,7 @@ TEST(TestGhostEpochRace) {
 // bucket another add moves the epoch on a slice and writes an entry for the
 // new slice there. Decoded against the epoch the first add loaded, that entry
 // is four slices old, dead: the first add must not take its place (the
-// defect of changes 28, an add that read the epoch once). Not in the
-// reference, which finds it only through the race.
+// defect of changes 28, an add that read the epoch once).
 TEST(TestGhostAddAcrossEpoch) {
   Hooks hooks;
   const u64 horizon = 10'000;          // slices of 5,000 ticks

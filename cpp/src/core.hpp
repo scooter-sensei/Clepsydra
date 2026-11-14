@@ -409,9 +409,8 @@ inline constexpr double sigmas = 3;
 // slices per horizon (the ring holds parts+2).
 struct SketchShape {
   int rows = 0, bits = 0, parts = 0;
-  // bytes is the memory of a sketch of width w. (The reference divides by
-  // bits: with the overflow table off its shape is zero and it panics; 0
-  // here, cpp/README.md, Deviations.)
+  // bytes is the memory of a sketch of width w; 0 for the zero shape, which a
+  // filter with the overflow table off has (its snapshot's shape says 0).
   u64 bytes(u64 w) const {
     if (bits == 0) return 0;
     u64 per = static_cast<u64>(32 / bits);
@@ -486,12 +485,7 @@ struct alignas(64) QuantilePad {
 // Each hook, if set, runs at the point the Go reference's hook of the same
 // name runs (go/filter.go lists them).
 inline std::function<void()> testHookCopied, testHookVictim, testHookTaken, testHookStamped, testHookStamping,
-    testHookPlacing, testHookSweeping, testHookGhostRead;
-// Two hooks the reference doesn't have (cpp/README.md, Deviations): each runs
-// where a ghost write has loaded the epoch it will decode against and before
-// it loads what it decodes, the window an epoch move must not slip into
-// (TestGhostAddAcrossEpoch, TestGhostFloorAcrossEpoch, TestGhostEpochRace).
-inline std::function<void()> testHookGhostAdding, testHookGhostFloor;
+    testHookPlacing, testHookSweeping, testHookGhostRead, testHookGhostAdding, testHookGhostFloor;
 inline std::function<void(i64)> testHookPicked, testHookInstalling, testHookBumping, testHookBumped,
     testHookOpenSeen, testHookSweepSeen, testHookSweepRead, testHookHotAdding;
 // forceCT turns ConstantTime on in every filter (tests: TF_CT=1).

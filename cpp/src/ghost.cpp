@@ -85,7 +85,7 @@ void Ghost::add(u64 id, u64 n, u64 last, bool isSat, u64 now) {
     // A write is committed only if ep is still the epoch.
     u64 ep = epoch.load();
     if (sl + 3 < ep) return;  // older than the live slices
-    if (testHookGhostAdding) testHookGhostAdding();  // not in the reference: the scan below may now decode against a stale ep
+    if (testHookGhostAdding) testHookGhostAdding();
     std::array<int, 2> freeK{-1, -1}, liveN{0, 0};
     int victim = -1, vb = 0;
     u64 vc = ghCntMax + 1, vsl = 0;
@@ -171,7 +171,7 @@ void Ghost::raiseFloor(i64 base, u64 fp, u64 n, u64 sl, u64 now) {
   unsigned sh = floorShift(fp);
   for (;;) {
     u64 ep = epoch.load();
-    if (testHookGhostFloor) testHookGhostFloor();  // not in the reference: old may now decode against a stale ep
+    if (testHookGhostFloor) testHookGhostFloor();
     u64 old = w.load();
     u64 e = (old >> sh) & ghSubMask;
     u64 c = 0, fsl = sl;

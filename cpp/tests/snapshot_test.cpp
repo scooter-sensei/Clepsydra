@@ -316,6 +316,54 @@ TEST(TestSnapshotRefusesClockPastMaxTick) {
     ERRORF("restored clock %d, want within [MaxTick-100000, MaxTick]", c);
 }
 
+// TestSnapshotNoOverflow: a filter with the overflow table off (Overflow < 0)
+// snapshots and restores like any other. A seeded stream over 6x Capacity
+// keys loses histories from the stash before the snapshot; after it, the
+// filter and its restored copy take the same calls and give the same
+// answers, Degraded ones included, and a filter with the overflow table on
+// refuses the snapshot. (The reference divided by zero here before changes
+// 102; the port wrote 0 for the zero shape from the start.)
+TEST(TestSnapshotNoOverflow) {
+  if (snapModes()) SKIP("snapshots refuse ConstantTime and Background filters");
+  Config cfg = cfgOf(64, 1s, 1ms);
+  cfg.Overflow = -1;
+  struct Op {
+    u64 k, at;
+  };
+  gorand::Rand r(1, 2);
+  std::vector<Op> ops(20'000);
+  u64 at = 1;
+  for (auto& o : ops) {
+    at += static_cast<u64>(r.IntN(3));
+    o = Op{snapKey(static_cast<int>(r.IntN(400))), at};
+  }
+  const std::size_t half = ops.size() / 2;
+  Filter f(cfg);
+  for (std::size_t i = 0; i < half; i++) f.TouchAt(ops[i].k, 1'000, ops[i].at);
+  const u64 lostAt = f.Lost();
+  if (lostAt == 0) FATALF("no history was lost before the snapshot");
+  const std::string buf = snapshotOf(f);
+  Filter g(cfg);
+  if (std::string err; !restore(g, buf, &err)) FATALF("%s", err);
+  int diff = 0, degraded = 0;
+  for (std::size_t j = 0; j < ops.size() - half; j++) {
+    const Op& o = ops[half + j];
+    Result a = f.TouchAt(o.k, 1'000, o.at);
+    Result b = g.TouchAt(o.k, 1'000, o.at);
+    const u64 other = ops[(j * 7919) % ops.size()].k;
+    Result c = f.CountAt(other, 500, o.at);
+    Result d = g.CountAt(other, 500, o.at);
+    if (!(a == b) || !(c == d)) diff++;
+    if (a.Degraded || c.Degraded) degraded++;
+  }
+  LOGF("lost %d histories by the snapshot, %d by the end (restored copy %d); %d of %d steps Degraded, %d differing",
+       lostAt, f.Lost(), g.Lost(), degraded, ops.size() - half, diff);
+  if (diff != 0) ERRORF("%d answers differ after the restore", diff);
+  if (degraded == 0) ERRORF("no answer read Degraded: the lost histories went untested");
+  Filter on(cfgOf(64, 1s, 1ms));
+  if (restore(on, buf)) ERRORF("a filter with the overflow table on restored a snapshot of one with it off");
+}
+
 // TestSnapshotSize (TF_EXP=1): a snapshot is within 1% of Bytes() at Capacity
 // 200,000 and 1,000,000, and at 200,000 with the stash, the hot table and the
 // overflow table all allocated.

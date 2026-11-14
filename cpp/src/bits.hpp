@@ -1,5 +1,5 @@
 // Go's math/bits and the few runtime helpers the reference uses, for every
-// compiler this port builds with (GCC and Clang: unsigned __int128; MSVC: its
+// compiler this port builds with (GCC and Clang: unsigned __int128, as u128; MSVC: its
 // intrinsics).
 #pragma once
 
@@ -13,12 +13,19 @@
 
 namespace clepsydra::detail {
 
+#if !(defined(_MSC_VER) && !defined(__clang__))
+// u128 is GCC's and Clang's 128-bit integer. ISO C++ has none, so -Wpedantic
+// flags the keyword (an error under GCC with -Werror); __extension__ on its
+// one declaration keeps every use quiet.
+__extension__ typedef unsigned __int128 u128;
+#endif
+
 // mulHi is bits.Mul64's high word.
 inline std::uint64_t mulHi(std::uint64_t a, std::uint64_t b) {
 #if defined(_MSC_VER) && !defined(__clang__)
   return __umulh(a, b);
 #else
-  return static_cast<std::uint64_t>((static_cast<unsigned __int128>(a) * b) >> 64);
+  return static_cast<std::uint64_t>((static_cast<u128>(a) * b) >> 64);
 #endif
 }
 
@@ -27,7 +34,7 @@ inline void mul64(std::uint64_t a, std::uint64_t b, std::uint64_t& hi, std::uint
 #if defined(_MSC_VER) && !defined(__clang__)
   lo = _umul128(a, b, &hi);
 #else
-  unsigned __int128 p = static_cast<unsigned __int128>(a) * b;
+  u128 p = static_cast<u128>(a) * b;
   hi = static_cast<std::uint64_t>(p >> 64);
   lo = static_cast<std::uint64_t>(p);
 #endif
@@ -40,7 +47,7 @@ inline std::uint64_t div64(std::uint64_t hi, std::uint64_t lo, std::uint64_t y) 
   std::uint64_t rem;
   return _udiv128(hi, lo, y, &rem);
 #else
-  unsigned __int128 n = (static_cast<unsigned __int128>(hi) << 64) | lo;
+  u128 n = (static_cast<u128>(hi) << 64) | lo;
   return static_cast<std::uint64_t>(n / y);
 #endif
 }

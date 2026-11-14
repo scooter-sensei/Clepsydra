@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <cstdlib>
 
+#include "bits.hpp"  // u128
+
 #if defined(_MSC_VER) && !defined(__clang__)
 #include <intrin.h>
 #elif defined(__x86_64__)
@@ -53,7 +55,7 @@ inline bool CAS2(std::atomic<std::uint64_t>* p, std::uint64_t old0, std::uint64_
 #elif defined(__x86_64__)
   bool ok;
   __asm__ __volatile__("lock cmpxchg16b %1"
-                       : "=@ccz"(ok), "+m"(*reinterpret_cast<volatile unsigned __int128*>(p)), "+a"(old0),
+                       : "=@ccz"(ok), "+m"(*reinterpret_cast<volatile u128*>(p)), "+a"(old0),
                          "+d"(old1)
                        : "b"(new0), "c"(new1)
                        : "memory");

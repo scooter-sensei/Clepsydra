@@ -190,7 +190,9 @@ x86-64 uses CMPXCHG16B after a CPUID check, as the reference does; other archite
 | x86-64 Linux | Clang 18, libc++ (zig 0.13) | every tier; ThreadSanitizer over the suite in each mode; UBSan (trap mode) with libc++'s extensive bounds checks over the suite in each mode |
 | arm64 Linux | Clang 18, musl, static (zig), under `qemu-aarch64` | conformance, the suite in plain, `TF_CT=1` and `TF_BG=1`, the ten regression outputs byte for byte (no 16-byte CAS: every slot change takes the hold path) |
 | x86-64 Windows | Clang 18, libc++, mingw-w64 (zig, cross-built), run natively | the suite in each mode (built with `-Wall -Wextra`: no warning) |
-| x86-64 Linux | GCC, libstdc++; Clang, libstdc++; Clang with ASan and UBSan | CI (`.github/workflows/cpp.yml`) |
-| x86-64 Windows | MSVC, `/W4 /WX` for the library | CI |
+| x86-64 Linux | Clang 18, libstdc++ (CI, Ubuntu 24.04) | sanity, and the ten regression outputs byte for byte |
+| x86-64 Linux | Clang 18 with ASan and UBSan, libstdc++ (CI) | the suite in each mode |
+| x86-64 Linux | GCC 13, libstdc++ (CI) | CI runs sanity and regression; its first runs stopped at the build: GCC's `-Wpedantic` rejects the `__int128` keyword under the library's `-Werror`, so `bits.hpp` declares it once as `u128` with `__extension__` |
+| x86-64 Windows | MSVC (CI), `/W4 /WX` for the library | the suite in each mode, CoarseClock's waitable timer included |
 
 The library keeps MSVC's `/W4` clean by construction: no local declaration hides a member (C4458), no unary minus on an unsigned operand (C4146), no 32-bit shift widened to 64 (C4334). The tests use only the standard library; the library's one platform-specific piece is CoarseClock's timer on Windows (a high-resolution waitable timer, as Go's runtime uses, with the condition variable as the fallback before Windows 10 1803). On Windows `steady_clock` usually steps 100 ns (QueryPerformanceCounter at 10 MHz), close to ConstantTime's 128 ns dither; the reference's clock there steps 100 ns as well.

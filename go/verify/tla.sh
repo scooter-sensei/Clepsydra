@@ -14,9 +14,13 @@
 # line per run and exits non-zero if a run's outcome isn't the one wanted.
 # TLA_BIG=1 adds the large sizes the claims cite (WaitRoom 2 touchers x 2
 # rounds, 72 M states; RegisterEpoch 3 touchers, 52 M states: tens of
-# minutes each; SlotUnit 3 touchers, 4.7-61 M states, more by hold from a
-# hot pointer: hours, and state files past a /tmp held in memory, so set
-# TMPDIR to a disk). TLC_WORKERS (default 4) sets TLC's threads.
+# minutes each; SlotUnit 3 touchers, 4.7-61 M states, but by hold from a
+# hot pointer 1.17 G states in 24 hours, and with a reclaimed entry more
+# than 29 hours: their state files outgrow a /tmp held in memory, so set
+# TMPDIR to a disk, and they fill a 7 GB WSL's page cache until it stops
+# answering; the scratch directory, tlc.log included, goes when the script
+# exits, so copy a long run's log out). TLC_WORKERS (default 4) sets TLC's
+# threads.
 set -uo pipefail
 cd "$(dirname "$0")/tla"
 J=${TLA2TOOLS:-$HOME/tools/tla/tla2tools.jar}

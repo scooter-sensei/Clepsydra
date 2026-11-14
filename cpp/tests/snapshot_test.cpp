@@ -231,6 +231,88 @@ TEST(TestSnapshotCorrupt) {
            ends.size());
 }
 
+// TestSnapshotRefusesWildIndices: a stream whose check words are right but
+// whose words no quiescent filter writes, where a restored value is later an
+// index or a lock: a slot or a stash entry pointing past the hot entries, a
+// free hot entry or the next one out of range, a hot entry held (an odd
+// version, which readers wait out forever), a wait bit past the stash's last
+// set. Check words catch damage, not a crafted stream (a snapshot is trusted
+// input, docs/paper/06-security.md), and where the reference panics at the
+// first use of such an index, C++ would index past its tables: ReadFrom
+// refuses each, and the refused filter holds nothing (it is unspecified, but
+// memory-safe) and keeps answering. Not in the reference (cpp/README.md,
+// Deviations).
+TEST(TestSnapshotRefusesWildIndices) {
+  if (snapModes()) SKIP("snapshots refuse ConstantTime and Background filters");
+  auto f = snapHalf();
+  const std::string snap = snapshotOf(*f);
+  Core& c = core(*f);
+  if (!c.hot.load() || !c.stash.load()) FATALF("the workload allocated no hot table or no stash");
+  auto word = [](const std::string& b, std::size_t i) {
+    u64 x = 0;
+    for (int k = 0; k < 8; k++) x |= static_cast<u64>(static_cast<std::uint8_t>(b[i + static_cast<std::size_t>(k)])) << (8 * k);
+    return x;
+  };
+  auto put = [](std::string& b, std::size_t i, u64 x) {
+    for (int k = 0; k < 8; k++) b[i + static_cast<std::size_t>(k)] = static_cast<char>(x >> (8 * k));
+  };
+  // The sections' ends, as TestSnapshotCorrupt finds them.
+  std::vector<std::size_t> ends;
+  for (std::size_t i = 8; i + 8 <= snap.size(); i += 8) {
+    if (u64 w = word(snap, i); (w >> 32) == ends.size()) {
+      std::size_t from = ends.empty() ? 0 : ends.back();
+      if (static_cast<u64>(crc32cUpdate(0, reinterpret_cast<const std::uint8_t*>(snap.data()) + from, i - from)) ==
+          (w & 0xffffffff))
+        ends.push_back(i + 8);
+    }
+  }
+  if (ends.size() != 7) FATALF("found %d sections, want 7", ends.size());
+  // edit sets the word at byte offset at, in section sec, and reseals sec.
+  auto edit = [&](std::size_t sec, std::size_t at, u64 x) {
+    std::string b = snap;
+    put(b, at, x);
+    const std::size_t from = sec == 0 ? 0 : ends[sec - 1], end = ends[sec] - 8;
+    put(b, end,
+        static_cast<u64>(crc32cUpdate(0, reinterpret_cast<const std::uint8_t*>(b.data()) + from, end - from)) |
+            (static_cast<u64>(sec) << 32));
+    return b;
+  };
+  const u64 wild = hotIdxMask << hotIdxShift;  // a hot pointer to the last index the field holds
+  if (!isHot(wild) || hotIdx(wild) < c.hot.load()->e.size()) FATALF("%#x is no out-of-range hot pointer", wild);
+  // Sections: 0 header, 1 table, 2 counters, 3 stash, 4 hot entries, 5 overflow, 6 buzz.
+  struct Case {
+    const char* what;
+    std::string b;
+  };
+  std::vector<Case> cases = {
+      {"a slot's word1 pointing past the hot entries", edit(1, ends[0] + 8, wild)},
+      {"a stash entry's word1 pointing past the hot entries", edit(3, ends[2] + 8 + 16, wild)},
+      {"a hot entry held (odd version)", edit(4, ends[3] + 8, word(snap, ends[3] + 8) | 1)},
+      {"the next hot entry out of range", edit(4, ends[4] - 48, u64{1} << 40)},
+  };
+  if (u64 tail = c.stashN % 64; tail != 0)
+    cases.push_back({"a wait bit past the stash's last set", edit(3, ends[3] - 24, word(snap, ends[3] - 24) | (u64{1} << 63))});
+  for (const Case& k : cases) {
+    Filter h(snapCfg());
+    std::string err;
+    if (restore(h, k.b, &err)) {
+      ERRORF("%s: restored", k.what);
+      continue;
+    }
+    LOGF("%s: %s", k.what, err);
+    Core& hc = core(h);
+    for (std::size_t i = 0; i < hc.nwords; i++) {
+      if (hc.words[i].load() != 0) {
+        ERRORF("%s: the refused filter kept word %d", k.what, i);
+        break;
+      }
+    }
+    for (int i = 0; i < 1000; i++) h.TouchAt(snapKey(i), 60'000, 150'000);  // answers, without reading past a table
+  }
+  Filter ok(snapCfg());
+  if (std::string err; !restore(ok, snap, &err)) ERRORF("the intact snapshot was refused: %s", err);
+}
+
 // TestSnapshotCross: SNAP_OUT=<file> writes the first half's snapshot;
 // SNAP_IN=<file> restores it, finishes the workload and compares the answers
 // with this build's uninterrupted run (another build, or the Go reference,

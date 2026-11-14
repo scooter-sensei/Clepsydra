@@ -662,6 +662,8 @@ struct Core {
   std::vector<u64> snapShape() const;
   i64 writeTo(std::ostream& w);
   i64 readFrom(std::istream& r);
+  std::string snapSane() const;
+  void snapScrub();
   u64 continued(u64 oldNow, i64 wall) const;
   std::pair<u64, u64> fromV2(u64 w0, u64 w1) const;
 

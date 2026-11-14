@@ -198,8 +198,12 @@ u64 Core::continued(u64 oldNow, i64 wall) const {
 i64 Core::readFrom(std::istream& r) {
   if (ct || bg || cms) throw Error(errSnapMode);
   SnapR s{r};
-  auto done = [&s]() -> i64 {
-    if (!s.err.empty()) throw Error(s.err);
+  bool wrote = false;  // a section has been stored into the filter
+  auto done = [&]() -> i64 {
+    if (!s.err.empty()) {
+      if (wrote) snapScrub();  // unspecified, but nothing in it points past a table
+      throw Error(s.err);
+    }
     return s.n;
   };
   if (s.u() != snapMagic) s.fail("bad magic");
@@ -216,6 +220,7 @@ i64 Core::readFrom(std::istream& r) {
   // A35): refuse it before anything is written.
   if (s.err.empty() && ownClock && continued(oldNow, wall) > MaxTick) s.fail("the continued clock is past MaxTick");
   if (!s.err.empty()) return done();
+  wrote = true;
   for (std::size_t i = 0; i < nwords; i++) words[i].store(s.u());
   if (v == 2) {
     for (std::size_t i = 0; i < nwords; i += 2) {
@@ -314,6 +319,9 @@ i64 Core::readFrom(std::istream& r) {
   }
   if (v >= 3) s.end();
   if (s.err.empty() && r.peek() != std::char_traits<char>::eof()) s.fail("trailing bytes");
+  if (s.err.empty()) {
+    if (std::string why = snapSane(); !why.empty()) s.fail(why);
+  }
   if (s.err.empty() && ownClock) {
     u64 target = continued(oldNow, wall);
     if (target > MaxTick) {  // crossed while the sections were read
@@ -324,6 +332,70 @@ i64 Core::readFrom(std::istream& r) {
     }
   }
   return done();
+}
+
+// snapSane checks, once every section is read, the restored values that a
+// later call uses as an index or waits on, and says what is wrong ("" if
+// nothing): a slot's or a stash entry's word1 pointing past the hot entries,
+// a free hot entry or the next one out of range, a hot entry held (an odd
+// version: readers would wait it out forever), a wait bit past the stash's
+// last set. A quiescent filter writes none of these. Check words catch
+// damage, not a crafted stream (a snapshot is trusted input,
+// docs/paper/06-security.md); where the reference panics at the first use of
+// such an index, C++ would index past the table, so the port refuses the
+// stream (cpp/README.md, Deviations).
+std::string Core::snapSane() const {
+  const HotTable* t = hot.load();
+  const u64 hn = t ? t->e.size() : 0;
+  auto points = [hn](u64 w1) { return isHot(w1) && (hotIdx(w1) == 0 || hotIdx(w1) >= hn); };
+  for (std::size_t i = 1; i < nwords; i += 2) {
+    if (points(words[i].load())) return "a slot points past the hot entries";
+  }
+  if (const StashTable* st = stash.load()) {
+    for (std::size_t i = 0; i < st->e.size(); i++) {
+      if (points(st->e[i].w1)) return "a stash entry points past the hot entries";
+    }
+    if (const u64 tail = st->n % 64; tail != 0 && st->wait.size() != 0 && (st->wait[st->wait.size() - 1].load() >> tail) != 0)
+      return "a wait bit past the stash's last set";
+  }
+  if (t) {
+    for (std::uint32_t x : t->free) {
+      if (x == 0 || x >= hn) return "a free hot entry out of range";
+    }
+    if (t->next == 0 || t->next > hn) return "the next hot entry out of range";
+    for (std::size_t i = 0; i < t->e.size(); i++) {
+      if ((t->e[i].ver.load() & 1) != 0) return "a hot entry held";
+    }
+  }
+  return "";
+}
+
+// snapScrub empties what a refused restore stored: the table's words, the
+// stash and the hot entries, so a filter whose ReadFrom threw, unspecified,
+// holds nothing that points past a table.
+void Core::snapScrub() {
+  for (std::size_t i = 0; i < nwords; i++) words[i].store(0);
+  if (StashTable* st = stash.load()) {
+    for (std::size_t i = 0; i < st->e.size(); i++) st->e[i].id = st->e[i].w0 = st->e[i].w1 = 0;
+    for (std::size_t i = 0; i < st->wait.size(); i++) st->wait[i].store(0);
+    st->at.store(0);
+  }
+  if (HotTable* t = hot.load()) {
+    for (std::size_t i = 0; i < t->e.size(); i++) {
+      HotEntry& e = t->e[i];
+      e.ver.store(0);
+      e.id.store(0);
+      e.epoch.store(0);
+      e.sat.store(0);
+      e.c0.store(0);
+      for (auto& x : e.c) x.store(0);
+    }
+    t->free.clear();
+    t->next = 1;
+    t->hand = 0;
+    t->full.store(0);
+    t->inUse.store(0);
+  }
 }
 
 // fromV2 is a version 2 snapshot's slot pair as version 3 holds it: the

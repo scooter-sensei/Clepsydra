@@ -107,6 +107,7 @@ fixes() {
 	slot-exit-frees-hot-entry|d6dbe56|fbf63fd|hotdrop_test.go|^TestSlotExitFreesHotEntry$|3
 	merge-own-stash|2ca617b|1cb3c35|merge_stash_test.go|^TestMergeKeepsOwnStash$|3
 	restore-past-maxtick|2883df8|b0ea20c|snapshot_test.go|^TestSnapshotRefusesClockPastMaxTick$|3
+	snapshot-no-overflow|eefb863|3bcdfd1|snapshot_test.go|^TestSnapshotNoOverflow$|3
 	LIST
 }
 

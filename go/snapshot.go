@@ -19,7 +19,8 @@ import (
 //	0 header:   magic "CLEPSNP1", version (3), the Config's shape (11 words:
 //	            lines, horizon, unit, resolution, stash sets, hot entries,
 //	            overflow bytes, overflow choices, floors per bucket, SpillMin,
-//	            count-min bytes), the clock anchor (tick, wall-clock ns)
+//	            count-min bytes; with the overflow table off all four
+//	            overflow words are 0), the clock anchor (tick, wall-clock ns)
 //	1 table:    lines x 8 words, as the table holds them
 //	2 counters: decay cursor, evictions, relocations, pressure, stash gate,
 //	            lostAt, lost, restored, folded, shed, waited, promoted,

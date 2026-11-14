@@ -44,8 +44,12 @@ type sketchShape struct{ rows, bits, parts int }
 
 var defaultShape = sketchShape{rows: 4, bits: 8, parts: 2}
 
-// bytes is the memory of a sketch of width w.
+// bytes is the memory of a sketch of width w; 0 for the zero shape, which a
+// filter with the overflow table off has (its snapshot's shape says 0).
 func (sh sketchShape) bytes(w uint64) uint64 {
+	if sh.bits == 0 {
+		return 0
+	}
 	per := uint64(32 / sh.bits)
 	return uint64(sh.rows) * w * ((uint64(sh.parts) + 2 + per - 1) / per) * 4
 }

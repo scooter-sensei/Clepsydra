@@ -353,6 +353,67 @@ func TestSnapshotRefusesClockPastMaxTick(t *testing.T) {
 	}
 }
 
+// TestSnapshotNoOverflow: a filter with the overflow table off (Overflow < 0)
+// snapshots and restores like any other. A seeded stream over 6x Capacity
+// keys loses histories from the stash before the snapshot; after it, the
+// filter and its restored copy take the same calls and give the same
+// answers, Degraded ones included, and a filter with the overflow table on
+// refuses the snapshot. Before, WriteTo and ReadFrom both panicked: the
+// Config's shape includes the count-min bytes, computed from the sketch
+// shape, which is zero with the overflow table off (a division by zero).
+func TestSnapshotNoOverflow(t *testing.T) {
+	skipSnapModes(t)
+	cfg := Config{Capacity: 64, Horizon: time.Second, Resolution: time.Millisecond, Overflow: -1}
+	type op struct{ k, at uint64 }
+	r := rand.New(rand.NewPCG(1, 2))
+	ops, at := make([]op, 20_000), uint64(1)
+	for i := range ops {
+		at += uint64(r.IntN(3))
+		ops[i] = op{snapKey(r.IntN(400)), at}
+	}
+	half := len(ops) / 2
+	f, _ := New(cfg)
+	for _, o := range ops[:half] {
+		f.TouchAt(o.k, 1_000, o.at)
+	}
+	lostAt := f.Lost()
+	if lostAt == 0 {
+		t.Fatal("no history was lost before the snapshot")
+	}
+	var buf bytes.Buffer
+	if _, err := f.WriteTo(&buf); err != nil {
+		t.Fatal(err)
+	}
+	g, _ := New(cfg)
+	if _, err := g.ReadFrom(bytes.NewReader(buf.Bytes())); err != nil {
+		t.Fatal(err)
+	}
+	diff, degraded := 0, 0
+	for i, o := range ops[half:] {
+		a, b := f.TouchAt(o.k, 1_000, o.at), g.TouchAt(o.k, 1_000, o.at)
+		other := ops[(i*7919)%len(ops)].k
+		c, d := f.CountAt(other, 500, o.at), g.CountAt(other, 500, o.at)
+		if a != b || c != d {
+			diff++
+		}
+		if a.Degraded || c.Degraded {
+			degraded++
+		}
+	}
+	t.Logf("lost %d histories by the snapshot, %d by the end (restored copy %d); %d of %d steps Degraded, %d differing",
+		lostAt, f.Lost(), g.Lost(), degraded, len(ops)-half, diff)
+	if diff != 0 {
+		t.Errorf("%d answers differ after the restore", diff)
+	}
+	if degraded == 0 {
+		t.Error("no answer read Degraded: the lost histories went untested")
+	}
+	on, _ := New(Config{Capacity: 64, Horizon: time.Second, Resolution: time.Millisecond})
+	if _, err := on.ReadFrom(bytes.NewReader(buf.Bytes())); err == nil {
+		t.Error("a filter with the overflow table on restored a snapshot of one with it off")
+	}
+}
+
 // TestSnapshotSize (TF_EXP=1): a snapshot is within 1% of Bytes() at
 // Capacity 200,000 and 1,000,000 (3 x Capacity keys over 30 s: the stash
 // allocated), and at 200,000 with the stash, the hot table and the overflow

@@ -130,7 +130,14 @@ std::pair<Result, bool> Sketch::estimate(u64 id, u64 window, u64 now, bool full)
       double v = static_cast<double>(c[p][static_cast<std::size_t>(row)]);
       d[static_cast<std::size_t>(row)] = v - (total - v) / static_cast<double>(w - 1);
     }
-    std::sort(d.begin(), d.begin() + rows);
+    // Go's slices.Sort(d[:rows]) as an insertion sort over at most maxRows
+    // values (the same order: they are finite). GCC 13 at -O2 analyses
+    // std::sort's 16-element insertion path on this 4-element array and
+    // reports -Warray-bounds, fatal under the library's -Werror.
+    for (int i = 1; i < rows; i++) {
+      for (int j = i; j > 0 && d[static_cast<std::size_t>(j)] < d[static_cast<std::size_t>(j - 1)]; j--)
+        std::swap(d[static_cast<std::size_t>(j)], d[static_cast<std::size_t>(j - 1)]);
+    }
     double m = std::min((d[static_cast<std::size_t>((rows - 1) / 2)] + d[static_cast<std::size_t>(rows / 2)]) / 2,
                         static_cast<double>(lo));
     // Other keys' events arrive in lumps, so the noise's variance is the sum

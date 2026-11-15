@@ -1,0 +1,42 @@
+[package]
+name = "clepsydra"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+description = "Clepsydra: a fixed-memory temporal filter (the Rust port of the Go reference implementation)"
+repository = "https://github.com/scooter-sensei/clepsydra"
+readme = "README.md"
+publish = false
+
+# No dependencies: the standard library only, as the reference and the C++ port.
+[dependencies]
+
+# The suite runs optimized, as `go test` runs the reference, with the checks
+# Go makes at run time left on: integer overflow (every wrap the reference
+# relies on is spelled wrapping_*) and debug assertions.
+[profile.dev]
+opt-level = 2
+overflow-checks = true
+debug-assertions = true
+
+[profile.release]
+debug = true
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+# go/cmd/tfbench -exact: the scorecard's deterministic metrics as raw counts
+# (the regression tier compares them with go/verify/expected/exact.txt).
+[[bin]]
+name = "tfbench"
+path = "tools/tfbench.rs"
+test = false
+doc = false
+
+# The perf tier's twelve benchmarks (go/test.sh's PERF_BENCH), run and printed
+# as `go test -bench` runs and prints them (bench/ab.sh compares two builds).
+[[bench]]
+name = "bench"
+path = "bench/bench.rs"
+harness = false

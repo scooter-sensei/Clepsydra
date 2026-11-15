@@ -1,0 +1,75 @@
+name: rust
+
+# The Rust port (rust/): the smoke, sanity and regression tiers on Linux, the
+# suite in each mode on Windows (MSVC) and on macOS (arm64: no 16-byte CAS,
+# every slot change takes the hold path), and a build at the declared minimum
+# Rust version, on every push and pull request that touches it or what it is
+# checked against (the format's vectors, the Go reference's test data and
+# expected outputs).
+on:
+  push:
+    paths: ["rust/**", "spec/**", "go/testdata/**", "go/verify/expected/**", ".github/workflows/rust.yml"]
+  pull_request:
+    paths: ["rust/**", "spec/**", "go/testdata/**", "go/verify/expected/**", ".github/workflows/rust.yml"]
+
+defaults:
+  run:
+    shell: bash
+    working-directory: rust
+
+env:
+  # The toolchain the port is checked with (clippy's lints change between
+  # releases; the smoke tier denies its warnings).
+  RUST_TOOLCHAIN: "1.99.1"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy,rustfmt && rustup default "$RUST_TOOLCHAIN"
+      - run: ./test.sh sanity
+      - run: ./test.sh regression
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-report-linux
+          path: rust/verify-report/
+
+  # Cargo.toml's rust-version: the library, the suite and the tools build.
+  msrv:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install 1.85 --profile minimal
+      - run: cargo +1.85 build --all-targets && cargo +1.85 test --lib --no-run
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal && rustup default "$RUST_TOOLCHAIN"
+      - name: suite
+        run: |
+          TF_SHORT=1 cargo test --lib
+          cargo test --lib -- --exact tests::conformance_test::TestConformance --nocapture
+      - name: modes
+        run: |
+          TF_SHORT=1 TF_CT=1 cargo test --lib
+          TF_SHORT=1 TF_BG=1 cargo test --lib
+          TF_SHORT=1 TF_NOCAS2=1 cargo test --lib
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal && rustup default "$RUST_TOOLCHAIN"
+      - name: suite
+        run: |
+          TF_SHORT=1 cargo test --lib
+          cargo test --lib -- --exact tests::conformance_test::TestConformance --nocapture
+      - name: modes
+        run: |
+          TF_SHORT=1 TF_CT=1 cargo test --lib
+          TF_SHORT=1 TF_BG=1 cargo test --lib

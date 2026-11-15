@@ -70,3 +70,7 @@ The head-to-head harness ([head-to-head.md](head-to-head.md)): `trace.go` (part 
 | `verify/experiments/` | reverted experiments as git patches, and the deleted lab branches' notebooks, tools and raw readings (`lab-notebook-*.patch`) ([experiments.md](experiments.md)) |
 | `verify/testdata/` | older versions of `ghost_test.go` and `restore_test.go`, and `mirror_test.go` without its read check, that the bug replays need |
 | `verify/tla/` | the TLA+ models of the slot protocol and of a stash set (`StashSet.tla`, A44); `verify/tla/experiments/` holds `HotCells.tla`, `DispBitmap.tla` and `SpilledBit.tla`, models of experiments not adopted (E23, E46, E53) |
+
+## Ports: `cpp/`, `rust/`
+
+Each port translates the library file by file, so each `.go` file above has one counterpart in each: their READMEs' architecture tables map them ([C++](../../cpp/README.md#architecture), [Rust](../../rust/README.md#architecture)), and each keeps the reference's function names, test names and claim tags. Each port's `test.sh` provides the five tiers and compares its regression outputs with `go/verify/expected/`.

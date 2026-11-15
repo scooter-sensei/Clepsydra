@@ -1,0 +1,4 @@
+# The port is written to about 150 columns, as the reference's lines run (one
+# Go statement, one Rust line, where it fits).
+max_width = 150
+use_small_heuristics = "Max"

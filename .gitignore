@@ -4,3 +4,4 @@ verify-report/
 verify-report-isolated/
 bench/h2h/target/
 cpp/build/
+rust/target/

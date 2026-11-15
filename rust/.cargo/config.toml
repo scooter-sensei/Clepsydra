@@ -1,0 +1,5 @@
+# The test hooks and forceCT/forceBG are process-wide, as the reference's
+# package variables: the suite runs one test at a time, as `go test` runs a
+# package's tests.
+[env]
+RUST_TEST_THREADS = "1"

@@ -28,7 +28,7 @@ On a checkout on a Windows drive under WSL, `./cg.sh` is cargo with the target d
 | **sanity** | smoke, the suite with `TF_SHORT=1` (as Go's tier), the suite under `TF_CT=1`, `TF_BG=1` and, on x86-64, `TF_NOCAS2=1`, and the conformance vectors | passes |
 | **regression** | conformance vectors, `TestRegress*`, and every deterministic output of the Go regression tier against `go/verify/expected/` byte for byte: `exact` (`tfbench -exact`), `placement`, `register-experiment`, `velocity-bound`, `velocity-information`, `attacks`, `rates`, `sketch-experiments`, `flood-sizing`, `answer-digest` | passes: all ten reproduce byte for byte |
 | **perf** | the twelve benchmarks of `go/test.sh`'s `PERF_BENCH` (`bench/bench.rs`, run as `testing.B` runs them and printed as `go test -bench` prints them), revision A against the working tree, alternated (`bench/ab.sh`); fails above `PERF_MAX` (1.20) | runs; `./test.sh perf go` compares with the Go reference ([below](#speed)). The Rust/Rust gate needs a committed `rust/` to compare with |
-| **stress** | ThreadSanitizer on the suite, plain and in each mode (needs a nightly toolchain with `rust-src`; skipped, and the tier says so, without one); the four racy regression tests 300 times each, each run its own process (as `go/verify/replay.sh stress`); `TestStressSoak` (plain, under TSan, Background, Background with tags shared 8 ways); `TestFuzzUpper`; `TestFuzzConcurrent` (plain and with tags shared 8 ways) | passes at its defaults (nightly 1.102 for TSan): ThreadSanitizer over the whole suite, plain and in each mode, no report (25, 13, 14 and 26 min); the racy tests 0 failures in 300 runs each; soaks 60 s each (24 threads, 0.23 to 0.25 billion operations, no unflagged low answer), under TSan 20 s (4.0 million operations); the fuzzer 1.03 billion operations (872 cases); the concurrent fuzzer 2,054 and, tags shared, 2,379 cases |
+| **stress** | ThreadSanitizer on the suite, plain and in each mode (needs a nightly toolchain with `rust-src`; skipped, and the tier says so, without one); the four racy regression tests 300 times each, each run its own process (as `go/verify/replay.sh stress`); `TestStressSoak` (plain, under TSan, Background, Background with tags shared 8 ways); `TestFuzzUpper`; `TestFuzzConcurrent` (plain and with tags shared 8 ways) | passes at its defaults (nightly 1.102 for TSan): ThreadSanitizer over the whole suite, plain and in each mode, no report (19, 10, 12 and 18 min); the racy tests 0 failures in 300 runs each; soaks 60 s each (24 threads, 0.29 to 0.30 billion operations, no unflagged low answer), under TSan 20 s (4.8 million operations); the fuzzer 1.03 billion operations (873 cases); the concurrent fuzzer 3,105 and, tags shared, 3,077 cases |
 
 ### The suite
 
@@ -91,10 +91,10 @@ The tests are `#[test]` functions in the crate (`src/tests/`), white-box as Go's
 | `sync/atomic` | `AtomicU64` and its kin, `SeqCst` everywhere | Go's atomics are sequentially consistent; a plain Go access to a word others access atomically is an atomic access here too |
 | a word a lock guards (stash entries, buzz blocks, the hot table's free list) | atomics, or a `Mutex` the lock is | `StashEntry` and `BuzzEntry` are values read from and written back to their cells under the set's lock |
 | `atomic.Pointer[T]`, set once | `OnceLock<T>` | replaces `skMu`; `ReadFrom` writes into the table `get_or_init` gives it (Go stores a new one) |
-| `cpu.CAS2` | `core::arch::x86_64::cmpxchg16b` | over two `AtomicU64`, as the reference over two words; mixed-size atomics are outside the Rust model, inside every x86-64 CPU's |
+| `cpu.CAS2` | LOCK CMPXCHG16B in `asm!` | over two `AtomicU64`, as the reference's assembly over two words; mixed-size atomics are outside the Rust model, inside every x86-64 CPU's. Not `core::arch`'s `cmpxchg16b` intrinsic ([Portability](#portability)) |
 | `sync.Mutex`, `TryLock` | `std::sync::Mutex<()>`; `PaddedMutex` is 64-byte aligned | a poisoned lock is used as it is, as Go's mutexes have no poison. The filter's own locks see no panic (a tick past MaxTick panics before any lock); `Resizable`'s mutex is held across a touch that can panic so, and its next call recovers it, as Go's deferred unlock releases it |
 | `defer` | a guard's `Drop` at function scope | |
-| goroutine (CoarseClock) | `std::thread` holding a `Weak` to the filter | it ends at `Close`, or when the filter is dropped. On Windows `thread::sleep` asks for a high-resolution waitable timer, as Go's runtime does (the C++ port's timer defect, below its README's table); not yet run there |
+| goroutine (CoarseClock) | `std::thread` holding a `Weak` to the filter | it ends at `Close`, or when the filter is dropped. On Windows `thread::sleep` asks for a high-resolution waitable timer, as Go's runtime does (the C++ port's timer defect, below its README's table); run in CI's Windows job |
 | goroutine (Background placer) | `std::thread` holding an `Arc` while it runs | started on the first wait, ends after its idle naps, as the goroutine |
 | `runtime.Gosched` | `std::thread::yield_now` | |
 | `bits.TrailingZeros64`, `RotateLeft64` | `u64::trailing_zeros`, `u64::rotate_left` | |
@@ -121,18 +121,18 @@ These are the rules the translation keeps; a change to any implementation should
 
 | benchmark | Go | Rust | Rust/Go |
 |---|---:|---:|---:|
-| CheckAndTouchHit | 188.3 | 178.1 | 0.95 |
-| CheckAndTouchHitHot | 59.7 | 60.2 | 1.01 |
-| CheckAndTouchMissInsert | 1700.0 | 1471.6 | 0.87 |
-| CheckAndTouchBatch (per key) | 89.7 | 70.0 | 0.78 |
-| CheckAndTouchParallel | 23.0 | 22.2 | 0.97 |
-| TouchAndCount | 198.4 | 197.6 | 1.00 |
-| VelocityCount | 186.3 | 167.6 | 0.90 |
-| VelocityCountHot | 93.3 | 54.5 | 0.58 |
-| ContainsAbsent | 163.8 | 134.8 | 0.82 |
-| InsertSteady | 469.1 | 387.3 | 0.83 |
-| InsertNearFull | 4963.5 | 4213.3 | 0.85 |
-| InsertSaturated | 1191.5 | 1008.6 | 0.85 |
+| CheckAndTouchHit | 184.9 | 178.9 | 0.97 |
+| CheckAndTouchHitHot | 59.3 | 55.5 | 0.93 |
+| CheckAndTouchMissInsert | 1695.5 | 1477.9 | 0.87 |
+| CheckAndTouchBatch (per key) | 89.4 | 69.5 | 0.78 |
+| CheckAndTouchParallel | 22.7 | 22.2 | 0.98 |
+| TouchAndCount | 198.0 | 195.3 | 0.99 |
+| VelocityCount | 184.2 | 168.9 | 0.92 |
+| VelocityCountHot | 92.1 | 54.3 | 0.59 |
+| ContainsAbsent | 163.9 | 130.5 | 0.80 |
+| InsertSteady | 466.9 | 381.2 | 0.82 |
+| InsertNearFull | 4976.0 | 3983.6 | 0.80 |
+| InsertSaturated | 1145.5 | 968.8 | 0.85 |
 
 What one response time tells about a key is compiled code's business, so the port has its own reading of it: `TF_TIMING=1 cargo test --release --lib -- --exact tests::timing_test::TestTimingLeak --nocapture` (2M keys at 85% load, 40,000 probes, the host otherwise idle). Kolmogorov-Smirnov distance between seen and unseen latencies, without ConstantTime: 0.089 (Count), 0.570 (Touch); with a 3 µs pad: 0.008 and 0.011, under the noise floor of about 0.014 at 20,000 samples per side, as the reference's [S41].
 
@@ -144,6 +144,7 @@ Each was found by a review of the port against the reference, and fixed:
 |---|---|---|
 | `cpu.rs` | the CPU probe read `TF_NOCAS2` from the environment (the library reads none); the suite sets the switch now, and the probe stores its finding only over "not probed yet", so the suite's setting wins | review against `internal/cpu` |
 | `snapshot.rs` (`snap_scrub`) | a refused restore left the hot table's `full` (the unit in which an allocation last found no entry) at 0 instead of "none", so promotions in unit 0 skipped their search for a free entry | review against `hot.go` |
+| `cpu.rs` (`cas2`) | `core::arch`'s `cmpxchg16b` intrinsic, which Rust 1.85 to 1.98 inline into callers compiled without CMPXCHG16B, became a call of `__atomic_compare_exchange_16` there: at the declared minimum the library didn't link with a system linker (zig's supplied the routine, so this host's 1.85 build linked). The 16-byte CAS is assembly now, as the reference's ([Portability](#portability)) | CI's `msrv` job |
 
 ## Deviations from the reference
 
@@ -158,14 +159,19 @@ Each was found by a review of the port against the reference, and fixed:
 
 ## Portability
 
-x86-64 uses CMPXCHG16B after a CPUID check, as the reference does; other architectures take the hold path (`has_cas2` false), as the reference does on arm64. `Mul64` and `Div64` are `u128` arithmetic everywhere.
+x86-64 uses LOCK CMPXCHG16B, in assembly, after a CPUID check, as the reference does; other architectures take the hold path (`has_cas2` false), as the reference does on arm64. `Mul64` and `Div64` are `u128` arithmetic everywhere.
 
 | Platform | Toolchain | What has run |
 |---|---|---|
 | x86-64 Linux (WSL) | Rust 1.99.1, linked by zig's `cc` | every tier; the suite in each mode |
-| x86-64 Linux (WSL), ThreadSanitizer | nightly 1.102 (`-Zsanitizer=thread`, `-Zbuild-std`) | the suite with `TF_SHORT=1` in each mode (plain, `TF_CT=1`, `TF_BG=1`, `TF_NOCAS2=1`): 153 pass, no report; the stress tier's TSan checks ([above](#test-tiers)) |
+| x86-64 Linux (WSL), ThreadSanitizer | nightly 1.102 (`-Zsanitizer=thread`, `-Zbuild-std`) | the stress tier's TSan checks ([above](#test-tiers)): the whole suite plain and under `TF_CT=1`, `TF_BG=1` and `TF_NOCAS2=1`, 153 pass in each, no report; the soak |
 | arm64 Linux (musl, under qemu) | Rust 1.99.1 (`aarch64-unknown-linux-musl`), linked by zig's `cc` | the suite with `TF_SHORT=1`, plain, `TF_CT=1` and `TF_BG=1`: 151 pass in each (the two CMPXCHG16B tests are x86-64's, as Go's `cas2_amd64_test.go` is amd64's); the prefetch's `prfm` assembles |
-| x86-64 Windows (MSVC); arm64 macOS | Rust 1.99.1 | clippy over every target with warnings denied, from Linux (`--target x86_64-pc-windows-msvc`, `--target aarch64-apple-darwin`); built and run only in CI (`.github/workflows/rust.yml`) |
-| Rust 1.85, the declared minimum | 1.85.1 | the library, the suite and the tools build (CI's `msrv` job, run here too); clippy's `incompatible_msrv` checks the standard library's APIs against it |
+| x86-64 Windows (MSVC); arm64 macOS | Rust 1.99.1, in CI (`.github/workflows/rust.yml`) | the suite with `TF_SHORT=1`, plain and under `TF_CT=1` and `TF_BG=1` (Windows also `TF_NOCAS2=1`), and the conformance vectors, pass (the `windows` and `macos` jobs); clippy over every target with warnings denied, from Linux (`--target x86_64-pc-windows-msvc`, `--target aarch64-apple-darwin`) |
+| Rust 1.85, the declared minimum | 1.85.1 | the library, the suite and the tools build (CI's `msrv` job); built here at 1.85, 1.92, 1.95 and 1.99.1, dev and release, no artifact refers to a 16-byte atomic library routine (`nm`) and the release library holds LOCK CMPXCHG16B at its four call sites; clippy's `incompatible_msrv` checks the standard library's APIs against it |
 
-ThreadSanitizer and the 16-byte CAS: the CAS is a compiler intrinsic here (`core::arch::x86_64::cmpxchg16b`, an `atomic cmpxchg` of 128 bits), not assembly as in the reference and the C++ port, so TSan instruments it, and the suite's 16-byte CAS becomes a call of the runtime's `__tsan_atomic128_compare_exchange_val`. That runtime (compiler-rt, as the nightly toolchain ships it) executes no CMPXCHG16B: it compares and stores the two words with plain loads and stores, under one global spin lock (`mutex128`) and, for a non-relaxed order, the lock of its address's sync object. An 8-byte atomic on the same words takes neither of the first and, unless it is non-relaxed and on word0 (the same address), not the second. Under TSan, then, a 16-byte CAS can overwrite an update of word1, or a relaxed update of word0, that lands between its load and its store, as the hardware's can't. A probe measured it (one thread swapping a 16-byte-aligned pair from what it read, changing one word; another adding 1 to the other word; 2 million times each, three runs per case): adds to word1 lost 1,283 to 3,934, relaxed adds to word0 216 to 3,430, SeqCst adds to word0 none; natively, none in any case. So the suite's counts under TSan are no evidence about the 16-byte CAS: the native runs are (the stress tier's racy tests, soaks and fuzzers), and under TSan `TF_NOCAS2=1` (`race-no-cas2`) is the mode whose atomic operations are the hardware's. A count wrong only under TSan with the 16-byte CAS on would be the runtime's; none has been wrong.
+The 16-byte CAS is LOCK CMPXCHG16B in inline assembly, as in the reference and the C++ port, so ThreadSanitizer sees neither it nor the words it writes, and sees the 8-byte atomics on the same words. `core::arch`'s `cmpxchg16b` intrinsic would serve neither the minimum nor TSan:
+
+- Rust 1.85 to 1.98 inline the intrinsic into its callers, which are compiled without CMPXCHG16B, and there its 128-bit `cmpxchg` becomes a call of `__atomic_compare_exchange_16`, which toolchains' default libraries don't define (CI's 1.85 build failed to link). 1.92 and 1.95 inline it so even from a never-inlined wrapper compiled with the feature; 1.99 keeps it out of line.
+- TSan instruments it, and its runtime (compiler-rt, as the nightly toolchain ships it) runs a 128-bit CAS as plain loads and stores under one global spin lock and, for a non-relaxed order, its address's sync lock. An 8-byte atomic on word1, or a relaxed one on word0, takes neither, so it can land between the load and the store and be overwritten, as it can't be on the hardware.
+
+A probe measured both (one thread swapping a 16-byte-aligned pair from what it read, changing one word; another adding 1 to the other word; 2 million times each, three runs per case). With the intrinsic under TSan, adds to word1 lost 1,283 to 3,934 and relaxed adds to word0 216 to 3,430; SeqCst adds to word0, which share the CAS's sync lock, lost none. With the assembly under TSan, and with either natively, none was lost in any case.

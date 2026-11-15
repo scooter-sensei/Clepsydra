@@ -64,7 +64,46 @@ pub(crate) fn cas2(p: &[AtomicU64], old0: u64, old1: u64, new0: u64, new1: u64) 
     // 64-bit one: mixed-size atomics are outside Rust's memory model and
     // inside every x86-64 CPU's (as the reference's assembly, and the C++
     // port's, rely on).
-    unsafe { core::arch::x86_64::cmpxchg16b(p.as_ptr() as *mut u128, old, new, Ordering::SeqCst, Ordering::SeqCst) == old }
+    unsafe { cmpxchg16b(p.as_ptr() as *mut u128, old, new) == old }
+}
+
+/// LOCK CMPXCHG16B in assembly, as the reference's and the C++ port's: it
+/// returns the 128-bit word it found at `dst` (equal to `old` when it stored
+/// `new`). Not `core::arch`'s `cmpxchg16b`: Rust 1.85 to 1.98 inline that
+/// intrinsic into callers compiled without CMPXCHG16B, where its 128-bit
+/// `cmpxchg` becomes a call of `__atomic_compare_exchange_16`, which
+/// toolchains' default libraries don't define (some releases inline it even
+/// from a never-inlined wrapper compiled with the feature); and
+/// ThreadSanitizer runs it as plain loads and stores under locks that an
+/// 8-byte atomic on word1, or a relaxed one on word0, doesn't take (README,
+/// Portability).
+///
+/// # Safety
+/// `dst` is valid for reads and writes and 16-byte aligned, and the CPU has
+/// CMPXCHG16B.
+#[cfg(all(target_arch = "x86_64", not(miri)))]
+#[inline(always)]
+unsafe fn cmpxchg16b(dst: *mut u128, old: u128, new: u128) -> u128 {
+    let (lo, hi): (u64, u64);
+    // SAFETY: the caller's. CMPXCHG16B compares RDX:RAX with the 16 bytes at
+    // dst, stores RCX:RBX there if they are equal and loads them into RDX:RAX
+    // if not. LLVM reserves RBX, so the new low word arrives in another
+    // register and trades places with RBX around the instruction. The asm
+    // reads and writes memory and sets flags: no options but nostack.
+    unsafe {
+        core::arch::asm!(
+            "xchg {new_lo}, rbx",
+            "lock cmpxchg16b xmmword ptr [{dst}]",
+            "mov rbx, {new_lo}",
+            dst = in(reg) dst,
+            new_lo = inout(reg) new as u64 => _,
+            in("rcx") (new >> 64) as u64,
+            inout("rax") old as u64 => lo,
+            inout("rdx") (old >> 64) as u64 => hi,
+            options(nostack),
+        );
+    }
+    ((hi as u128) << 64) | lo as u128
 }
 
 #[cfg(not(all(target_arch = "x86_64", not(miri))))]

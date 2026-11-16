@@ -1,6 +1,6 @@
 # Conformance: vectors and test tiers
 
-An implementation is the same filter when it reproduces the conformance vectors exactly, and it is tested the same way when it provides the same five test tiers. Both rules apply to every implementation: Go now, Python, C++ and Java later.
+An implementation is the same filter when it reproduces the conformance vectors exactly, and it is tested the same way when it provides the same five test tiers. Both rules apply to every implementation: Go, C++ and Rust now, Python and Java later.
 
 ## Conformance vectors
 
@@ -46,4 +46,4 @@ The concurrent fuzzer, the model checks and running the tiers on other architect
 <lang>/...                its own build, tests and benchmarks
 ```
 
-A port goes in its own top-level folder (`python/`, `cpp/`, `java/`), follows [the format](format.md), and must reproduce `spec/vectors/` exactly. Its regression tier must include the conformance vectors. Its smoke tier must call every public operation once.
+A port goes in its own top-level folder (`cpp/` and `rust/` so far; `python/` and `java/` planned), follows [the format](format.md), and must reproduce `spec/vectors/` exactly. Its regression tier must include the conformance vectors. Its smoke tier must call every public operation once.

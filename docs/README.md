@@ -2,7 +2,7 @@
 
 **Abstract.** Clepsydra is a fixed-memory filter that answers two questions about a stream of keyed events: *"was key X seen in the last W?"* and *"how many times in the last W?"*, for any window `W` up to a configured horizon, chosen per query. Each key's exact last-touch time and an age-graded event counter (the velocity register) share one 16-byte slot of a 64-byte cache line, so a hit costs one memory access. Hits are lock-free (a CAS on the slot's two words); a key's first touch takes one of 256 striped locks. Evicted keys keep their history in a stash, histories the stash drops go to an overflow table that no flood can erase within the horizon, and heavy keys move to exact 32-bit counters. Every answer says how far it can be trusted (`Upper`, `Saturated`, `Restored`, `Degraded`), so a rate limiter or abuse check can fail closed. At the default 85% load it uses 18.8 B per key, misses no key up to 1.15x its capacity, has a false-positive rate of 1.8e-8, and a velocity error of 0.067 [D1, D3, D5, D6, D29].
 
-**Status.** Research prototype. The Go implementation (`go/`) is the reference; Python, C++ and Java ports are planned. Every claim in these documents carries a tag that [the claims register](artifact/claims.md) maps to a check.
+**Status.** Research prototype. The Go implementation (`go/`) is the reference; the C++ (`cpp/`) and Rust (`rust/`) ports reproduce its conformance vectors and the ten deterministic outputs of its regression tier byte for byte ([changes 103, 104](record/changes.md#ports)); Python and Java ports are planned. Every claim in these documents carries a tag that [the claims register](artifact/claims.md) maps to a check.
 
 ## How the documentation is organized
 
@@ -63,8 +63,10 @@ go/                  Go reference implementation
     experiments/         reverted experiments as git patches
     testdata/            older versions of test files the replays need
     tla/                 TLA+ models of the slot protocol (tla/experiments/: models of experiments not adopted)
-```
+cpp/                 the C++ port (C++20, the standard library only): cpp/README.md
+rust/                the Rust port (2024 edition, the standard library only): rust/README.md
+.github/workflows/   CI: go.yml (sanity, regression), tier.yml (stress weekly, any tier on request), cpp.yml, rust.yml
 
 [artifact/source-map.md](artifact/source-map.md) lists every file of `go/` by category, tests included. Go requires a package's white-box tests to sit beside its code, so the library and its tests share `go/`'s root; everything that stands on its own is a package under `go/internal/`.
 
-Each port goes in its own top-level folder (`python/`, `cpp/`, `java/`) with its own build ([specification/conformance.md](specification/conformance.md)).
+Each port goes in its own top-level folder with its own build ([specification/conformance.md](specification/conformance.md)): `cpp/` and `rust/` so far, `python/` and `java/` planned. Each translates `go/` file by file; [artifact/source-map.md](artifact/source-map.md#ports-cpp-rust) says how their files map to the reference's.

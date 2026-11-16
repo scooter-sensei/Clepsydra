@@ -2,7 +2,7 @@
 
 A fixed-memory temporal filter: **"seen key X in the last W?"** and **"how many times in the last W?"**, for any window `W` up to a configured horizon, chosen per query. Each key's exact timestamp and event counter share one cache line, so a hit costs one memory access.
 
-Status: research prototype. The Go implementation is the reference; Python, C++ and Java ports are planned.
+Status: research prototype. The Go implementation is the reference; the C++ and Rust ports reproduce its conformance vectors and the ten deterministic outputs of its regression tier byte for byte; Python and Java ports are planned.
 
 ## Documentation
 
@@ -26,11 +26,13 @@ go/            Go reference implementation
   cmd/tfbench/   accuracy and speed scorecard
   internal/      cpu (assembly primitives), siphash, workload, registersim
   verify/        tools that check every claim; isolated.sh re-runs them offline
+cpp/           C++ port (C++20), cpp/README.md
+rust/          Rust port (2024 edition), rust/README.md
 ```
 
 Every file is listed by category in [docs/artifact/source-map.md](docs/artifact/source-map.md).
 
-Each port goes in its own top-level folder (`python/`, `cpp/`, `java/`) with its own build. A port follows [docs/specification/format.md](docs/specification/format.md), must reproduce `spec/vectors/` exactly and must provide the same five test tiers ([docs/specification/conformance.md](docs/specification/conformance.md)).
+Each port goes in its own top-level folder with its own build: `cpp/` and `rust/` so far, `python/` and `java/` planned. A port follows [docs/specification/format.md](docs/specification/format.md), must reproduce `spec/vectors/` exactly and must provide the same five test tiers ([docs/specification/conformance.md](docs/specification/conformance.md)).
 
 ## Go
 
@@ -40,6 +42,15 @@ cd go
 ./bench.sh "label"      # a scorecard row in docs/record/scorecard-history.md
 verify/run.sh           # every claim check (docs/artifact/claims.md)
 ```
+
+## C++ and Rust
+
+```
+cd cpp && ./test.sh smoke    # cpp/README.md: CMake and a C++20 compiler
+cd rust && ./test.sh smoke   # rust/README.md: Rust 1.85 or later
+```
+
+Each port's `test.sh` provides the same five tiers as the reference's.
 
 ## License
 

@@ -321,7 +321,8 @@ TEST(TestWaitBesidePlacementKeepsKey) {
   if (c.locate(l, fingerprint(l), tag(l)) < 0) FATALF("L is not in the table");
   if (Result r = f.CountAt(k, c.horizon, t1); r.Upper < 1 && !r.Saturated)
     FATALF("K reads %+v after L's placement, want Upper >= 1", r);
-  if (Result r = f.TouchAt(k, c.horizon, t1); r.Upper < 2 && !r.Saturated) FATALF("K's second touch reads %+v, want Upper >= 2", r);
+  if (Result r = f.TouchAt(k, c.horizon, t1); r.Upper < 2 && !r.Saturated)
+    FATALF("K's second touch reads %+v, want Upper >= 2", r);
 }
 
 // TestTouchesRacingAfterGap (go/gaprace_test.go; claims A21): K's last touch is
@@ -374,7 +375,8 @@ TEST(TestTouchRacingRelocationKeepsCounts) {
   LOGF("relocations %d, evictions %d, hot dups %d, counted %d of %d touches", f.Relocations(), f.Evictions(), dups,
        total, touches.load() + static_cast<i64>(hot) * initTouches);
   if (dups > 0) FATALF("%d hot keys in two slots", dups);
-  if (i64 want = touches.load() + static_cast<i64>(hot) * initTouches; total != want) FATALF("counted %d of %d touches", total, want);
+  if (i64 want = touches.load() + static_cast<i64>(hot) * initTouches; total != want)
+    FATALF("counted %d of %d touches", total, want);
 }
 
 // TestConcurrentFirstInsertNoDuplicates (go/dup_test.go): concurrent first
@@ -489,7 +491,8 @@ TEST(TestAbandonedMoveKeepsCounts) {
       // its tag, and where its history is.
       std::vector<i64> wantK(hot, 3);
       for (int w = 0; w < workers; w++)
-        for (u64 i = static_cast<u64>(w / 2); i < static_cast<u64>(w / 2) + static_cast<u64>(ns[static_cast<std::size_t>(w)]); i++)
+        for (u64 i = static_cast<u64>(w / 2);
+             i < static_cast<u64>(w / 2) + static_cast<u64>(ns[static_cast<std::size_t>(w)]); i++)
           wantK[i % hot]++;
       for (u64 k = 0; k < hot; k++) {
         u64 h = mix64(salt + k);
@@ -595,7 +598,8 @@ TEST(TestEvictedKeyThatWaitsIsRestored) {
     Result r = f.TouchAt(v, c.horizon, 1000);
     if (f.Waited() != 1) FATALF("v didn't wait for a slot (waited %d; %s)", f.Waited(), whereIs(c, v, 1000));
     if (!r.Restored || r.Count != 2 || !r.Seen || f.Restored() != 1)
-      FATALF("waiting touch of an evicted key: %+v, Restored() %d; want count 2, seen, restored, Restored() 1", r, f.Restored());
+      FATALF("waiting touch of an evicted key: %+v, Restored() %d; want count 2, seen, restored, Restored() 1", r,
+             f.Restored());
     // Free a slot of v's primary line: v's next touch installs it.
     std::size_t base = static_cast<std::size_t>(c.primary(v) * wordsPerLine);
     c.words[base].store(0);
@@ -603,7 +607,8 @@ TEST(TestEvictedKeyThatWaitsIsRestored) {
     r = f.TouchAt(v, c.horizon, 1000);
     if (c.locate(v, fingerprint(v), tag(v)) < 0) FATALF("v not installed: %s", whereIs(c, v, 1000));
     if (r.Restored || r.Count != 3 || f.Restored() != 1)
-      FATALF("touch that installs the waiting key: %+v, Restored() %d; want count 3, not restored, Restored() 1", r, f.Restored());
+      FATALF("touch that installs the waiting key: %+v, Restored() %d; want count 3, not restored, Restored() 1", r,
+             f.Restored());
   }
 }
 

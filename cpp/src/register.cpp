@@ -58,9 +58,7 @@ bool Register::advance(i64 u0, i64 u1) {
 }
 
 // onsetOf is where the tick now falls in its unit u, in sixteenths.
-u64 Core::onsetOf(u64 now, i64 u) const {
-  return static_cast<u64>(unitOf(16 * (now - static_cast<u64>(u) * unit)));
-}
+u64 Core::onsetOf(u64 now, i64 u) const { return static_cast<u64>(unitOf(16 * (now - static_cast<u64>(u) * unit))); }
 
 // nextReg returns word1 after counting one event at now in old, the register
 // of key tg last touched at last; the result is at the unit of max(now, last).

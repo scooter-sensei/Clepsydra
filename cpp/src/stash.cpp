@@ -5,7 +5,9 @@
 namespace clepsydra::detail {
 
 StashTable::StashTable(u64 sets, PaddedMutex* mus)
-    : e(static_cast<std::size_t>(sets * stashWays)), wait(static_cast<std::size_t>((sets + 63) / 64)), n(sets),
+    : e(static_cast<std::size_t>(sets * stashWays)),
+      wait(static_cast<std::size_t>((sets + 63) / 64)),
+      n(sets),
       mu(mus) {}
 
 // set returns id's set (stashWays entries) and its lock.

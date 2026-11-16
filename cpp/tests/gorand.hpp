@@ -3,8 +3,8 @@
 // the scorecard's workloads) replay here exactly as there.
 #pragma once
 
-#include <cstdint>
 #include <cmath>
+#include <cstdint>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -95,14 +95,17 @@ struct Rand {
   // Shuffle is Go's Fisher-Yates shuffle.
   template <class Swap>
   void Shuffle(std::int64_t n, Swap swap) {
-    for (std::int64_t i = n - 1; i > 0; i--) swap(i, static_cast<std::int64_t>(uint64n(static_cast<std::uint64_t>(i + 1))));
+    for (std::int64_t i = n - 1; i > 0; i--)
+      swap(i, static_cast<std::int64_t>(uint64n(static_cast<std::uint64_t>(i + 1))));
   }
 
   // Perm is Go's rand.Perm: a permutation of [0, n).
   std::vector<std::int64_t> Perm(std::int64_t n) {
     std::vector<std::int64_t> p(static_cast<std::size_t>(n));
     for (std::int64_t i = 0; i < n; i++) p[static_cast<std::size_t>(i)] = i;
-    Shuffle(n, [&](std::int64_t a, std::int64_t b) { std::swap(p[static_cast<std::size_t>(a)], p[static_cast<std::size_t>(b)]); });
+    Shuffle(n, [&](std::int64_t a, std::int64_t b) {
+      std::swap(p[static_cast<std::size_t>(a)], p[static_cast<std::size_t>(b)]);
+    });
     return p;
   }
 };

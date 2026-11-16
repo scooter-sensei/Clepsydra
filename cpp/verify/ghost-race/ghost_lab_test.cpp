@@ -7,15 +7,15 @@
 // one LAB line per run. The suite's TestGhostEpochRace is LAB_PIN=0
 // LAB_INJECT=1 LAB_K=3; the reference's arrangement ported is LAB_PIN=0
 // LAB_INJECT=0. Linux only (the pinning).
+#include <pthread.h>
+#include <sched.h>
+
 #include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <thread>
 #include <vector>
-
-#include <pthread.h>
-#include <sched.h>
 
 #include "check.hpp"
 #include "helpers.hpp"

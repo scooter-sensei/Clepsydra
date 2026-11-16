@@ -150,8 +150,8 @@ std::pair<Result, bool> Core::touchIfBuzz(u64 h, u64 window, u64 limit, u64 now)
   i64 over = r.Upper;
   if (sketchLive(now)) addSketch(r, h, window, now);
   over = r.Upper - over;
-  bool refuse = r.Saturated || (skW == 0 && r.Degraded && !r.Seen) ||
-                static_cast<u64>(std::max<i64>(r.Upper, 0)) >= limit;
+  bool refuse =
+      r.Saturated || (skW == 0 && r.Degraded && !r.Seen) || static_cast<u64>(std::max<i64>(r.Upper, 0)) >= limit;
   // A register the two words answer for: no hot entry, not saturated, not
   // full in every bucket.
   bool plain = live && !isHot(w1) && (w0 & satBit) == 0 && (~w1 & regMask) != 0;

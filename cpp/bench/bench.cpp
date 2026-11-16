@@ -93,8 +93,9 @@ struct B {
     // Iterations that take ~100 µs, at most 1e4.
     u64 grain = 0;
     if (previousN > 0 && previousDuration.count() > 0)
-      grain = static_cast<u64>(1e5 * static_cast<double>(previousN) /
-                               static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(previousDuration).count()));
+      grain = static_cast<u64>(
+          1e5 * static_cast<double>(previousN) /
+          static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(previousDuration).count()));
     grain = std::clamp<u64>(grain, 1, 10'000);
     std::atomic<u64> n{0};
     const unsigned procs = std::max(1u, std::thread::hardware_concurrency());
@@ -139,21 +140,24 @@ void CheckAndTouchHit(B& b) {
   Bench x = benchFilter();
   u64 w = x.f->Ticks(30s);
   b.ResetTimer();
-  for (i64 i = 0; i < b.N; i++) x.f->CheckAndTouchAt(x.hs[static_cast<std::size_t>(i & (benchKeys - 1))], w, 2000 + static_cast<u64>(i >> 10));
+  for (i64 i = 0; i < b.N; i++)
+    x.f->CheckAndTouchAt(x.hs[static_cast<std::size_t>(i & (benchKeys - 1))], w, 2000 + static_cast<u64>(i >> 10));
 }
 
 void CheckAndTouchMissInsert(B& b) {
   Bench x = benchFilter();
   u64 w = x.f->Ticks(30s);
   b.ResetTimer();
-  for (i64 i = 0; i < b.N; i++) x.f->CheckAndTouchAt(mix64(static_cast<u64>(benchKeys + i)), w, 2000 + static_cast<u64>(i >> 10));
+  for (i64 i = 0; i < b.N; i++)
+    x.f->CheckAndTouchAt(mix64(static_cast<u64>(benchKeys + i)), w, 2000 + static_cast<u64>(i >> 10));
 }
 
 void TouchAndCount(B& b) {
   Bench x = benchFilter();
   u64 w = x.f->Ticks(30s);
   b.ResetTimer();
-  for (i64 i = 0; i < b.N; i++) x.f->TouchAndCountAt(x.hs[static_cast<std::size_t>(i & (benchKeys - 1))], w, 2000 + static_cast<u64>(i >> 10));
+  for (i64 i = 0; i < b.N; i++)
+    x.f->TouchAndCountAt(x.hs[static_cast<std::size_t>(i & (benchKeys - 1))], w, 2000 + static_cast<u64>(i >> 10));
 }
 
 void VelocityCount(B& b) {
@@ -161,7 +165,8 @@ void VelocityCount(B& b) {
   u64 w = x.f->Ticks(30s);
   b.ResetTimer();
   u64 s = 0;
-  for (i64 i = 0; i < b.N; i++) s += static_cast<u64>(x.f->VelocityCountAt(x.hs[static_cast<std::size_t>(i & (benchKeys - 1))], w, 2000));
+  for (i64 i = 0; i < b.N; i++)
+    s += static_cast<u64>(x.f->VelocityCountAt(x.hs[static_cast<std::size_t>(i & (benchKeys - 1))], w, 2000));
   sink += s;
 }
 
@@ -190,7 +195,8 @@ void CheckAndTouchHitHot(B& b) {
   }
   u64 w = f.Ticks(30s);
   b.ResetTimer();
-  for (i64 i = 0; i < b.N; i++) f.CheckAndTouchAt(hs[static_cast<std::size_t>(i & (n - 1))], w, 2000 + static_cast<u64>(i >> 10));
+  for (i64 i = 0; i < b.N; i++)
+    f.CheckAndTouchAt(hs[static_cast<std::size_t>(i & (n - 1))], w, 2000 + static_cast<u64>(i >> 10));
 }
 
 // Worst case: every insert lands in two full lines (no expiry).
@@ -240,7 +246,8 @@ void VelocityCountHot(B& b) {
   u64 w = f.Ticks(30s);
   b.ResetTimer();
   u64 s = 0;
-  for (i64 i = 0; i < b.N; i++) s += static_cast<u64>(f.VelocityCountAt(hs[static_cast<std::size_t>(i & (n - 1))], w, 20'000'000));
+  for (i64 i = 0; i < b.N; i++)
+    s += static_cast<u64>(f.VelocityCountAt(hs[static_cast<std::size_t>(i & (n - 1))], w, 20'000'000));
   sink += s;
 }
 

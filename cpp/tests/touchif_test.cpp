@@ -117,12 +117,14 @@ TEST(TestTouchIfSustained) {
           if (n > static_cast<i64>(c.limit)) over++;
         }
       }
-      LOGF("sustained keys %4d W=%ds limit %d: positions %d, over the limit %d, mean admitted per window %.1f (min "
-           "%d); evictions %d, saturated answers %d",
-           nk, c.w / 1000, c.limit, positions, over, static_cast<double>(sum) / static_cast<double>(std::max<i64>(positions, 1)),
-           minW, f.Evictions(), sat.load());
+      LOGF(
+          "sustained keys %4d W=%ds limit %d: positions %d, over the limit %d, mean admitted per window %.1f (min "
+          "%d); evictions %d, saturated answers %d",
+          nk, c.w / 1000, c.limit, positions, over,
+          static_cast<double>(sum) / static_cast<double>(std::max<i64>(positions, 1)), minW, f.Evictions(), sat.load());
       if (over != 0)
-        ERRORF("sustained keys %d W=%ds limit %d: over the limit at %d window positions", nk, c.w / 1000, c.limit, over);
+        ERRORF("sustained keys %d W=%ds limit %d: over the limit at %d window positions", nk, c.w / 1000, c.limit,
+               over);
     }
   }
 }
@@ -168,10 +170,11 @@ TEST(TestTouchIfVelocity) {
           }
         },
         [](int, const std::vector<u64>&, int, u64) {});
-    LOGF("velocity W=%ds limit %d: requests %d, agreement with exact %.4f (exact admits %d, both %d); admitted at/over "
-         "own limit %d; refused under own limit %d, of which Upper > truth %d",
-         c.w / 1000, c.limit, reqs, static_cast<double>(agree) / static_cast<double>(reqs), exAdmit, bothAdmit,
-         admitOver, refusedUnder, refusedUnderUpper);
+    LOGF(
+        "velocity W=%ds limit %d: requests %d, agreement with exact %.4f (exact admits %d, both %d); admitted at/over "
+        "own limit %d; refused under own limit %d, of which Upper > truth %d",
+        c.w / 1000, c.limit, reqs, static_cast<double>(agree) / static_cast<double>(reqs), exAdmit, bothAdmit,
+        admitOver, refusedUnder, refusedUnderUpper);
     if (admitOver != 0 || refusedUnderUpper != refusedUnder)
       ERRORF("velocity W=%ds limit %d: %d admitted at or over the limit; %d refused under it without Upper > truth",
              c.w / 1000, c.limit, admitOver, refusedUnder - refusedUnderUpper);
@@ -193,5 +196,6 @@ TEST(TestTouchIfUnderLostHistory) {
   c.spill(c.stashID(h, fp, tg), (fp << 48) | 1000, w1, 1000);
   if (auto [r, ok] = f.TouchIfUnderAt(h, 1000, 5, 1500); ok || !r.Degraded || r.Seen)
     ERRORF("an unseen key read Degraded after a lost history: %+v, admitted %v; want refused", r, ok);
-  if (auto [r, ok] = f.TouchIfUnderAt(h, 1000, 5, 2001); !ok) ERRORF("past a horizon after the lost event: %+v, refused", r);
+  if (auto [r, ok] = f.TouchIfUnderAt(h, 1000, 5, 2001); !ok)
+    ERRORF("past a horizon after the lost event: %+v, refused", r);
 }

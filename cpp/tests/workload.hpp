@@ -77,7 +77,6 @@ inline void velWorkload(const std::function<void(int, std::uint64_t)>& touch,
   }
 }
 
-
 // Windows are the query windows (ticks) the churn stream draws from
 // (go/internal/workload).
 inline const std::vector<std::uint64_t> Windows{1'000, 10'000, 60'000};
@@ -109,7 +108,7 @@ inline void Churn(double load, std::uint64_t seed, std::int64_t capacity, std::u
         next++;
         h = hash(next);
         keys.push_back(Born{h, now});
-      } else {  // repeat a key born within the last 1.5 horizons
+      } else {                          // repeat a key born within the last 1.5 horizons
         std::size_t lo = 0, hi = live;  // sort.Search: the first i with keys[i].t+hTicks*3/2 > now
         while (lo < hi) {
           std::size_t mid = lo + (hi - lo) / 2;

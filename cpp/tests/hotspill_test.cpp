@@ -99,7 +99,8 @@ TEST(TestHotAddAfterStashDropCounts) {
     // before them into the next ways; K6's eviction finds all four ways live
     // and K's the lightest.
     for (int n = 0; n < 5; n++) {
-      f.TouchAt(keyAt(c, static_cast<u64>(n % 2), fps[static_cast<std::size_t>(8 + n)], 0x5a6 + static_cast<u64>(n)), 0, t2);
+      f.TouchAt(keyAt(c, static_cast<u64>(n % 2), fps[static_cast<std::size_t>(8 + n)], 0x5a6 + static_cast<u64>(n)), 0,
+                t2);
       if (n == 0) {
         gone = slotsOf(c, k).empty();
         u64 a, b;
@@ -113,7 +114,8 @@ TEST(TestHotAddAfterStashDropCounts) {
   f.TouchAt(k, 0, t1);  // T
   testHookHotAdding = nullptr;
   if (!fired || !gone || !stashed || !dropped || ev != 5)
-    FATALF("during K's hot add: K evicted %v, stashed %v, then dropped %v; evictions %d, want 5", gone, stashed, dropped, ev);
+    FATALF("during K's hot add: K evicted %v, stashed %v, then dropped %v; evictions %d, want 5", gone, stashed,
+           dropped, ev);
   if (Result r = f.CountAt(k, c.horizon, t2); r.Upper < 1 && !r.Saturated) FATALF("K reads %+v after a touch at t1", r);
 }
 
@@ -137,11 +139,13 @@ TEST(TestSpillOfForeignHotEntryIsNotLost) {
   if (!isHot(foreign)) FATALF("not a hot pointer");
   c.spill(id, w0, foreign, now);
   if (f.Lost() != 0 || c.lostRecently(now))
-    FATALF("a drop whose hot entry is another's: Lost %d, lost recently %v; want 0, false", f.Lost(), c.lostRecently(now));
+    FATALF("a drop whose hot entry is another's: Lost %d, lost recently %v; want 0, false", f.Lost(),
+           c.lostRecently(now));
   u64 own = c.nextReg(0, tg, now, now, true).first;
   c.spill(id, w0, own, now);
   if (f.Lost() != 1 || !c.lostRecently(now))
-    FATALF("a drop of a history with one event: Lost %d, lost recently %v; want 1, true", f.Lost(), c.lostRecently(now));
+    FATALF("a drop of a history with one event: Lost %d, lost recently %v; want 1, true", f.Lost(),
+           c.lostRecently(now));
 }
 
 namespace {
@@ -171,7 +175,8 @@ TEST(TestSlotExitFreesHotEntry) {
     u64 now = dropT0 + c.horizon + c.unit;  // K's history is past the horizon: its touch starts afresh
     f->TouchAt(k, 0, now);
     if (i64 n = f->HotInUse(); n != 0) FATALF("hot entries in use after K's reset: %d, want 0", n);
-    if (Result r = f->CountAt(k, c.horizon, now); r.Count != 1 || r.Saturated) FATALF("K reads %+v after its reset, want count 1", r);
+    if (Result r = f->CountAt(k, c.horizon, now); r.Count != 1 || r.Saturated)
+      FATALF("K reads %+v after its reset, want count 1", r);
   });
   LOGF("-- sweep");
   {
@@ -202,7 +207,8 @@ TEST(TestSlotExitFreesHotEntry) {
       }
     }
     if (c.locate(k, fingerprint(k), tag(k)) == i) FATALF("K's expired slot not taken");
-    if (i64 n = f->HotInUse(); n != 0) FATALF("hot entries in use after an insert over K's expired slot: %d, want 0", n);
+    if (i64 n = f->HotInUse(); n != 0)
+      FATALF("hot entries in use after an insert over K's expired slot: %d, want 0", n);
   }
 }
 

@@ -112,11 +112,12 @@ TEST(TestFloodSizing) {
       }
       const i64 bytes = f.Bytes();
       auto pct = [&](int n) { return 100 * static_cast<double>(n) / probes; };
-      LOGF("%-27s flood %2dx x %2d: offenders Upper<true %d, Count>=90%% %3d/%d | new keys Degraded %5.2f%%, turned "
-           "away (test) %6.2f%% (recipe) %6.2f%% = match %5.2f%% + floor %5.2f%% | floored %6d folded %6d | %5.1f "
-           "B/key",
-           c.name, fl.mult, fl.weight, below, rec, offenders, pct(deg), pct(test), pct(recipe), pct(byMatch),
-           pct(byFloor), f.Floored(), f.Folded(), static_cast<double>(bytes) / 4096);
+      LOGF(
+          "%-27s flood %2dx x %2d: offenders Upper<true %d, Count>=90%% %3d/%d | new keys Degraded %5.2f%%, turned "
+          "away (test) %6.2f%% (recipe) %6.2f%% = match %5.2f%% + floor %5.2f%% | floored %6d folded %6d | %5.1f "
+          "B/key",
+          c.name, fl.mult, fl.weight, below, rec, offenders, pct(deg), pct(test), pct(recipe), pct(byMatch),
+          pct(byFloor), f.Floored(), f.Folded(), static_cast<double>(bytes) / 4096);
       if (below > 0) ERRORF("%s flood %dx: %d offenders read Upper below the truth", c.name, fl.mult, below);
     }
   }

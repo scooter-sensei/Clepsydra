@@ -1,12 +1,13 @@
 // SipHash-2-4 reference vectors (go/internal/siphash/siphash_test.go) and the
 // batch hash (go/internal/siphash/batch_test.go).
+#include "siphash.hpp"
+
 #include <array>
 #include <cstdint>
 #include <span>
 #include <vector>
 
 #include "check.hpp"
-#include "siphash.hpp"
 
 using clepsydra::detail::siphash::Key;
 
@@ -59,7 +60,8 @@ TEST(TestHashUint64sMatches) {
     for (auto& o : out) o = 0xdeadbeef;
     k.HashUint64s(std::span<const std::uint64_t>(keys.data(), static_cast<std::size_t>(n)), out);
     for (int i = 0; i < n; i++) {
-      if (std::uint64_t want = k.HashUint64(keys[static_cast<std::size_t>(i)]); out[static_cast<std::size_t>(i)] != want)
+      if (std::uint64_t want = k.HashUint64(keys[static_cast<std::size_t>(i)]);
+          out[static_cast<std::size_t>(i)] != want)
         FATALF("batch of %d, key %d (%#x): %#x, want %#x", n, i, keys[static_cast<std::size_t>(i)],
                out[static_cast<std::size_t>(i)], want);
     }

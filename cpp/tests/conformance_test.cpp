@@ -66,9 +66,9 @@ void runScenario(const std::string& name) {
   if (v.has("hashes")) {
     for (const auto& h : v["hashes"].a) {
       std::uint64_t got = h.has("string") ? f.Hash(h["string"].s) : f.HashUint64(h["uint64"].u64());
-      CHECK_MSG(hex16(got) == h["hash"].s, name + ": hash of " + (h.has("string") ? '"' + h["string"].s + '"'
-                                                                                    : h["uint64"].s) +
-                                               " = " + hex16(got) + ", want " + h["hash"].s);
+      CHECK_MSG(hex16(got) == h["hash"].s, name + ": hash of " +
+                                               (h.has("string") ? '"' + h["string"].s + '"' : h["uint64"].s) + " = " +
+                                               hex16(got) + ", want " + h["hash"].s);
     }
   }
   int bad = 0, i = 0;
@@ -96,8 +96,7 @@ void runScenario(const std::string& name) {
       if (++bad <= 5)
         check::fail(__FILE__, __LINE__,
                     name + ": op " + std::to_string(i) + " " + kind + " " + op["key"].s + " window_ms " +
-                        op["window_ms"].s + " now_ms " + op["now_ms"].s + ": got " + show(r) + " want " +
-                        show(wr));
+                        op["window_ms"].s + " now_ms " + op["now_ms"].s + ": got " + show(r) + " want " + show(wr));
     }
     i++;
   }

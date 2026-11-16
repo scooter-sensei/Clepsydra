@@ -32,8 +32,8 @@ double goLog2(double x) {
 struct VelReg {
   virtual ~VelReg() = default;
   virtual std::string name() const = 0;
-  virtual void add(double t) = 0;                                 // record an event at t (non-decreasing)
-  virtual double count(double now, double w, double last) = 0;    // estimate events in (now-w, now]
+  virtual void add(double t) = 0;                               // record an event at t (non-decreasing)
+  virtual double count(double now, double w, double last) = 0;  // estimate events in (now-w, now]
 };
 
 // gate applies the two exact facts every encoding gets from word0.
@@ -123,7 +123,8 @@ struct DyadicReg final : VelReg {
       int top = bitsTrailing(u) + 1;  // buckets 0..top-1 shift; top merges up
       if (top + 1 < n) {
         c[static_cast<std::size_t>(top + 1)] =
-            std::min(max[static_cast<std::size_t>(top + 1)], c[static_cast<std::size_t>(top + 1)] + c[static_cast<std::size_t>(top)]);
+            std::min(max[static_cast<std::size_t>(top + 1)],
+                     c[static_cast<std::size_t>(top + 1)] + c[static_cast<std::size_t>(top)]);
       } else {
         top = n - 1;  // shift everything, oldest drops
       }
@@ -285,8 +286,8 @@ TEST(TestRegisterExperiment) {
       [] { return std::make_unique<LaplaceReg>(std::vector<double>{expH / 16, expH / 4, expH}, 16); },
       [] { return std::make_unique<LaplaceReg>(std::vector<double>{expH / 32, expH / 8, expH / 3, expH}, 12); },
   };
-  std::string out = check::format("\nnormalized MAE (sum|est-exact| / sum exact), by window\n%-34s %-15s", "register",
-                                  "traffic");
+  std::string out =
+      check::format("\nnormalized MAE (sum|est-exact| / sum exact), by window\n%-34s %-15s", "register", "traffic");
   for (double w : wins) out += check::format(" %6.0fs", w / 1000);
   out += "\n";
   std::map<std::string, std::vector<double>> total;

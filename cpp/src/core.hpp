@@ -205,8 +205,8 @@ inline u64 hotIdx(u64 w1) { return (w1 >> hotIdxShift) & hotIdxMask; }
 inline bool hot(u64 w1) {
   if (isHot(w1)) return false;
   return (w1 & 0x1F) >= satPerUnit || ((w1 >> 5) & 0x1F) >= satPerUnit || ((w1 >> 10) & 0x3F) >= satPerUnit ||
-         ((w1 >> 16) & 0x7F) >= satPerUnit || ((w1 >> 23) & 0xFF) >= satPerUnit ||
-         ((w1 >> 31) & 0xFF) >= satPerUnit || ((w1 >> 39) & 0x1FF) >= satPerUnit;
+         ((w1 >> 16) & 0x7F) >= satPerUnit || ((w1 >> 23) & 0xFF) >= satPerUnit || ((w1 >> 31) & 0xFF) >= satPerUnit ||
+         ((w1 >> 39) & 0x1FF) >= satPerUnit;
 }
 
 // lowerOnset is w1 with its onset lowered to on, if on is earlier.
@@ -321,11 +321,11 @@ struct StashTable {
 
 // HotEntry is one hot entry (hot.go), a cache line.
 struct alignas(64) HotEntry {
-  AU64 ver{0};                 // odd while a writer holds the entry
-  AU64 id{0};                  // owner's identity; 0: free
-  std::atomic<i64> epoch{0};   // unit of bucket 0
-  std::atomic<i64> sat{0};     // newest unit whose events may be missing; satNone
-  AU64 c0{0};                  // bucket 0's count | hotClosed | generation | onset
+  AU64 ver{0};                // odd while a writer holds the entry
+  AU64 id{0};                 // owner's identity; 0: free
+  std::atomic<i64> epoch{0};  // unit of bucket 0
+  std::atomic<i64> sat{0};    // newest unit whose events may be missing; satNone
+  AU64 c0{0};                 // bucket 0's count | hotClosed | generation | onset
   std::array<std::atomic<std::uint32_t>, nBuckets - 1> c{};
 
   u64 lock();
@@ -486,8 +486,8 @@ struct alignas(64) QuantilePad {
 // name runs (go/filter.go lists them).
 inline std::function<void()> testHookCopied, testHookVictim, testHookTaken, testHookStamped, testHookStamping,
     testHookPlacing, testHookSweeping, testHookGhostRead, testHookGhostAdding, testHookGhostFloor;
-inline std::function<void(i64)> testHookPicked, testHookInstalling, testHookBumping, testHookBumped,
-    testHookOpenSeen, testHookSweepSeen, testHookSweepRead, testHookHotAdding;
+inline std::function<void(i64)> testHookPicked, testHookInstalling, testHookBumping, testHookBumped, testHookOpenSeen,
+    testHookSweepSeen, testHookSweepRead, testHookHotAdding;
 // forceCT turns ConstantTime on in every filter (tests: TF_CT=1).
 inline bool forceCT = false;
 // forceBG turns Background on in every filter (tests: TF_BG=1).
@@ -545,8 +545,7 @@ struct Core {
   std::pair<u64, bool> nextReg(u64 old, u64 tg, u64 last, u64 now, bool reset) const;
   std::pair<u64, bool> nextRegU(u64 old, u64 tg, u64 last, u64 now, i64 lastU, i64 nowU, bool reset) const;
   // bump: ok is false if the slot was handed to another key meanwhile.
-  bool bump(i64 i, u64 fpd, u64 tg, u64 now, i64 nu, u64 last, i64 lu, bool reset, u64& w1, u64& ref,
-            bool& overflow);
+  bool bump(i64 i, u64 fpd, u64 tg, u64 now, i64 nu, u64 last, i64 lu, bool reset, u64& w1, u64& ref, bool& overflow);
   bool unpoint(i64 i, u64 w0, u64 old, u64 fpd, u64 tg, u64 now, i64 nu, u64& w1, u64& ref);
   bool strayed(i64 i, u64 tg) const;
   u64 mass(u64 id, u64 w1, u64 last, u64 now) const;
@@ -602,9 +601,7 @@ struct Core {
   bool stashWait(u64 id, u64 w0, u64 w1, u64 now);
   void putBack(u64 id, u64 w0, u64 w1, u64 now);
   void stashWrite(StashTable* p, StashEntry* e, StashEntry ne);
-  bool stashGet(u64 id, u64 now, bool take, u64& w0, u64& w1) {
-    return tableGet(stash.load(), id, now, take, w0, w1);
-  }
+  bool stashGet(u64 id, u64 now, bool take, u64& w0, u64& w1) { return tableGet(stash.load(), id, now, take, w0, w1); }
   bool tableGet(StashTable* p, u64 id, u64 now, bool take, u64& w0, u64& w1);
   void dropped(u64 now);
 
@@ -619,8 +616,7 @@ struct Core {
 
   // ---- batch.go ----
   void checkAndTouchBatch(std::span<const u64> hs, u64 window, u64 now, std::span<bool> out);
-  void touchAndCountBatch(std::span<const u64> hs, u64 window, u64 now, std::span<bool> seen,
-                          std::span<i64> counts);
+  void touchAndCountBatch(std::span<const u64> hs, u64 window, u64 now, std::span<bool> seen, std::span<i64> counts);
   void velocityCountBatch(std::span<const u64> hs, u64 window, u64 now, std::span<i64> counts);
   void warm(std::span<const u64> hs, std::array<i64, batchChunk>& at);
 

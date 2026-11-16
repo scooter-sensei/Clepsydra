@@ -272,7 +272,8 @@ TEST(TestCoarseClock) {
 // stash comes with the first eviction, the overflow table with the first
 // history the stash drops.
 TEST(TestMemoryOnFirstUse) {
-  if (forceCT || forceBG) SKIP("ConstantTime and Background allocate the stash on the first insert that waits for a slot");
+  if (forceCT || forceBG)
+    SKIP("ConstantTime and Background allocate the stash on the first insert that waits for a slot");
   auto fp = newTest(4096, 1min);
   Filter& f = *fp;
   Core& c = core(f);

@@ -40,7 +40,9 @@ TEST(TestBatchAtHighLoadMatchesSingle) {
         }
         for (std::size_t j = 0; j < 4; j++) hs[c + i * 4 + j] = k;
       }
-      rng.Shuffle(64, [&](i64 i, i64 j) { std::swap(hs[c + static_cast<std::size_t>(i)], hs[c + static_cast<std::size_t>(j)]); });
+      rng.Shuffle(64, [&](i64 i, i64 j) {
+        std::swap(hs[c + static_cast<std::size_t>(i)], hs[c + static_cast<std::size_t>(j)]);
+      });
     }
     for (u64 h : hs)
       if (ca.find(ca.primary(h), fingerprint(h) << 1, tag(h)) < 0) missed++;

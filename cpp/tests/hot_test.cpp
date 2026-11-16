@@ -59,8 +59,8 @@ TEST(TestHotPromotionUnderRaces) {
       total += r.Count;
     }
     if (i64 want = sent.load() + 3 * keys; total != want)
-      FATALF("round %d: counted %d of %d events (promoted %d, refused %d, relocations %d, evictions %d)", round,
-             total, want, f.Promoted(), f.HotRefused(), f.Relocations(), f.Evictions());
+      FATALF("round %d: counted %d of %d events (promoted %d, refused %d, relocations %d, evictions %d)", round, total,
+             want, f.Promoted(), f.HotRefused(), f.Relocations(), f.Evictions());
   }
 }
 

@@ -163,7 +163,8 @@ TEST(TestCTWaitingKeyNotRestored) {
     f.TouchAt(mix64(i), 0, 30'000);
     if (f.Waited() != w) key = mix64(i);
   }
-  if (auto [tb, st] = whereKey(c, key); tb != 0 || st != 1) FATALF("key not waiting: %d table and %d stash entries", tb, st);
+  if (auto [tb, st] = whereKey(c, key); tb != 0 || st != 1)
+    FATALF("key not waiting: %d table and %d stash entries", tb, st);
   Result r = f.TouchAt(key, 60'000, 60'002);
   if (int tb = whereKey(c, key).first; tb != 1) FATALF("key not placed by its touch: %d table entries", tb);
   if (r.Count != 2 || !r.Seen || r.Restored || f.Restored() != 0)
@@ -198,9 +199,10 @@ TEST(TestCTWaitingKeysKeepCounts) {
     if (f.Waiting() == 0) break;
     c.place(Clock::now(), 1ms, 2000);
   }
-  LOGF("%d keys at 97%% of %d slots: %d inserts waited, %d waiting after the inserts and Counts, %d after placing; "
-       "evictions %d, folded %d",
-       n, f.Slots(), f.Waited(), waiting, f.Waiting(), f.Evictions(), f.Folded());
+  LOGF(
+      "%d keys at 97%% of %d slots: %d inserts waited, %d waiting after the inserts and Counts, %d after placing; "
+      "evictions %d, folded %d",
+      n, f.Slots(), f.Waited(), waiting, f.Waiting(), f.Evictions(), f.Folded());
   if (f.Waited() == 0) FATALF("no insert waited: the test doesn't exercise placement");
   if (f.Waiting() != 0) FATALF("%d keys still wait", f.Waiting());
   checkAll("after placing");
@@ -220,11 +222,13 @@ TEST(TestCTWaitingKeysUnderRaces) {
     Core& c = core(f);
     i64 n = f.Slots() * 98 / 100;
     std::vector<u64> keys(static_cast<std::size_t>(n));
-    for (i64 i = 0; i < n; i++) keys[static_cast<std::size_t>(i)] = mix64((static_cast<u64>(round) << 40) | static_cast<u64>(i));
+    for (i64 i = 0; i < n; i++)
+      keys[static_cast<std::size_t>(i)] = mix64((static_cast<u64>(round) << 40) | static_cast<u64>(i));
     std::vector<std::thread> ts;
     for (int w = 0; w < workers; w++)
       ts.emplace_back([&, w] {
-        for (i64 p = 0; p < per * n / workers; p++) f.TouchAt(keys[static_cast<std::size_t>((p * workers + w) % n)], 0, 1000);
+        for (i64 p = 0; p < per * n / workers; p++)
+          f.TouchAt(keys[static_cast<std::size_t>((p * workers + w) % n)], 0, 1000);
       });
     for (auto& t : ts) t.join();
     i64 total = 0;
@@ -256,7 +260,7 @@ TEST(TestDisplacedBitTracksLine) {
   for (int w = 0; w < workers; w++)
     ts.emplace_back([&, w] {
       for (int i = 0; i < 300'000; i++) {
-        u64 now = (clock.fetch_add(1) + 1) * horizon / 100'000;          // ~24 horizons overall
+        u64 now = (clock.fetch_add(1) + 1) * horizon / 100'000;   // ~24 horizons overall
         u64 k = static_cast<u64>(w * 7919 + i) % (capN * 6 / 5);  // 1.2x capacity live
         f.CheckAndTouchAt(key(k, now), horizon, now);
         if (i % 97 == 0) c.decayStep(now, 4);
@@ -275,7 +279,8 @@ TEST(TestDisplacedBitTracksLine) {
       FATALF("key %d in its primary line marked displaced", k);
     if (inP < 0 && inAlt >= 0 && (c.words[static_cast<std::size_t>(inAlt)].load() & dispBit) == 0)
       FATALF("key %d in its alternate line not marked displaced", k);
-    if ((c.locate(h, hfp, tg) >= 0) != (inP >= 0 || inAlt >= 0)) FATALF("key %d: locate disagrees with a two-line search", k);
+    if ((c.locate(h, hfp, tg) >= 0) != (inP >= 0 || inAlt >= 0))
+      FATALF("key %d: locate disagrees with a two-line search", k);
     if (inP >= 0 || inAlt >= 0) found++;
   }
   if (found == 0) FATALF("no keys survived; test exercises nothing");

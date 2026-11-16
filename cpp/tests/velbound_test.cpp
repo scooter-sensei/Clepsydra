@@ -174,8 +174,9 @@ TEST(TestVelocityBound) {
   for (int k = 0; k < nkeys; k++) hs[static_cast<std::size_t>(k)] = mix64(static_cast<u64>(k) + (u64{1} << 50));
   const std::vector<u64>& wins = workload::velWins;
   const std::vector<u64> flat{2500, 1250, 625, 250, 100};  // H/24 (today's unit), H/48, H/96, H/240, H/600
-  std::vector<std::string> names{"filter",         "spread (until 10-22)", "anchored (until D29)", "onset (re-derived)",
-                                 "median (anchored)", "model floor"};
+  std::vector<std::string> names{
+      "filter",     "spread (until 10-22)", "anchored (until D29)", "onset (re-derived)", "median (anchored)",
+      "model floor"};
   for (u64 u : flat) names.push_back("flat " + check::goDuration(static_cast<i64>(u * 1'000'000)));
   std::vector<std::vector<double>> errSum(names.size(), std::vector<double>(wins.size()));
   std::vector<double> exactSum(wins.size());
@@ -187,8 +188,8 @@ TEST(TestVelocityBound) {
                         [&](int k, const std::vector<u64>& ts, int wi, u64 now) {
                           const u64 w = wins[static_cast<std::size_t>(wi)];
                           const u64 h = hs[static_cast<std::size_t>(k)];
-                          const double exact = static_cast<double>(
-                              ts.size() - sortSearch(ts, [&](u64 x) { return x + w >= now; }));
+                          const double exact =
+                              static_cast<double>(ts.size() - sortSearch(ts, [&](u64 x) { return x + w >= now; }));
                           exactSum[static_cast<std::size_t>(wi)] += exact;
                           std::vector<double> got{static_cast<double>(f.VelocityCountAt(h, w, now))};
                           Found fd = c.read(h, now, -1);
@@ -199,7 +200,8 @@ TEST(TestVelocityBound) {
                           const bool in = ok && age(now, last) <= std::min(w, c.horizon);
                           for (int mode : {0, 1, 2, 3}) {  // spread, anchored, onset, median
                             double est = 0, mad = 0;
-                            if (in) std::tie(est, mad) = regEstimate(c, v, last, now, w, mode >= 1, mode == 3, mode == 2);
+                            if (in)
+                              std::tie(est, mad) = regEstimate(c, v, last, now, w, mode >= 1, mode == 3, mode == 2);
                             got.push_back(round(est, in));
                             if (mode == 3) got.push_back(mad);  // the floor is an expected |error|, scored as is
                           }

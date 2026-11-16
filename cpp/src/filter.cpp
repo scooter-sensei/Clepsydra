@@ -61,8 +61,7 @@ Core::Core(const Config& in) {
   if (cfg.Load <= 0) cfg.Load = 0.85;
   if (cfg.Load > 1) throw Error("temporalfilter: Load must be <= 1");
   if (cfg.Clock && cfg.Clock() > MaxTick) throw TickError();
-  lines = std::max<u64>(
-      2, static_cast<u64>(std::ceil(static_cast<double>(cfg.Capacity) / (cfg.Load * slotsPerLine))));
+  lines = std::max<u64>(2, static_cast<u64>(std::ceil(static_cast<double>(cfg.Capacity) / (cfg.Load * slotsPerLine))));
   horizon = hz;
   unit = (hz + unitsPerHorizon - 1) / unitsPerHorizon;
   res = cfg.Resolution;
@@ -102,9 +101,7 @@ Core::Core(const Config& in) {
     const auto base = Clock::now();
     const Duration r = cfg.Resolution;
     ownClock = true;
-    auto read = [this, base, r]() -> u64 {
-      return static_cast<u64>((Clock::now() - base) / r) + 1 + clockAdd.load();
-    };
+    auto read = [this, base, r]() -> u64 { return static_cast<u64>((Clock::now() - base) / r) + 1 + clockAdd.load(); };
     clock = read;
     if (cfg.CoarseClock > Duration::zero()) {
       coarse.store(read());

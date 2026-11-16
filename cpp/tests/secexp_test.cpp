@@ -108,8 +108,8 @@ TEST(TestSketchShapes) {
     i64 mult;
     int weight;
   };
-  const std::vector<Flood> floods{{"heavy 1x", 1, k + 1}, {"heavy 2x", 2, k + 1},  {"heavy 3x", 3, k + 1},
-                                  {"heavy 4x", 4, k + 1}, {"light 16x", 16, 1}, {"light 64x", 64, 1}};
+  const std::vector<Flood> floods{{"heavy 1x", 1, k + 1}, {"heavy 2x", 2, k + 1}, {"heavy 3x", 3, k + 1},
+                                  {"heavy 4x", 4, k + 1}, {"light 16x", 16, 1},   {"light 64x", 64, 1}};
   for (const Cfg& c : cfgs) {
     std::string line;
     double bpk = 0;
@@ -132,9 +132,10 @@ TEST(TestSketchShapes) {
     }
     LOGF("%-24s %5.1f B/key%s", c.name, bpk, line);
   }
-  LOGF("columns per flood (heavy 1x, 2x, 3x, 4x, light 16x, 64x): offenders with Count >= 90%% of truth (of %d) | new "
-       "keys Degraded | new keys turned away by a strict limit of %d",
-       offenders, k);
+  LOGF(
+      "columns per flood (heavy 1x, 2x, 3x, 4x, light 16x, 64x): offenders with Count >= 90%% of truth (of %d) | new "
+      "keys Degraded | new keys turned away by a strict limit of %d",
+      offenders, k);
 }
 
 // TestSpillThreshold: histories lighter than spillMin events are shed instead
@@ -178,7 +179,8 @@ TEST(TestSpillThreshold) {
       LOGF("%-14s spillMin %d%s", sh.name, min, line);
     }
   }
-  LOGF("floods: heavy 1x, heavy 2x, 16x slots of 1-, 2-, 4-event keys, 8x of 8-event keys; per flood: offenders with "
-       "Count >= 90%% (of %d) | new keys turned away by a strict limit of %d",
-       offenders, k);
+  LOGF(
+      "floods: heavy 1x, heavy 2x, 16x slots of 1-, 2-, 4-event keys, 8x of 8-event keys; per flood: offenders with "
+      "Count >= 90%% (of %d) | new keys turned away by a strict limit of %d",
+      offenders, k);
 }

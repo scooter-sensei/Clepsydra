@@ -300,10 +300,11 @@ TEST(TestPlacementLimit) {
     std::string hist;
     for (std::size_t d = 0; d < o.moves.size(); d++)
       if (o.moves[d] > 0) hist += check::format(" %d:%d", d, o.moves[d]);
-    LOGF("placement load=%.2f seed=%d inserts=%d oracle_drops=%d oracle_peak_slot_load=%.4f oracle_missed=%d "
-         "filter_evictions=%d filter_missed=%d positives=%d",
-         c.load, c.seed, o.inserts, o.drops, static_cast<double>(o.peak) / static_cast<double>(4 * core(f).lines),
-         oracleFN, f.Evictions(), filterFN, pos);
+    LOGF(
+        "placement load=%.2f seed=%d inserts=%d oracle_drops=%d oracle_peak_slot_load=%.4f oracle_missed=%d "
+        "filter_evictions=%d filter_missed=%d positives=%d",
+        c.load, c.seed, o.inserts, o.drops, static_cast<double>(o.peak) / static_cast<double>(4 * core(f).lines),
+        oracleFN, f.Evictions(), filterFN, pos);
     LOGF("placement load=%.2f shortest_path_moves(moves:inserts)%s", c.load, hist);
   }
 }

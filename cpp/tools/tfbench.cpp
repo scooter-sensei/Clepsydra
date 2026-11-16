@@ -187,7 +187,8 @@ i64 spray() {
     off[i] = mix64((u64{1} << 40) + i);
     for (int j = 0; j < 20; j++) f.CheckAndTouchAt(off[i], 0, 1);
   }
-  for (i64 i = 0; i < 20 * capacity; i++) f.CheckAndTouchAt(mix64(static_cast<u64>(i)), 0, 1 + static_cast<u64>(i % 30'000));
+  for (i64 i = 0; i < 20 * capacity; i++)
+    f.CheckAndTouchAt(mix64(static_cast<u64>(i)), 0, 1 + static_cast<u64>(i % 30'000));
   i64 ok = 0;
   for (u64 h : off)
     if (f.VelocityCountAt(h, hTicks, 30'001) == 20) ok++;
@@ -271,10 +272,10 @@ void printExact() {
   };
   for (const Case& c : {Case{1.0, 2}, Case{1.1, 3}, Case{1.15, 4}}) {
     ChurnResult r = churn(c.load, c.seed);
-    out(check::format("churn load=%.2f seed=%d positives=%d missed=%d negatives=%d false_seen=%d live_at_end=%d "
-                      "evictions=%d relocations=%d  => FN %.3f%% FP %.2e live/capacity %.2f",
-                      c.load, c.seed, r.pos, r.fn, r.neg, r.fp, r.nlive, r.evictions, r.relocations, 100 * r.fnr, r.fpr,
-                      r.live));
+    out(check::format(
+        "churn load=%.2f seed=%d positives=%d missed=%d negatives=%d false_seen=%d live_at_end=%d "
+        "evictions=%d relocations=%d  => FN %.3f%% FP %.2e live/capacity %.2f",
+        c.load, c.seed, r.pos, r.fn, r.neg, r.fp, r.nlive, r.evictions, r.relocations, 100 * r.fnr, r.fpr, r.live));
   }
   i64 n = staticFPR(fprProbes);
   auto [lo, hi] = poissonCI95(n);

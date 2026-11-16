@@ -17,9 +17,9 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
-#include <cstring>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <iomanip>
 #include <mutex>
@@ -91,7 +91,8 @@ inline void print(const std::string& msg) {
 template <class T, class = void>
 struct isRange : std::false_type {};
 template <class T>
-struct isRange<T, std::void_t<decltype(std::begin(std::declval<const T&>())), decltype(std::end(std::declval<const T&>()))>>
+struct isRange<
+    T, std::void_t<decltype(std::begin(std::declval<const T&>())), decltype(std::end(std::declval<const T&>()))>>
     : std::true_type {};
 
 struct Spec {
@@ -158,8 +159,8 @@ void putPlain(std::ostream& o, const Spec& s, const T& v) {
     o << (v ? "true" : "false");
   } else if constexpr (isDuration<U>::value) {
     o << goDuration(static_cast<std::int64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(v).count()));
-  } else if constexpr (std::is_same_v<U, std::string> || std::is_same_v<U, const char*> ||
-                       std::is_same_v<U, char*> || std::is_convertible_v<U, std::string_view>) {
+  } else if constexpr (std::is_same_v<U, std::string> || std::is_same_v<U, const char*> || std::is_same_v<U, char*> ||
+                       std::is_convertible_v<U, std::string_view>) {
     if (s.verb == 'q') {
       o << '"' << v << '"';
     } else {
@@ -272,12 +273,18 @@ inline std::string formatv(const char* f, const std::vector<Putter>& args) {
     }
     Spec s;
     for (;; p++) {
-      if (*p == '#') s.alt = true;
-      else if (*p == '+') s.plus = true;
-      else if (*p == '0') s.zero = true;
-      else if (*p == '-') s.left = true;
-      else if (*p == ' ') s.space = true;
-      else break;
+      if (*p == '#')
+        s.alt = true;
+      else if (*p == '+')
+        s.plus = true;
+      else if (*p == '0')
+        s.zero = true;
+      else if (*p == '-')
+        s.left = true;
+      else if (*p == ' ')
+        s.space = true;
+      else
+        break;
     }
     if (*p >= '0' && *p <= '9') {
       s.width = 0;
@@ -323,48 +330,48 @@ std::string format(const char* f, const A&... a) {
 
 #define CHECK_CAT2(a, b) a##b
 #define CHECK_CAT(a, b) CHECK_CAT2(a, b)
-#define TEST(name)                                                         \
-  static void name();                                                      \
-  static ::check::Register CHECK_CAT(check_reg_, name)(#name, &name);      \
+#define TEST(name)                                                    \
+  static void name();                                                 \
+  static ::check::Register CHECK_CAT(check_reg_, name)(#name, &name); \
   static void name()
 
-#define CHECK(cond)                                                      \
-  do {                                                                   \
+#define CHECK(cond)                                                         \
+  do {                                                                      \
     if (!(cond)) ::check::fail(__FILE__, __LINE__, "check failed: " #cond); \
   } while (0)
 
-#define CHECK_MSG(cond, msg)                                    \
-  do {                                                          \
-    if (!(cond)) ::check::fail(__FILE__, __LINE__, (msg));      \
+#define CHECK_MSG(cond, msg)                               \
+  do {                                                     \
+    if (!(cond)) ::check::fail(__FILE__, __LINE__, (msg)); \
   } while (0)
 
-#define CHECK_EQ(got, want)                                                                                   \
-  do {                                                                                                        \
-    auto check_g = (got);                                                                                     \
-    auto check_w = (want);                                                                                    \
-    if (!(check_g == check_w))                                                                                \
-      ::check::fail(__FILE__, __LINE__, ::check::format(#got " = %v, want %v", check_g, check_w));          \
+#define CHECK_EQ(got, want)                                                                        \
+  do {                                                                                             \
+    auto check_g = (got);                                                                          \
+    auto check_w = (want);                                                                         \
+    if (!(check_g == check_w))                                                                     \
+      ::check::fail(__FILE__, __LINE__, ::check::format(#got " = %v, want %v", check_g, check_w)); \
   } while (0)
 
-#define REQUIRE(cond)                                                       \
-  do {                                                                      \
-    if (!(cond)) {                                                          \
-      ::check::fail(__FILE__, __LINE__, "required: " #cond);                \
-      throw ::check::Failed{};                                              \
-    }                                                                       \
+#define REQUIRE(cond)                                        \
+  do {                                                       \
+    if (!(cond)) {                                           \
+      ::check::fail(__FILE__, __LINE__, "required: " #cond); \
+      throw ::check::Failed{};                               \
+    }                                                        \
   } while (0)
 
 // ERRORF is t.Errorf, FATALF t.Fatalf, LOGF t.Logf.
 #define ERRORF(...) ::check::fail(__FILE__, __LINE__, ::check::format(__VA_ARGS__))
-#define FATALF(...)                                                   \
-  do {                                                                \
-    ::check::fail(__FILE__, __LINE__, ::check::format(__VA_ARGS__));  \
-    throw ::check::Failed{};                                          \
+#define FATALF(...)                                                  \
+  do {                                                               \
+    ::check::fail(__FILE__, __LINE__, ::check::format(__VA_ARGS__)); \
+    throw ::check::Failed{};                                         \
   } while (0)
 #define LOGF(...) ::check::log(::check::format(__VA_ARGS__))
 
-#define SKIP(msg)                 \
-  do {                            \
-    ::check::log(msg);            \
-    throw ::check::Skipped{};     \
+#define SKIP(msg)             \
+  do {                        \
+    ::check::log(msg);        \
+    throw ::check::Skipped{}; \
   } while (0)

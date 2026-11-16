@@ -181,8 +181,7 @@ class Filter {
   // limit within window by the strict fail-closed recipe, and reports whether
   // it did (claims A45, A46).
   std::pair<Result, bool> TouchIfUnder(std::string_view key, Duration window, std::uint64_t limit);
-  std::pair<Result, bool> TouchIfUnderAt(std::uint64_t h, std::uint64_t window, std::uint64_t limit,
-                                         std::uint64_t now);
+  std::pair<Result, bool> TouchIfUnderAt(std::uint64_t h, std::uint64_t window, std::uint64_t limit, std::uint64_t now);
 
   // ContinuousDecay reclaims expired slots at a rate set by the clock (one
   // table pass per horizon, at most 4 lines per call). Returns lines swept.

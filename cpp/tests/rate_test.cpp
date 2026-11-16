@@ -29,7 +29,7 @@ TEST(TestSustainedRate) {
   for (int hot : {0, -1}) {
     for (int rate : rates) {
       const u64 every = static_cast<u64>(std::max(1, 1000 / rate));  // ticks between sends
-      const int per = std::max(1, rate / 1000);                       // events per send
+      const int per = std::max(1, rate / 1000);                      // events per send
       Config cfg = cfgOf(1000, 1min, 1ms);
       cfg.Hot = hot;
       Filter f(cfg);

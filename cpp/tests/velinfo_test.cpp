@@ -268,7 +268,8 @@ TEST(TestVelocityInformation) {
     }
     LOGF("%-20s%s", shapes[sh], line);
   }
-  for (std::size_t wi = 0; wi < 5; wi++) {  // the filter is the register with its newest bucket's 4-bit onset (claims D29)
+  for (std::size_t wi = 0; wi < 5;
+       wi++) {  // the filter is the register with its newest bucket's 4-bit onset (claims D29)
     for (std::size_t sh = 0; sh < nshapes; sh++) {
       if (errSum[0][sh][wi] != errSum[3][sh][wi])
         ERRORF("the register model with its onset differs from the filter: shape %d window %d: %v vs %v", sh, wi,

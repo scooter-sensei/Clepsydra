@@ -509,3 +509,13 @@ codes is a valid burst, not "says nothing").
 
 **Verdict: W4c passes its rule.** The drip log is a candidate, at 12 bits of
 word0 that the default build's last touch holds: W5 is where they come from.
+
+### W5a's reading (c98f6da's tree; `lab/w5.sh a`, outputs in `lab/w5a/`)
+
+Default build: `tfbench -exact` and the answer digest equal
+`verify/expected/`'s, and `./test.sh regression` passes. `tfdrip`:
+`tfbench -exact` and the answer digest with Count equal W4c's byte for byte.
+The suites: default, no failure; `tfdrip`, in each of the four modes the same
+failing tests as W4c's tree (plain and `TF_NOCAS2=1`: `TestConformance`,
+`TestCountsLastTouchWhole`, `TestMerge`, `TestUnitOfMatchesDivision`;
+ConstantTime and Background: the same but `TestMerge`). **W5a holds.**

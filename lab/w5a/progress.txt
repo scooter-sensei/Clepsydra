@@ -1,0 +1,14 @@
+[09:11:32] 1: default build
+[09:11:53] 1 exact: IDENTICAL
+[09:13:05] 1 digest: IDENTICAL
+[09:15:43] 1 regression tier: PASS
+[09:15:43] 2: tfdrip against W4c's
+[09:16:03] 2 exact: IDENTICAL
+[09:17:16] 2 digest: IDENTICAL
+[09:17:16] 5: unit suites
+[09:17:57] 5 default: failing: 
+[09:18:47] 5 tfdrip plain: failing: TestConformance TestCountsLastTouchWhole TestMerge TestUnitOfMatchesDivision | W4c's: TestConformance TestCountsLastTouchWhole TestMerge TestUnitOfMatchesDivision 
+[09:19:17] 5 tfdrip TF_CT=1: failing: TestConformance TestCountsLastTouchWhole TestUnitOfMatchesDivision | W4c's: TestConformance TestCountsLastTouchWhole TestUnitOfMatchesDivision 
+[09:19:41] 5 tfdrip TF_BG=1: failing: TestConformance TestCountsLastTouchWhole TestUnitOfMatchesDivision | W4c's: TestConformance TestCountsLastTouchWhole TestUnitOfMatchesDivision 
+[09:20:29] 5 tfdrip TF_NOCAS2=1: failing: TestConformance TestCountsLastTouchWhole TestMerge TestUnitOfMatchesDivision | W4c's: TestConformance TestCountsLastTouchWhole TestMerge TestUnitOfMatchesDivision 
+[09:20:29] W5a readings finished

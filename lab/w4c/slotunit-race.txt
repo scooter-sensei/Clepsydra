@@ -1,0 +1,1 @@
+ok  	github.com/scooter-sensei/clepsydra/go	1.037s

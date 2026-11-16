@@ -1,0 +1,38 @@
+[08:28:48] 1: default build unchanged
+[08:29:10] 1a exact: IDENTICAL
+[08:30:23] 1b digest: IDENTICAL
+[08:30:23] W4 readings finished (1)
+[08:30:23] 2: tfdrip velocity
+[08:30:42] 2a tfbench -exact lines that differ: 14
+[08:31:19] 2b done
+[08:31:19] W4 readings finished (2)
+[08:31:19] 3: digest without Count
+[08:33:37] 3: IDENTICAL (30 cells)
+[08:33:37] W4 readings finished (3)
+[08:33:37] 4: Upper never below the truth
+[08:33:44] 4: --- PASS: TestAttackHeavyHitter (3.74s) --- PASS: TestUpperBoundRandom (1.99s) ok  	github.com/scooter-sensei/clepsydra/go	5.734s 
+[08:33:44] W4 readings finished (4)
+[08:33:44] 2c: the 11-bit model on both seeds
+[08:35:44] 5b: TestBackgroundConcurrentCounts, 200 runs with tfdrip, 20 under -race
+[08:47:23] 5b: 0 of 200 fail
+[08:51:05] 5b race: 0 of 20 fail
+[08:51:05] 5: suites with tfdrip
+[08:51:54] 5 unit plain: 4 failing: TestConformance TestMerge TestUnitOfMatchesDivision TestCountsLastTouchWhole 
+[08:52:24] 5 unit TF_CT=1: 3 failing: TestConformance TestUnitOfMatchesDivision TestCountsLastTouchWhole 
+[08:52:48] 5 unit TF_BG=1: 3 failing: TestConformance TestUnitOfMatchesDivision TestCountsLastTouchWhole 
+[08:53:36] 5 unit TF_NOCAS2=1: 4 failing: TestConformance TestMerge TestUnitOfMatchesDivision TestCountsLastTouchWhole 
+[08:53:37] 5 slotunit: ok  	github.com/scooter-sensei/clepsydra/go	0.006s
+[08:53:39] 5 slotunit race: ok  	github.com/scooter-sensei/clepsydra/go	1.037s
+[08:58:40] 5 soak race: ok  	github.com/scooter-sensei/clepsydra/go	301.039s
+[09:03:57] 5 cfuzz race: ok  	github.com/scooter-sensei/clepsydra/go	316.046s
+[09:03:57] W4 readings finished (5)
+[09:03:57] W4 readings finished (7)
+[09:03:57] 7/8: periodic and sustained workloads, both builds
+[09:04:46] 7/8: workload periodic: filter  0.0786  0.0154  0.0067  0.0035  0.0017 mean  0.0212;workload sustained: filter  0.2598  0.0729  0.0500  0.0361  0.0181 mean  0.0874;W3's rule (unary at unit/16 with the onset, 12 and 15 bits, on every workload): holds = true;workload periodic: filter  0.0472  0.0152  0.0067  0.0035  0.0017 mean  0.0149;workload sustained: filter  0.1047  0.0729  0.0500  0.0361  0.0181 mean  0.0564;W3's rule (unary at unit/16 with the onset, 12 and 15 bits, on every workload): holds = false;
+[09:04:46] 6: speed (3 interleaved rounds)
+[09:06:18] 6 done
+[09:06:18] W4 readings finished (6)
+[09:06:18] W4 readings finished (9)
+[09:06:18] 9: batched throughput (3 interleaved rounds)
+[09:06:55] 9 done
+[09:06:55] W4c readings finished

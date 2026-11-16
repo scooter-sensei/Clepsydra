@@ -464,3 +464,48 @@ of 20 under `-race`); and:
    onset) at every window, and its mean at most 0.8 of the default build's.
    The tfbench clause (2) with the model now the 11-bit one: within 0.002
    at every window, mean at most 0.050 on both seeds.
+
+(Before any W5 reading: W5a and W5b were rebased onto W4c, 0837f9f, as
+`lab/sw-w5` (e7c1328, c98f6da) and `lab/sw-w5b` (c0cea9e); where their rules
+name W4b's tree, they read W4c's. W5a's second commit gives `lookupStable`
+the caller's clock, so `slotWords` reads both loads of word0 against it.)
+
+### W4c's reading (0837f9f's tree; `lab/w4c.sh`, outputs in `lab/w4c/`)
+
+1. **Holds.** Default build: `tfbench -exact` and the answer digest equal
+   `verify/expected/`'s.
+2. **Holds.** `tfdrip`: velocity 0.0592 / 0.0476 / 0.0505 / 0.0435 /
+   0.0239, **mean 0.0450**; held-out seed 1 s 0.0580, mean 0.0444. The
+   11-bit model reads the same to the fourth decimal at every window on both
+   seeds: the filter is the model.
+3. **Holds.** Digest without Count identical in 30 cells.
+4. **Holds.** `Upper` below the truth 0 in both tests.
+5. **Holds.** `TestBackgroundConcurrentCounts` 0 of 200 runs fail with
+   `tfdrip`, 0 of 20 under `-race`. Suites (plain, `TF_NOCAS2=1`): only
+   `TestConformance`, `TestMerge` (its 1 s bar alone: merged 0.2245 against
+   single 0.0740; every other window and check as the single filter),
+   `TestUnitOfMatchesDivision` and `TestCountsLastTouchWhole`; ConstantTime and
+   Background the same but `TestMerge` (skipped there). `TestSlotUnitRaces`
+   passes, also under `-race`; the soak and the concurrent fuzzer under
+   `-race` pass.
+6. Speed (ns/op, medians of 3, default → `tfdrip`): CheckAndTouchHit 189.8 →
+   203.9 (1.07x), CheckAndTouchHitHot 77.4 → 71.1, CheckAndTouchMissInsert
+   1743 → 1757, TouchAndCount 204.6 → 220.1 (1.08x), VelocityCount 187.1 →
+   186.9, VelocityCountHot 92.4 → 95.9 (W4b's 1.65x was the decoder on
+   windows that cut no bucket).
+7. **Holds.** Periodic traffic: 0.0212 → 0.0149 (the model's 0.0149), no
+   window above.
+8. **Holds.** Sustained traffic with bursts inside it: default 0.2598 /
+   0.0729 / 0.0500 / 0.0361 / 0.0181 (0.0874), `tfdrip` 0.1047 / 0.0729 /
+   0.0500 / 0.0361 / 0.0181 (0.0564, 0.645 of the default's), the 11-bit
+   model's exactly.
+9. Target 8: `BenchmarkCheckAndTouchBatch` 88.6 → 98.8 ns/key (11.3 → 10.1 M
+   keys/s on this guest, 1.11x).
+
+`tfbench -exact`'s other differences: the steady 1 s lines at every rate
+(1-100/s: min 0.500-0.990, max 1.000-1.167; exact before), the
+event-on-the-edge cost W4 found, now at 100/s too (a full field of zero
+codes is a valid burst, not "says nothing").
+
+**Verdict: W4c passes its rule.** The drip log is a candidate, at 12 bits of
+word0 that the default build's last touch holds: W5 is where they come from.

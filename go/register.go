@@ -458,6 +458,7 @@ func (f *Filter) estimate(id, w1, last, drip, now, window uint64, sat bool) (r R
 	top := float64(e+1) * unit
 	newest := true
 	est, upper, hit := 0.0, uint64(0), false
+	cut := false // the window cuts a bucket: only then can the drip log move Count (W4c)
 	for j := range nBuckets {
 		lo := float64(bucketStart(e, j)) * unit
 		c := v.c[j]
@@ -483,6 +484,7 @@ func (f *Filter) estimate(id, w1, last, drip, now, window uint64, sat bool) (r R
 			est += float64(c)
 			continue
 		}
+		cut = true
 		if j == 0 && v.on != 0 && float64(c) > a {
 			// The newest bucket's events lie from its onset to the last
 			// touch (hi), not from the unit's start: all inside a window
@@ -504,7 +506,7 @@ func (f *Filter) estimate(id, w1, last, drip, now, window uint64, sat bool) (r R
 		}
 		break
 	}
-	if dripOn && drip != 0 && v.e == f.unitOf(last) {
+	if dripOn && cut && drip&dripV != 0 && v.e == f.unitOf(last) {
 		est = f.dripCount(&v, last, now, window, drip) // lab/sw W4: the drip log (drip.go)
 	}
 	n := max(1, int(est+0.5))

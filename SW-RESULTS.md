@@ -393,3 +393,74 @@ later): it detects aliasing.
 Reported, not judged: speed of hits and counts with the per-call check
 against W4b's `tfdrip` build and the default build (3 interleaved rounds);
 whether the soak's and fuzzer's clocks keep within 2^31 of each other.
+
+### W4b's reading (06940e8's tree; `lab/w4.sh` with `O=…/w4b`, outputs in `lab/w4b/`)
+
+1. **Holds.** Default build: `tfbench -exact` and the answer digest equal
+   `verify/expected/`'s.
+2. **Holds.** `tfdrip`: velocity 0.0535 / 0.0477 / 0.0505 / 0.0435 / 0.0239,
+   mean 0.0438, as W4.
+3. **Holds.** Digest without Count identical in 30 cells.
+4. **Holds.** `Upper` below the truth 0; Count more than 10% low 297.
+5. **Fails.** `TestSlotUnitRaces` and `TestResize` pass now, in every mode;
+   the soak (50.3 M operations) and the concurrent fuzzer under `-race` pass;
+   `TestMerge` fails its 1 s bar alone (its other assertions hold); the named
+   failures as named. But `TestBackgroundConcurrentCounts` failed once in the
+   plain suite, and read alone it fails **36 of 60 runs with `tfdrip`, 0 of 60
+   without** (round 137 key 8: Count 21 for 20 touches). Cause: a touch
+   pushes its event in word0's CAS, then counts it in word1; when the count
+   fails (the slot changed hands meanwhile) the touch starts over and pushes
+   the same event again. The log then holds an event the register does not,
+   and the estimator, taking logged events out of their buckets, counts it.
+   The default build's word0 move is idempotent on a retry; the push is not.
+   W4 had the same defect; its run did not happen to hit it.
+6. Speed (indicative; ns/op, 3 rounds, default → `tfdrip`): CheckAndTouchHit
+   194.8 → 201.0, CheckAndTouchHitHot 76.9 → 72.3, CheckAndTouchMissInsert
+   1826 → 1926, TouchAndCount 208.7 → 238.9 (1.14x), VelocityCount 193.3 →
+   195.5, VelocityCountHot 94.5 → 156.0 (1.65x: the decoder walks every
+   bucket for every logged event).
+7. **Holds.** Periodic traffic at random instants: default 0.0786 / 0.0154 /
+   0.0067 / 0.0035 / 0.0017 (mean 0.0212), `tfdrip` 0.0451 / 0.0153 /
+   0.0067 / 0.0035 / 0.0017 (0.0144). The event-on-the-edge loss is a
+   property of reads at a touch's instant, not of periodic traffic.
+8. Sustained traffic with bursts inside it: default 0.2598 / 0.0729 /
+   0.0500 / 0.0361 / 0.0181 (mean 0.0874); the 12-bit model 0.0915 / … /
+   0.0537; **the `tfdrip` filter 0.2536 / … / 0.0861**: the filter keeps
+   almost none of the model's gain. Each burst puts 13 events in one
+   quantum, the field fills with zero codes, which W4 made "says nothing",
+   and at 5 events/s a silence of 12 quanta (1.9 s) that would revive it
+   almost never comes.
+9. Target 8, `BenchmarkCheckAndTouchBatch`: 96.0 → 97.3 ns/key (10.4 → 10.3
+   M keys/s on this guest); `TouchAndCount` 205.1 → 232.2 ns.
+
+**Verdict: W4b fails its rule** (clause 5: `TestBackgroundConcurrentCounts`),
+and reading 8 shows a second defect of the design: "says nothing" is
+reached by ordinary bursts and is sticky under sustained traffic.
+
+## W4c: the drip log, mended again
+
+**Mends** (written after W4b's reading, as is this rule):
+
+- **A validity bit.** word0 = fp(16) | displaced | saturated | valid(1) |
+  drip log(11) | last touch(34). A field of zero codes (a burst) is a
+  legitimate state; "says nothing" is the valid bit clear, set by what W4b
+  set it for (a count at a later unit than its event; a summed history in a
+  merge; a word written without the log), and cleared by a gap of 11 quanta
+  or more, which sets the field to all ones. The log is 11 bits.
+- **One push per touch.** A touch that has pushed its event and starts over
+  (its count failed) does not push again while the slot's last touch is at
+  or after its tick; a slot whose last touch is behind its tick holds a
+  history from before its push (a relocated or stashed copy carries the
+  push), and gets it.
+- **A shortcut.** Count reads the log only when the window cuts a bucket.
+
+**Rule (written after W4b's reading, before W4c's).** W4b's clauses 1-4, 6, 7
+and 9 as written, read on W4c's tree; clause 5 as written for W4b, and with
+`TestBackgroundConcurrentCounts` failing 0 of 200 runs with `tfdrip` (and 0
+of 20 under `-race`); and:
+
+8. sustained traffic with bursts inside it, now judged: the `tfdrip`
+   filter within 0.003 of the 11-bit model (unary log at unit/16 with the
+   onset) at every window, and its mean at most 0.8 of the default build's.
+   The tfbench clause (2) with the model now the 11-bit one: within 0.002
+   at every window, mean at most 0.050 on both seeds.

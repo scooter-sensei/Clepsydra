@@ -1,0 +1,67 @@
+=== RUN   TestShortWindowRobust
+    swenc_test.go:423: workload periodic: filter  0.0451  0.0153  0.0067  0.0035  0.0017 mean  0.0144
+    swenc_test.go:437:   unary B6 r=u/16 +on4      0.0593  0.0154  0.0067  0.0035  0.0017 mean  0.0173 (1.199 of the filter's) 
+    swenc_test.go:437:   unary B6 r=u/8 +on4       0.0815  0.0152  0.0067  0.0035  0.0017 mean  0.0217 (1.505 of the filter's) 
+    swenc_test.go:437:   unary B6 r=u/32 +on4      0.0561  0.0154  0.0067  0.0035  0.0017 mean  0.0167 (1.154 of the filter's) 
+    swenc_test.go:437:   unary B8 r=u/16 +on4      0.0545  0.0154  0.0067  0.0035  0.0017 mean  0.0163 (1.132 of the filter's) 
+    swenc_test.go:437:   unary B8 r=u/8 +on4       0.0746  0.0155  0.0067  0.0035  0.0017 mean  0.0204 (1.412 of the filter's) 
+    swenc_test.go:437:   unary B8 r=u/32 +on4      0.0568  0.0154  0.0067  0.0035  0.0017 mean  0.0168 (1.165 of the filter's) 
+    swenc_test.go:437:   unary B10 r=u/16 +on4     0.0507  0.0153  0.0067  0.0035  0.0017 mean  0.0156 (1.079 of the filter's) 
+    swenc_test.go:437:   unary B10 r=u/8 +on4      0.0607  0.0144  0.0067  0.0035  0.0017 mean  0.0174 (1.205 of the filter's) 
+    swenc_test.go:437:   unary B10 r=u/32 +on4     0.0510  0.0154  0.0067  0.0035  0.0017 mean  0.0156 (1.084 of the filter's) 
+    swenc_test.go:437:   unary B12 r=u/16 +on4     0.0451  0.0153  0.0067  0.0035  0.0017 mean  0.0144 (1.000 of the filter's) 
+    swenc_test.go:437:   unary B12 r=u/8 +on4      0.0496  0.0140  0.0067  0.0035  0.0017 mean  0.0151 (1.045 of the filter's) 
+    swenc_test.go:437:   unary B12 r=u/32 +on4     0.0445  0.0154  0.0067  0.0035  0.0017 mean  0.0144 (0.994 of the filter's) 
+    swenc_test.go:437:   unary B15 r=u/16 +on4     0.0355  0.0155  0.0067  0.0035  0.0017 mean  0.0126 (0.870 of the filter's) 
+    swenc_test.go:437:   unary B15 r=u/8 +on4      0.0394  0.0130  0.0067  0.0035  0.0017 mean  0.0128 (0.890 of the filter's) 
+    swenc_test.go:437:   unary B15 r=u/32 +on4     0.0329  0.0154  0.0067  0.0035  0.0017 mean  0.0120 (0.833 of the filter's) 
+    swenc_test.go:437:   unary B6 r=u/16           0.0583  0.0154  0.0067  0.0035  0.0017 mean  0.0171 (1.184 of the filter's) 
+    swenc_test.go:437:   unary B6 r=u/8            0.0809  0.0152  0.0067  0.0035  0.0017 mean  0.0216 (1.496 of the filter's) 
+    swenc_test.go:437:   unary B6 r=u/32           0.0537  0.0154  0.0067  0.0035  0.0017 mean  0.0162 (1.122 of the filter's) 
+    swenc_test.go:437:   unary B8 r=u/16           0.0536  0.0154  0.0067  0.0035  0.0017 mean  0.0162 (1.120 of the filter's) 
+    swenc_test.go:437:   unary B8 r=u/8            0.0745  0.0155  0.0067  0.0035  0.0017 mean  0.0204 (1.411 of the filter's) 
+    swenc_test.go:437:   unary B8 r=u/32           0.0546  0.0154  0.0067  0.0035  0.0017 mean  0.0164 (1.133 of the filter's) 
+    swenc_test.go:437:   unary B10 r=u/16          0.0505  0.0153  0.0067  0.0035  0.0017 mean  0.0155 (1.076 of the filter's) 
+    swenc_test.go:437:   unary B10 r=u/8           0.0607  0.0144  0.0067  0.0035  0.0017 mean  0.0174 (1.205 of the filter's) 
+    swenc_test.go:437:   unary B10 r=u/32          0.0502  0.0154  0.0067  0.0035  0.0017 mean  0.0155 (1.072 of the filter's) 
+    swenc_test.go:437:   unary B12 r=u/16          0.0451  0.0153  0.0067  0.0035  0.0017 mean  0.0144 (1.000 of the filter's) 
+    swenc_test.go:437:   unary B12 r=u/8           0.0496  0.0140  0.0067  0.0035  0.0017 mean  0.0151 (1.045 of the filter's) 
+    swenc_test.go:437:   unary B12 r=u/32          0.0440  0.0154  0.0067  0.0035  0.0017 mean  0.0143 (0.987 of the filter's) 
+    swenc_test.go:437:   unary B15 r=u/16          0.0355  0.0155  0.0067  0.0035  0.0017 mean  0.0126 (0.870 of the filter's) 
+    swenc_test.go:437:   unary B15 r=u/8           0.0394  0.0130  0.0067  0.0035  0.0017 mean  0.0128 (0.890 of the filter's) 
+    swenc_test.go:437:   unary B15 r=u/32          0.0327  0.0154  0.0067  0.0035  0.0017 mean  0.0120 (0.830 of the filter's) 
+    swenc_test.go:423: workload sustained: filter  0.2536  0.0729  0.0500  0.0361  0.0181 mean  0.0861
+    swenc_test.go:437:   unary B6 r=u/16 +on4      0.2028  0.0729  0.0500  0.0361  0.0181 mean  0.0760 (0.882 of the filter's) 
+    swenc_test.go:437:   unary B6 r=u/8 +on4       0.1786  0.0729  0.0500  0.0361  0.0181 mean  0.0712 (0.826 of the filter's) 
+    swenc_test.go:437:   unary B6 r=u/32 +on4      0.2283  0.0729  0.0500  0.0361  0.0181 mean  0.0811 (0.941 of the filter's) 
+    swenc_test.go:437:   unary B8 r=u/16 +on4      0.1632  0.0729  0.0500  0.0361  0.0181 mean  0.0681 (0.790 of the filter's) ok
+    swenc_test.go:437:   unary B8 r=u/8 +on4       0.1363  0.0729  0.0500  0.0361  0.0181 mean  0.0627 (0.728 of the filter's) ok
+    swenc_test.go:437:   unary B8 r=u/32 +on4      0.2104  0.0729  0.0500  0.0361  0.0181 mean  0.0775 (0.900 of the filter's) 
+    swenc_test.go:437:   unary B10 r=u/16 +on4     0.1215  0.0729  0.0500  0.0361  0.0181 mean  0.0597 (0.693 of the filter's) ok
+    swenc_test.go:437:   unary B10 r=u/8 +on4      0.1086  0.0729  0.0500  0.0361  0.0181 mean  0.0572 (0.664 of the filter's) ok
+    swenc_test.go:437:   unary B10 r=u/32 +on4     0.1867  0.0729  0.0500  0.0361  0.0181 mean  0.0728 (0.845 of the filter's) 
+    swenc_test.go:437:   unary B12 r=u/16 +on4     0.0915  0.0729  0.0500  0.0361  0.0181 mean  0.0537 (0.624 of the filter's) ok
+    swenc_test.go:437:   unary B12 r=u/8 +on4      0.0933  0.0729  0.0500  0.0361  0.0181 mean  0.0541 (0.628 of the filter's) ok
+    swenc_test.go:437:   unary B12 r=u/32 +on4     0.1574  0.0729  0.0500  0.0361  0.0181 mean  0.0669 (0.777 of the filter's) ok
+    swenc_test.go:437:   unary B15 r=u/16 +on4     0.0674  0.0729  0.0500  0.0361  0.0181 mean  0.0489 (0.568 of the filter's) ok
+    swenc_test.go:437:   unary B15 r=u/8 +on4      0.0808  0.0729  0.0500  0.0361  0.0181 mean  0.0516 (0.599 of the filter's) ok
+    swenc_test.go:437:   unary B15 r=u/32 +on4     0.1061  0.0729  0.0500  0.0361  0.0181 mean  0.0566 (0.658 of the filter's) ok
+    swenc_test.go:437:   unary B6 r=u/16           0.2113  0.0729  0.0500  0.0361  0.0181 mean  0.0777 (0.902 of the filter's) 
+    swenc_test.go:437:   unary B6 r=u/8            0.1847  0.0729  0.0500  0.0361  0.0181 mean  0.0724 (0.840 of the filter's) 
+    swenc_test.go:437:   unary B6 r=u/32           0.2390  0.0729  0.0500  0.0361  0.0181 mean  0.0832 (0.966 of the filter's) 
+    swenc_test.go:437:   unary B8 r=u/16           0.1699  0.0729  0.0500  0.0361  0.0181 mean  0.0694 (0.806 of the filter's) 
+    swenc_test.go:437:   unary B8 r=u/8            0.1417  0.0729  0.0500  0.0361  0.0181 mean  0.0638 (0.740 of the filter's) ok
+    swenc_test.go:437:   unary B8 r=u/32           0.2200  0.0729  0.0500  0.0361  0.0181 mean  0.0794 (0.922 of the filter's) 
+    swenc_test.go:437:   unary B10 r=u/16          0.1274  0.0729  0.0500  0.0361  0.0181 mean  0.0609 (0.707 of the filter's) ok
+    swenc_test.go:437:   unary B10 r=u/8           0.1133  0.0729  0.0500  0.0361  0.0181 mean  0.0581 (0.674 of the filter's) ok
+    swenc_test.go:437:   unary B10 r=u/32          0.1950  0.0729  0.0500  0.0361  0.0181 mean  0.0744 (0.864 of the filter's) 
+    swenc_test.go:437:   unary B12 r=u/16          0.0963  0.0729  0.0500  0.0361  0.0181 mean  0.0547 (0.635 of the filter's) ok
+    swenc_test.go:437:   unary B12 r=u/8           0.0971  0.0729  0.0500  0.0361  0.0181 mean  0.0549 (0.637 of the filter's) ok
+    swenc_test.go:437:   unary B12 r=u/32          0.1644  0.0729  0.0500  0.0361  0.0181 mean  0.0683 (0.793 of the filter's) ok
+    swenc_test.go:437:   unary B15 r=u/16          0.0706  0.0729  0.0500  0.0361  0.0181 mean  0.0495 (0.575 of the filter's) ok
+    swenc_test.go:437:   unary B15 r=u/8           0.0831  0.0729  0.0500  0.0361  0.0181 mean  0.0520 (0.604 of the filter's) ok
+    swenc_test.go:437:   unary B15 r=u/32          0.1111  0.0729  0.0500  0.0361  0.0181 mean  0.0577 (0.669 of the filter's) ok
+    swenc_test.go:440: W3's rule (unary at unit/16 with the onset, 12 and 15 bits, on every workload): holds = false
+--- PASS: TestShortWindowRobust (16.90s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	16.920s

@@ -1,0 +1,21 @@
+goos: linux
+goarch: amd64
+pkg: github.com/scooter-sensei/clepsydra/go
+cpu: AMD Ryzen 5 4600H with Radeon Graphics         
+BenchmarkTouchAndCount-12         	 4889952	       205.9 ns/op	       581.9 cycles/op
+BenchmarkCheckAndTouchBatch-12    	12331432	        92.93 ns/op	       261.0 cycles/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/scooter-sensei/clepsydra/go
+cpu: AMD Ryzen 5 4600H with Radeon Graphics         
+BenchmarkTouchAndCount-12         	 5774528	       201.4 ns/op	       574.4 cycles/op
+BenchmarkCheckAndTouchBatch-12    	12231795	        96.11 ns/op	       271.5 cycles/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/scooter-sensei/clepsydra/go
+cpu: AMD Ryzen 5 4600H with Radeon Graphics         
+BenchmarkTouchAndCount-12         	 5861811	       208.0 ns/op	       591.3 cycles/op
+BenchmarkCheckAndTouchBatch-12    	11523103	        99.08 ns/op	       278.0 cycles/op
+PASS

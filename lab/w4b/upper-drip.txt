@@ -1,0 +1,26 @@
+=== RUN   TestAttackHeavyHitter
+    attack_test.go:341: burst false    1 ev/s:    78 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 0
+    attack_test.go:341: burst false    5 ev/s:   342 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 1
+    attack_test.go:341: burst false   12 ev/s:   832 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 2
+    attack_test.go:341: burst false   13 ev/s:   865 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 3
+    attack_test.go:341: burst false   20 ev/s:  1367 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 4
+    attack_test.go:341: burst false   31 ev/s:  1946 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 3
+    attack_test.go:341: burst false   50 ev/s:  3468 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 3
+    attack_test.go:341: burst false  100 ev/s:  6973 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 1
+    attack_test.go:341: burst false  500 ev/s: 33432 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 0
+    attack_test.go:341: burst true     1 ev/s:    57 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 2
+    attack_test.go:341: burst true     5 ev/s:   180 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 14
+    attack_test.go:341: burst true    12 ev/s:   401 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 25
+    attack_test.go:341: burst true    13 ev/s:   445 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 19
+    attack_test.go:341: burst true    20 ev/s:   708 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 20
+    attack_test.go:341: burst true    31 ev/s:  1060 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 45
+    attack_test.go:341: burst true    50 ev/s:  1804 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 43
+    attack_test.go:341: burst true   100 ev/s:  3423 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 52
+    attack_test.go:341: burst true   500 ev/s: 16938 queries,   0.0% Saturated; unflagged: Upper < exact 0, Count >10% low 60
+heavy hitter: 74319 queries, 0 Saturated, 0 unflagged with Upper < exact, 297 unflagged with Count >10% low
+--- PASS: TestAttackHeavyHitter (3.09s)
+=== RUN   TestUpperBoundRandom
+upper bound: 187219 queries, 0 Saturated, 0 unflagged with Upper < exact; unflagged Upper exceeds exact by 17.3% of events
+--- PASS: TestUpperBoundRandom (1.17s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	4.266s

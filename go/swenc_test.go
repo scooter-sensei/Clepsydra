@@ -152,7 +152,7 @@ func swW2Models() []swModel {
 		return swRound(swCount(iv, float64(now)-float64(w)), now-L <= w)
 	}})
 	rs := []int{64, 32, 16, 8} // quantum = unit / rs
-	for _, B := range []int{12, 14, 15, 16} {
+	for _, B := range []int{11, 12, 14, 15, 16} {
 		for _, rd := range rs {
 			r := unit / float64(rd)
 			// W2a: fixed-width delta logs
@@ -248,7 +248,7 @@ func TestShortWindowEncodings(t *testing.T) {
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].worst < rows[j].worst })
 	t.Logf("best worse-seed means per budget:")
-	for _, B := range []int{12, 14, 15, 16} {
+	for _, B := range []int{11, 12, 14, 15, 16} {
 		n := 0
 		for _, r := range rows {
 			if strings.Contains(r.name, fmt.Sprintf("B%d ", B)) && n < 5 {
@@ -397,7 +397,7 @@ func TestShortWindowRobust(t *testing.T) {
 	}
 	models := []swModel{model("register +on4", 0, 16, 4)}
 	for _, on := range []int{4, 0} {
-		for _, B := range []int{6, 8, 10, 12, 15} {
+		for _, B := range []int{6, 8, 10, 11, 12, 15} {
 			for _, rd := range []int{16, 8, 32} {
 				name := fmt.Sprintf("unary B%d r=u/%d", B, rd)
 				if on > 0 {

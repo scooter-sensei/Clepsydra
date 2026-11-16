@@ -228,6 +228,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 	}
 	fp, tg := fingerprint(h), tag(h)
 	var held *paddedMutex // ConstantTime: h's stripe, while held
+	pushed := false       // this touch's event is in its slot's drip log (W4c)
 	for first := true; ; first = false {
 		if held != nil { // released between attempts: a claim that fails on another stripe's TryLock must not hold its own while it retries
 			held.Unlock()
@@ -329,9 +330,10 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 				if !f.stamp(i, w0, old, tg, now) {
 					continue
 				}
-			} else if n0 := f.next0(w0, now); n0 != w0 && !atomic.CompareAndSwapUint64(&f.words[i], w0, n0) {
-				continue
+			} else if n0 := f.next0(w0, now); !(pushed && now <= last) && n0 != w0 && !atomic.CompareAndSwapUint64(&f.words[i], w0, n0) {
+				continue // (a touch that pushed its event and starts over pushes it again only into a history from before it: W4c)
 			}
+			pushed = true
 			if nu > lu && testHookStamped != nil {
 				testHookStamped()
 			}

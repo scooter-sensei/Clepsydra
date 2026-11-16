@@ -54,7 +54,7 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 	low := stamp // the installed word0's last touch, and its drip log
 	if dripOn {
 		if recalled {
-			low = f.next0(s0, now) & (tsMask | dripMask<<dripShift)
+			low = f.next0(s0, now) & (tsMask | dripWord)
 		} else {
 			low = dripFresh(now)
 		}

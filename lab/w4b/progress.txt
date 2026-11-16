@@ -1,0 +1,26 @@
+[08:04:49] 1: default build unchanged
+[08:05:11] 1a exact: IDENTICAL
+[08:06:24] 1b digest: IDENTICAL
+[08:06:24] 2: tfdrip velocity
+[08:06:44] 2a tfbench -exact lines that differ: 13
+[08:07:12] 2b done
+[08:07:12] 3: digest without Count
+[08:09:30] 3: IDENTICAL (30 cells)
+[08:09:30] 4: Upper never below the truth
+[08:09:34] 4: --- PASS: TestAttackHeavyHitter (3.09s) --- PASS: TestUpperBoundRandom (1.17s) ok  	github.com/scooter-sensei/clepsydra/go	4.266s 
+[08:09:34] 5: suites with tfdrip
+[08:10:22] 5 unit plain: 5 failing: TestBackgroundConcurrentCounts TestConformance TestMerge TestUnitOfMatchesDivision TestCountsLastTouchWhole 
+[08:10:49] 5 unit TF_CT=1: 3 failing: TestConformance TestUnitOfMatchesDivision TestCountsLastTouchWhole 
+[08:11:12] 5 unit TF_BG=1: 3 failing: TestConformance TestUnitOfMatchesDivision TestCountsLastTouchWhole 
+[08:11:58] 5 unit TF_NOCAS2=1: 4 failing: TestConformance TestMerge TestUnitOfMatchesDivision TestCountsLastTouchWhole 
+[08:11:58] 5 slotunit: ok  	github.com/scooter-sensei/clepsydra/go	0.011s
+[08:12:04] 5 slotunit race: ok  	github.com/scooter-sensei/clepsydra/go	1.033s
+[08:17:05] 5 soak race: ok  	github.com/scooter-sensei/clepsydra/go	301.038s
+[08:22:09] 5 cfuzz race: ok  	github.com/scooter-sensei/clepsydra/go	303.375s
+[08:22:09] 6: speed (3 interleaved rounds)
+[08:23:40] 6 done
+[08:23:40] W4 readings finished (all)
+[08:23:40] 7/8: periodic and sustained workloads, both builds
+[08:24:14] 7/8: workload periodic: filter  0.0786  0.0154  0.0067  0.0035  0.0017 mean  0.0212;workload sustained: filter  0.2598  0.0729  0.0500  0.0361  0.0181 mean  0.0874;W3's rule (unary at unit/16 with the onset, 12 and 15 bits, on every workload): holds = true;workload periodic: filter  0.0451  0.0153  0.0067  0.0035  0.0017 mean  0.0144;workload sustained: filter  0.2536  0.0729  0.0500  0.0361  0.0181 mean  0.0861;W3's rule (unary at unit/16 with the onset, 12 and 15 bits, on every workload): holds = false;
+[08:24:14] 9: batched throughput (3 interleaved rounds)
+[08:24:51] 9 done

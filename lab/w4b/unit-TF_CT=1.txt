@@ -1,0 +1,24 @@
+heavy hitter: 74319 queries, 0 Saturated, 0 unflagged with Upper < exact, 297 unflagged with Count >10% low
+upper bound: 18382 queries, 0 Saturated, 0 unflagged with Upper < exact; unflagged Upper exceeds exact by 16.7% of events
+--- FAIL: TestConformance (0.01s)
+    --- FAIL: TestConformance/basic (0.00s)
+        conformance_test.go:313: op 60 {Op:touch Key:user:1 WindowMs:250 NowMs:12363 Want:{Seen:false Count:2 Upper:4 Saturated:false Restored:false Degraded:false}}: got {Seen:false Count:1 Upper:4 Saturated:false Restored:false Degraded:false}
+        conformance_test.go:313: op 76 {Op:touch Key:user:7 WindowMs:1000 NowMs:15526 Want:{Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+        conformance_test.go:313: op 94 {Op:touch Key:user:0 WindowMs:1000 NowMs:19324 Want:{Seen:false Count:2 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+        conformance_test.go:313: op 141 {Op:touch Key:user:9 WindowMs:1000 NowMs:27851 Want:{Seen:false Count:2 Upper:3 Saturated:false Restored:false Degraded:false}}: got {Seen:false Count:1 Upper:3 Saturated:false Restored:false Degraded:false}
+        conformance_test.go:313: op 147 {Op:touch Key:user:9 WindowMs:1000 NowMs:28971 Want:{Seen:false Count:2 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+        conformance_test.go:318: ... 11 ops differ in all
+--- FAIL: TestUnitOfMatchesDivision (0.01s)
+    register_test.go:101: temporalfilter: Horizon too large for Resolution (MaxTick ticks or more)
+--- FAIL: TestCountsLastTouchWhole (0.00s)
+    register_test.go:128: window 200 ms: Count 1, want 2 ({Seen:true Count:1 Upper:11 Saturated:false Restored:false Degraded:false})
+FAIL
+FAIL	github.com/scooter-sensei/clepsydra/go	26.380s
+?   	github.com/scooter-sensei/clepsydra/go/cmd/h2h	[no test files]
+?   	github.com/scooter-sensei/clepsydra/go/cmd/tfbench	[no test files]
+?   	github.com/scooter-sensei/clepsydra/go/internal/cpu	[no test files]
+ok  	github.com/scooter-sensei/clepsydra/go/internal/ecm	2.049s
+ok  	github.com/scooter-sensei/clepsydra/go/internal/registersim	0.003s
+ok  	github.com/scooter-sensei/clepsydra/go/internal/siphash	0.112s
+?   	github.com/scooter-sensei/clepsydra/go/internal/workload	[no test files]
+FAIL

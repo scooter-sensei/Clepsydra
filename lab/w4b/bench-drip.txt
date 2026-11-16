@@ -1,0 +1,33 @@
+goos: linux
+goarch: amd64
+pkg: github.com/scooter-sensei/clepsydra/go
+cpu: AMD Ryzen 5 4600H with Radeon Graphics         
+BenchmarkCheckAndTouchHit-12           	 5875441	       204.2 ns/op	       581.1 cycles/op
+BenchmarkCheckAndTouchMissInsert-12    	  528213	      2350 ns/op	      6564 cycles/op
+BenchmarkTouchAndCount-12              	 5051059	       235.8 ns/op	       671.5 cycles/op
+BenchmarkVelocityCount-12              	 6127966	       195.5 ns/op	       557.1 cycles/op
+BenchmarkCheckAndTouchHitHot-12        	15776400	        72.29 ns/op	       207.2 cycles/op
+BenchmarkVelocityCountHot-12           	 7540008	       156.0 ns/op	       445.8 cycles/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/scooter-sensei/clepsydra/go
+cpu: AMD Ryzen 5 4600H with Radeon Graphics         
+BenchmarkCheckAndTouchHit-12           	 5978577	       201.0 ns/op	       572.2 cycles/op
+BenchmarkCheckAndTouchMissInsert-12    	 1000000	      1926 ns/op	      5416 cycles/op
+BenchmarkTouchAndCount-12              	 5208376	       271.9 ns/op	       746.6 cycles/op
+BenchmarkVelocityCount-12              	 6214830	       210.6 ns/op	       595.4 cycles/op
+BenchmarkCheckAndTouchHitHot-12        	15856315	        72.45 ns/op	       207.4 cycles/op
+BenchmarkVelocityCountHot-12           	 7490935	       156.4 ns/op	       447.2 cycles/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/scooter-sensei/clepsydra/go
+cpu: AMD Ryzen 5 4600H with Radeon Graphics         
+BenchmarkCheckAndTouchHit-12           	 6044826	       199.3 ns/op	       561.5 cycles/op
+BenchmarkCheckAndTouchMissInsert-12    	  815590	      1900 ns/op	      5371 cycles/op
+BenchmarkTouchAndCount-12              	 5144017	       238.9 ns/op	       670.0 cycles/op
+BenchmarkVelocityCount-12              	 6297925	       189.8 ns/op	       538.8 cycles/op
+BenchmarkCheckAndTouchHitHot-12        	16004691	        71.51 ns/op	       204.6 cycles/op
+BenchmarkVelocityCountHot-12           	 8029177	       150.8 ns/op	       430.9 cycles/op
+PASS

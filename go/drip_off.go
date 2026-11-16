@@ -10,4 +10,6 @@ const (
 	dripShift = tsBits
 	dripBits  = 0
 	dripMask  = 0
+	dripV     = 0
+	dripWord  = 0
 )

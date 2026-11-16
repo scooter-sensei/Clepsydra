@@ -27,7 +27,7 @@ import "sync/atomic"
 func (f *Filter) quantum(t uint64) int64 { return f.unitOf(t << 4) }
 
 // dripOf is word0's drip log (0 without the build tag).
-func dripOf(w0 uint64) uint64 { return w0 >> dripShift & dripMask }
+func dripOf(w0 uint64) uint64 { return w0 >> dripShift & (dripMask | dripV) }
 
 // next0 is word0 w0 after an event at now: the last touch moves to now if
 // now is later, and the drip log takes the event's gap.
@@ -43,26 +43,29 @@ func (f *Filter) next0(w0, now uint64) uint64 {
 	switch {
 	case now > last:
 		if g := uint64(f.quantum(now) - f.quantum(last)); g >= dripBits {
-			d = dripMask
-		} else if d != 0 {
-			d = (d<<(g+1) | (1<<g - 1)) & dripMask
+			d = dripV | dripMask // valid again: no event within the field's reach (W4c)
+		} else if d&dripV != 0 {
+			d = dripV | (d<<(g+1)|(1<<g-1))&dripMask
 		}
 	case f.unitOf(now) < f.unitOf(last):
-		d = 0 // the register counts it at the last touch's unit, not its own (W4b)
+		d = 0 // the register counts it at the last touch's unit, not its own (W4b): says nothing
 	default:
-		d = d << 1 & dripMask // at or behind the last touch in its unit: a gap of 0
+		if d&dripV != 0 { // at or behind the last touch in its unit: a gap of 0
+			d = dripV | d<<1&dripMask
+		}
 	}
-	return w0&^(tsMask|dripMask<<dripShift) | d<<dripShift | max(now, last)
+	return w0&^(tsMask|dripWord) | d<<dripShift | max(now, last)
 }
 
 // dripFresh is a new key's word0 low bits at now: its last touch, and a
 // drip log that holds no older event.
-func dripFresh(now uint64) uint64 { return dripMask<<dripShift | now }
+func dripFresh(now uint64) uint64 { return dripWord | now }
 
 // dripCount is Count's estimate from the register view v (at the unit of
 // last), the last touch and the drip log d (non-zero): the count in
 // [now-window, now], as W1's interval model reads it (swIvals, swCount).
 func (f *Filter) dripCount(v *view, last, now, window, d uint64) float64 {
+	d &= dripMask
 	unit := float64(f.unit)
 	r := unit / 16
 	from := float64(now) - float64(window)
@@ -145,7 +148,7 @@ func (f *Filter) dripCount(v *view, last, now, window, d uint64) float64 {
 func (f *Filter) dripForget(i int, fpd uint64) {
 	for {
 		x := atomic.LoadUint64(&f.words[i])
-		if x>>47 != fpd || dripOf(x) == 0 || atomic.CompareAndSwapUint64(&f.words[i], x, x&^(dripMask<<dripShift)) {
+		if x>>47 != fpd || dripOf(x)&dripV == 0 || atomic.CompareAndSwapUint64(&f.words[i], x, x&^dripWord) {
 			return
 		}
 	}

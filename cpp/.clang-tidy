@@ -18,12 +18,16 @@
 #   modernize-avoid-c-arrays, modernize-use-using
 #                                           a Windows handle pair, a snprintf buffer,
 #                                           the __extension__ typedef of u128
+#   clang-analyzer-optin.performance.Padding
+#                                           Core's and BuzzTable's padding is their alignas(64)
+#                                           fields, a cache line each (MSVC's C4324, off for it)
 Checks: >
   -*,
   bugprone-*,
   -bugprone-easily-swappable-parameters,
   -bugprone-implicit-widening-of-multiplication-result,
   clang-analyzer-*,
+  -clang-analyzer-optin.performance.Padding,
   concurrency-*,
   performance-*,
   cppcoreguidelines-init-variables,

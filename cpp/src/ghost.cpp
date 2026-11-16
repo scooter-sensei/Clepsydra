@@ -68,7 +68,7 @@ void Ghost::add(u64 id, u64 n, u64 last, bool isSat, u64 now) {
   if (u64 ns = std::max(now, last) / sliceLen; epoch.load() < ns + 1) advance(ns);
   if (isSat || n >= ghCntMax) {
     n = ghCntMax;
-    isSat = true;
+    // (Go sets sat to true here too; nothing reads it after.)
     sat.store(true);
   }
   if (u64 u = sl * sliceLen + sliceLen - 1 + horizon; until.load() < u) {

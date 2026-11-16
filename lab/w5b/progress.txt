@@ -1,0 +1,39 @@
+[09:20:52] 1: default build
+[09:21:15] 1 exact: IDENTICAL
+[09:22:27] 1 digest: IDENTICAL
+[09:22:27] 2: tfdrip against W4c's
+[09:22:49] 2 exact: DIFFER
+[09:24:10] 2 digest: IDENTICAL
+[09:24:10] 3: translation
+[09:25:34] 3 K=566935680000: DIFFER
+10,30c10,30
+< cell mode="" seed=1 repeat=6000 spill1=false cms=false check=48f155863140380d touch=344ff8a1738ddc8b count=0c50204a620c2cdb contains=4efc8f6ff6691802 cbatch=9cc8901e75462641 tcbatch=98a33b70b02b0eb6 decay=7b6ccdf0ff45ac3d end=099f5cff2e3b7292 (evictions 1341146, folded 6804, floored 0, promoted 18, waited 0, seen checks with overflow live 31990)
+< cell mode="" seed=2 repeat=6000 spill1=false cms=false check=bacc81de0ba6b1dc touch=84f71b23cf90e2e1 count=79ff35abea6b911c contains=38cec09aea65767e cbatch=15f0d9ffebfbb811 tcbatch=00acbb842a2e54a9 decay=936af988cfc4efad end=09bb6c2a7de3aac1 (evictions 1336592, folded 6731, floored 0, promoted 18, waited 0, seen checks with overflow live 31534)
+< cell mode="" seed=3 repeat=6000 spill1=false cms=false check=1172ca976789a1db touch=d834110d3a6e0d65 count=e34372e29d12d6a3 contains=aa3adb735c91a557 cbatch=d8811f3e732dd2b4 tcbatch=764ce0256eb70375 decay=111cd57538612265 end=9b27dc6e057a4803 (evictions 1347203, folded 6867, floored 0, promoted 18, waited 0, seen checks with overflow live 31624)
+< cell mode="bg" seed=1 repeat=6000 spill1=false cms=false check=1b3600b74561b2d4 touch=537690eb3a638e24 count=047adc71b093e923 contains=025f72976b2171d3 cbatch=6ca125e6081e4cff tcbatch=72cee42100307da0 decay=60b1db2001b69f9d end=8cdcca3893aafe37 (evictions 1343018, folded 6997, floored 0, promoted 18, waited 39222, seen checks with overflow live 32265)
+< cell mode="bg" seed=2 repeat=6000 spill1=false cms=false check=529dbdd4a1d06b84 touch=52ccc92e4d5dfe9d count=fb0e9c5ab39bc8ab contains=0d40844cbff61d30 cbatch=ec59c5daff5fc08e tcbatch=8dd28e849cc986cd decay=2a6c1e51396adbd5 end=dd63392f2539f324 (evictions 1345520, folded 7091, floored 0, promoted 18, waited 38447, seen checks with overflow live 31872)
+[09:27:00] 3 K=1013612280000: DIFFER
+10,30c10,30
+< cell mode="" seed=1 repeat=6000 spill1=false cms=false check=48f155863140380d touch=344ff8a1738ddc8b count=0c50204a620c2cdb contains=4efc8f6ff6691802 cbatch=9cc8901e75462641 tcbatch=98a33b70b02b0eb6 decay=7b6ccdf0ff45ac3d end=099f5cff2e3b7292 (evictions 1341146, folded 6804, floored 0, promoted 18, waited 0, seen checks with overflow live 31990)
+< cell mode="" seed=2 repeat=6000 spill1=false cms=false check=bacc81de0ba6b1dc touch=84f71b23cf90e2e1 count=79ff35abea6b911c contains=38cec09aea65767e cbatch=15f0d9ffebfbb811 tcbatch=00acbb842a2e54a9 decay=936af988cfc4efad end=09bb6c2a7de3aac1 (evictions 1336592, folded 6731, floored 0, promoted 18, waited 0, seen checks with overflow live 31534)
+< cell mode="" seed=3 repeat=6000 spill1=false cms=false check=1172ca976789a1db touch=d834110d3a6e0d65 count=e34372e29d12d6a3 contains=aa3adb735c91a557 cbatch=d8811f3e732dd2b4 tcbatch=764ce0256eb70375 decay=111cd57538612265 end=9b27dc6e057a4803 (evictions 1347203, folded 6867, floored 0, promoted 18, waited 0, seen checks with overflow live 31624)
+< cell mode="bg" seed=1 repeat=6000 spill1=false cms=false check=1b3600b74561b2d4 touch=537690eb3a638e24 count=047adc71b093e923 contains=025f72976b2171d3 cbatch=6ca125e6081e4cff tcbatch=72cee42100307da0 decay=60b1db2001b69f9d end=8cdcca3893aafe37 (evictions 1343018, folded 6997, floored 0, promoted 18, waited 39222, seen checks with overflow live 32265)
+< cell mode="bg" seed=2 repeat=6000 spill1=false cms=false check=529dbdd4a1d06b84 touch=52ccc92e4d5dfe9d count=fb0e9c5ab39bc8ab contains=0d40844cbff61d30 cbatch=ec59c5daff5fc08e tcbatch=8dd28e849cc986cd decay=2a6c1e51396adbd5 end=dd63392f2539f324 (evictions 1345520, folded 7091, floored 0, promoted 18, waited 38447, seen checks with overflow live 31872)
+[09:28:25] 3 K=1460288880000: DIFFER
+10,30c10,30
+< cell mode="" seed=1 repeat=6000 spill1=false cms=false check=48f155863140380d touch=344ff8a1738ddc8b count=0c50204a620c2cdb contains=4efc8f6ff6691802 cbatch=9cc8901e75462641 tcbatch=98a33b70b02b0eb6 decay=7b6ccdf0ff45ac3d end=099f5cff2e3b7292 (evictions 1341146, folded 6804, floored 0, promoted 18, waited 0, seen checks with overflow live 31990)
+< cell mode="" seed=2 repeat=6000 spill1=false cms=false check=bacc81de0ba6b1dc touch=84f71b23cf90e2e1 count=79ff35abea6b911c contains=38cec09aea65767e cbatch=15f0d9ffebfbb811 tcbatch=00acbb842a2e54a9 decay=936af988cfc4efad end=09bb6c2a7de3aac1 (evictions 1336592, folded 6731, floored 0, promoted 18, waited 0, seen checks with overflow live 31534)
+< cell mode="" seed=3 repeat=6000 spill1=false cms=false check=1172ca976789a1db touch=d834110d3a6e0d65 count=e34372e29d12d6a3 contains=aa3adb735c91a557 cbatch=d8811f3e732dd2b4 tcbatch=764ce0256eb70375 decay=111cd57538612265 end=9b27dc6e057a4803 (evictions 1347203, folded 6867, floored 0, promoted 18, waited 0, seen checks with overflow live 31624)
+< cell mode="bg" seed=1 repeat=6000 spill1=false cms=false check=1b3600b74561b2d4 touch=537690eb3a638e24 count=047adc71b093e923 contains=025f72976b2171d3 cbatch=6ca125e6081e4cff tcbatch=72cee42100307da0 decay=60b1db2001b69f9d end=8cdcca3893aafe37 (evictions 1343018, folded 6997, floored 0, promoted 18, waited 39222, seen checks with overflow live 32265)
+< cell mode="bg" seed=2 repeat=6000 spill1=false cms=false check=529dbdd4a1d06b84 touch=52ccc92e4d5dfe9d count=fb0e9c5ab39bc8ab contains=0d40844cbff61d30 cbatch=ec59c5daff5fc08e tcbatch=8dd28e849cc986cd decay=2a6c1e51396adbd5 end=dd63392f2539f324 (evictions 1345520, folded 7091, floored 0, promoted 18, waited 38447, seen checks with overflow live 31872)
+[09:28:26] 4: TestWrapAlias: ok  	github.com/scooter-sensei/clepsydra/go	0.274s
+[09:28:26] 5: unit suites
+[09:29:18] 5 tfdrip plain: failing: TestConformance TestCountsLastTouchWhole TestMerge TestUnitOfMatchesDivision | W4c's: TestConformance TestCountsLastTouchWhole TestMerge TestUnitOfMatchesDivision 
+[09:29:50] 5 tfdrip TF_CT=1: failing: TestConformance TestCountsLastTouchWhole TestUnitOfMatchesDivision | W4c's: TestConformance TestCountsLastTouchWhole TestUnitOfMatchesDivision 
+[09:30:16] 5 tfdrip TF_BG=1: failing: TestConformance TestCountsLastTouchWhole TestUnitOfMatchesDivision | W4c's: TestConformance TestCountsLastTouchWhole TestUnitOfMatchesDivision 
+[09:31:07] 5 tfdrip TF_NOCAS2=1: failing: TestConformance TestCountsLastTouchWhole TestMerge TestUnitOfMatchesDivision | W4c's: TestConformance TestCountsLastTouchWhole TestMerge TestUnitOfMatchesDivision 
+[09:31:07] 6: soak and concurrent fuzzer under -race, 5 minutes each
+[09:36:11] 6 soak: ok  	github.com/scooter-sensei/clepsydra/go	301.044s 42433128 ops, 12731363 counts checked (0 Saturated, 0 low behind a live bucket floor)
+[09:41:17] 6 cfuzz: ok  	github.com/scooter-sensei/clepsydra/go	301.221s
+[09:41:17] 7: speed (reported): default, W4c tfdrip, W5b tfdrip; 3 interleaved rounds
+[09:44:30] W5b readings finished

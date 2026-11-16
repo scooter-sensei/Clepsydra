@@ -519,3 +519,65 @@ The suites: default, no failure; `tfdrip`, in each of the four modes the same
 failing tests as W4c's tree (plain and `TF_NOCAS2=1`: `TestConformance`,
 `TestCountsLastTouchWhole`, `TestMerge`, `TestUnitOfMatchesDivision`;
 ConstantTime and Background: the same but `TestMerge`). **W5a holds.**
+
+### W5b's reading (c0cea9e's tree; `lab/w5.sh b`, outputs in `lab/w5b/`)
+
+1. **Holds.** Default build: `tfbench -exact` and the answer digest equal
+   `verify/expected/`'s.
+2. **Fails.** `tfdrip`: the answer digest with Count equals W4c's; `tfbench
+   -exact` differs in three lines, the churn rows' relocation and eviction
+   counts (load 1.00: relocations 148,716 → 148,685; 1.10: 379,688 →
+   379,659; 1.15: evictions 4,577 → 4,600, relocations 932,499 → 931,823);
+   every answer field of those rows (positives, missed, negatives, false
+   seen, live at end), the velocity rows and every other line are equal.
+   Cause: the deadline itself. W4c's cursor skips ahead when it falls a lap
+   behind (tfbench's inline steps cannot keep pace on a 200k-key table), and
+   W5b's sweeps every line it passes and the stash's sets with them, so lines
+   are freed at other times and placements differ.
+3. **Fails.** The 30-cell digest at K = 566,935,680,000, 1,013,612,280,000
+   and 1,460,288,880,000: the 9 cells of 64 keys equal K = 0's, the 21 cells
+   of 6,000 keys differ. A lockstep diagnostic (`TestWrapTranslateDiverge`,
+   `TF_EXP=1`: one cell at two offsets, every slot and answer compared after
+   each operation) finds the first difference at operation 52,461, a batch,
+   when the two filters evict different keys: `mass` (eviction's score) reads
+   the buckets newer than `now - Horizon`, clamped to tick 0 in a filter's
+   first horizon (`now-min(now, f.horizon)`, `mass` and `viewMass`), and a
+   register whose newest unit filled holds spilled events in its next
+   bucket, which at K = 0 lies before tick 0 and is left out (mass 31), at K
+   not (33). The clamp is the default build's, not the wrap's: run from a
+   base of 1,200,000 ticks (past the first horizon, never wrapping) against
+   the same three wrap-crossing runs, the lockstep finds no difference in any
+   slot or answer in 400,000 operations each.
+4. **Holds.** `TestWrapAlias` passes.
+5. **Holds.** The suites with `tfdrip` fail exactly W4c's tests in every
+   mode (`TestUnitOfMatchesDivision` still fails: its Horizon of `MaxTick`
+   ticks is refused by the wrap's 2^31 bound).
+6. **Holds.** The soak under `-race` (42,433,128 operations, 12,731,363
+   counts checked, 0 low) and the concurrent fuzzer under `-race` pass.
+
+Reported: speed, ns/op medians of 3 (default / W4c `tfdrip` / W5b
+`tfdrip`): CheckAndTouchHit 189.5 / 200.5 / 199.0; CheckAndTouchHitHot 66.7 /
+72.8 / 73.7; CheckAndTouchMissInsert 1744 / 1796 / 1930; TouchAndCount 204.1
+/ 222.9 / 229.4; VelocityCount 186.9 / 185.2 / 199.8; VelocityCountHot 92.0 /
+96.2 / 107.0; ContainsAbsent 171.6 / 165.8 / 173.9; CheckAndTouchBatch 91.0 /
+97.9 / 106.6. The concurrent fuzzer's callers read one shared clock with a
+lag of at most two units (a straggler up to a horizon), well within 2^31.
+
+**Verdict: W5b fails its rule** (clauses 2 and 3 as written), with neither
+failure in the wrap's decoding: clause 2's difference is the deadline's own
+placement effect (no answer moves), and clause 3's reference was ill chosen
+(a filter's first horizon is not translation-invariant). Side finding: in a
+filter's first horizon a key whose newest unit spilled scores lighter for
+eviction than it would later (`mass`'s clamp), in the default build too.
+
+## W5c: W5b re-read
+
+The code is W5b's (c0cea9e, with `TestWrapTranslateDiverge` added). **Rule
+(written after W5b's reading, before W5c's):**
+
+2'. `tfdrip`'s `tfbench -exact` equals W4c's in every line but the churn
+   rows' relocation and eviction counts, and those within 1%;
+3'. the 30-cell digest at the three K equals the digest at K = 1,200,000
+   (past the first horizon, never wrapping) byte for byte;
+
+with W5b's clauses 1 and 4-6 as read.

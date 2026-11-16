@@ -326,3 +326,70 @@ Both pass; W4's verdict stands on the four unnamed failures above.)
 `go/verify/experiments/row8-batch-f298a7a.patch`; target 8 is read instead
 with `BenchmarkCheckAndTouchBatch` and `BenchmarkTouchAndCount` on both
 builds, 3 interleaved rounds. Noted before the run.)
+
+## Phase 5: a lasting source for the bits (W5)
+
+W4's arm takes its 12 bits by narrowing `MaxTick` to 2^34-1: 4.8 hours at
+the default 1 µs tick, after which a call panics. W5 keeps `MaxTick` at
+2^46-1 for callers' clocks and stores only 34 bits of a slot's last touch,
+read against the reading call's tick (paper §8.3's direction, lab/bio3's
+B10 postulate). It is split in two arms.
+
+**W5a, one decode and one store for every stored tick** (branch
+`lab/sw-w5`). Every read of a stored tick (`w0&tsMask`, the stash's, the
+wait room's, buzz entries' and `Merge`'s copies) goes through `lastOf(w0,
+ref)`, ref the reading call's tick (or, where a function has none, a tick
+within a unit of the stored one: the unit it compares against); every write
+masks the tick it stores; the sites that order raw stored ticks (the stash's
+put, the eviction score, `Merge`'s clock, `estimateAt`'s re-read) order
+decoded ones. `lastOf` is `w0 & tsMask` in both builds here: no behaviour
+changes.
+
+**Rule (before the reading).** W5a holds if the default build's regression
+tier (`./test.sh regression`) passes and its `tfbench -exact` and answer
+digest equal `verify/expected/`'s, the `tfdrip` build's `tfbench -exact`
+and answer digest (Count included) equal W4b's tree's byte for byte, and
+the unit suites in both builds fail exactly the tests they failed before
+W5a.
+
+**W5b, the wrap** (branch `lab/sw-w5b`, from W5a's 73bc1d1; `wrap.go`). With
+`tfdrip`, `lastOf` decodes 34 stored bits against the reading call's tick
+(signed: right while the two are less than 2^33 apart), `MaxTick` is 2^46-1
+again for callers' clocks, and Horizon must be at most 2^31 ticks. A dead
+tick must be cleared before it is 2^33 old, so: the decay cursor never skips
+ahead (each step sweeps its lines and the stash's and wait room's sets that
+map to them, so every line of the cursor's last lap was visited at or after
+`doneAt` = (c - lines) H / lines); a step that finds `doneAt` 2^30 behind
+sweeps 64 lines; and a call that finds it 2^31 behind (an idle filter's
+first call) sweeps everything first, reading stored ticks against the middle
+of the span they can hold (`catchUp`). A new filter's cursor and `doneAt`
+start at its clock. Buzz entries are not swept: one answers only while its
+slot's words match its copy, so a stale one can hold a way, never decide.
+Callers' clocks must stay within 2^31 ticks of each other.
+
+Before this rule: `TestWrapAlias` (a key touched once reads unseen 2^34 +
+500 ticks later, idle, with other keys' calls, and from the stash) passes
+on d59776a, and fails all three with the catch-up disabled (Count 3 a wrap
+later): it detects aliasing.
+
+**Rule (before the reading).** W5b holds if:
+
+1. the default build's `tfbench -exact` and answer digest equal
+   `verify/expected/`'s;
+2. with `tfdrip`, `tfbench -exact` and the answer digest (Count included)
+   equal W4b's tree's byte for byte (ticks that never wrap);
+3. translation: with `tfdrip`, the 30-cell digest with every tick offset by
+   K = 566,935,680,000, 1,013,612,280,000 and 1,460,288,880,000 (multiples
+   of two horizons whose runs cross a multiple of 2^34 after 3,072, 1,856
+   and 640 ticks) equals K = 0's byte for byte;
+4. `TestWrapAlias` passes;
+5. the unit suites with `tfdrip` fail no test that W4b's tree passes, but
+   for `TestUnitOfMatchesDivision` (a Horizon of `MaxTick` ticks, refused
+   either way) and tests that need a Horizon over 2^31 ticks, named before
+   the run;
+6. the soak and the concurrent fuzzer under `-race`, 5 minutes each, with
+   `tfdrip`, pass.
+
+Reported, not judged: speed of hits and counts with the per-call check
+against W4b's `tfdrip` build and the default build (3 interleaved rounds);
+whether the soak's and fuzzer's clocks keep within 2^31 of each other.

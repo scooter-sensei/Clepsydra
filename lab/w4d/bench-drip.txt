@@ -1,0 +1,33 @@
+goos: linux
+goarch: amd64
+pkg: github.com/scooter-sensei/clepsydra/go
+cpu: AMD Ryzen 5 4600H with Radeon Graphics         
+BenchmarkCheckAndTouchHit-12           	 5917224	       200.8 ns/op	       573.5 cycles/op
+BenchmarkCheckAndTouchMissInsert-12    	  647763	      1878 ns/op	      5362 cycles/op
+BenchmarkTouchAndCount-12              	 5373046	       225.2 ns/op	       641.5 cycles/op
+BenchmarkVelocityCount-12              	 5783422	       187.6 ns/op	       535.5 cycles/op
+BenchmarkCheckAndTouchHitHot-12        	17020932	        68.10 ns/op	       193.1 cycles/op
+BenchmarkVelocityCountHot-12           	12725175	        94.56 ns/op	       269.9 cycles/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/scooter-sensei/clepsydra/go
+cpu: AMD Ryzen 5 4600H with Radeon Graphics         
+BenchmarkCheckAndTouchHit-12           	 5904556	       201.8 ns/op	       574.1 cycles/op
+BenchmarkCheckAndTouchMissInsert-12    	 1000000	      1760 ns/op	      5013 cycles/op
+BenchmarkTouchAndCount-12              	 5369340	       234.3 ns/op	       665.0 cycles/op
+BenchmarkVelocityCount-12              	 6136310	       191.0 ns/op	       544.5 cycles/op
+BenchmarkCheckAndTouchHitHot-12        	17005184	        67.88 ns/op	       192.9 cycles/op
+BenchmarkVelocityCountHot-12           	12788475	        93.98 ns/op	       267.4 cycles/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/scooter-sensei/clepsydra/go
+cpu: AMD Ryzen 5 4600H with Radeon Graphics         
+BenchmarkCheckAndTouchHit-12           	 5876210	       205.2 ns/op	       580.0 cycles/op
+BenchmarkCheckAndTouchMissInsert-12    	 1000000	      1774 ns/op	      5035 cycles/op
+BenchmarkTouchAndCount-12              	 5253243	       227.6 ns/op	       645.7 cycles/op
+BenchmarkVelocityCount-12              	 6043058	       191.6 ns/op	       546.4 cycles/op
+BenchmarkCheckAndTouchHitHot-12        	17301708	        66.76 ns/op	       192.0 cycles/op
+BenchmarkVelocityCountHot-12           	12961238	        93.19 ns/op	       267.2 cycles/op
+PASS

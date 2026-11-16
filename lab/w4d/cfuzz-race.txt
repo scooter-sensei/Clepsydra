@@ -1,0 +1,5 @@
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:77: 100 cases from seed 1 in 5m1s (0.2 M ops/s): 70121844 ops, 18195957 answers checked (2993310 Saturated, 4643 low behind a live floor, 15978 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 22, Background 15, no stash 11, no overflow 7, small overflow 27, no hot entries 9, few hot entries 24; evictions 3323207, folded 2983473, promoted 242484, waited 336537
+--- PASS: TestFuzzConcurrent (300.89s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	301.919s

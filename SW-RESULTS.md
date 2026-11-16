@@ -698,3 +698,27 @@ Seen) and passes with it.
 Reported, not judged: the largest call (a catch-up of a 1M-key table
 after idle gaps of 2^31+1 and 3x2^31 ticks), and speed against W4d's
 `tfdrip` build and the default.
+
+### W4d's reading (b7a33a7's tree; `lab/w4d.sh`, outputs in `lab/w4d/`)
+
+1. **Holds.** Default build: `tfbench -exact` and the answer digest equal
+   `verify/expected/`'s.
+2. **Holds.** `tfdrip`: 0.0592 / 0.0476 / 0.0505 / 0.0435 / 0.0239, mean
+   0.0450; held-out 1 s 0.0580, mean 0.0444; the 11-bit model's to the
+   fourth decimal.
+3. **Holds.** Digest without Count identical in 30 cells.
+4. **Holds.** `Upper` below the truth 0.
+5. **Holds.** `TestDripPushOnce` 0 of 160,000 keys in 5,000 rounds, 0 of
+   16,000 in 500 rounds under `-race`; `TestBackgroundConcurrentCounts` 0 of
+   200 runs, 0 of 20 under `-race`; the suites as W4c's (only the named
+   tests; `TestMerge` its 1 s bar alone); `TestSlotUnitRaces`, the soak and
+   the concurrent fuzzer under `-race` pass.
+6. Speed (ns/op medians of 3, default → `tfdrip`): CheckAndTouchHit 193.1 →
+   201.8, CheckAndTouchHitHot 75.4 → 67.9, CheckAndTouchMissInsert 1760 →
+   1774, TouchAndCount ~205 → ~224, VelocityCount 188.4 → 191.0,
+   VelocityCountHot 92.2 → 94.0.
+7. **Holds.** Periodic 0.0212 → 0.0149.
+8. **Holds.** Sustained 0.0874 → 0.0564 (the model's).
+9. `BenchmarkCheckAndTouchBatch` 91.4 → 98.3 ns/key (1.08x).
+
+**Verdict: W4d passes its rule.**

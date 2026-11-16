@@ -462,7 +462,7 @@ impl Core {
     /// uncertain: a refusal (r) of a key whose words answer for it (plain)
     /// at a limit of buzzCap or less, though the events certainly inside the
     /// window, with the overflow table's part (over), are under the limit.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "the reference's signature, parameter for parameter")]
     pub(crate) fn uncertain(&self, plain: bool, r: &Result, w1: u64, last: u64, now: u64, win: u64, over: i64, limit: u64) -> bool {
         plain && !r.saturated && ((self.certain(w1, last, now, win) + over) as u64) < limit
     }

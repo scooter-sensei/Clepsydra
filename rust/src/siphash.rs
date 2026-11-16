@@ -60,7 +60,7 @@ impl Key {
         }
         let mut last = (n as u64) << 56;
         for (i, &c) in b.iter().enumerate() {
-            last |= (c as u64) << (8 * i);
+            last |= u64::from(c) << (8 * i);
         }
         sip_finish(v, last)
     }

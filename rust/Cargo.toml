@@ -23,8 +23,50 @@ debug-assertions = true
 [profile.release]
 debug = true
 
+# Lints: rustc's and clippy's defaults, and these (the smoke tier denies every
+# warning, over every target). Clippy's pedantic group is not on as a whole:
+# most of its lints would have the translation stop reading line for line
+# against the reference (its integer conversions, its loops, its names, its
+# doc prose naming Go's identifiers); the ones below hold for it.
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
+# the API Guidelines: every public item documented, every public type Debug
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+# pub(crate) where the item is the crate's
+unreachable_pub = "warn"
+trivial_casts = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[lints.clippy]
+# The reference's shape (README, Porting rules): its loops, index for index,
+# and its arithmetic, expression for expression (`(a + b - 1) / b`, `x >= y +
+# 1`), so each line reads against its Go line and overflows (a panic in the
+# test profile) where Go's would wrap.
+needless_range_loop = "allow"
+manual_div_ceil = "allow"
+int_plus_one = "allow"
+# Unsafe code: a SAFETY comment on every block and impl, for one operation.
+undocumented_unsafe_blocks = "warn"
+multiple_unsafe_ops_per_block = "warn"
+# A lint left out says why (`reason = "..."`).
+allow_attributes_without_reason = "warn"
+# The API Guidelines' C-FAILURE. (The queries that record nothing are
+# #[must_use] by hand: clippy's must_use_candidate can't tell a touch, which
+# records, from a count.)
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+# A conversion that can't lose anything is From; a pointer cast says what it
+# changes (cast, cast_mut, from_ref).
+cast_lossless = "warn"
+ptr_as_ptr = "warn"
+ptr_cast_constness = "warn"
+ref_as_ptr = "warn"
+borrow_as_ptr = "warn"
+# Small idioms.
+semicolon_if_nothing_returned = "warn"
+explicit_iter_loop = "warn"
+redundant_closure_for_method_calls = "warn"
 
 # go/cmd/tfbench -exact: the scorecard's deterministic metrics as raw counts
 # (the regression tier compares them with go/verify/expected/exact.txt).

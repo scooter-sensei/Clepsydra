@@ -3,7 +3,7 @@
 //! (Go's `testing`), `json.rs` reads the vectors, `gorand.rs` is Go's
 //! `math/rand/v2` over PCG bit for bit (so a seeded case replays as in Go).
 
-#![allow(non_snake_case)] // the tests keep their Go names
+#![allow(non_snake_case, reason = "the tests keep their Go names")]
 
 pub(crate) mod check;
 pub(crate) mod goexp;

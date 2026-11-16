@@ -227,6 +227,11 @@ pub(crate) enum Clock {
 /// placer's thread shares while it runs. It is safe for concurrent use: hits
 /// never lock; first touches of a key serialize on a striped lock.
 #[repr(C)]
+#[allow(
+    unreachable_pub,
+    missing_debug_implementations,
+    reason = "public only as the white-box tests' Deref target (cfg(test)), which a crate-private type can't be; not exported"
+)]
 pub struct Core {
     pub(crate) words: AlignedWords, // 64-byte aligned, len = lines*wordsPerLine
     pub(crate) lines: u64,          // any size; indexed by multiply-shift, not masking
@@ -487,7 +492,7 @@ impl Core {
     /// what a restore moved it on by.
     #[inline]
     pub(crate) fn read_own(&self) -> u64 {
-        (self.base.elapsed().as_nanos() / self.res as u128) as u64 + 1 + self.clock_add.load(SeqCst)
+        (self.base.elapsed().as_nanos() / u128::from(self.res)) as u64 + 1 + self.clock_add.load(SeqCst)
     }
 
     /// `f.clock()`.

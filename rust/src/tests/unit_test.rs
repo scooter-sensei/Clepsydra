@@ -125,6 +125,38 @@ fn TestConfigDefaults() {
     }
 }
 
+/// TestDebug: every public type prints something (the API Guidelines'
+/// C-DEBUG, C-DEBUG-NONEMPTY), none prints the filter's secret key, and a
+/// Resizable whose mutex is held prints without waiting for it.
+#[test]
+fn TestDebug() {
+    let t = T::new("TestDebug");
+    let cfg = Config { capacity: 1000, horizon: MINUTE, key: Some([0xa5; 16]), hot: -1, ..Config::default() };
+    let f = must(cfg.clone());
+    let mut printed = vec![
+        ("Config", format!("{cfg:?}")),
+        ("Filter", format!("{f:?}")),
+        ("Result", format!("{:?}", f.count("k", MINUTE))),
+        ("Error", format!("{:?}", Filter::new(Config::default()).unwrap_err())),
+    ];
+    let r = crate::Resizable::new(cfg);
+    if let Ok(r) = &r {
+        printed.push(("Resizable", format!("{r:?}")));
+        let _held = r.guard();
+        let s = format!("{r:?}");
+        if !s.contains("<locked>") {
+            errorf!(t, "Resizable with its mutex held: {s}, want <locked>");
+        }
+    } else if !force_ct() && !force_bg() {
+        errorf!(t, "NewResizable: {:?}", r.err());
+    }
+    for (what, s) in printed {
+        if s.is_empty() || s.contains("165") || s.contains("a5") {
+            errorf!(t, "{what}: {s:?} (empty, or the key's bytes, 0xa5 = 165)");
+        }
+    }
+}
+
 /// TestConfigUnaddressable: a Config whose table no allocation can hold
 /// (2^57 lines of 64 B or more: an allocation ends at `isize::MAX` bytes), or
 /// one that no memory can back, or whose Load is NaN, is refused by `new`.

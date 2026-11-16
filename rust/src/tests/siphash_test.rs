@@ -50,7 +50,7 @@ fn TestHashUint64sMatches() {
         if c > 131 {
             n = (next() % 131) as usize;
         }
-        for key in keys[..n].iter_mut() {
+        for key in &mut keys[..n] {
             *key = next();
         }
         out.fill(0xdeadbeef);

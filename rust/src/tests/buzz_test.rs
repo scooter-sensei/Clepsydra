@@ -85,7 +85,7 @@ fn own_within(ts: &[u64], w: u64, now: u64) -> i64 {
 /// filters also take tfbench's churn stream at that load (its 4 horizons). It
 /// fails the test if an arm admits a request while the key's window already
 /// holds the limit.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments, reason = "a helper of the Go test, parameter for parameter")]
 fn buzz_offer(t: &T, cap_n: i64, nkeys: usize, ru: BuzzRule, mult: f64, horizons: u64, plain_frac: f64, churn_load: f64, churn_seed: u64) -> BuzzRow {
     const H_T: u64 = 60_000;
     let was = BUZZ_OFF.load(SeqCst);
@@ -115,7 +115,7 @@ fn buzz_offer(t: &T, cap_n: i64, nkeys: usize, ru: BuzzRule, mult: f64, horizons
         let (et, ek, plain) = e;
         let h = mix64(ek as u64 + (1 << 50));
         if plain {
-            for o in own.iter_mut() {
+            for o in &mut own {
                 o[ek].push(et);
             }
             fb.touch_at(h, ru.w, et);
@@ -351,7 +351,7 @@ fn TestBuzzConcurrent() {
                 }
             }
             let (mut over, mut positions) = (0, 0);
-            for ts in per.iter_mut() {
+            for ts in &mut per {
                 gosort::slice(ts, |a, b| a < b);
                 let mut lo = 0;
                 for hi in 0..ts.len() {

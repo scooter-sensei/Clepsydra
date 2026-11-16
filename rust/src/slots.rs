@@ -2,6 +2,7 @@
 
 use std::alloc::{Layout, alloc_zeroed, dealloc, handle_alloc_error};
 use std::ops::Deref;
+use std::ptr::NonNull;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard, TryLockError};
 
@@ -50,7 +51,7 @@ pub(crate) fn ld(a: &AtomicU64) -> u64 {
 /// `atomic.StoreUint64`.
 #[inline(always)]
 pub(crate) fn st(a: &AtomicU64, v: u64) {
-    a.store(v, Ordering::SeqCst)
+    a.store(v, Ordering::SeqCst);
 }
 
 /// `atomic.CompareAndSwapUint64`.
@@ -72,7 +73,7 @@ pub(crate) struct Defer<F: FnMut()>(pub(crate) F);
 
 impl<F: FnMut()> Drop for Defer<F> {
     fn drop(&mut self) {
-        (self.0)()
+        (self.0)();
     }
 }
 
@@ -92,7 +93,7 @@ impl PaddedMutex {
     /// `mu.Lock()`; dropping the guard is `mu.Unlock()`.
     #[inline]
     pub(crate) fn lock(&self) -> MutexGuard<'_, ()> {
-        self.0.lock().unwrap_or_else(|e| e.into_inner())
+        self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// `mu.TryLock()`.
@@ -137,32 +138,36 @@ pub(crate) struct MoveCount {
 /// alignedWords: a 64-byte aligned, zeroed array of words. The pages come
 /// zeroed from the allocator and fault on first touch, as the reference's.
 pub(crate) struct AlignedWords {
-    p: *mut AtomicU64,
+    p: NonNull<AtomicU64>,
     n: usize,
 }
 
-// SAFETY: the buffer is owned and holds only atomics.
+// SAFETY: the words are owned (no other handle to them exists), and an
+// AtomicU64 is Send.
 unsafe impl Send for AlignedWords {}
+// SAFETY: shared, the words are reached only as &AtomicU64 (Deref), which is
+// Sync.
 unsafe impl Sync for AlignedWords {}
 
 impl AlignedWords {
+    /// The allocation of n words: 64-byte aligned (a line each 8 words).
+    fn layout(n: usize) -> Layout {
+        assert!(n > 0 && n <= isize::MAX as usize / 8, "a table of {n} words");
+        Layout::from_size_align(n * 8, 64).expect("a size checked above, at a power-of-two alignment")
+    }
+
     /// n zeroed words, or `None` if the allocator has no memory for them
     /// (the filter's table: `new` returns an error then).
     pub(crate) fn try_new(n: usize) -> Option<Self> {
-        assert!(n > 0 && n <= isize::MAX as usize / 8);
-        let layout = Layout::from_size_align(n * 8, 64).unwrap();
-        // SAFETY: the layout's size is not zero.
-        let p = unsafe { alloc_zeroed(layout) } as *mut AtomicU64;
-        if p.is_null() {
-            return None;
-        }
-        Some(AlignedWords { p, n })
+        // SAFETY: the layout's size is not zero (n > 0).
+        let p = unsafe { alloc_zeroed(Self::layout(n)) };
+        Some(AlignedWords { p: NonNull::new(p.cast::<AtomicU64>())?, n })
     }
 
     /// n zeroed words; without memory for them the process aborts, as on
     /// any failed allocation (the tables allocated on first use).
     pub(crate) fn new(n: usize) -> Self {
-        Self::try_new(n).unwrap_or_else(|| handle_alloc_error(Layout::from_size_align(n * 8, 64).unwrap()))
+        Self::try_new(n).unwrap_or_else(|| handle_alloc_error(Self::layout(n)))
     }
 
     /// prefault writes a word of every page, so a table allocated while the
@@ -179,8 +184,8 @@ impl AlignedWords {
 
 impl Drop for AlignedWords {
     fn drop(&mut self) {
-        // SAFETY: allocated in new with this layout.
-        unsafe { dealloc(self.p as *mut u8, Layout::from_size_align(self.n * 8, 64).unwrap()) }
+        // SAFETY: allocated by try_new with this layout, and not freed yet.
+        unsafe { dealloc(self.p.as_ptr().cast::<u8>(), Self::layout(self.n)) }
     }
 }
 
@@ -191,7 +196,7 @@ impl Deref for AlignedWords {
         // SAFETY: p points to n zero-initialized (or since atomically
         // written) words, alive as long as self; AtomicU64 has u64's layout
         // and all-zero is a valid value.
-        unsafe { std::slice::from_raw_parts(self.p, self.n) }
+        unsafe { std::slice::from_raw_parts(self.p.as_ptr(), self.n) }
     }
 }
 
@@ -270,7 +275,7 @@ impl Core {
 
     /// locate returns the word index of h's slot, or -1: an undisplaced
     /// entry in the primary line or a displaced one in the alternate line.
-    #[allow(dead_code)] // the tests'
+    #[cfg(test)]
     pub(crate) fn locate(&self, h: u64, fp: u64, tg: u64) -> isize {
         self.locate_at(h, fp, tg).0
     }

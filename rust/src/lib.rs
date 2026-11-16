@@ -15,25 +15,19 @@
 //! use std::time::Duration;
 //! use clepsydra::{Config, Filter};
 //!
+//! # fn main() -> Result<(), clepsydra::Error> {
 //! let f = Filter::new(Config {
 //!     capacity: 100_000,
 //!     horizon: Duration::from_secs(60),
 //!     ..Config::default()
-//! })
-//! .unwrap();
+//! })?;
 //! assert!(!f.check_and_touch("203.0.113.9", Duration::from_secs(10)));
 //! assert!(f.check_and_touch("203.0.113.9", Duration::from_secs(10)));
 //! let r = f.touch("203.0.113.9", Duration::from_secs(10));
 //! assert_eq!((r.seen, r.count), (true, 3));
+//! # Ok(())
+//! # }
 //! ```
-
-// The reference's loops, index for index.
-#![allow(clippy::needless_range_loop)]
-// The reference's arithmetic, expression for expression: `(a + b - 1) / b`
-// and `x >= y + 1` are written as the Go code writes them, so each line reads
-// against its Go line and overflows (a panic in the test profile) where Go's
-// would wrap.
-#![allow(clippy::manual_div_ceil, clippy::int_plus_one)]
 
 use std::fmt;
 
@@ -65,6 +59,18 @@ mod tests;
 pub use api::Filter;
 pub use filter::{AUTO_PAD, ClockFn, Config, MAX_TICK};
 pub use resize::Resizable;
+
+// Every public type can be shared between threads and sent to one (the API
+// Guidelines' C-SEND-SYNC): a change that loses either fails the build here,
+// not a caller's.
+const _: () = {
+    const fn send_sync<T: Send + Sync>() {}
+    send_sync::<Filter>();
+    send_sync::<Resizable>();
+    send_sync::<Config>();
+    send_sync::<Result>();
+    send_sync::<Error>();
+};
 
 /// `Result` is the full answer of Touch and Count, including how far it can
 /// be trusted. A fail-closed caller (rate limit, abuse check) should treat
@@ -111,6 +117,7 @@ impl Error {
     }
 
     /// The message, as the reference's `err.Error()`.
+    #[must_use]
     pub fn message(&self) -> &str {
         &self.0
     }

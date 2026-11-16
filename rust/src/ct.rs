@@ -159,7 +159,7 @@ impl Core {
             if b == 0 {
                 continue;
             }
-            let set = wi * 64 + b.trailing_zeros() as u64;
+            let set = wi * 64 + u64::from(b.trailing_zeros());
             p.at.store(set + 1, SeqCst);
             if self.room.get().is_some_and(|r| std::ptr::eq(r, p)) {
                 self.place_room_set(p, set);

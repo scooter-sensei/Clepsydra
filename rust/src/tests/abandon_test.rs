@@ -115,7 +115,7 @@ fn TestAbandonedMoveKeepsCounts() {
 /// true count (3 first touches, and worker w's ns[w] touches of keys w/2,
 /// w/2+1, ... in turn), the hot and cold keys on its tag, and where its
 /// history is.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments, reason = "a helper of the Go test, parameter for parameter")]
 pub(crate) fn log_off_keys(t: &T, f: &Filter, it: u64, salt: u64, ns: &[i64], hot_tags: &[u64], cold_tags: &HashMap<u64, i64>, at: u64) {
     let hot = hot_tags.len() as u64;
     let mut want = vec![3i64; hot as usize];

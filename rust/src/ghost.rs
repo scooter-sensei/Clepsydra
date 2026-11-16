@@ -49,8 +49,6 @@ pub(crate) const GH_SL_BITS: u32 = 2;
 pub(crate) const GH_ENTRY_BITS: u32 = GH_FP_BITS + GH_CNT_BITS + GH_SL_BITS; // 21
 pub(crate) const GH_PER_WORD: usize = 3;
 pub(crate) const GH_WORDS: usize = 8; // per bucket: one cache line
-#[allow(dead_code)] // the tests'
-pub(crate) const GH_ENTRIES: usize = GH_WORDS * GH_PER_WORD;
 pub(crate) const GH_CNT_MAX: u64 = (1 << GH_CNT_BITS) - 1;
 pub(crate) const GH_ENTRY_MASK: u64 = (1 << GH_ENTRY_BITS) - 1;
 pub(crate) const GH_SUB_BITS: u32 = GH_CNT_BITS + GH_SL_BITS; // a floor: count and slice, no fingerprint
@@ -332,7 +330,7 @@ impl Ghost {
     /// is dead by then (so the 2-bit slices of the rest decode
     /// unambiguously).
     pub(crate) fn advance(&self, ns: u64) {
-        let _g = self.mu.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = self.mu.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let ep = self.epoch.load(SeqCst);
         if ep >= ns + 1 {
             return;

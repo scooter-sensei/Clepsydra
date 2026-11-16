@@ -406,7 +406,7 @@ fn sweep_over_j(t: &T, tg_j: u64) -> (Arc<Filter>, u64, isize) {
 /// sweepHolds runs the decay sweep of line p at tS; when the hook seen fires
 /// on slot s, K's touch at tS takes the slot (J expired there), and ok checks
 /// the result; during runs while the sweep holds the slot.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments, reason = "a helper of the Go test, parameter for parameter")]
 #[track_caller]
 fn sweep_holds(
     t: &T,

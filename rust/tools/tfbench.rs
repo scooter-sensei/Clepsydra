@@ -15,13 +15,13 @@ use std::time::Duration;
 
 use clepsydra::{Config, Filter};
 
-#[allow(dead_code)]
+#[allow(dead_code, reason = "the suite's module, of which tfbench uses a part")]
 #[path = "../src/tests/goexp.rs"]
 mod goexp;
-#[allow(dead_code)]
+#[allow(dead_code, reason = "the suite's module, of which tfbench uses a part")]
 #[path = "../src/tests/gorand.rs"]
 mod gorand;
-#[allow(dead_code)]
+#[allow(dead_code, reason = "the suite's module, of which tfbench uses a part")]
 #[path = "../src/tests/gosort.rs"]
 mod gosort;
 
@@ -262,7 +262,7 @@ fn static_fpr(probes: i64) -> i64 {
     // FPR is ~1e-8, so it takes ~1e9 probes to see more than a handful; split
     // them across cores.
     let fp = AtomicI64::new(0);
-    let workers = std::thread::available_parallelism().map_or(1, |n| n.get()) as i64;
+    let workers = std::thread::available_parallelism().map_or(1, std::num::NonZero::get) as i64;
     std::thread::scope(|s| {
         for w in 0..workers {
             let (f, fp) = (&f, &fp);

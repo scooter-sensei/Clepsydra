@@ -75,7 +75,7 @@ struct SnapW<'a, W: Write> {
 impl<W: Write> SnapW<'_, W> {
     /// end writes the section's check word.
     fn end(&mut self) {
-        let x = self.crc as u64 | ((self.sec as u64) << 32);
+        let x = u64::from(self.crc) | (u64::from(self.sec) << 32);
         self.u(x);
         (self.crc, self.sec) = (0, self.sec + 1);
     }
@@ -103,7 +103,7 @@ struct SnapR<'a, R: Read> {
 impl<R: Read> SnapR<'_, R> {
     /// end reads and checks the section's check word.
     fn end(&mut self) {
-        let want = self.crc as u64 | ((self.sec as u64) << 32);
+        let want = u64::from(self.crc) | (u64::from(self.sec) << 32);
         let got = self.u();
         if self.err.is_none() && got != want {
             self.fail(&format!("section {}: check word {:#x}, want {:#x}", self.sec, got, want));
@@ -189,7 +189,7 @@ impl Core {
             self.cursor.load(SeqCst),
             self.evictions.load(SeqCst),
             self.relocations.load(SeqCst),
-            self.pressure.load(SeqCst) as u64,
+            u64::from(self.pressure.load(SeqCst)),
             self.stash_until.load(SeqCst),
             self.lost_at.load(SeqCst),
             self.lost.load(SeqCst),
@@ -211,7 +211,7 @@ impl Core {
                 s.u(e.w0);
                 s.u(e.w1);
             }
-            for w in st.wait.iter() {
+            for w in &st.wait {
                 s.u(ld(w));
             }
             s.u(st.at.load(SeqCst));
@@ -221,7 +221,7 @@ impl Core {
         s.end();
         if let Some(t) = self.hot.get() {
             s.u(1);
-            for e in t.e.iter() {
+            for e in &t.e {
                 s.u(e.ver.load(SeqCst));
                 s.u(e.id.load(SeqCst));
                 s.u(e.epoch.load(SeqCst) as u64);
@@ -229,14 +229,14 @@ impl Core {
                 s.u(e.c0.load(SeqCst));
                 let mut j = 0;
                 while j < e.c.len() {
-                    s.u(e.c[j].load(SeqCst) as u64 | ((e.c[j + 1].load(SeqCst) as u64) << 32));
+                    s.u(u64::from(e.c[j].load(SeqCst)) | (u64::from(e.c[j + 1].load(SeqCst)) << 32));
                     j += 2;
                 }
             }
             let g = t.guard();
             s.u(g.free.len() as u64);
             for &x in &g.free {
-                s.u(x as u64);
+                s.u(u64::from(x));
             }
             s.u(g.next);
             s.u(g.hand);
@@ -254,7 +254,7 @@ impl Core {
             }
             s.u(g.epoch.load(SeqCst));
             s.u(g.until.load(SeqCst));
-            s.u(g.sat.load(SeqCst) as u64);
+            s.u(u64::from(g.sat.load(SeqCst)));
             s.u(g.floored.load(SeqCst));
         } else {
             s.u(0);
@@ -262,7 +262,7 @@ impl Core {
         s.end();
         if let Some(t) = self.buzz.get() {
             s.u(1);
-            for b in t.b.iter() {
+            for b in &t.b {
                 for j in 0..BUZZ_WAYS {
                     let e = b.entry(j);
                     for x in [ld(&b.ids[j]), e.w0, e.w1, e.meta, e.ev[0], e.ev[1], e.ev[2], e.ev[3]] {
@@ -387,7 +387,7 @@ impl Core {
                 }
                 p.put(i, e);
             }
-            for w in p.wait.iter() {
+            for w in &p.wait {
                 st(w, s.u());
             }
             p.at.store(s.u(), SeqCst);
@@ -399,7 +399,7 @@ impl Core {
                 return;
             }
             let t = f.hot_table();
-            for e in t.e.iter() {
+            for e in &t.e {
                 e.ver.store(s.u(), SeqCst);
                 e.id.store(s.u(), SeqCst);
                 e.epoch.store(s.u() as i64, SeqCst);
@@ -527,14 +527,14 @@ impl Core {
         if let Some(t) = t {
             let g = t.guard();
             for &x in &g.free {
-                if x == 0 || x as u64 >= hn {
+                if x == 0 || u64::from(x) >= hn {
                     return Some("a free hot entry out of range");
                 }
             }
             if g.next == 0 || g.next > hn {
                 return Some("the next hot entry out of range");
             }
-            for e in t.e.iter() {
+            for e in &t.e {
                 if (e.ver.load(SeqCst) & 1) != 0 {
                     return Some("a hot entry held");
                 }
@@ -554,13 +554,13 @@ impl Core {
             for i in 0..p.e.len() {
                 p.put(i, StashEntry::default());
             }
-            for w in p.wait.iter() {
+            for w in &p.wait {
                 st(w, 0);
             }
             p.at.store(0, SeqCst);
         }
         if let Some(t) = self.hot.get() {
-            for e in t.e.iter() {
+            for e in &t.e {
                 e.ver.store(0, SeqCst);
                 e.id.store(0, SeqCst);
                 e.epoch.store(0, SeqCst);
@@ -586,7 +586,7 @@ impl Core {
     /// says nothing, so it answers as it did. One ahead of its last touch
     /// (never at rest) keeps its unit, its last touch moved to that unit's
     /// start.
-    #[allow(clippy::wrong_self_convention)] // the reference's fromV2, a method of the filter
+    #[expect(clippy::wrong_self_convention, reason = "the reference's fromV2, a method of the filter")]
     pub(crate) fn from_v2(&self, mut w0: u64, w1: u64) -> (u64, u64) {
         if w0 == 0 || w1 == 0 || (w1 >> TAG_SHIFT) == TAG_BUSY || is_hot(w1) {
             return (w0, w1);

@@ -14,7 +14,7 @@ use crate::{Config, Filter, MAX_TICK};
 fn TestAlignment() {
     let t = T::new("TestAlignment");
     let f = new_test(1000, MINUTE);
-    let p = &f.words[0] as *const _ as usize;
+    let p = f.words.as_ptr() as usize;
     if p % 64 != 0 {
         fatalf!(t, "table not cache-line aligned: {p:#x}");
     }
@@ -189,7 +189,7 @@ fn TestFalsePositiveRate() {
             fp += 1;
         }
     }
-    let rate = fp as f64 / PROBES as f64;
+    let rate = f64::from(fp) / PROBES as f64;
     logf!(t, "FPR at capacity: {} ({fp}/{PROBES}), slots={}", go_e(rate, 2), f.slots());
     if rate > 1e-5 {
         fatalf!(t, "FPR {} too high", go_e(rate, 2));
@@ -301,7 +301,7 @@ fn TestConcurrentMixedRace() {
                             f.check_and_touch_at(h, f.ticks(ms(50)), now);
                         }
                         1 => {
-                            f.velocity_count_at(h, f.ticks(ms(50)), now);
+                            let _ = f.velocity_count_at(h, f.ticks(ms(50)), now);
                             f.check_and_touch_batch(&[h, h ^ 1, h ^ 2], f.ticks(ms(50)), now, &mut [false; 3]);
                         }
                         _ => {

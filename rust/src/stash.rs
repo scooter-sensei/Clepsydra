@@ -354,7 +354,7 @@ impl Core {
     /// events in the horizon if that has fewer than it. Whichever history is
     /// dropped, Lost counts it.
     pub(crate) fn stash_put(&self, id: u64, w0: u64, w1: u64, now: u64) {
-        self.stash_put_as(id, w0, w1, now, false)
+        self.stash_put_as(id, w0, w1, now, false);
     }
 
     /// stashPutAs is stashPut; wait marks the entry as waiting for a slot.

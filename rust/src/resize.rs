@@ -1,6 +1,8 @@
 //! resize.go: Resizable.
 
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::fmt;
+use std::sync::atomic::Ordering::SeqCst;
+use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 
 use crate::cuckoo::CLAIM_FULL;
 use crate::filter::{Config, Core};
@@ -29,6 +31,26 @@ pub struct Resizable {
     pub(crate) mu: Mutex<Resizing>,
 }
 
+impl fmt::Debug for Resizable {
+    /// Without waiting for the mutex, as `std::sync::Mutex`'s: a call that
+    /// holds it (a `Config::clock` that prints the filter) reads `<locked>`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let z = match self.mu.try_lock() {
+            Ok(z) => z,
+            Err(TryLockError::Poisoned(e)) => e.into_inner(),
+            Err(TryLockError::WouldBlock) => {
+                return f.debug_struct("Resizable").field("state", &format_args!("<locked>")).finish_non_exhaustive();
+            }
+        };
+        f.debug_struct("Resizable")
+            .field("slots", &z.cur.slots())
+            .field("in_transition", &z.old.is_some())
+            .field("until", &z.until)
+            .field("moved", &z.moved)
+            .finish_non_exhaustive()
+    }
+}
+
 /// What a Resizable's mutex guards.
 pub(crate) struct Resizing {
     pub(crate) cfg: Config,
@@ -40,6 +62,11 @@ pub(crate) struct Resizing {
 
 impl Resizable {
     /// NewResizable is `Filter::new` for a Resizable.
+    ///
+    /// # Errors
+    ///
+    /// As [`Filter::new`](crate::Filter::new), and for a `cfg` with hot
+    /// entries (`hot` >= 0), ConstantTime or Background.
     pub fn new(cfg: Config) -> std::result::Result<Resizable, Error> {
         if cfg.hot >= 0 {
             return Err(Error::new("temporalfilter: Resizable needs hot entries off (Config.Hot < 0)"));
@@ -52,10 +79,15 @@ impl Resizable {
     }
 
     pub(crate) fn guard(&self) -> MutexGuard<'_, Resizing> {
-        self.mu.lock().unwrap_or_else(|e| e.into_inner())
+        self.mu.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Resize starts a transition to a filter of the given Capacity at now.
+    ///
+    /// # Errors
+    ///
+    /// During a transition, and as [`Filter::new`](crate::Filter::new) for
+    /// the new Capacity.
     pub fn resize(&self, capacity: i64, now: u64) -> std::result::Result<(), Error> {
         let mut z = self.guard();
         z.settle(now);
@@ -72,6 +104,10 @@ impl Resizable {
     }
 
     /// TouchAt is `Filter::touch_at` across the transition.
+    ///
+    /// # Panics
+    ///
+    /// As [`Filter::touch_at`](crate::Filter::touch_at).
     pub fn touch_at(&self, h: u64, window: u64, now: u64) -> Result {
         let mut z = self.guard();
         z.settle(now);
@@ -79,10 +115,15 @@ impl Resizable {
             return z.cur.touch_at(h, window, now);
         }
         z.do_move(h, now);
-        sum_result(z.cur.touch_at(h, window, now), z.old.as_ref().expect("in a transition").count_at(h, window, now))
+        let r = z.cur.touch_at(h, window, now);
+        match &z.old {
+            Some(old) => sum_result(r, old.count_at(h, window, now)),
+            None => r,
+        }
     }
 
     /// CountAt is `Filter::count_at` across the transition.
+    #[must_use]
     pub fn count_at(&self, h: u64, window: u64, now: u64) -> Result {
         let mut z = self.guard();
         z.settle(now);
@@ -94,11 +135,13 @@ impl Resizable {
     }
 
     /// VelocityCountAt is CountAt's Count.
+    #[must_use]
     pub fn velocity_count_at(&self, h: u64, window: u64, now: u64) -> i64 {
         self.count_at(h, window, now).count
     }
 
     /// ContainsAt is `Filter::contains_at` across the transition.
+    #[must_use]
     pub fn contains_at(&self, h: u64, window: u64, now: u64) -> bool {
         let mut z = self.guard();
         z.settle(now);
@@ -106,6 +149,7 @@ impl Resizable {
     }
 
     /// Bytes is the memory both filters hold.
+    #[must_use]
     pub fn bytes(&self) -> i64 {
         let z = self.guard();
         let mut n = z.cur.bytes();
@@ -116,11 +160,12 @@ impl Resizable {
     }
 
     /// Evictions sums both filters'.
+    #[must_use]
     pub fn evictions(&self) -> u64 {
         let z = self.guard();
-        let mut n = z.cur.evictions.load(std::sync::atomic::Ordering::SeqCst);
+        let mut n = z.cur.evictions.load(SeqCst);
         if let Some(old) = &z.old {
-            n += old.evictions.load(std::sync::atomic::Ordering::SeqCst);
+            n += old.evictions.load(SeqCst);
         }
         n
     }
@@ -142,7 +187,9 @@ impl Resizing {
     /// never holds a key the old table holds live.
     pub(crate) fn do_move(&mut self, h: u64, now: u64) {
         let (fp, tg) = (fingerprint(h), tag(h));
-        let (f, o) = (&self.cur, self.old.as_ref().expect("in a transition"));
+        let (f, Some(o)) = (&self.cur, self.old.as_ref()) else {
+            return; // no transition
+        };
         if f.lookup_stable(h, fp, tg, false).0 >= 0 {
             return;
         }

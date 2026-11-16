@@ -16,7 +16,7 @@ impl<T, L: FnMut(&T, &T) -> bool> D<'_, T, L> {
     }
     #[inline]
     fn swap(&mut self, i: i64, j: i64) {
-        self.v.swap(i as usize, j as usize)
+        self.v.swap(i as usize, j as usize);
     }
 
     fn insertion_sort(&mut self, a: i64, b: i64) {

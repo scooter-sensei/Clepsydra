@@ -118,7 +118,7 @@ fn TestAnswerDigest() {
             } else if k < 90 {
                 put("contains", &f.contains_at(h, w, now).to_string());
             } else if k < 95 {
-                for b in batch.iter_mut() {
+                for b in &mut batch {
                     *b = repeat[r.int_n(repeat.len() as i64) as usize];
                     if r.int_n(3) == 0 {
                         oneoff += 1;
@@ -128,7 +128,7 @@ fn TestAnswerDigest() {
                 f.check_and_touch_batch(&batch, w, now, &mut out);
                 put("cbatch", &gov(&out));
             } else {
-                for b in batch.iter_mut() {
+                for b in &mut batch {
                     *b = repeat[r.int_n(repeat.len() as i64) as usize];
                 }
                 f.touch_and_count_batch(&batch, w, now, &mut out, &mut counts);
@@ -175,7 +175,7 @@ fn TestAnswerDigest() {
         }
         let mut line = format!("cell mode={:?} seed={} repeat={} spill1={} cms={}", c.mode, c.seed, c.repeat, c.spill1, c.cms);
         for k in ["check", "touch", "count", "contains", "cbatch", "tcbatch", "decay", "end"] {
-            line += &format!(" {k}={:016x}", hs.get(k).map_or(0, |h| h.sum64()));
+            line += &format!(" {k}={:016x}", hs.get(k).map_or(0, Fnv64a::sum64));
         }
         line += &format!(
             " (evictions {}, folded {}, floored {}, promoted {}, waited {}, seen checks with overflow live {live_seen_checks})",

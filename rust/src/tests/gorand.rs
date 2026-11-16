@@ -3,14 +3,14 @@
 //! the scorecard's workloads) replay here exactly as there.
 
 // The ziggurat's constants, digit for digit as Go's source spells them.
-#![allow(clippy::excessive_precision)]
+#![allow(clippy::excessive_precision, reason = "Go's constants, digit for digit")]
 
 use super::goexp::{EXP_FE, EXP_KE, EXP_WE};
 
 /// `bits.Mul64`: (hi, lo) of a * b. (Here, not from the library: tools/tfbench.rs
 /// includes this file too.)
 fn mul64(a: u64, b: u64) -> (u64, u64) {
-    let p = a as u128 * b as u128;
+    let p = u128::from(a) * u128::from(b);
     ((p >> 64) as u64, p as u64)
 }
 
@@ -34,7 +34,7 @@ impl Pcg {
         let (mut h, l) = mul64(self.lo, MUL_LO);
         h = h.wrapping_add(self.hi.wrapping_mul(MUL_LO)).wrapping_add(self.lo.wrapping_mul(MUL_HI));
         let (nl, c) = l.overflowing_add(INC_LO);
-        h = h.wrapping_add(INC_HI).wrapping_add(c as u64);
+        h = h.wrapping_add(INC_HI).wrapping_add(u64::from(c));
         (self.lo, self.hi) = (nl, h);
         (h, nl)
     }
@@ -55,7 +55,7 @@ pub(crate) struct Rand {
     src: Pcg,
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, reason = "Go's Rand, ported whole: the suite and tfbench each use a part")]
 impl Rand {
     pub(crate) fn new(seed1: u64, seed2: u64) -> Rand {
         Rand { src: Pcg::new(seed1, seed2) }
@@ -116,7 +116,7 @@ impl Rand {
             let u = self.uint64();
             let j = u as u32;
             let i = ((u >> 32) as u8) as usize;
-            let x = j as f64 * EXP_WE[i] as f64;
+            let x = f64::from(j) * f64::from(EXP_WE[i]);
             if j < EXP_KE[i] {
                 return x;
             }

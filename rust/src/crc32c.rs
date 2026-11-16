@@ -23,7 +23,7 @@ static TABLE: [u32; 256] = make_table();
 pub(crate) fn update(crc: u32, p: &[u8]) -> u32 {
     let mut c = !crc;
     for &b in p {
-        c = TABLE[((c ^ b as u32) & 0xff) as usize] ^ (c >> 8);
+        c = TABLE[((c ^ u32::from(b)) & 0xff) as usize] ^ (c >> 8);
     }
     !c
 }

@@ -18,7 +18,6 @@ pub(crate) struct Hook<A: 'static = ()> {
     f: Mutex<Option<HookFn<A>>>,
 }
 
-#[allow(dead_code)] // set and clear: the tests'
 impl<A: 'static> Hook<A> {
     pub(crate) const fn new() -> Self {
         Hook { on: AtomicBool::new(false), f: Mutex::new(None) }
@@ -32,32 +31,28 @@ impl<A: 'static> Hook<A> {
         }
     }
 
-    /// `testHookX != nil`.
-    #[inline(always)]
-    pub(crate) fn is_set(&self) -> bool {
-        self.on.load(Ordering::Relaxed)
-    }
-
     #[cold]
     fn call(&self, a: A) {
         // The hook is taken out of the lock before it runs: a hook may clear
         // or replace itself, and may run the code that runs it.
-        let f = self.f.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let f = self.f.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
         if let Some(f) = f {
             f(a);
         }
     }
 
     /// `testHookX = f`.
+    #[cfg(test)]
     pub(crate) fn set(&self, f: impl Fn(A) + Send + Sync + 'static) {
-        *self.f.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(f));
+        *self.f.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Arc::new(f));
         self.on.store(true, Ordering::SeqCst);
     }
 
     /// `testHookX = nil`.
+    #[cfg(test)]
     pub(crate) fn clear(&self) {
         self.on.store(false, Ordering::SeqCst);
-        *self.f.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *self.f.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
     }
 }
 

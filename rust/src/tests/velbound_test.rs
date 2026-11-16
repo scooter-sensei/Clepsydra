@@ -121,7 +121,7 @@ fn TestVelocityBound() {
 /// Binomial(events, share) instead of its mean) and onset (the newest
 /// bucket's events lie from its onset, as estimate reads it). mad is the
 /// expected |error| of that median under the uniform model.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments, reason = "a helper of the Go test, parameter for parameter")]
 fn reg_estimate(f: &Filter, v: &View, last: u64, now: u64, window: u64, anchor: bool, median: bool, onset: bool) -> (f64, f64) {
     let window = window.min(f.horizon);
     let e = v.e;

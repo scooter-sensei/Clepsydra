@@ -647,3 +647,54 @@ run of the probe on W4d's tree, 0 of 320,000 keys in two runs, came before
 it and is not the reading).** W4c's clauses 1-9 read again on W4d's tree,
 and: `TestDripPushOnce` 0 of 160,000 keys in 5,000 rounds, and 0 in 500
 rounds under `-race`.
+
+## W5d: the wrap's other entry points, and its untested corners
+
+The same review found W5c's evidence thinner than its verdict: the digest
+runs span ~4,400 ticks, under one horizon, so nothing expired across a wrap;
+no concurrent run met a wrap (the fuzzer's clock starts below 2^30); and
+`ContinuousDecay`, `ReadFrom` and `Merge` never called the deadline check.
+`ContinuousDecay` can lap the table after a suspend longer than a wrap and
+advance `doneAt` past entries it decoded as young; `ReadFrom` left `doneAt`
+at the new filter's own tick, so a snapshot restored a wrap later read its
+keys against the wrong span. **W5c's verdict ("answers as the full one") is
+narrowed to what it read: a run of under one horizon crossing a wrap.**
+
+**W5d** (branch `lab/sw-w5b` at 9db48f9, rebased onto W4d): `ContinuousDecay`
+calls the check first; `ReadFrom` sets `doneAt` and `lastNow` from the
+restored cursor (the writer's own ticks); `Merge` still reads both filters
+against the later of their recent ticks, and is documented as needing
+filters within 2^31 ticks of each other. Tests: `TestWrapDeadlineEntries`
+(a ticker that laps an 8-key table a wrap after a touch; a snapshot
+restored a moment and a wrap later), `TestWrapCatchUpStall` (reported), a
+fast clock for `TestWrapTranslateDiverge` (`TF_TICK_SPEED`), clock bases for
+the soak and the fuzzer and the fuzzer's idle jumps past 2^31
+(`TF_STRESS_CLOCK_BASE`, `TF_CFUZZ_CLOCK_BASE`, `TF_CFUZZ_JUMP=1`). Before
+this rule: each subtest of `TestWrapDeadlineEntries` fails with its mend
+undone (the ticker's key reads Count 3 a wrap later; the snapshot's reads
+Seen) and passes with it.
+
+**Rule (written after the review, before W5d's reading).** W5d holds if:
+
+1. the default build's `tfbench -exact` and answer digest equal
+   `verify/expected/`'s;
+2. with `tfdrip`, the answer digest with Count equals W4d's, and `tfbench
+   -exact` equals W4d's but for the churn rows' relocation and eviction
+   counts, within 1%;
+3. the 30-cell digest at the three W5b offsets equals the digest at
+   1,200,000 byte for byte;
+4. the lockstep with a fast clock (`TF_TICK_SPEED=30`: ~5.8 M ticks, ~100
+   horizons, keys expiring and swept throughout) from a base of 1,200,000
+   against offsets 17,175,600,000, 34,355,520,000, 51,535,320,000,
+   85,895,040,000 and 120,254,880,000 (each crossing a multiple of 2^34
+   ~4.2 M ticks in) finds no difference in any slot or answer in 400,000
+   operations;
+5. `TestWrapAlias` and `TestWrapDeadlineEntries` pass;
+6. the suites with `tfdrip`, in four modes, fail exactly W4d's tests;
+7. under `-race`, 5 minutes each: the soak with its clock from 2^34 -
+   10,000,000 (it crosses 2^34 after ~3.3 minutes) and the concurrent fuzzer
+   from 2^34 - 2^29 with idle jumps past 2^31 pass.
+
+Reported, not judged: the largest call (a catch-up of a 1M-key table
+after idle gaps of 2^31+1 and 3x2^31 ticks), and speed against W4d's
+`tfdrip` build and the default.

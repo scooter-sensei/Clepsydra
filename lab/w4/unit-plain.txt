@@ -1,0 +1,248 @@
+heavy hitter: 74319 queries, 0 Saturated, 0 unflagged with Upper < exact, 297 unflagged with Count >10% low
+upper bound: 18382 queries, 0 Saturated, 0 unflagged with Upper < exact; unflagged Upper exceeds exact by 16.7% of events
+--- FAIL: TestConformance (0.02s)
+    --- FAIL: TestConformance/basic (0.00s)
+        conformance_test.go:313: op 60 {Op:touch Key:user:1 WindowMs:250 NowMs:12363 Want:{Seen:false Count:2 Upper:4 Saturated:false Restored:false Degraded:false}}: got {Seen:false Count:1 Upper:4 Saturated:false Restored:false Degraded:false}
+        conformance_test.go:313: op 76 {Op:touch Key:user:7 WindowMs:1000 NowMs:15526 Want:{Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+        conformance_test.go:313: op 94 {Op:touch Key:user:0 WindowMs:1000 NowMs:19324 Want:{Seen:false Count:2 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+        conformance_test.go:313: op 141 {Op:touch Key:user:9 WindowMs:1000 NowMs:27851 Want:{Seen:false Count:2 Upper:3 Saturated:false Restored:false Degraded:false}}: got {Seen:false Count:1 Upper:3 Saturated:false Restored:false Degraded:false}
+        conformance_test.go:313: op 147 {Op:touch Key:user:9 WindowMs:1000 NowMs:28971 Want:{Seen:false Count:2 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+        conformance_test.go:318: ... 11 ops differ in all
+--- FAIL: TestMerge (1.04s)
+    merge_test.go:83: checkpoints 47, comparisons 470000; Upper < exact flagged Saturated 12
+    merge_test.go:94: window  1s  MAE merged 0.2245  single 0.0683
+    merge_test.go:96: window 1s: merged count error 50202 over 1.5x the single filter's 15271
+    merge_test.go:94: window  5s  MAE merged 0.0014  single 0.0014
+    merge_test.go:94: window 15s  MAE merged 0.0188  single 0.0189
+    merge_test.go:94: window 30s  MAE merged 0.0408  single 0.0408
+    merge_test.go:94: window 60s  MAE merged 0.0233  single 0.0233
+    merge_test.go:110: absent probes 1e6: false Seen merged 0, single 0
+--- FAIL: TestUnitOfMatchesDivision (0.01s)
+    register_test.go:101: temporalfilter: Horizon too large for Resolution (MaxTick ticks or more)
+--- FAIL: TestCountsLastTouchWhole (0.00s)
+    register_test.go:128: window 200 ms: Count 1, want 2 ({Seen:true Count:1 Upper:11 Saturated:false Restored:false Degraded:false})
+--- FAIL: TestResize (7.15s)
+    resize_test.go:119: grow 2560 -> 4096: checkpoints 36 (13 in transition); evictions resized 0, reference 0; moved 1918
+    resize_test.go:121: grow: count error ratio resized/reference at 1s 5s 15s 30s 60s: 2.2101 1.0000 1.0000 1.0000 1.0000
+    resize_test.go:123: grow: Seen differs 0; Upper < exact: resized unflagged 0 (in transition 0, after 0; flagged 7), reference unflagged 0; false Seen of 100,000 absent keys in transition 0, reference 0
+    resize_test.go:136: grow: count error at 1000 ms 2.2101x the reference's
+    resize_test.go:119: shrink 8192 -> 4096: checkpoints 36 (13 in transition); evictions resized 0, reference 0; moved 1918
+    resize_test.go:121: shrink: count error ratio resized/reference at 1s 5s 15s 30s 60s: 2.2101 1.0000 1.0000 1.0000 1.0000
+    resize_test.go:123: shrink: Seen differs 0; Upper < exact: resized unflagged 0 (in transition 0, after 0; flagged 7), reference unflagged 0; false Seen of 100,000 absent keys in transition 0, reference 0
+    resize_test.go:136: shrink: count error at 1000 ms 2.2101x the reference's
+    resize_test.go:119: shrink, evicting 4096 -> 1280: checkpoints 36 (13 in transition); evictions resized 8556, reference 21641; moved 1918
+    resize_test.go:121: shrink, evicting: count error ratio resized/reference at 1s 5s 15s 30s 60s: 1.1472 0.9978 0.9655 0.9473 0.8509
+    resize_test.go:123: shrink, evicting: Seen differs 0; Upper < exact: resized unflagged 22895 (in transition 4254, after 18641; flagged 5040), reference unflagged 31364; false Seen of 100,000 absent keys in transition 23, reference 17
+    resize_test.go:136: shrink, evicting: count error at 1000 ms 1.1472x the reference's
+    resize_test.go:119: grow from an evicting filter 1280 -> 1792: checkpoints 36 (13 in transition); evictions resized 0, reference 0; moved 1494
+    resize_test.go:121: grow from an evicting filter: count error ratio resized/reference at 1s 5s 15s 30s 60s: 2.5516 4.7666 1.2242 1.0927 1.2595
+    resize_test.go:123: grow from an evicting filter: Seen differs 0; Upper < exact: resized unflagged 4412 (in transition 4412, after 0; flagged 1077), reference unflagged 0; false Seen of 100,000 absent keys in transition 0, reference 0
+--- FAIL: TestSlotUnitRaces (0.00s)
+    --- FAIL: TestSlotUnitRaces/stamp (0.00s)
+        --- FAIL: TestSlotUnitRaces/stamp/cas2 (0.00s)
+            slotunit_race_test.go:163: after the race:
+                slots 1 words 0x66003ffc0001d268 0x3210001400800002
+                  at 119400 window   500: {Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  1000: {Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  2500: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  5000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 15000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 30000: {Seen:true Count:3 Upper:3 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 60000: {Seen:true Count:43 Upper:43 Saturated:false Restored:false Degraded:false}
+                  at 121900 window   500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  1000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  2500: {Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  5000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 15000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 30000: {Seen:true Count:2 Upper:3 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 60000: {Seen:true Count:39 Upper:43 Saturated:false Restored:false Degraded:false}
+                  at 144400 window   500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  1000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  2500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  5000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 15000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 30000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 60000: {Seen:true Count:3 Upper:3 Saturated:false Restored:false Degraded:false}
+                  promoted 1 demoted 1
+                sequential:
+                slots 1 words 0x66003ff80001d268 0x3210001400800002
+                  at 119400 window   500: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  1000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  2500: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  5000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 15000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 30000: {Seen:true Count:3 Upper:3 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 60000: {Seen:true Count:43 Upper:43 Saturated:false Restored:false Degraded:false}
+                  at 121900 window   500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  1000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  2500: {Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  5000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 15000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 30000: {Seen:true Count:2 Upper:3 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 60000: {Seen:true Count:39 Upper:43 Saturated:false Restored:false Degraded:false}
+                  at 144400 window   500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  1000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  2500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  5000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 15000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 30000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 60000: {Seen:true Count:3 Upper:3 Saturated:false Restored:false Degraded:false}
+                  promoted 1 demoted 1
+        --- FAIL: TestSlotUnitRaces/stamp/hold (0.00s)
+            slotunit_race_test.go:163: after the race:
+                slots 1 words 0x66003ffc0001d268 0x3210001400800002
+                  at 119400 window   500: {Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  1000: {Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  2500: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  5000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 15000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 30000: {Seen:true Count:3 Upper:3 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 60000: {Seen:true Count:43 Upper:43 Saturated:false Restored:false Degraded:false}
+                  at 121900 window   500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  1000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  2500: {Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  5000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 15000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 30000: {Seen:true Count:2 Upper:3 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 60000: {Seen:true Count:39 Upper:43 Saturated:false Restored:false Degraded:false}
+                  at 144400 window   500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  1000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  2500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  5000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 15000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 30000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 60000: {Seen:true Count:3 Upper:3 Saturated:false Restored:false Degraded:false}
+                  promoted 1 demoted 1
+                sequential:
+                slots 1 words 0x66003ff80001d268 0x3210001400800002
+                  at 119400 window   500: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  1000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  2500: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  5000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 15000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 30000: {Seen:true Count:3 Upper:3 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 60000: {Seen:true Count:43 Upper:43 Saturated:false Restored:false Degraded:false}
+                  at 121900 window   500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  1000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  2500: {Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  5000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 15000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 30000: {Seen:true Count:2 Upper:3 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 60000: {Seen:true Count:39 Upper:43 Saturated:false Restored:false Degraded:false}
+                  at 144400 window   500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  1000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  2500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  5000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 15000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 30000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 60000: {Seen:true Count:3 Upper:3 Saturated:false Restored:false Degraded:false}
+                  promoted 1 demoted 1
+    --- FAIL: TestSlotUnitRaces/unpoint (0.00s)
+        --- FAIL: TestSlotUnitRaces/unpoint/cas2 (0.00s)
+            slotunit_race_test.go:198: after the race:
+                slots 1 words 0x66003ffc0001d268 0x3210000000000002
+                  at 119400 window   500: {Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  1000: {Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  2500: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  5000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 15000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 30000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 60000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window   500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  1000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  2500: {Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  5000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 15000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 30000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 60000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 144400 window   500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  1000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  2500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  5000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 15000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 30000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 60000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  promoted 1 demoted 0
+                sequential:
+                slots 1 words 0x66003ff80001d268 0x3210000000000002
+                  at 119400 window   500: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  1000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  2500: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  5000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 15000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 30000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 60000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window   500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  1000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  2500: {Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  5000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 15000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 30000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 60000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 144400 window   500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  1000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  2500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  5000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 15000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 30000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 60000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  promoted 1 demoted 0
+        --- FAIL: TestSlotUnitRaces/unpoint/hold (0.00s)
+            slotunit_race_test.go:198: after the race:
+                slots 1 words 0x66003ffc0001d268 0x3210000000000002
+                  at 119400 window   500: {Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  1000: {Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  2500: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  5000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 15000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 30000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 60000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window   500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  1000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  2500: {Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  5000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 15000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 30000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 60000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 144400 window   500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  1000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  2500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  5000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 15000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 30000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 60000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  promoted 1 demoted 0
+                sequential:
+                slots 1 words 0x66003ff80001d268 0x3210000000000002
+                  at 119400 window   500: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  1000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  2500: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window  5000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 15000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 30000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 119400 window 60000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window   500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  1000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  2500: {Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window  5000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 15000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 30000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 121900 window 60000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 144400 window   500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  1000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  2500: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window  5000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 15000: {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 30000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  at 144400 window 60000: {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+                  promoted 1 demoted 0
+FAIL
+FAIL	github.com/scooter-sensei/clepsydra/go	45.067s
+?   	github.com/scooter-sensei/clepsydra/go/cmd/h2h	[no test files]
+?   	github.com/scooter-sensei/clepsydra/go/cmd/tfbench	[no test files]
+?   	github.com/scooter-sensei/clepsydra/go/internal/cpu	[no test files]
+ok  	github.com/scooter-sensei/clepsydra/go/internal/ecm	2.095s
+ok  	github.com/scooter-sensei/clepsydra/go/internal/registersim	0.004s
+ok  	github.com/scooter-sensei/clepsydra/go/internal/siphash	0.115s
+?   	github.com/scooter-sensei/clepsydra/go/internal/workload	[no test files]
+FAIL

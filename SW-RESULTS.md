@@ -229,3 +229,100 @@ what they read today.
    without the log;
 6. speed is reported, not judged (hits, counts, misses; 3 interleaved
    rounds in one binary on the WSL2 guest: indicative only).
+
+### W4's reading (b8739a9's tree; `lab/w4.sh`, outputs in `lab/w4/`)
+
+1. **Holds.** The default build's `tfbench -exact` is byte-identical to
+   `verify/expected/exact.txt`, and its answer digest to
+   `verify/expected/answer-digest.txt`.
+2. **Holds.** With `tfdrip`, `tfbench -exact` reads velocity 0.0535 /
+   0.0477 / 0.0505 / 0.0435 / 0.0239, **mean 0.0438** (default 0.1671 /
+   0.0503 / 0.0506 / 0.0435 / 0.0239, 0.0671); on the held-out seed 1 s
+   0.0525, mean 0.0433 (default 0.1663, 0.0666). The model reads 0.0522 /
+   0.0474 / 0.0505 / 0.0435 / 0.0239 (0.0435): the filter is within 0.0013
+   at 1 s, 0.0003 at 5 s, equal beyond (a field of 13 events in one
+   quantum says nothing on the filter, and not in the model). On W3's other
+   workloads: half 0.0448 (model 0.0446), double 0.0449 (0.0445), log-uniform
+   0.0363 (0.0363). No window above the default build's.
+3. **Holds.** Without Count, the 30 cells' digests are identical.
+4. **Holds.** `Upper` below the truth: 0 in both tests, both builds; Count
+   more than 10% low (heavy hitter) 299 → 297; Upper's excess unchanged
+   (17.3% of events).
+5. **Fails.** With `tfdrip`, the plain and `TF_NOCAS2=1` suites fail 6
+   tests, ConstantTime and Background 4 (Merge and Resize skip there):
+   `TestConformance` and `TestUnitOfMatchesDivision` (a Horizon of `MaxTick`
+   ticks) for the reasons named; and four that were not named:
+   - `TestSlotUnitRaces` (stamp and unpoint, both modes): Count at 0.5 and
+     1 s reads 1 where the sequential order reads 2. A touch D pushes its
+     event into the log at its own tick (its word0 CAS), and counts it in
+     the register afterwards; when another touch A moves word0 into a later
+     unit in between, the register counts D at A's unit ("behind the last
+     touch, counted at it"), while the log keeps D at its own tick, which
+     A's push of a 13-quantum gap then rolls off. The log is right in time
+     and wrong against the register, and the estimator trusts both. The
+     sequential order, D's touch after A's, pushes D as a gap of 0.
+   - `TestCountsLastTouchWhole`: eleven touches 200 ms apart, read at the
+     last one with a 200 ms window: 1, not 2. The event exactly on the
+     window's edge is placed to its 156 ms quantum and counted 0.48 of an
+     event; the register's uniform spread put it exactly there. The same
+     cause moves `tfbench -exact`'s steady 1 s lines (periodic touches read
+     at a touch's instant, the window a multiple of the period) from 1.000
+     to min 0.500-1.000, max up to 1.143; their 5-60 s lines and every burst
+     line are unchanged.
+   - `TestResize` (1 s count error 2.2x the reference's): a resize's move
+     installs the key's word0 without its log, so moved keys read as today.
+   - `TestMerge` (1 s count error 3.3x the single filter's, bar 1.5x): a
+     summed history's log says nothing, so the merged filter reads as
+     today while the single filter it is held to reads with its log.
+
+   The soak and the concurrent fuzzer under `-race`: below.
+
+**Verdict: W4 fails its rule** on clause 5. The velocity result stands as a
+reading of the filter (clause 2), but the arm as built answers a
+deterministic race inconsistently and loses its log in resizes.
+
+## W4b: the drip log, mended
+
+**Mends** (written after W4's reading, as is this rule):
+
+- an event the register counts at a later unit than its own (a caller
+  whose clock lags across a unit boundary) makes the log say nothing:
+  `next0` for a touch behind the last touch in an earlier unit, and the
+  touch itself after its count when the count landed at a later unit than
+  its tick's (the race above), by a CAS of word0's log to 0;
+- a resize's move carries the log with the last touch.
+
+**Rule (written after W4's reading, before W4b's).** W4's clauses 1-4 and
+6, read again on W4b's tree; clause 5 with `TestSlotUnitRaces` and
+`TestResize` required to pass, and these failures allowed, named now:
+`TestConformance` (pinned Counts), `TestUnitOfMatchesDivision` (`MaxTick`),
+`TestCountsLastTouchWhole` (an event exactly on the window's edge, read at
+a touch's instant), and `TestMerge`'s 1 s count bar alone (summed histories'
+logs say nothing; every other assertion of it must hold); the soak and the
+concurrent fuzzer under `-race`, 5 minutes each, clean. And a new clause:
+
+7. periodic traffic at random instants: a fifth W3 workload, 2,000 keys
+   each touched with a fixed period log-uniform in 0.1-20 s from a random
+   phase, queried as the velocity workload is (a random key and window
+   every tick). The `tfdrip` filter's mean at most the default build's on
+   it, and no window above 1.01x the default build's.
+
+Readings added to W4b before its run, reported and not judged:
+
+8. sustained traffic with bursts inside it (5/s Poisson per key, and 15
+   events in 200 ms every ~10 s): the only workload read so far whose
+   bursts are not followed by silence, so the only one where a field that
+   says nothing (13 events in a quantum) stays so for long; both builds and
+   the model;
+9. target 8: `TestRow8` (batched throughput at 90% load) on both builds.
+
+(W4, clause 5, continued: the soak under `-race`, 24 workers for 5 minutes:
+50,284,465 operations, 15,087,970 counts checked, 0 low; the concurrent
+fuzzer under `-race`, 102 cases in 5 minutes: 71,842,707 operations,
+18,644,436 answers checked, 0 off for a key whose identity another shares.
+Both pass; W4's verdict stands on the four unnamed failures above.)
+
+(W4b, reading 9: `TestRow8` is not in the tree, only in
+`go/verify/experiments/row8-batch-f298a7a.patch`; target 8 is read instead
+with `BenchmarkCheckAndTouchBatch` and `BenchmarkTouchAndCount` on both
+builds, 3 interleaved rounds. Noted before the run.)

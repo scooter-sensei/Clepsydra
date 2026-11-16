@@ -1,0 +1,10 @@
+=== RUN   TestShortWindowEncodings
+    swenc_test.go:215: normalized MAE per window (1 5 15 30 60 s) and mean on (9,9); 1 s and mean on the held-out (3,7); rule: B <= 15, mean <= 0.050 on both, no window over 1.01x the filter's
+    swenc_test.go:216: model                                bits |      1s      5s     15s     30s     60s    mean |     1s'   mean' | rule
+    swenc_test.go:246: register +on4                           0 |  0.1671  0.0503  0.0506  0.0435  0.0239  0.0671 |  0.1663  0.0666 | 
+    swenc_test.go:246: W2b B12 rice0 r=u/16                   12 |  0.0522  0.0474  0.0505  0.0435  0.0239  0.0435 |  0.0510  0.0429 | PASS
+    swenc_test.go:250: best worse-seed means per budget:
+    swenc_test.go:255:   B12  0.0435 W2b B12 rice0 r=u/16 pass=true
+--- PASS: TestShortWindowEncodings (3.26s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	3.272s

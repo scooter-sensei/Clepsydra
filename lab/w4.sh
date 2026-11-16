@@ -3,7 +3,7 @@
 set -u
 export PATH=$HOME/sdk/go1.24.7/bin:$HOME/go/bin:$HOME/bin:/usr/local/bin:/usr/bin:/bin
 export GOTOOLCHAIN=local CGO_ENABLED=0
-O=$HOME/lab-sw-out/w4
+O=${O:-$HOME/lab-sw-out/w4}
 mkdir -p $O
 cd $HOME/lab-sw/go || exit 1
 log() { echo "[$(date +%T)] $*" | tee -a $O/progress.txt; }
@@ -75,3 +75,21 @@ if [ $step = all ] || [ $step = 6 ]; then
 	log "6 done"
 fi
 log "W4 readings finished ($step)"
+
+if [ $step = all ] || [ $step = 7 ]; then
+	log "7/8: periodic and sustained workloads, both builds"
+	TF_EXP=1 TF_SW_WORKLOADS=periodic,sustained go test -count=1 -run '^TestShortWindowRobust$' -v . >$O/robust-default.txt 2>&1
+	TF_EXP=1 TF_SW_WORKLOADS=periodic,sustained go test -tags tfdrip -count=1 -run '^TestShortWindowRobust$' -v . >$O/robust-drip.txt 2>&1
+	log "7/8: $(grep -h 'workload' $O/robust-default.txt $O/robust-drip.txt | sed 's/^ *swenc_test.go:[0-9]*: //' | tr '\n' ';')"
+fi
+
+if [ $step = all ] || [ $step = 9 ]; then
+	log "9: batched throughput (3 interleaved rounds)"
+	go test -c -o $O/def.test . && go test -tags tfdrip -c -o $O/drip.test .
+	for r in 1 2 3; do
+		for b in def drip; do
+			$O/$b.test -test.run '^$' -test.bench '^Benchmark(CheckAndTouchBatch|TouchAndCount)$' -test.benchtime 1s >>$O/batch-$b.txt 2>&1
+		done
+	done
+	log "9 done"
+fi

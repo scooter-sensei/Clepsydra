@@ -1,0 +1,24 @@
+[07:41:49] 1: default build unchanged
+[07:42:08] 1a exact: IDENTICAL
+[07:43:19] 1b digest: IDENTICAL
+[07:43:19] W4 readings finished (1)
+[07:43:19] 2: tfdrip velocity
+[07:43:39] 2a tfbench -exact lines that differ: 13
+[07:44:05] 2b done
+[07:44:05] W4 readings finished (2)
+[07:44:05] 3: digest without Count
+[07:46:20] 3: IDENTICAL (30 cells)
+[07:46:20] W4 readings finished (3)
+[07:46:20] 4: Upper never below the truth
+[07:46:25] 4: --- PASS: TestAttackHeavyHitter (3.08s) --- PASS: TestUpperBoundRandom (1.19s) ok  	github.com/scooter-sensei/clepsydra/go	4.278s 
+[07:46:25] W4 readings finished (4)
+[07:46:32] 5: suites with tfdrip
+[07:47:19] 5 unit plain: 6 failing: TestConformance TestMerge TestUnitOfMatchesDivision TestCountsLastTouchWhole TestResize TestSlotUnitRaces 
+[07:47:46] 5 unit TF_CT=1: 4 failing: TestConformance TestUnitOfMatchesDivision TestCountsLastTouchWhole TestSlotUnitRaces 
+[07:48:08] 5 unit TF_BG=1: 4 failing: TestConformance TestUnitOfMatchesDivision TestCountsLastTouchWhole TestSlotUnitRaces 
+[07:48:54] 5 unit TF_NOCAS2=1: 6 failing: TestConformance TestMerge TestUnitOfMatchesDivision TestCountsLastTouchWhole TestResize TestSlotUnitRaces 
+[07:48:54] 5 slotunit: FAIL
+[07:48:58] 5 slotunit race: FAIL
+[07:54:00] 5 soak race: ok  	github.com/scooter-sensei/clepsydra/go	301.037s
+[07:59:10] 5 cfuzz race: ok  	github.com/scooter-sensei/clepsydra/go	308.908s
+[07:59:10] W4 readings finished (5)

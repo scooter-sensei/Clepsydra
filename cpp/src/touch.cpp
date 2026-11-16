@@ -139,25 +139,23 @@ Result Core::touch(u64 h, u64 window, u64 now, bool wantCount, i64 i0) {
     if (ct) return touchCT(h, window, now, wantCount);
   }
   u64 fp = fingerprint(h), tg = tag(h);
-  PaddedMutex* held = nullptr;  // ConstantTime: h's stripe, while held
+  // The stripes are unlocked by hand where the reference unlocks them; the
+  // guards release them only when a lazy table's allocation throws meanwhile
+  // (std::bad_alloc, fatal in Go).
+  std::unique_lock<PaddedMutex> held;  // ConstantTime: h's stripe, while held
   for (bool first = true;; first = false) {
-    if (held) {  // released between attempts
-      held->unlock();
-      held = nullptr;
-    }
+    if (held) held.unlock();  // released between attempts
     i64 i = -1;
     u64 fpd = 0;  // what the lookup matched in the slot (word0>>47)
     if (inside) {
-      held = &claimMu[h >> (64 - claimStripeBits)];
-      held->lock();
+      held = std::unique_lock<PaddedMutex>(claimMu[h >> (64 - claimStripeBits)]);
       u64 w0, w1;
       i = lookupStable(h, fp, tg, true, w0, w1);
       Found s = recall(h, fp, tg, now, true);
       if (i < 0) {
         Result r = miss(h, fp, tg, window, now, wantCount, s.w0, s.w1, s.src);
         if (r.Count < 0) continue;
-        held->unlock();
-        held = nullptr;
+        held.unlock();
         if (sketchLive(now)) addSketch(r, h, window, now);
         return r;
       }
@@ -176,8 +174,7 @@ Result Core::touch(u64 h, u64 window, u64 now, bool wantCount, i64 i0) {
       // Miss: serialize first touches of the same key. A tick past MaxTick
       // throws before the lock.
       checkTick(now);
-      PaddedMutex& mu = claimMu[h >> (64 - claimStripeBits)];
-      mu.lock();
+      std::unique_lock<PaddedMutex> mu(claimMu[h >> (64 - claimStripeBits)]);
       MoveCount& m = moveOf(tg);
       u64 b = m.begun.load(), d = m.done.load();
       u64 w0, w1;
@@ -235,10 +232,7 @@ Result Core::touch(u64 h, u64 window, u64 now, bool wantCount, i64 i0) {
     Result r;
     if (wantCount) r = estimateAt(h, w1, std::max(now, ref), now, window, sat);
     r.Seen = !stale && age(now, last) <= window;
-    if (held) {
-      held->unlock();
-      held = nullptr;
-    }
+    if (held) held.unlock();
     // CheckAndTouch asks only for Seen, which addSketch can set but never
     // clear: a hit already Seen skips the overflow read.
     if (sketchLive(now) && (wantCount || !r.Seen || ct)) addSketch(r, h, window, now);

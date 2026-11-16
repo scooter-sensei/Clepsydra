@@ -27,8 +27,10 @@
 #include <memory>
 #include <mutex>
 #include <new>
+#include <stdexcept>
 #include <thread>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -248,12 +250,18 @@ bool demotable(const View& v, i64 u);
 
 // AlignedBuf is the reference's alignedWords: an array of T aligned to a
 // cache line, every element value-initialized (zero), which also takes the
-// pages' faults at allocation (the reference's prefault).
+// pages' faults at allocation (the reference's prefault). A size whose bytes
+// overflow std::size_t throws std::length_error, as std::vector's does (Go's
+// make panics); the elements' construction can't throw.
 template <class T>
 class AlignedBuf {
+  static_assert(std::is_nothrow_default_constructible_v<T>);
+
  public:
   AlignedBuf() = default;
   explicit AlignedBuf(std::size_t n) : n_(n) {
+    if (n > std::numeric_limits<std::size_t>::max() / sizeof(T))
+      throw std::length_error("temporalfilter: table larger than the address space");
     p_ = static_cast<T*>(::operator new(std::max<std::size_t>(n, 1) * sizeof(T), std::align_val_t{64}));
     for (std::size_t i = 0; i < n; i++) new (p_ + i) T();
   }
@@ -338,7 +346,10 @@ static_assert(sizeof(HotEntry) == 64);
 struct Core;
 
 struct HotTable {
-  explicit HotTable(std::size_t n) : e(n) {}
+  // The free list never holds more than the table's entries: reserved up
+  // front, putFree never allocates, so a slot drop (a sweep, a relocation)
+  // can't throw between beginning and ending its move.
+  explicit HotTable(std::size_t n) : e(n) { free.reserve(n); }
   std::pair<View, bool> read(u64 idx, u64 id) const;
   bool add(Core& f, u64 idx, u64 id, u64 n, i64 u, u64 now, AU64* slot, u64 old);
   void putFree(u64 idx);

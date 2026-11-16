@@ -10,7 +10,14 @@ namespace clepsydra::detail {
 // claim stripe.
 Result Core::miss(u64 h, u64 fp, u64 tg, u64 window, u64 now, bool wantCount, u64 s0, u64 s1, int src) {
   Result r;
-  bool fromRoom = src == srcRoom;                 // taken out of the wait room: its move ends once it is placed
+  bool fromRoom = src == srcRoom;  // taken out of the wait room: its move ends once it is placed
+  // An exception out of the placement (a lazy table's allocation, the placer
+  // thread's start; fatal in Go) ends the move on its way out, so first
+  // touches on the stripe don't wait for it forever. The history is lost.
+  bool moving = fromRoom;
+  Defer endMove{[this, &moving, tg] {
+    if (moving) moveOf(tg).done.fetch_add(1);
+  }};
   u64 w1 = nextReg(0, tg, now, now, true).first;  // first event, published with the key
   u64 last = now, sat = 0;
   bool hotRestore = false;
@@ -48,7 +55,10 @@ Result Core::miss(u64 h, u64 fp, u64 tg, u64 window, u64 now, bool wantCount, u6
     }
   }
   if (ci == -1 && (src == srcStash || fromRoom)) putBack(stashID(h, fp, tg), s0, s1, now);  // for the retry
-  if (fromRoom) moveOf(tg).done.fetch_add(1);  // in the table, or back in the room or the stash
+  if (fromRoom) {  // in the table, or back in the room or the stash
+    moving = false;
+    moveOf(tg).done.fetch_add(1);
+  }
   if (ci == -1) {
     Result x;
     x.Count = -1;

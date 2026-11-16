@@ -127,7 +127,8 @@ struct TestAccess;
 class Filter {
  public:
   // Go: New. Throws Error for a refused Config, TickError for a Clock already
-  // past MaxTick.
+  // past MaxTick, std::length_error for a table larger than the address space
+  // (Go's make panics).
   explicit Filter(const Config& cfg);
   ~Filter();
   Filter(const Filter&) = delete;

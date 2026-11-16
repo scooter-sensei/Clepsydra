@@ -117,8 +117,10 @@ void Core::placeSet(StashTable* p, u64 i, u64 now) {
     u64 id = ids[k];
     u64 fp = (id >> tagBits) & ((u64{1} << 16) - 1), tg = id & ((u64{1} << tagBits) - 1);
     u64 stripe = fp >> (16 - claimStripeBits);
-    PaddedMutex& cm = claimMu[stripe];
-    if (!cm.try_lock()) continue;
+    // Unlocked by hand below; the guard releases the stripe if an eviction's
+    // stash or overflow table allocation throws (as in touch).
+    std::unique_lock<PaddedMutex> cm(claimMu[stripe], std::try_to_lock);
+    if (!cm) continue;
     u64 w0, w1;
     if (tableGet(p, id, now, true, w0, w1)) {
       u64 pl = id >> 28;

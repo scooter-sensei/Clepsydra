@@ -23,7 +23,7 @@ const noStripe = 1 << claimStripeBits
 // register, or its evicted history from the stash. Count < 0 means it lost a
 // race for a slot and the caller should look again. The caller holds h's
 // claim stripe, so no other first touch of h runs meanwhile.
-func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint64, src int) Result {
+func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint64, src int, pushed bool) Result {
 	var r Result
 	// Taken out of the wait room (srcRoom): its move ends once it is placed.
 	room := src == srcRoom
@@ -53,7 +53,9 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 	stamp := max(now, last)
 	low := stamp // the installed word0's last touch, and its drip log
 	if dripOn {
-		if recalled {
+		if recalled && pushed && now <= last {
+			low = s0 & (tsMask | dripWord) // this touch's event is in it already (W4d)
+		} else if recalled {
 			low = f.next0(s0, now) & (tsMask | dripWord)
 		} else {
 			low = dripFresh(now)

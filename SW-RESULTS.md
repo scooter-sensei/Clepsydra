@@ -621,3 +621,29 @@ read at a touch's instant) are no longer exact; a merged history's log says
 nothing until a gap; Horizon at most 2^31 ticks. Open: MAWI (the trace is
 not on this host), speed on bare metal, a TLA+ model of the log beside the
 slot protocol, the ports.
+
+## W4c's verdict revised, and W4d
+
+A review of the record found W4c's clause 5 blind: `TestBackgroundConcurrentCounts`
+asks a 60 s window, which cuts no bucket, and W4c's shortcut (the log read
+only when a window cuts a bucket) came in the same commit as one push per
+touch, so the test no longer reads the log. Checked: with one push per touch
+undone and the shortcut kept, it passes 60 of 60 runs. A probe that reads
+the log itself (`TestDripPushOnce`, `drip_probe_test.go`, `tfdrip`: the same
+scenario, every key's log audited against its register after each round; a
+bucket may not hold more logged events than the register counts there)
+finds, in 5,000 rounds (160,000 keys): 13 with one push per touch undone,
+**3 on W4c as committed**. **W4c's verdict is revised: it fails clause 5.**
+The path left: a touch that pushed its event and lost its count, then
+finds its key back in the stash (or the wait room) and installs it by `miss`,
+pushed again: `miss` had no one-push rule.
+
+**W4d** (mend, written after that reading): `miss` takes the touch's flag;
+a recalled history whose last touch is at or after the touch's tick is
+installed with its log as it is.
+
+**Rule (written after W4c's revised reading, before W4d's; a preliminary
+run of the probe on W4d's tree, 0 of 320,000 keys in two runs, came before
+it and is not the reading).** W4c's clauses 1-9 read again on W4d's tree,
+and: `TestDripPushOnce` 0 of 160,000 keys in 5,000 rounds, and 0 in 500
+rounds under `-race`.

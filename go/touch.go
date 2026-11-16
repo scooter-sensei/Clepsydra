@@ -242,7 +242,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 			i, w0, _ = f.lookupStable(h, fp, tg, true)
 			s0, s1, src := f.recall(h, fp, tg, now, true)
 			if i < 0 {
-				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src)
+				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src, pushed)
 				if r.Count < 0 {
 					continue
 				}
@@ -283,7 +283,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 					mu.Unlock()
 					continue
 				}
-				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src)
+				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src, pushed)
 				mu.Unlock()
 				if r.Count < 0 {
 					continue

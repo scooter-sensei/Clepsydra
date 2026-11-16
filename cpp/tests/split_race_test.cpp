@@ -206,7 +206,8 @@ TEST(TestMoveAfterEvictionKeepsTouches) {
     done = during([&] { m->touch(m->x, 1, t2); });  // the touch runs whole, or waits for the move
   };
   m->touch(k, 1, t2);  // relocates X to P
-  if (!picked || !copied) FATALF("k's insert did not relocate X after reading it (picked %v, copied %v)", picked, copied);
+  if (!picked || !copied)
+    FATALF("k's insert did not relocate X after reading it (picked %v, copied %v)", picked, copied);
   WAIT_FOR(done, "X's touch");
   testHookPicked = nullptr;
   testHookCopied = nullptr;
@@ -259,7 +260,8 @@ TEST(TestSweepRacingTouchPutsSlotBack) {
   c.sweepLine(static_cast<u64>(s.i / wordsPerLine), tS);
   testHookSweeping = nullptr;
   if (!moved) FATALF("the touch did not move K's last touch while the sweep held the slot");
-  if (u64 got = c.words[i + 1].load(); got != w1) ERRORF("K's word1 is %#x after the sweep, want its register %#x back", got, w1);
+  if (u64 got = c.words[i + 1].load(); got != w1)
+    ERRORF("K's word1 is %#x after the sweep, want its register %#x back", got, w1);
   s.f->TouchAt(s.k, 0, tL);  // the touch's count, after the sweep
   if (Result r = s.f->CountAt(s.k, c.horizon, tL); r.Upper < 2 && !r.Saturated)
     FATALF("K reads %+v after two touches, want Upper >= 2", r);
@@ -308,7 +310,8 @@ TEST(TestInsertOverExpiredHoldLaggingTouch) {
   u64 l = 0;  // L: K's line its primary, its own claim stripe, no inline sweep
   for (u64 j = u64{1} << 40; l == 0; j++) {
     if (u64 h = mix64(j); c.primary(h) == line && (h & decayEvery) != 0 &&
-                          (h >> (64 - claimStripeBits)) != (s.k >> (64 - claimStripeBits)) && fingerprint(h) != fingerprint(s.k))
+                          (h >> (64 - claimStripeBits)) != (s.k >> (64 - claimStripeBits)) &&
+                          fingerprint(h) != fingerprint(s.k))
       l = h;
   }
   DonePtr done;

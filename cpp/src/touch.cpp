@@ -34,7 +34,7 @@ Result Core::estimateAt(u64 h, u64 w1, u64 last, u64 now, u64 window, bool sat) 
   u64 id = stashID(h, fp, tg);
   for (int k = 0; k < 8; k++) {
     if (auto [r, ok] = estimate(id, w1, last, now, window, sat); ok) return r;
-    u64 w0, nw1;
+    u64 w0 = 0, nw1 = 0;
     i64 i = lookupStable(h, fp, tg, false, w0, nw1);
     if (i < 0) break;
     w1 = nw1;
@@ -60,7 +60,7 @@ Found Core::read(u64 h, u64 now, i64 i0) {
       i64 i = i0;
       u64 fpd = fp << 1;  // warm finds a key undisplaced in its primary line
       if (t > 0 || i < 0) std::tie(i, fpd) = locateAt(h, fp, tg);
-      u64 w0, w1;
+      u64 w0 = 0, w1 = 0;
       if (slotWords(i, fpd, tg, w0, w1)) return Found{w0, w1, srcTable};
       bool may = stashMay(h, fp, tg, now);
       if (i < 0 && b == d && m.begun.load() == b) {
@@ -76,7 +76,7 @@ Found Core::read(u64 h, u64 now, i64 i0) {
   MoveCount& m = moveOf(tg);
   for (;;) {
     u64 b = m.begun.load(), d = m.done.load();
-    u64 w0, w1;
+    u64 w0 = 0, w1 = 0;
     i64 i = lookupStable(h, fp, tg, true, w0, w1);
     Found s = recall(h, fp, tg, now, false);
     if (s.src == srcRetry) continue;
@@ -139,25 +139,23 @@ Result Core::touch(u64 h, u64 window, u64 now, bool wantCount, i64 i0) {
     if (ct) return touchCT(h, window, now, wantCount);
   }
   u64 fp = fingerprint(h), tg = tag(h);
-  PaddedMutex* held = nullptr;  // ConstantTime: h's stripe, while held
+  // The stripes are unlocked by hand where the reference unlocks them; the
+  // guards release them only when a lazy table's allocation throws meanwhile
+  // (std::bad_alloc, fatal in Go).
+  std::unique_lock<PaddedMutex> held;  // ConstantTime: h's stripe, while held
   for (bool first = true;; first = false) {
-    if (held) {  // released between attempts
-      held->unlock();
-      held = nullptr;
-    }
+    if (held) held.unlock();  // released between attempts
     i64 i = -1;
     u64 fpd = 0;  // what the lookup matched in the slot (word0>>47)
     if (inside) {
-      held = &claimMu[h >> (64 - claimStripeBits)];
-      held->lock();
-      u64 w0, w1;
+      held = std::unique_lock<PaddedMutex>(claimMu[h >> (64 - claimStripeBits)]);
+      u64 w0 = 0, w1 = 0;
       i = lookupStable(h, fp, tg, true, w0, w1);
       Found s = recall(h, fp, tg, now, true);
       if (i < 0) {
         Result r = miss(h, fp, tg, window, now, wantCount, s.w0, s.w1, s.src);
         if (r.Count < 0) continue;
-        held->unlock();
-        held = nullptr;
+        held.unlock();
         if (sketchLive(now)) addSketch(r, h, window, now);
         return r;
       }
@@ -165,7 +163,7 @@ Result Core::touch(u64 h, u64 window, u64 now, bool wantCount, i64 i0) {
       fpd = w0 >> 47;
     }
     if (first && !inside && i0 >= 0) {
-      u64 a, b;
+      u64 a = 0, b = 0;
       if (slotWords(i0, fp << 1, tg, a, b)) {  // warm finds a key undisplaced in its primary line
         i = i0;
         fpd = fp << 1;
@@ -176,11 +174,10 @@ Result Core::touch(u64 h, u64 window, u64 now, bool wantCount, i64 i0) {
       // Miss: serialize first touches of the same key. A tick past MaxTick
       // throws before the lock.
       checkTick(now);
-      PaddedMutex& mu = claimMu[h >> (64 - claimStripeBits)];
-      mu.lock();
+      std::unique_lock<PaddedMutex> mu(claimMu[h >> (64 - claimStripeBits)]);
       MoveCount& m = moveOf(tg);
       u64 b = m.begun.load(), d = m.done.load();
-      u64 w0, w1;
+      u64 w0 = 0, w1 = 0;
       if (i = lookupStable(h, fp, tg, false, w0, w1); i < 0) {
         Found s = recall(h, fp, tg, now, true);
         if (s.src == srcRetry || (s.src == 0 && !settled(m, b, d))) {
@@ -235,10 +232,7 @@ Result Core::touch(u64 h, u64 window, u64 now, bool wantCount, i64 i0) {
     Result r;
     if (wantCount) r = estimateAt(h, w1, std::max(now, ref), now, window, sat);
     r.Seen = !stale && age(now, last) <= window;
-    if (held) {
-      held->unlock();
-      held = nullptr;
-    }
+    if (held) held.unlock();
     // CheckAndTouch asks only for Seen, which addSketch can set but never
     // clear: a hit already Seen skips the overflow read.
     if (sketchLive(now) && (wantCount || !r.Seen || ct)) addSketch(r, h, window, now);
@@ -303,7 +297,7 @@ bool Core::realign(u64 h, i64 i, u64 w0, u64 old, u64 tg, u64 now, i64 nu, i64 l
   u64 last = w0 & tsMask;
   std::tie(w1, over) = nextRegU(old, tg, last, now, lu, nu, age(now, last) > horizon);
   if (over) {
-    u64 pw;
+    u64 pw = 0;
     if (promoteHeld(i, w0, old, tg, last, now, pw)) {
       w1 = pw;
       over = false;
@@ -322,7 +316,7 @@ bool Core::realign2U(i64 i, u64 w0, u64 old, u64 tg, u64 now, i64 nu, i64 lu, u6
   std::tie(w1, over) = nextRegU(old, tg, last, now, lu, nu, age(now, last) > horizon);
   u64 idx = 0, id = 0;
   if (over) {
-    u64 x, y;
+    u64 x = 0, y = 0;
     if (u64 pw = hotEntryFor(i, w0, old, tg, last, now, x, y); pw != 0) {
       w1 = pw;
       over = false;

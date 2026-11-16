@@ -1,0 +1,7 @@
+# The port's layout (clang-format 18, as zig's Clang and Ubuntu 24.04 ship):
+# Google's style at 120 columns. Check with `clang-format --dry-run --Werror`,
+# apply with `clang-format -i`; .clang-format-ignore lists generated files.
+BasedOnStyle: Google
+ColumnLimit: 120
+DerivePointerAlignment: false
+PointerAlignment: Left

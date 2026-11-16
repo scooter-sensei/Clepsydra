@@ -80,15 +80,16 @@ TEST(TestCheckAndTouchMatchesTouchSeen) {
       }
       if (a.Evictions() != b.Evictions() || a.Folded() != b.Folded() || a.Lost() != b.Lost() ||
           a.Occupancy(now) != b.Occupancy(now))
-        ERRORF("cms %v, bg %v: the twins' states differ: evictions %d/%d, folded %d/%d, lost %d/%d, occupancy %d/%d", cms,
-               bg, a.Evictions(), b.Evictions(), a.Folded(), b.Folded(), a.Lost(), b.Lost(), a.Occupancy(now),
+        ERRORF("cms %v, bg %v: the twins' states differ: evictions %d/%d, folded %d/%d, lost %d/%d, occupancy %d/%d",
+               cms, bg, a.Evictions(), b.Evictions(), a.Folded(), b.Folded(), a.Lost(), b.Lost(), a.Occupancy(now),
                b.Occupancy(now));
       LOGF("cms %v, bg %v: %d calls, %d Seen with a dropped history behind it, folded %d, evictions %d", cms, bg,
            evs.size(), seenDegraded, b.Folded(), b.Evictions());
       if (seenDegraded == 0)
-        ERRORF("cms %v, bg %v: Touch never answered Seen with a dropped history behind it (folded %d): the overflow "
-               "table never answered",
-               cms, bg, b.Folded());
+        ERRORF(
+            "cms %v, bg %v: Touch never answered Seen with a dropped history behind it (folded %d): the overflow "
+            "table never answered",
+            cms, bg, b.Folded());
     }
   }
 }
@@ -177,8 +178,8 @@ TEST(TestAnswerDigest) {
     gorand::Rand r(cl.seed, 99);
     Digest dg;
     auto res = [](const Result& x) {
-      return boolStr(x.Seen) + "/" + std::to_string(x.Count) + "/" + std::to_string(x.Upper) + "/" + boolStr(x.Saturated) +
-             "/" + boolStr(x.Restored) + "/" + boolStr(x.Degraded);
+      return boolStr(x.Seen) + "/" + std::to_string(x.Count) + "/" + std::to_string(x.Upper) + "/" +
+             boolStr(x.Saturated) + "/" + boolStr(x.Restored) + "/" + boolStr(x.Degraded);
     };
     std::vector<u64> repeat(static_cast<std::size_t>(cl.repeat));
     for (std::size_t i = 0; i < repeat.size(); i++) repeat[i] = f.HashUint64(i + (u64{1} << 40));
@@ -252,8 +253,8 @@ TEST(TestAnswerDigest) {
         << f.HotInUse() << " " << f.Waited() << " " << f.Waiting() << " " << f.Occupancy(now) << " " << f.Bytes();
     dg.put("end", end.str());
     if (cl.repeat == 6000 && liveSeenChecks == 0)  // Go: the cell as %+v
-      FATALF("overflow cell {mode:%s seed:%d repeat:%d spill1:%v cms:%v} read 0 seen checks with overflow live", cl.mode,
-             cl.seed, cl.repeat, cl.spill1, cl.cms);
+      FATALF("overflow cell {mode:%s seed:%d repeat:%d spill1:%v cms:%v} read 0 seen checks with overflow live",
+             cl.mode, cl.seed, cl.repeat, cl.spill1, cl.cms);
     std::string line = check::format("cell mode=\"%s\" seed=%d repeat=%d spill1=%v cms=%v", cl.mode, cl.seed, cl.repeat,
                                      cl.spill1, cl.cms);
     for (const char* kd : {"check", "touch", "count", "contains", "cbatch", "tcbatch", "decay", "end"}) {
@@ -261,8 +262,9 @@ TEST(TestAnswerDigest) {
       u64 sum = it == dg.hs.end() ? 0 : it->second.sum();
       line += check::format(" %s=%016x", kd, sum);
     }
-    line += check::format(" (evictions %d, folded %d, floored %d, promoted %d, waited %d, seen checks with overflow live %d)",
-                          f.Evictions(), f.Folded(), f.Floored(), f.Promoted(), f.Waited(), liveSeenChecks);
+    line += check::format(
+        " (evictions %d, folded %d, floored %d, promoted %d, waited %d, seen checks with overflow live %d)",
+        f.Evictions(), f.Folded(), f.Floored(), f.Promoted(), f.Waited(), liveSeenChecks);
     check::print(line);
   }
 }

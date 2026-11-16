@@ -84,7 +84,8 @@ TEST(TestRestoreBehindLastTouch) {
       std::string w = whereIs(c, mix64(i), 1000);
       if (w.find("stash") != std::string::npos && w.find("slot") == std::string::npos) v = mix64(i);
     }
-    if (v == 0) FATALF("no key in the stash after %d touches (evictions %d, waited %d)", k + 1, f.Evictions(), f.Waited());
+    if (v == 0)
+      FATALF("no key in the stash after %d touches (evictions %d, waited %d)", k + 1, f.Evictions(), f.Waited());
     f.TouchAt(v, 0, 990);  // a caller whose clock is 10 ticks behind v's last touch
     // v's events: 1000 and 990. In [995, 1010] one of them.
     if (Result r = f.CountAt(v, 15, 1010); r.Upper < 1 || r.Saturated)
@@ -109,7 +110,8 @@ TEST(TestLostAtNewestEvent) {
   if (f.Lost() != 1) FATALF("Lost() %d, want 1", f.Lost());
   if (Result r = f.CountAt(h, 1000, 1995); !r.Degraded)
     FATALF("at 1995, a horizon after the dropper's clock but not the event: %+v, want Degraded", r);
-  if (Result r = f.CountAt(h, 1000, 2001); r.Degraded) FATALF("at 2001, past a horizon after the event: %+v, want not Degraded", r);
+  if (Result r = f.CountAt(h, 1000, 2001); r.Degraded)
+    FATALF("at 2001, past a horizon after the event: %+v, want not Degraded", r);
 }
 
 // TestHashUint64sMatchesFilter (go/hashbatch_test.go): HashUint64s equals

@@ -7,18 +7,18 @@
 #include <atomic>
 #include <chrono>
 #include <cinttypes>
-#include <functional>
-#include <memory>
-#include <ostream>
-#include <thread>
-#include <vector>
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
+#include <ostream>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <unordered_map>
+#include <vector>
 
 #include "check.hpp"
 #include "clepsydra/clepsydra.hpp"
@@ -85,8 +85,8 @@ inline std::string whereIs(Core& f, u64 h, u64 now) {
     for (u64 i = 0; i < stashWays; i++) {
       if (set[i].id == id) {
         auto [v, ok] = f.viewOf(id, set[i].w1, set[i].w0 & tsMask);
-        s << "stash last " << (set[i].w0 & tsMask) << " hot " << isHot(set[i].w1) << " ok " << ok << " epoch "
-          << v.e << " counts " << counts(v.c) << "; ";
+        s << "stash last " << (set[i].w0 & tsMask) << " hot " << isHot(set[i].w1) << " ok " << ok << " epoch " << v.e
+          << " counts " << counts(v.c) << "; ";
       }
     }
   }
@@ -183,13 +183,20 @@ inline Duration parseDuration(const char* s) {
     while (k < str.size() && std::isalpha(static_cast<unsigned char>(str[k]))) k++;
     std::string u = str.substr(j, k - j);
     double ns;
-    if (u == "ns") ns = 1;
-    else if (u == "us" || u == "µs") ns = 1e3;
-    else if (u == "ms") ns = 1e6;
-    else if (u == "s") ns = 1e9;
-    else if (u == "m") ns = 60e9;
-    else if (u == "h") ns = 3600e9;
-    else return Duration::zero();
+    if (u == "ns")
+      ns = 1;
+    else if (u == "us" || u == "µs")
+      ns = 1e3;
+    else if (u == "ms")
+      ns = 1e6;
+    else if (u == "s")
+      ns = 1e9;
+    else if (u == "m")
+      ns = 60e9;
+    else if (u == "h")
+      ns = 3600e9;
+    else
+      return Duration::zero();
     total += v * ns;
     i = k;
   }
@@ -412,8 +419,8 @@ inline Config cfgOf(std::int64_t capacity, Duration horizon, Duration res = Dura
 }  // namespace helpers
 
 // waitFor is the Go suite's waitFor: the goroutine must return within 5 s.
-#define WAIT_FOR(done, what)                                     \
-  do {                                                           \
+#define WAIT_FOR(done, what)                                              \
+  do {                                                                    \
     if (!::helpers::awaitDone(done)) FATALF("%s did not return", (what)); \
   } while (0)
 

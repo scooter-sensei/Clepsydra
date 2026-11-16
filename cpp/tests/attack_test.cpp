@@ -139,14 +139,16 @@ TEST(TestAttackStripeFlood) {
 // lost, and every new key reads Degraded.
 TEST(TestAttackEvictionReset) {
   if (forceCT || forceBG)
-    SKIP("ConstantTime evicts only when a waiting key's stash set is full; Background evicts in its placer "
-         "goroutine, so the spray can't tell when");
+    SKIP(
+        "ConstantTime evicts only when a waiting key's stash set is full; Background evicts in its placer "
+        "goroutine, so the spray can't tell when");
   const int k = 20;
   const u64 window = 60'000;
   auto report = [&](const std::string& name, Filter& f, int events, const Result& r) {
-    LOGF("%-30s attacker events %7d; offender returns: count %2d upper %3d (true %d) seen %-5v restored %-5v degraded "
-         "%-5v; evictions %d folded %d lost %d",
-         name, events, r.Count, r.Upper, k + 1, r.Seen, r.Restored, r.Degraded, f.Evictions(), f.Folded(), f.Lost());
+    LOGF(
+        "%-30s attacker events %7d; offender returns: count %2d upper %3d (true %d) seen %-5v restored %-5v degraded "
+        "%-5v; evictions %d folded %d lost %d",
+        name, events, r.Count, r.Upper, k + 1, r.Seen, r.Restored, r.Degraded, f.Evictions(), f.Folded(), f.Lost());
   };
   int targeted = 0, sprayed = 0;
   for (i64 stash : {i64{-1}, i64{0}}) {
@@ -163,7 +165,8 @@ TEST(TestAttackEvictionReset) {
     Result r = f.TouchAt(off, window, now);
     report(check::format("unkeyed targeted, stash %v", stash >= 0), f, events, r);
     targeted = events;
-    if (stash < 0 && (r.Count != 1 || !r.Degraded)) ERRORF("no stash: expected a reset reported as Degraded, got %+v", r);
+    if (stash < 0 && (r.Count != 1 || !r.Degraded))
+      ERRORF("no stash: expected a reset reported as Degraded, got %+v", r);
     if (stash >= 0 && (!r.Restored || r.Count != k + 1))
       ERRORF("stash: offender not restored after a targeted eviction: %+v", r);
   }
@@ -254,13 +257,15 @@ TEST(TestAttackFloodCollateral) {
         if (r.Seen) seen++;
         upper += r.Upper;
       }
-      LOGF("sketch %-5v flood %2dx slots x %2d (%7d events): offenders Upper<true %d/%d, Count low %3d/%d (mean "
-           "shortfall %4.1f); new keys Degraded %5.1f%% Seen %5.2f%% mean Upper %6.1f, denied by a strict limit of %d: "
-           "%5.1f%%; folded %d shed %d lost %d",
-           sk, mult, fl.weight, f.Slots() * mult * fl.weight, below, offenders, low, offenders,
-           static_cast<double>(shortfall) / static_cast<double>(std::max(low, 1)), 100 * static_cast<double>(deg) / probes,
-           100 * static_cast<double>(seen) / probes, static_cast<double>(upper) / probes, k,
-           100 * static_cast<double>(strict) / probes, f.Folded(), f.Shed(), f.Lost());
+      LOGF(
+          "sketch %-5v flood %2dx slots x %2d (%7d events): offenders Upper<true %d/%d, Count low %3d/%d (mean "
+          "shortfall %4.1f); new keys Degraded %5.1f%% Seen %5.2f%% mean Upper %6.1f, denied by a strict limit of %d: "
+          "%5.1f%%; folded %d shed %d lost %d",
+          sk, mult, fl.weight, f.Slots() * mult * fl.weight, below, offenders, low, offenders,
+          static_cast<double>(shortfall) / static_cast<double>(std::max(low, 1)),
+          100 * static_cast<double>(deg) / probes, 100 * static_cast<double>(seen) / probes,
+          static_cast<double>(upper) / probes, k, 100 * static_cast<double>(strict) / probes, f.Folded(), f.Shed(),
+          f.Lost());
       if (sk && (below > 0 || f.Lost() > 0))
         ERRORF("sketch: %d offenders read Upper below the truth, %d lost", below, f.Lost());
       if (sk && deg * 100 > probes) ERRORF("sketch: %d of %d new keys read Degraded", deg, probes);

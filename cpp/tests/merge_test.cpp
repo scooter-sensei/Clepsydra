@@ -51,7 +51,8 @@ TEST(TestMerge) {
           for (std::size_t wi = 0; wi < wins.size(); wi++) {
             u64 w = wins[wi];
             i64 exact = 0;
-            for (i64 i = static_cast<i64>(times[k].size()) - 1; i >= 0 && times[k][static_cast<std::size_t>(i)] > now - w; i--)
+            for (i64 i = static_cast<i64>(times[k].size()) - 1;
+                 i >= 0 && times[k][static_cast<std::size_t>(i)] > now - w; i--)
               exact++;
             Result rm = m->CountAt(key(static_cast<int>(k)), w, now), rs = s->CountAt(key(static_cast<int>(k)), w, now);
             cmp++;
@@ -107,8 +108,11 @@ TEST(TestMergeRefuses) {
   Config ctc = cfgOf(4096, 1min);
   ctc.ConstantTime = 1us;
   Filter ct(ctc);
-  std::vector<std::pair<const char*, Filter*>> gs{
-      {"itself", &f}, {"other Capacity", &otherCap}, {"other Horizon", &otherHz}, {"ConstantTime", &ct}, {"hot entries", &hot}};
+  std::vector<std::pair<const char*, Filter*>> gs{{"itself", &f},
+                                                  {"other Capacity", &otherCap},
+                                                  {"other Horizon", &otherHz},
+                                                  {"ConstantTime", &ct},
+                                                  {"hot entries", &hot}};
   for (auto& [name, g] : gs) {
     bool threw = false;
     try {
@@ -151,5 +155,6 @@ TEST(TestMergeKeepsOwnStash) {
     ERRORF("after Merge: %+v, truth 8 (5 in f's stash, 3 in g)", r);
   f.TouchAt(k, 0, 131);
   evict(132);
-  if (Result r = f.CountAt(k, 60'000, 133); r.Upper < 9 && !r.Saturated) ERRORF("after the next eviction: %+v, truth 9", r);
+  if (Result r = f.CountAt(k, 60'000, 133); r.Upper < 9 && !r.Saturated)
+    ERRORF("after the next eviction: %+v, truth 9", r);
 }

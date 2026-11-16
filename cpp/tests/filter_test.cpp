@@ -2,6 +2,7 @@
 // and TestBatchMatchesSingle are in properties_test.cpp.
 #include <atomic>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 #include "check.hpp"
@@ -209,7 +210,7 @@ TEST(TestConcurrentMixedRace) {
             f.CheckAndTouchAt(h, f.Ticks(50ms), now);
             break;
           case 1: {
-            f.VelocityCountAt(h, f.Ticks(50ms), now);
+            std::ignore = f.VelocityCountAt(h, f.Ticks(50ms), now);
             u64 hs[3] = {h, h ^ 1, h ^ 2};
             f.CheckAndTouchBatch(hs, f.Ticks(50ms), now, out);
             break;
@@ -272,7 +273,8 @@ TEST(TestCoarseClock) {
 // stash comes with the first eviction, the overflow table with the first
 // history the stash drops.
 TEST(TestMemoryOnFirstUse) {
-  if (forceCT || forceBG) SKIP("ConstantTime and Background allocate the stash on the first insert that waits for a slot");
+  if (forceCT || forceBG)
+    SKIP("ConstantTime and Background allocate the stash on the first insert that waits for a slot");
   auto fp = newTest(4096, 1min);
   Filter& f = *fp;
   Core& c = core(f);

@@ -82,8 +82,8 @@ SweepJ sweepOverJ(u64 tgJ) {
 // sweepHolds runs the decay sweep of line p at tS; when the hook named by seen
 // fires on slot s, K's touch at tS takes the slot (J expired there), and ok
 // checks the result; during runs while the sweep holds the slot.
-void sweepHolds(Filter& f, u64 p, i64 s, u64 k, u64 tS, std::function<void(i64)>& seen,
-                const std::function<bool()>& ok, const std::function<void()>& during) {
+void sweepHolds(Filter& f, u64 p, i64 s, u64 k, u64 tS, std::function<void(i64)>& seen, const std::function<bool()>& ok,
+                const std::function<void()>& during) {
   Hooks hooks;
   int stage = 0;
   seen = [&](i64 i) {
@@ -180,7 +180,8 @@ void staleHotReset(u64 gap) {
   if (!fired) FATALF("A did not move K's last touch");
   WAIT_FOR(done, "B's touch");
   testHookStamped = nullptr;
-  if (Result r = f.CountAt(k, c.horizon, t1); r.Upper < 2 && !r.Saturated) FATALF("K reads %+v after 2 touches at t1", r);
+  if (Result r = f.CountAt(k, c.horizon, t1); r.Upper < 2 && !r.Saturated)
+    FATALF("K reads %+v after 2 touches at t1", r);
 }
 }  // namespace
 
@@ -320,7 +321,8 @@ TEST(TestTornOpenScanHoldHidesKey) {
   tornOpenHold(f, kp.k, kp.l, kp.p, t0, [&] { done = during([&] { f.TouchAt(kp.k, 0, t0); }); });
   WAIT_FOR(done, "K's touch");
   if (auto sl = slotsOf(core(f), kp.k); sl.size() != 1) FATALF("K in slots %v", sl);
-  if (Result r = f.CountAt(kp.k, core(f).horizon, t0); r.Upper < 2 && !r.Saturated) FATALF("K reads %+v after 2 touches", r);
+  if (Result r = f.CountAt(kp.k, core(f).horizon, t0); r.Upper < 2 && !r.Saturated)
+    FATALF("K reads %+v after 2 touches", r);
 }
 
 // TestTornOpenScanHoldRead (claims A28): a Count of K during L's hold must
@@ -439,7 +441,8 @@ TEST(TestRealignCAS2) {
     u64 full = (tg << tagShift) | ((static_cast<u64>(c.unitOf(sweepT0)) & onsetMask) << onsetShift) | regMask;
     c.words[static_cast<std::size_t>(i) + 1].store(full);
     u64 w0 = word(c, i);
-    if (moved) c.words[static_cast<std::size_t>(i)].store(w0 + 1);  // a touch of K at the next tick, after realign's read
+    if (moved)
+      c.words[static_cast<std::size_t>(i)].store(w0 + 1);  // a touch of K at the next tick, after realign's read
     MoveCount& m = c.moveOf(tg);
     u64 begun = m.begun.load();
     u64 now = sweepT0 + 10 * c.unit;

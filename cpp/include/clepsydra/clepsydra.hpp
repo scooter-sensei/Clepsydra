@@ -123,48 +123,52 @@ struct TestAccess;
 
 // Filter is safe for concurrent use. Hits never lock; first touches of a key
 // serialize on a striped lock. It is neither copyable nor movable (its state
-// is shared with its threads).
+// is shared with its threads). Methods that only answer (they record no
+// occurrence) are [[nodiscard]]; the counters never throw.
 class Filter {
  public:
   // Go: New. Throws Error for a refused Config, TickError for a Clock already
-  // past MaxTick.
+  // past MaxTick, std::length_error for a table larger than the address space
+  // (Go's make panics).
   explicit Filter(const Config& cfg);
   ~Filter();
   Filter(const Filter&) = delete;
   Filter& operator=(const Filter&) = delete;
+  Filter(Filter&&) = delete;
+  Filter& operator=(Filter&&) = delete;
 
   // Close stops the CoarseClock thread, if any. The filter stays usable; its
   // clock just stops advancing. The destructor calls it.
   void Close();
 
   // Now returns the filter's current tick.
-  std::uint64_t Now() const;
+  [[nodiscard]] std::uint64_t Now() const;
   // Ticks converts a duration to filter ticks (a negative one to 0).
-  std::uint64_t Ticks(Duration d) const;
+  [[nodiscard]] std::uint64_t Ticks(Duration d) const;
 
   // Hash hashes a string key for the *At methods, under the filter's secret key.
-  std::uint64_t Hash(std::string_view key) const;
+  [[nodiscard]] std::uint64_t Hash(std::string_view key) const;
   // HashUint64 hashes an integer key for the *At methods. The *At methods
   // trust the hash they are given: pass them only Hash or HashUint64 values
   // of this filter.
-  std::uint64_t HashUint64(std::uint64_t k) const;
+  [[nodiscard]] std::uint64_t HashUint64(std::uint64_t k) const;
   // HashUint64s sets out[i] = HashUint64(keys[i]) for every key (out must be
   // at least keys.size(); std::out_of_range otherwise).
   void HashUint64s(std::span<const std::uint64_t> keys, std::span<std::uint64_t> out) const;
 
   Result Touch(std::string_view key, Duration window);
   Result TouchAt(std::uint64_t h, std::uint64_t window, std::uint64_t now);
-  Result Count(std::string_view key, Duration window);
-  Result CountAt(std::uint64_t h, std::uint64_t window, std::uint64_t now);
+  [[nodiscard]] Result Count(std::string_view key, Duration window);
+  [[nodiscard]] Result CountAt(std::uint64_t h, std::uint64_t window, std::uint64_t now);
   bool CheckAndTouch(std::string_view key, Duration window);
   bool CheckAndTouchAt(std::uint64_t h, std::uint64_t window, std::uint64_t now);
-  std::int64_t VelocityCount(std::string_view key, Duration window);
-  std::int64_t VelocityCountAt(std::uint64_t h, std::uint64_t window, std::uint64_t now);
+  [[nodiscard]] std::int64_t VelocityCount(std::string_view key, Duration window);
+  [[nodiscard]] std::int64_t VelocityCountAt(std::uint64_t h, std::uint64_t window, std::uint64_t now);
   // TouchAndCount returns (seen within window before this touch, estimated
   // count within window including this touch).
   std::pair<bool, std::int64_t> TouchAndCount(std::string_view key, Duration window);
   std::pair<bool, std::int64_t> TouchAndCountAt(std::uint64_t h, std::uint64_t window, std::uint64_t now);
-  bool ContainsAt(std::uint64_t h, std::uint64_t window, std::uint64_t now);
+  [[nodiscard]] bool ContainsAt(std::uint64_t h, std::uint64_t window, std::uint64_t now);
 
   // Batches: in the order of hs, a chunk at a time with the chunk's cache
   // misses overlapped. Each output span must be at least hs.size()
@@ -181,8 +185,7 @@ class Filter {
   // limit within window by the strict fail-closed recipe, and reports whether
   // it did (claims A45, A46).
   std::pair<Result, bool> TouchIfUnder(std::string_view key, Duration window, std::uint64_t limit);
-  std::pair<Result, bool> TouchIfUnderAt(std::uint64_t h, std::uint64_t window, std::uint64_t limit,
-                                         std::uint64_t now);
+  std::pair<Result, bool> TouchIfUnderAt(std::uint64_t h, std::uint64_t window, std::uint64_t limit, std::uint64_t now);
 
   // ContinuousDecay reclaims expired slots at a rate set by the clock (one
   // table pass per horizon, at most 4 lines per call). Returns lines swept.
@@ -203,25 +206,25 @@ class Filter {
   std::int64_t ReadFrom(std::istream& r);
 
   // Counters for operators (docs/paper/04-operations.md §4.1).
-  std::uint64_t Evictions() const;
-  std::uint64_t Relocations() const;
-  std::uint64_t Lost() const;
-  std::uint64_t Folded() const;
-  std::uint64_t Shed() const;
-  std::uint64_t Waited() const;
-  std::int64_t Waiting() const;
-  std::uint64_t Restored() const;
-  std::uint64_t Promoted() const;
-  std::uint64_t HotRefused() const;
-  std::uint64_t Demoted() const;
-  std::int64_t HotInUse() const;
-  std::uint64_t Floored() const;
+  [[nodiscard]] std::uint64_t Evictions() const noexcept;
+  [[nodiscard]] std::uint64_t Relocations() const noexcept;
+  [[nodiscard]] std::uint64_t Lost() const noexcept;
+  [[nodiscard]] std::uint64_t Folded() const noexcept;
+  [[nodiscard]] std::uint64_t Shed() const noexcept;
+  [[nodiscard]] std::uint64_t Waited() const noexcept;
+  [[nodiscard]] std::int64_t Waiting() const noexcept;
+  [[nodiscard]] std::uint64_t Restored() const noexcept;
+  [[nodiscard]] std::uint64_t Promoted() const noexcept;
+  [[nodiscard]] std::uint64_t HotRefused() const noexcept;
+  [[nodiscard]] std::uint64_t Demoted() const noexcept;
+  [[nodiscard]] std::int64_t HotInUse() const noexcept;
+  [[nodiscard]] std::uint64_t Floored() const noexcept;
   // Occupancy returns the number of slots holding a key live at now. O(table).
-  std::int64_t Occupancy(std::uint64_t now) const;
+  [[nodiscard]] std::int64_t Occupancy(std::uint64_t now) const noexcept;
   // Slots returns the table's slot count.
-  std::int64_t Slots() const;
+  [[nodiscard]] std::int64_t Slots() const noexcept;
   // Bytes is the memory the filter holds now.
-  std::int64_t Bytes() const;
+  [[nodiscard]] std::int64_t Bytes() const noexcept;
 
  private:
   friend struct detail::TestAccess;
@@ -238,22 +241,24 @@ class Resizable {
   ~Resizable();
   Resizable(const Resizable&) = delete;
   Resizable& operator=(const Resizable&) = delete;
+  Resizable(Resizable&&) = delete;
+  Resizable& operator=(Resizable&&) = delete;
 
   // Resize starts a transition to a filter of the given Capacity at now.
   void Resize(std::int64_t capacity, std::uint64_t now);
   Result TouchAt(std::uint64_t h, std::uint64_t window, std::uint64_t now);
-  Result CountAt(std::uint64_t h, std::uint64_t window, std::uint64_t now);
-  std::int64_t VelocityCountAt(std::uint64_t h, std::uint64_t window, std::uint64_t now);
-  bool ContainsAt(std::uint64_t h, std::uint64_t window, std::uint64_t now);
-  std::int64_t Bytes();
-  std::uint64_t Evictions();
+  [[nodiscard]] Result CountAt(std::uint64_t h, std::uint64_t window, std::uint64_t now);
+  [[nodiscard]] std::int64_t VelocityCountAt(std::uint64_t h, std::uint64_t window, std::uint64_t now);
+  [[nodiscard]] bool ContainsAt(std::uint64_t h, std::uint64_t window, std::uint64_t now);
+  [[nodiscard]] std::int64_t Bytes() const;
+  [[nodiscard]] std::uint64_t Evictions() const;
 
  private:
   friend struct detail::TestAccess;
   void settle(std::uint64_t now);
   void move(std::uint64_t h, std::uint64_t now);
 
-  std::mutex mu_;
+  mutable std::mutex mu_;  // the const queries lock it too
   Config cfg_;
   std::unique_ptr<Filter> cur_, old_;
   std::uint64_t until_ = 0;  // the transition ends after this tick

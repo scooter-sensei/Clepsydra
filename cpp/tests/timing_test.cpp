@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "check.hpp"
@@ -68,18 +69,19 @@ TEST(TestTimingLeak) {
         kind[static_cast<std::size_t>(i)] = static_cast<int>(rng.IntN(2));
         hs[static_cast<std::size_t>(i)] = f.HashUint64(rng.Uint64());
         if (kind[static_cast<std::size_t>(i)] == 1)
-          hs[static_cast<std::size_t>(i)] = seen[static_cast<std::size_t>(rng.IntN(static_cast<std::int64_t>(seen.size())))];
+          hs[static_cast<std::size_t>(i)] =
+              seen[static_cast<std::size_t>(rng.IntN(static_cast<std::int64_t>(seen.size())))];
       }
       std::vector<double> ts[2];  // [unseen, seen]
       for (int i = 0; i < probes; i++) {
         auto t0 = std::chrono::steady_clock::now();
         if (op == "Count") {
-          f.CountAt(hs[static_cast<std::size_t>(i)], 60'000, now);
+          std::ignore = f.CountAt(hs[static_cast<std::size_t>(i)], 60'000, now);
         } else {
           f.TouchAt(hs[static_cast<std::size_t>(i)], 60'000, now);
         }
-        ts[kind[static_cast<std::size_t>(i)]].push_back(
-            static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count()));
+        ts[kind[static_cast<std::size_t>(i)]].push_back(static_cast<double>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count()));
       }
       std::sort(ts[0].begin(), ts[0].end());
       std::sort(ts[1].begin(), ts[1].end());
@@ -87,9 +89,11 @@ TEST(TestTimingLeak) {
         return x[static_cast<std::size_t>(p * static_cast<double>(x.size() - 1))];
       };
       double d = ks(ts[0], ts[1]);
-      LOGF("ConstantTime %-5v %-5s: unseen p50/p99/p99.9 %4.0f/%5.0f/%5.0f ns, seen %4.0f/%5.0f/%5.0f ns; KS D = %.3f (best single-timing guess right %.1f%%)",
-           ct, op, q(ts[0], .5), q(ts[0], .99), q(ts[0], .999), q(ts[1], .5), q(ts[1], .99), q(ts[1], .999), d,
-           50 + 50 * d);
+      LOGF(
+          "ConstantTime %-5v %-5s: unseen p50/p99/p99.9 %4.0f/%5.0f/%5.0f ns, seen %4.0f/%5.0f/%5.0f ns; KS D = %.3f "
+          "(best single-timing guess right %.1f%%)",
+          ct, op, q(ts[0], .5), q(ts[0], .99), q(ts[0], .999), q(ts[1], .5), q(ts[1], .99), q(ts[1], .999), d,
+          50 + 50 * d);
     }
   }
 }

@@ -59,10 +59,15 @@ Core::Core(const Config& in) {
   if (hz >= MaxTick)  // no tick could age a key past it
     throw Error("temporalfilter: Horizon too large for Resolution (MaxTick ticks or more)");
   if (cfg.Load <= 0) cfg.Load = 0.85;
-  if (cfg.Load > 1) throw Error("temporalfilter: Load must be <= 1");
+  if (!(cfg.Load <= 1)) throw Error("temporalfilter: Load must be <= 1");  // NaN too
   if (cfg.Clock && cfg.Clock() > MaxTick) throw TickError();
-  lines = std::max<u64>(
-      2, static_cast<u64>(std::ceil(static_cast<double>(cfg.Capacity) / (cfg.Load * slotsPerLine))));
+  // A table of 2^58 lines or more has more bytes than a 64-bit address space:
+  // the reference wraps its word count there (and a double past 2^64 has no
+  // integer value in C++), so it is refused before any size is computed.
+  const double want = std::ceil(static_cast<double>(cfg.Capacity) / (cfg.Load * slotsPerLine));
+  constexpr std::size_t maxLines = std::numeric_limits<std::size_t>::max() / (wordsPerLine * sizeof(AU64));
+  if (!(want < static_cast<double>(maxLines))) throw std::length_error("temporalfilter: Capacity too large for Load");
+  lines = std::max<u64>(2, static_cast<u64>(want));
   horizon = hz;
   unit = (hz + unitsPerHorizon - 1) / unitsPerHorizon;
   res = cfg.Resolution;
@@ -77,7 +82,9 @@ Core::Core(const Config& in) {
     sip.k1 = word();
   }
   if (cfg.Stash == 0) cfg.Stash = static_cast<i64>(std::max<u64>(1, lines * slotsPerLine / 16));
-  if (cfg.Stash > 0) stashN = static_cast<u64>(cfg.Stash + static_cast<i64>(stashWays) - 1) / stashWays;
+  // In uint64: Go's int sum wraps near its maximum to these same bits, where
+  // a signed sum overflowing in C++ is undefined.
+  if (cfg.Stash > 0) stashN = (static_cast<u64>(cfg.Stash) + stashWays - 1) / stashWays;
   roomN = std::max<u64>(16, lines * slotsPerLine / (128 * stashWays));  // Background: one entry per 128 slots
   if (cfg.Overflow == 0) cfg.Overflow = static_cast<i64>(std::max<u64>(64, lines * slotsPerLine * 5 / 9));
   if (cfg.Overflow > 0) {
@@ -102,9 +109,7 @@ Core::Core(const Config& in) {
     const auto base = Clock::now();
     const Duration r = cfg.Resolution;
     ownClock = true;
-    auto read = [this, base, r]() -> u64 {
-      return static_cast<u64>((Clock::now() - base) / r) + 1 + clockAdd.load();
-    };
+    auto read = [this, base, r]() -> u64 { return static_cast<u64>((Clock::now() - base) / r) + 1 + clockAdd.load(); };
     clock = read;
     if (cfg.CoarseClock > Duration::zero()) {
       coarse.store(read());

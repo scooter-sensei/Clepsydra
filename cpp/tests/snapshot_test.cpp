@@ -142,10 +142,11 @@ TEST(TestSnapshot) {
     }
   }
   Core &cu = core(*u.f), &cr = core(*r.f);
-  LOGF("answers %d / %d, differing %d (first at %d); end: evictions %d / %d, folded %d / %d, promoted %d / %d, "
-       "floored %d / %d",
-       u.ans.size(), r.ans.size(), diff, first, u.f->Evictions(), r.f->Evictions(), cu.folded.load(),
-       cr.folded.load(), cu.promoted.load(), cr.promoted.load(), u.f->Floored(), r.f->Floored());
+  LOGF(
+      "answers %d / %d, differing %d (first at %d); end: evictions %d / %d, folded %d / %d, promoted %d / %d, "
+      "floored %d / %d",
+      u.ans.size(), r.ans.size(), diff, first, u.f->Evictions(), r.f->Evictions(), cu.folded.load(), cr.folded.load(),
+      cu.promoted.load(), cr.promoted.load(), u.f->Floored(), r.f->Floored());
   LOGF("snapshot %d bytes, Bytes() %d at the snapshot (%.3f%%)", r.size, r.bytesAt,
        100 * (static_cast<double>(r.size) - static_cast<double>(r.bytesAt)) / static_cast<double>(r.bytesAt));
   if (diff != 0 || u.ans.size() != r.ans.size()) ERRORF("a restore changed answers");
@@ -179,7 +180,8 @@ TEST(TestSnapshotCorrupt) {
   }
   auto word = [&](std::size_t i) {
     u64 x = 0;
-    for (int k = 0; k < 8; k++) x |= static_cast<u64>(static_cast<std::uint8_t>(snap[i + static_cast<std::size_t>(k)])) << (8 * k);
+    for (int k = 0; k < 8; k++)
+      x |= static_cast<u64>(static_cast<std::uint8_t>(snap[i + static_cast<std::size_t>(k)])) << (8 * k);
     return x;
   };
   // The sections' ends: each a word holding the section's number above the
@@ -250,7 +252,8 @@ TEST(TestSnapshotRefusesWildIndices) {
   if (!c.hot.load() || !c.stash.load()) FATALF("the workload allocated no hot table or no stash");
   auto word = [](const std::string& b, std::size_t i) {
     u64 x = 0;
-    for (int k = 0; k < 8; k++) x |= static_cast<u64>(static_cast<std::uint8_t>(b[i + static_cast<std::size_t>(k)])) << (8 * k);
+    for (int k = 0; k < 8; k++)
+      x |= static_cast<u64>(static_cast<std::uint8_t>(b[i + static_cast<std::size_t>(k)])) << (8 * k);
     return x;
   };
   auto put = [](std::string& b, std::size_t i, u64 x) {
@@ -291,7 +294,8 @@ TEST(TestSnapshotRefusesWildIndices) {
       {"the next hot entry out of range", edit(4, ends[4] - 48, u64{1} << 40)},
   };
   if (u64 tail = c.stashN % 64; tail != 0)
-    cases.push_back({"a wait bit past the stash's last set", edit(3, ends[3] - 24, word(snap, ends[3] - 24) | (u64{1} << 63))});
+    cases.push_back(
+        {"a wait bit past the stash's last set", edit(3, ends[3] - 24, word(snap, ends[3] - 24) | (u64{1} << 63))});
   for (const Case& k : cases) {
     Filter h(snapCfg());
     std::string err;
@@ -457,9 +461,10 @@ TEST(TestSnapshotSize) {
     Core& c = core(f);
     bool st = c.stash.load() != nullptr, hot = c.hot.load() != nullptr, gh = c.gh.load() != nullptr;
     double over = (static_cast<double>(b.size()) - static_cast<double>(f.Bytes())) / static_cast<double>(f.Bytes());
-    LOGF("%s: snapshot %d bytes, Bytes() %d (%+.3f%%); stash %v, hot %v, overflow %v; evictions %d, folded %d, "
-         "promoted %d",
-         name, b.size(), f.Bytes(), 100 * over, st, hot, gh, f.Evictions(), f.Folded(), f.Promoted());
+    LOGF(
+        "%s: snapshot %d bytes, Bytes() %d (%+.3f%%); stash %v, hot %v, overflow %v; evictions %d, folded %d, "
+        "promoted %d",
+        name, b.size(), f.Bytes(), 100 * over, st, hot, gh, f.Evictions(), f.Folded(), f.Promoted());
     if (over > 0.01 || over < -0.01 || !st || (all && (!hot || !gh)))
       ERRORF("%s: not within 1%% of Bytes(), or a section not allocated", name);
   };

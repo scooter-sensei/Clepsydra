@@ -27,8 +27,10 @@
 #include <memory>
 #include <mutex>
 #include <new>
+#include <stdexcept>
 #include <thread>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -172,18 +174,23 @@ inline u64 mix64(u64 x) {
 // cas is Go's atomic CompareAndSwap: old is taken by value (C++'s
 // compare_exchange writes the current value back into its first argument).
 template <class T, class V>
-inline bool cas(std::atomic<T>& a, V old, V nw) {
+[[nodiscard]] inline bool cas(std::atomic<T>& a, V old, V nw) {
   T o = static_cast<T>(old);
   return a.compare_exchange_strong(o, static_cast<T>(nw));
 }
 
 // Defer runs f when it goes out of scope: Go's defer, when declared at the
 // function's own scope (Go runs every defer at function return, never at the
-// end of a block).
+// end of a block). Neither copyable nor movable: a copy would run f twice.
 template <class F>
 struct Defer {
-  F f;
+  explicit Defer(F fn) : f(std::move(fn)) {}
+  Defer(const Defer&) = delete;
+  Defer& operator=(const Defer&) = delete;
+  Defer(Defer&&) = delete;
+  Defer& operator=(Defer&&) = delete;
   ~Defer() { f(); }
+  F f;
 };
 template <class F>
 Defer(F) -> Defer<F>;
@@ -205,8 +212,8 @@ inline u64 hotIdx(u64 w1) { return (w1 >> hotIdxShift) & hotIdxMask; }
 inline bool hot(u64 w1) {
   if (isHot(w1)) return false;
   return (w1 & 0x1F) >= satPerUnit || ((w1 >> 5) & 0x1F) >= satPerUnit || ((w1 >> 10) & 0x3F) >= satPerUnit ||
-         ((w1 >> 16) & 0x7F) >= satPerUnit || ((w1 >> 23) & 0xFF) >= satPerUnit ||
-         ((w1 >> 31) & 0xFF) >= satPerUnit || ((w1 >> 39) & 0x1FF) >= satPerUnit;
+         ((w1 >> 16) & 0x7F) >= satPerUnit || ((w1 >> 23) & 0xFF) >= satPerUnit || ((w1 >> 31) & 0xFF) >= satPerUnit ||
+         ((w1 >> 39) & 0x1FF) >= satPerUnit;
 }
 
 // lowerOnset is w1 with its onset lowered to on, if on is earlier.
@@ -248,12 +255,18 @@ bool demotable(const View& v, i64 u);
 
 // AlignedBuf is the reference's alignedWords: an array of T aligned to a
 // cache line, every element value-initialized (zero), which also takes the
-// pages' faults at allocation (the reference's prefault).
+// pages' faults at allocation (the reference's prefault). A size whose bytes
+// overflow std::size_t throws std::length_error, as std::vector's does (Go's
+// make panics); the elements' construction can't throw.
 template <class T>
 class AlignedBuf {
+  static_assert(std::is_nothrow_default_constructible_v<T>);
+
  public:
   AlignedBuf() = default;
   explicit AlignedBuf(std::size_t n) : n_(n) {
+    if (n > std::numeric_limits<std::size_t>::max() / sizeof(T))
+      throw std::length_error("temporalfilter: table larger than the address space");
     p_ = static_cast<T*>(::operator new(std::max<std::size_t>(n, 1) * sizeof(T), std::align_val_t{64}));
     for (std::size_t i = 0; i < n; i++) new (p_ + i) T();
   }
@@ -321,11 +334,11 @@ struct StashTable {
 
 // HotEntry is one hot entry (hot.go), a cache line.
 struct alignas(64) HotEntry {
-  AU64 ver{0};                 // odd while a writer holds the entry
-  AU64 id{0};                  // owner's identity; 0: free
-  std::atomic<i64> epoch{0};   // unit of bucket 0
-  std::atomic<i64> sat{0};     // newest unit whose events may be missing; satNone
-  AU64 c0{0};                  // bucket 0's count | hotClosed | generation | onset
+  AU64 ver{0};                // odd while a writer holds the entry
+  AU64 id{0};                 // owner's identity; 0: free
+  std::atomic<i64> epoch{0};  // unit of bucket 0
+  std::atomic<i64> sat{0};    // newest unit whose events may be missing; satNone
+  AU64 c0{0};                 // bucket 0's count | hotClosed | generation | onset
   std::array<std::atomic<std::uint32_t>, nBuckets - 1> c{};
 
   u64 lock();
@@ -338,7 +351,10 @@ static_assert(sizeof(HotEntry) == 64);
 struct Core;
 
 struct HotTable {
-  explicit HotTable(std::size_t n) : e(n) {}
+  // The free list never holds more than the table's entries: reserved up
+  // front, putFree never allocates, so a slot drop (a sweep, a relocation)
+  // can't throw between beginning and ending its move.
+  explicit HotTable(std::size_t n) : e(n) { free.reserve(n); }
   std::pair<View, bool> read(u64 idx, u64 id) const;
   bool add(Core& f, u64 idx, u64 id, u64 n, i64 u, u64 now, AU64* slot, u64 old);
   void putFree(u64 idx);
@@ -373,7 +389,7 @@ inline u64 ghFP(u64 e) { return e >> (ghCntBits + ghSlBits); }
 inline u64 ghCnt(u64 e) { return (e >> ghSlBits) & ghCntMax; }
 
 struct Ghost {
-  Ghost(u64 bytes, u64 horizon, int choices, int sub);
+  Ghost(u64 bytes, u64 hz, int ch, int sb);
   void slot(u64 id, std::array<i64, 2>& base, int& nb, u64& fp) const;
   u64 real(u64 e, u64 ep) const;
   bool live(u64 sl, u64 window, u64 now) const;
@@ -420,7 +436,7 @@ struct SketchShape {
 inline constexpr SketchShape defaultShape{4, 8, 2};
 
 struct Sketch {
-  Sketch(u64 w, u64 horizon, SketchShape sh);
+  Sketch(u64 width, u64 hz, SketchShape sh);
   u64 col(u64 id, int r) const;
   std::uint32_t cell(u64 base, u64 p) const;
   void add(u64 id, u64 t, u64 n, bool sat, u64 now);
@@ -486,8 +502,8 @@ struct alignas(64) QuantilePad {
 // name runs (go/filter.go lists them).
 inline std::function<void()> testHookCopied, testHookVictim, testHookTaken, testHookStamped, testHookStamping,
     testHookPlacing, testHookSweeping, testHookGhostRead, testHookGhostAdding, testHookGhostFloor;
-inline std::function<void(i64)> testHookPicked, testHookInstalling, testHookBumping, testHookBumped,
-    testHookOpenSeen, testHookSweepSeen, testHookSweepRead, testHookHotAdding;
+inline std::function<void(i64)> testHookPicked, testHookInstalling, testHookBumping, testHookBumped, testHookOpenSeen,
+    testHookSweepSeen, testHookSweepRead, testHookHotAdding;
 // forceCT turns ConstantTime on in every filter (tests: TF_CT=1).
 inline bool forceCT = false;
 // forceBG turns Background on in every filter (tests: TF_BG=1).
@@ -507,10 +523,12 @@ struct Found {
 
 // Core is Go's Filter.
 struct Core {
-  explicit Core(const Config& cfg);
+  explicit Core(const Config& in);
   ~Core();
   Core(const Core&) = delete;
   Core& operator=(const Core&) = delete;
+  Core(Core&&) = delete;
+  Core& operator=(Core&&) = delete;
 
   // ---- filter.go ----
   void close();
@@ -545,8 +563,7 @@ struct Core {
   std::pair<u64, bool> nextReg(u64 old, u64 tg, u64 last, u64 now, bool reset) const;
   std::pair<u64, bool> nextRegU(u64 old, u64 tg, u64 last, u64 now, i64 lastU, i64 nowU, bool reset) const;
   // bump: ok is false if the slot was handed to another key meanwhile.
-  bool bump(i64 i, u64 fpd, u64 tg, u64 now, i64 nu, u64 last, i64 lu, bool reset, u64& w1, u64& ref,
-            bool& overflow);
+  bool bump(i64 i, u64 fpd, u64 tg, u64 now, i64 nu, u64 last, i64 lu, bool reset, u64& w1, u64& ref, bool& overflow);
   bool unpoint(i64 i, u64 w0, u64 old, u64 fpd, u64 tg, u64 now, i64 nu, u64& w1, u64& ref);
   bool strayed(i64 i, u64 tg) const;
   u64 mass(u64 id, u64 w1, u64 last, u64 now) const;
@@ -602,9 +619,7 @@ struct Core {
   bool stashWait(u64 id, u64 w0, u64 w1, u64 now);
   void putBack(u64 id, u64 w0, u64 w1, u64 now);
   void stashWrite(StashTable* p, StashEntry* e, StashEntry ne);
-  bool stashGet(u64 id, u64 now, bool take, u64& w0, u64& w1) {
-    return tableGet(stash.load(), id, now, take, w0, w1);
-  }
+  bool stashGet(u64 id, u64 now, bool take, u64& w0, u64& w1) { return tableGet(stash.load(), id, now, take, w0, w1); }
   bool tableGet(StashTable* p, u64 id, u64 now, bool take, u64& w0, u64& w1);
   void dropped(u64 now);
 
@@ -619,8 +634,7 @@ struct Core {
 
   // ---- batch.go ----
   void checkAndTouchBatch(std::span<const u64> hs, u64 window, u64 now, std::span<bool> out);
-  void touchAndCountBatch(std::span<const u64> hs, u64 window, u64 now, std::span<bool> seen,
-                          std::span<i64> counts);
+  void touchAndCountBatch(std::span<const u64> hs, u64 window, u64 now, std::span<bool> seen, std::span<i64> counts);
   void velocityCountBatch(std::span<const u64> hs, u64 window, u64 now, std::span<i64> counts);
   void warm(std::span<const u64> hs, std::array<i64, batchChunk>& at);
 

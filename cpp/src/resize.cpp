@@ -40,7 +40,7 @@ void Resizable::move(std::uint64_t h, std::uint64_t now) {
   u64 fp = fingerprint(h), tg = tag(h);
   Core& f = *cur_->c_;
   Core& o = *old_->c_;
-  u64 w0, w1;
+  u64 w0 = 0, w1 = 0;
   if (f.lookupStable(h, fp, tg, false, w0, w1) >= 0) return;
   i64 i = o.lookupStable(h, fp, tg, false, w0, w1);
   if (i < 0 || (w1 >> tagShift) == tagBusy || isHot(w1) || age(now, w0 & tsMask) > o.horizon) return;
@@ -100,14 +100,14 @@ bool Resizable::ContainsAt(std::uint64_t h, std::uint64_t window, std::uint64_t 
   return cur_->ContainsAt(h, window, now) || (old_ && old_->ContainsAt(h, window, now));
 }
 
-std::int64_t Resizable::Bytes() {
+std::int64_t Resizable::Bytes() const {
   std::lock_guard<std::mutex> lk(mu_);
   std::int64_t n = cur_->Bytes();
   if (old_) n += old_->Bytes();
   return n;
 }
 
-std::uint64_t Resizable::Evictions() {
+std::uint64_t Resizable::Evictions() const {
   std::lock_guard<std::mutex> lk(mu_);
   std::uint64_t n = cur_->Evictions();
   if (old_) n += old_->Evictions();

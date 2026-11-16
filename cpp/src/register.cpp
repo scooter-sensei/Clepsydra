@@ -58,9 +58,7 @@ bool Register::advance(i64 u0, i64 u1) {
 }
 
 // onsetOf is where the tick now falls in its unit u, in sixteenths.
-u64 Core::onsetOf(u64 now, i64 u) const {
-  return static_cast<u64>(unitOf(16 * (now - static_cast<u64>(u) * unit)));
-}
+u64 Core::onsetOf(u64 now, i64 u) const { return static_cast<u64>(unitOf(16 * (now - static_cast<u64>(u) * unit))); }
 
 // nextReg returns word1 after counting one event at now in old, the register
 // of key tg last touched at last; the result is at the unit of max(now, last).
@@ -122,7 +120,7 @@ bool Core::bump(i64 i, u64 fpd, u64 tg, u64 now, i64 nu, u64 last, i64 lu, bool 
       }
       // The entry aged out with the key's history (or the caller resets it):
       // start afresh, at the unit word0 has when the register replaces it.
-      u64 nw, nref;
+      u64 nw = 0, nref = 0;
       if (unpoint(i, w0, old, fpd, tg, now, nu, nw, nref)) {
         if (reset) slotDrop(id, old);
         w1 = nw;
@@ -142,7 +140,7 @@ bool Core::bump(i64 i, u64 fpd, u64 tg, u64 now, i64 nu, u64 last, i64 lu, bool 
     }
     auto [nw, over] = nextRegU(old, tg, ref, now, refU, nu, reset);
     if (over) {
-      u64 pw;
+      u64 pw = 0;
       if (promote(i, w0, old, tg, ref, now, pw)) {
         w1 = pw;
         overflow = false;
@@ -320,6 +318,7 @@ std::pair<Result, bool> Core::estimate(u64 id, u64 w1, u64 last, u64 now, u64 wi
     if (from < hi) est += a + (static_cast<double>(c) - a) * (hi - from) / (hi - lo);
     break;
   }
+  // NOLINTNEXTLINE(bugprone-incorrect-roundings): the reference rounds as int(x + 0.5)
   i64 n = std::max<i64>(1, static_cast<i64>(est + 0.5));
   Result r;
   r.Count = n;

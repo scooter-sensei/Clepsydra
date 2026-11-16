@@ -100,9 +100,10 @@ TEST(TestResize) {
          c.to, checkpoints, inTransition, z.Evictions(), s.Evictions(), TestAccess::moved(z));
     LOGF("%s: count error ratio resized/reference at 1s 5s 15s 30s 60s: %.4f %.4f %.4f %.4f %.4f", c.name, ratio[0],
          ratio[1], ratio[2], ratio[3], ratio[4]);
-    LOGF("%s: Seen differs %d; Upper < exact: resized unflagged %d (in transition %d, after %d; flagged %d), reference "
-         "unflagged %d; false Seen of 100,000 absent keys in transition %d, reference %d",
-         c.name, seenDiff, lowM, lowIn, lowAfter, lowMflag, lowS, falseM, falseS);
+    LOGF(
+        "%s: Seen differs %d; Upper < exact: resized unflagged %d (in transition %d, after %d; flagged %d), reference "
+        "unflagged %d; false Seen of 100,000 absent keys in transition %d, reference %d",
+        c.name, seenDiff, lowM, lowIn, lowAfter, lowMflag, lowS, falseM, falseS);
     if (c.lossy) {
       if (lowAfter != 0) ERRORF("%s: %d unflagged lows after the transition", c.name, lowAfter);
       continue;
@@ -110,7 +111,8 @@ TEST(TestResize) {
     if (seenDiff != 0) ERRORF("%s: Seen differs %d times", c.name, seenDiff);
     for (int wi = 0; wi < 5; wi++)
       if (ratio[wi] > 1.05)
-        ERRORF("%s: count error at %d ms %.4fx the reference's", c.name, workload::velWins[static_cast<std::size_t>(wi)], ratio[wi]);
+        ERRORF("%s: count error at %d ms %.4fx the reference's", c.name,
+               workload::velWins[static_cast<std::size_t>(wi)], ratio[wi]);
     if (lowM > lowS) ERRORF("%s: %d unflagged lows against the reference's %d", c.name, lowM, lowS);
     if (!c.evicts && (z.Evictions() != 0 || s.Evictions() != 0 || lowM != 0))
       ERRORF("%s: evictions or unflagged lows where none were expected", c.name);

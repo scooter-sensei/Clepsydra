@@ -46,7 +46,8 @@ TEST(TestSprayCannotEvictRepeatOffender) {
   for (std::size_t i = 0; i < offenders.size(); i++) {
     Result r = f.CountAt(offenders[i], f.Ticks(1min), now);
     if (r.Count < 20 || (r.Count > 20 && !r.Degraded)) {
-      check::fail(__FILE__, __LINE__, "offender " + std::to_string(i) + ": " + helpers::show(r) + " after spray, want 20");
+      check::fail(__FILE__, __LINE__,
+                  "offender " + std::to_string(i) + ": " + helpers::show(r) + " after spray, want 20");
       break;
     }
   }
@@ -92,8 +93,8 @@ struct Workload {
   bool step(std::vector<Filter*> fs, std::string& why) {
     now += static_cast<std::uint64_t>(rng.IntN(40));
     if (rng.IntN(500) == 0) now += 1 + rng.Uint64N(20'000);
-    std::uint64_t h = rng.IntN(10) == 0 ? heavy[static_cast<std::size_t>(rng.IntN(8))]
-                                        : mix64(0x1000 + rng.Uint64N(700));
+    std::uint64_t h =
+        rng.IntN(10) == 0 ? heavy[static_cast<std::size_t>(rng.IntN(8))] : mix64(0x1000 + rng.Uint64N(700));
     std::uint64_t w = 1 + rng.Uint64N(12'000);
     std::int64_t op = rng.IntN(100);
     std::vector<std::string> got;
@@ -175,7 +176,8 @@ TEST(TestSnapshotRoundTrip) {
     CHECK_EQ(g.Folded(), f.Folded());
     for (int i = 0; i < 30'000; i++) {
       if (!wl.step({&f, &g}, why)) {
-        check::fail(__FILE__, __LINE__, "variant " + std::to_string(variant) + " step " + std::to_string(i) + ": " + why);
+        check::fail(__FILE__, __LINE__,
+                    "variant " + std::to_string(variant) + " step " + std::to_string(i) + ": " + why);
         break;
       }
     }
@@ -214,7 +216,8 @@ TEST(TestSnapshotRefusals) {
   Config other = cfg;
   other.Capacity = 512;
   CHECK_MSG(refused(good, other), "another Config was restored");
-  for (std::size_t cut : {std::size_t{0}, std::size_t{1}, std::size_t{8}, std::size_t{100}, good.size() / 2, good.size() - 8, good.size() - 1})
+  for (std::size_t cut : {std::size_t{0}, std::size_t{1}, std::size_t{8}, std::size_t{100}, good.size() / 2,
+                          good.size() - 8, good.size() - 1})
     CHECK_MSG(refused(good.substr(0, cut), cfg), "a stream cut at " + std::to_string(cut) + " was restored");
   CHECK_MSG(refused(good + "x", cfg), "trailing bytes were restored");
   int flips = 0, missed = 0;
@@ -384,7 +387,8 @@ TEST(TestResizeKeepsCounts) {
     std::int64_t want = k % 2 == 0 ? 4 : 3;
     Result r = z.CountAt(hasher.HashUint64(static_cast<std::uint64_t>(k)), 60'000, now);
     if (r.Count != want) {
-      check::fail(__FILE__, __LINE__, "key " + std::to_string(k) + ": " + helpers::show(r) + ", want " + std::to_string(want));
+      check::fail(__FILE__, __LINE__,
+                  "key " + std::to_string(k) + ": " + helpers::show(r) + ", want " + std::to_string(want));
       break;
     }
   }

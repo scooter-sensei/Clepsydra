@@ -149,14 +149,30 @@ class Parser {
       }
       char e = t_[i_++];
       switch (e) {
-        case '"': out += '"'; break;
-        case '\\': out += '\\'; break;
-        case '/': out += '/'; break;
-        case 'b': out += '\b'; break;
-        case 'f': out += '\f'; break;
-        case 'n': out += '\n'; break;
-        case 'r': out += '\r'; break;
-        case 't': out += '\t'; break;
+        case '"':
+          out += '"';
+          break;
+        case '\\':
+          out += '\\';
+          break;
+        case '/':
+          out += '/';
+          break;
+        case 'b':
+          out += '\b';
+          break;
+        case 'f':
+          out += '\f';
+          break;
+        case 'n':
+          out += '\n';
+          break;
+        case 'r':
+          out += '\r';
+          break;
+        case 't':
+          out += '\t';
+          break;
         case 'u': {
           unsigned cp = static_cast<unsigned>(std::stoul(t_.substr(i_, 4), nullptr, 16));
           i_ += 4;
@@ -172,7 +188,8 @@ class Parser {
           }
           break;
         }
-        default: err("bad escape");
+        default:
+          err("bad escape");
       }
     }
     if (i_ >= t_.size()) err("unterminated string");

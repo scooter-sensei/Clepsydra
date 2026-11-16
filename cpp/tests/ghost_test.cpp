@@ -139,8 +139,8 @@ TEST(TestGhostFloorAcrossEpoch) {
   testHookGhostFloor = [&] {
     if (fired) return;
     fired = true;
-    g.advance(11);                             // slice 11: the epoch moves on
-    g.raiseFloor(0, 2, 20, 11, 55'000);        // a history of 20 events leaves to the floor
+    g.advance(11);                       // slice 11: the epoch moves on
+    g.raiseFloor(0, 2, 20, 11, 55'000);  // a history of 20 events leaves to the floor
   };
   g.raiseFloor(0, 3, 4, 10, 54'999);  // a history of 4 events, slice 10, the epoch loaded before the move
   testHookGhostFloor = nullptr;

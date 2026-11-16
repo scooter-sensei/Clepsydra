@@ -5,7 +5,9 @@
 namespace clepsydra::detail {
 
 StashTable::StashTable(u64 sets, PaddedMutex* mus)
-    : e(static_cast<std::size_t>(sets * stashWays)), wait(static_cast<std::size_t>((sets + 63) / 64)), n(sets),
+    : e(static_cast<std::size_t>(sets * stashWays)),
+      wait(static_cast<std::size_t>((sets + 63) / 64)),
+      n(sets),
       mu(mus) {}
 
 // set returns id's set (stashWays entries) and its lock.
@@ -27,8 +29,8 @@ Found Core::recall(u64 h, u64 fp, u64 tg, u64 now, bool take) {
   if (!ct) {
     if (StashTable* p = room.load(); p && p->waiting(id)) {
       MoveCount* mv = take ? &moveOf(tg) : nullptr;
-      u64 w0, w1;
-      bool retry;
+      u64 w0 = 0, w1 = 0;
+      bool retry = false;
       bool ok = roomGet(p, id, now, mv, w0, w1, retry);
       if (retry) return Found{0, 0, srcRetry};
       if (ok && take) return Found{w0, w1, srcRoom};
@@ -36,7 +38,7 @@ Found Core::recall(u64 h, u64 fp, u64 tg, u64 now, bool take) {
     }
     if (now > stashUntil.load()) return Found{};
   }
-  u64 w0, w1;
+  u64 w0 = 0, w1 = 0;
   if (stashGet(id, now, take, w0, w1)) return Found{w0, w1, srcStash};
   return Found{};
 }

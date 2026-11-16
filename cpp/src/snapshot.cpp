@@ -86,7 +86,8 @@ struct SnapR {
   }
 };
 
-const char* errSnapMode = "temporalfilter: snapshots of ConstantTime, Background or count-min filters are not supported";
+const char* errSnapMode =
+    "temporalfilter: snapshots of ConstantTime, Background or count-min filters are not supported";
 }  // namespace
 
 std::vector<u64> Core::snapShape() const {
@@ -145,7 +146,8 @@ i64 Core::writeTo(std::ostream& w) {
       s.u(static_cast<u64>(e.epoch.load()));
       s.u(static_cast<u64>(e.sat.load()));
       s.u(e.c0.load());
-      for (std::size_t j = 0; j < e.c.size(); j += 2) s.u(static_cast<u64>(e.c[j].load()) | (static_cast<u64>(e.c[j + 1].load()) << 32));
+      for (std::size_t j = 0; j < e.c.size(); j += 2)
+        s.u(static_cast<u64>(e.c[j].load()) | (static_cast<u64>(e.c[j + 1].load()) << 32));
     }
     s.u(t->free.size());
     for (std::uint32_t x : t->free) s.u(x);
@@ -355,7 +357,8 @@ std::string Core::snapSane() const {
     for (std::size_t i = 0; i < st->e.size(); i++) {
       if (points(st->e[i].w1)) return "a stash entry points past the hot entries";
     }
-    if (const u64 tail = st->n % 64; tail != 0 && st->wait.size() != 0 && (st->wait[st->wait.size() - 1].load() >> tail) != 0)
+    if (const u64 tail = st->n % 64;
+        tail != 0 && st->wait.size() != 0 && (st->wait[st->wait.size() - 1].load() >> tail) != 0)
       return "a wait bit past the stash's last set";
   }
   if (t) {

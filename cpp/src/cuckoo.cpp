@@ -11,6 +11,13 @@ namespace clepsydra::detail {
 Result Core::miss(u64 h, u64 fp, u64 tg, u64 window, u64 now, bool wantCount, u64 s0, u64 s1, int src) {
   Result r;
   bool fromRoom = src == srcRoom;  // taken out of the wait room: its move ends once it is placed
+  // An exception out of the placement (a lazy table's allocation, the placer
+  // thread's start; fatal in Go) ends the move on its way out, so first
+  // touches on the stripe don't wait for it forever. The history is lost.
+  bool moving = fromRoom;
+  Defer endMove{[this, &moving, tg] {
+    if (moving) moveOf(tg).done.fetch_add(1);
+  }};
   u64 w1 = nextReg(0, tg, now, now, true).first;  // first event, published with the key
   u64 last = now, sat = 0;
   bool hotRestore = false;
@@ -20,7 +27,7 @@ Result Core::miss(u64 h, u64 fp, u64 tg, u64 window, u64 now, bool wantCount, u6
       w1 = s1;
       hotRestore = true;
     } else {
-      bool over;
+      bool over = false;
       std::tie(w1, over) = nextReg(s1, tg, last, now, false);
       if (over || ((s0 & satBit) != 0 && detail::hot(w1))) sat = satBit;
     }
@@ -48,7 +55,10 @@ Result Core::miss(u64 h, u64 fp, u64 tg, u64 window, u64 now, bool wantCount, u6
     }
   }
   if (ci == -1 && (src == srcStash || fromRoom)) putBack(stashID(h, fp, tg), s0, s1, now);  // for the retry
-  if (fromRoom) moveOf(tg).done.fetch_add(1);  // in the table, or back in the room or the stash
+  if (fromRoom) {  // in the table, or back in the room or the stash
+    moving = false;
+    moveOf(tg).done.fetch_add(1);
+  }
   if (ci == -1) {
     Result x;
     x.Count = -1;
@@ -129,8 +139,7 @@ i64 Core::claimAt(std::array<u64, 2> lns, std::array<u64, 2> mine, u64 w1, u64 n
         u64 vw1 = words[static_cast<std::size_t>(base + s + 1)].load();
         // Read after the slot: a key whose move is under way is left alone,
         // and a busy word1 can't be taken.
-        if (MoveCount& mv = moveOf(vw1 >> tagShift);
-            (vw1 >> tagShift) == tagBusy || mv.begun.load() != mv.done.load())
+        if (MoveCount& mv = moveOf(vw1 >> tagShift); (vw1 >> tagShift) == tagBusy || mv.begun.load() != mv.done.load())
           continue;
         u64 score = (std::min<u64>(mass(slotID(lns[li], w0, vw1), vw1, ts, now), (u64{1} << 16) - 1) << 48) | ts;
         if (score < victimScore) {
@@ -150,8 +159,8 @@ i64 Core::claimAt(std::array<u64, 2> lns, std::array<u64, 2> mine, u64 w1, u64 n
 
 // evict is claimAt's eviction of the slot at word index victim (in line,
 // holding victimW0/victimW1) for the new entry mine0/mine1.
-i64 Core::evict(u64 line, u64 mine0, u64 mine1, u64 now, u64 stripe, const PutFunc* put, i64 victim,
-                u64 victimW0, u64 victimW1) {
+i64 Core::evict(u64 line, u64 mine0, u64 mine1, u64 now, u64 stripe, const PutFunc* put, i64 victim, u64 victimW0,
+                u64 victimW1) {
   // The victim's history goes to the stash under the victim's own claim
   // stripe. TryLock: the caller holds its own stripe.
   u64 vs = victimW0 >> (64 - claimStripeBits);
@@ -240,9 +249,9 @@ bool Core::relocate(i64 i, u64 line, u64 mine0, u64 mine1, u64 now, int depth, i
   if (testHookPicked) testHookPicked(i);
   u64 a = alt(line, w0 >> 48);
   const i64 base = static_cast<i64>(a * wordsPerLine);
-  u64 moved = w0 ^ dispBit;           // displaced iff it wasn't
+  u64 moved = w0 ^ dispBit;               // displaced iff it wasn't
   MoveCount& m = moveOf(w1 >> tagShift);  // the entry's key's stripe
-  auto replace = [&](i64 d) -> bool {  // the hidden copy is at d; now take the source
+  auto replace = [&](i64 d) -> bool {     // the hidden copy is at d; now take the source
     Defer done{[&m] { m.done.fetch_add(1); }};
     if (parent) {
       parent->begun.fetch_add(1);  // the parent's copy goes in (hidden) with this install
@@ -252,7 +261,7 @@ bool Core::relocate(i64 i, u64 line, u64 mine0, u64 mine1, u64 now, int depth, i
         return false;
       }
     }
-    if (putNew(put, i, w0, w1, mine0, mine1)) {  // deeper levels pass no put: install
+    if (putNew(put, i, w0, w1, mine0, mine1)) {          // deeper levels pass no put: install
       words[static_cast<std::size_t>(d) + 1].store(w1);  // publish
       relocations.fetch_add(1);
       return true;

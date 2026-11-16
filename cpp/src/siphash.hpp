@@ -13,8 +13,7 @@ namespace clepsydra::detail::siphash {
 
 inline std::uint64_t le64(const unsigned char* b) {
   return std::uint64_t{b[0]} | std::uint64_t{b[1]} << 8 | std::uint64_t{b[2]} << 16 | std::uint64_t{b[3]} << 24 |
-         std::uint64_t{b[4]} << 32 | std::uint64_t{b[5]} << 40 | std::uint64_t{b[6]} << 48 |
-         std::uint64_t{b[7]} << 56;
+         std::uint64_t{b[4]} << 32 | std::uint64_t{b[5]} << 40 | std::uint64_t{b[6]} << 48 | std::uint64_t{b[7]} << 56;
 }
 
 // Key is a 128-bit SipHash key.

@@ -1,8 +1,8 @@
 name: cpp
 
 # The C++ port (cpp/): sanity and regression with GCC and Clang on Linux, the
-# suite under ASan and UBSan, and the suite with MSVC on Windows (/W4 /WX for
-# the library), on every push and pull request that touches
+# suite under ASan and UBSan, the suite with MSVC on Windows (/W4 /WX for the
+# library), and the layout and lint checks, on every push and pull request that touches
 # it or what it is checked against (the format's vectors, the Go reference's
 # expected outputs).
 on:
@@ -34,6 +34,20 @@ jobs:
         with:
           name: verify-report-${{ matrix.cxx }}
           path: cpp/verify-report/
+
+  # Layout (cpp/.clang-format) and the library's lint (cpp/.clang-tidy, kept
+  # at zero findings), with LLVM 18 as Ubuntu 24.04 ships it.
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get install -y ninja-build clang-18 clang-format-18 clang-tidy-18
+      - name: format
+        run: git ls-files '*.cpp' '*.hpp' '*.inc' | xargs clang-format-18 --dry-run --Werror
+      - name: tidy
+        run: |
+          cmake --preset dev -DCMAKE_CXX_COMPILER=clang++-18
+          clang-tidy-18 -p build/dev --quiet src/*.cpp
 
   # Undefined behaviour and memory errors (Go rules both out; C++ doesn't):
   # the suite under AddressSanitizer and UndefinedBehaviorSanitizer, with the

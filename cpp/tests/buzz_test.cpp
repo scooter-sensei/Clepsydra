@@ -180,7 +180,8 @@ TEST(TestBuzzLimiter) {
     BuzzRow lo = buzzOffer(200'000, 100, ru, 0.8, horizons, 0, 0, 0);
     LOGF("%-7v x2.0 | %v", str(ru), hi.String());
     LOGF("%-7v x0.8 | %v", str(ru), lo.String());
-    if (hi.share(2) < 0.97) ERRORF("%s offered 2x: the buzz admits %.3f of the exact log (0.97 wanted)", str(ru), hi.share(2));
+    if (hi.share(2) < 0.97)
+      ERRORF("%s offered 2x: the buzz admits %.3f of the exact log (0.97 wanted)", str(ru), hi.share(2));
     if (lo.denied(1) > lo.denied(0) / 4)
       ERRORF("%s offered 0.8x: false denials %.4f, the register's %.4f (a quarter wanted)", str(ru), lo.denied(1),
              lo.denied(0));
@@ -281,12 +282,13 @@ TEST(TestBuzzConcurrent) {
       }
       u64 decided = 0;
       if (BuzzTable* tb = core(f).buzz.load()) decided = tb->decided.load();
-      LOGF("keys %3d %v: admitted %d (%.2f of limit x windows x keys), window positions %d, over the limit %d, "
-           "decided by a log %d",
-           nk, str(c), total,
-           static_cast<double>(total) /
-               (static_cast<double>(c.limit) * static_cast<double>(ticks) / static_cast<double>(c.w) * nk),
-           positions, over, decided);
+      LOGF(
+          "keys %3d %v: admitted %d (%.2f of limit x windows x keys), window positions %d, over the limit %d, "
+          "decided by a log %d",
+          nk, str(c), total,
+          static_cast<double>(total) /
+              (static_cast<double>(c.limit) * static_cast<double>(ticks) / static_cast<double>(c.w) * nk),
+          positions, over, decided);
       if (over != 0) ERRORF("keys %d %s: over the limit at %d window positions", nk, str(c), over);
       if (decided == 0) ERRORF("keys %d %s: no decision was made by a log", nk, str(c));
     }
@@ -343,7 +345,8 @@ TEST(TestBuzzSnapshot) {
 TEST(TestBuzzReading) {
   skipBuzzCT();
   if (const char* e = std::getenv("TF_EXP"); !e || !*e) SKIP("set TF_EXP=1");
-  std::vector<BuzzRule> rules{{1'000, 5}, {5'000, 10}, {10'000, 3}, {10'000, 5}, {30'000, 10}, {60'000, 6}, {60'000, 16}};
+  std::vector<BuzzRule> rules{{1'000, 5},   {5'000, 10}, {10'000, 3}, {10'000, 5},
+                              {30'000, 10}, {60'000, 6}, {60'000, 16}};
   const double mults[] = {0.8, 1.2, 2};
   auto scen = [&](const char* name, i64 capN, double plain, const std::vector<BuzzRule>& rs) {
     for (const BuzzRule& ru : rs) {

@@ -6,6 +6,7 @@
 #include <chrono>
 #include <fstream>
 #include <thread>
+#include <tuple>
 #include <unordered_map>
 
 #include "check.hpp"
@@ -219,9 +220,9 @@ TEST(TestStressSoak) {
       std::int64_t cnt[16];
       for (std::uint64_t n = 0;; n++) {
         if (stop.load()) return;
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                      std::chrono::system_clock::now().time_since_epoch())
-                      .count();
+        auto ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count();
         int phase = static_cast<int>((ms / 500) % 4);  // pool: 0.5x, 1x, 2x, 4x capacity in total
         std::uint64_t pool = static_cast<std::uint64_t>((capacity / 2) << phase) / static_cast<std::uint64_t>(workers);
         u64 h;
@@ -252,8 +253,8 @@ TEST(TestStressSoak) {
               Result again = f.CountAt(h, w, now);
               std::lock_guard<std::mutex> lk(firstMu);
               firstLow = "got " + helpers::show(r) + "; asked again: " + helpers::show(again) + "; window " +
-                         std::to_string(w) + " ms: exact " + std::to_string(exact) + " (now " +
-                         std::to_string(now) + "); " + helpers::whereIs(c, h, now);
+                         std::to_string(w) + " ms: exact " + std::to_string(exact) + " (now " + std::to_string(now) +
+                         "); " + helpers::whereIs(c, h, now);
             }
           }
         } else {
@@ -284,13 +285,14 @@ TEST(TestStressSoak) {
   stop.store(true);
   for (auto& t : ts) t.join();
   ticker.join();
-  std::printf("    %d workers, %.0fs: %lld ops, %lld counts checked (%lld Saturated, %lld low behind a live bucket floor); "
-              "evictions %llu, restored %llu, lost %llu, promoted %llu, hot refused %llu\n",
-              workers, std::chrono::duration<double>(d).count(), static_cast<long long>(ops.load()),
-              static_cast<long long>(queries.load()), static_cast<long long>(sat.load()),
-              static_cast<long long>(floored.load()), static_cast<unsigned long long>(f.Evictions()),
-              static_cast<unsigned long long>(f.Restored()), static_cast<unsigned long long>(f.Lost()),
-              static_cast<unsigned long long>(f.Promoted()), static_cast<unsigned long long>(f.HotRefused()));
+  std::printf(
+      "    %d workers, %.0fs: %lld ops, %lld counts checked (%lld Saturated, %lld low behind a live bucket floor); "
+      "evictions %llu, restored %llu, lost %llu, promoted %llu, hot refused %llu\n",
+      workers, std::chrono::duration<double>(d).count(), static_cast<long long>(ops.load()),
+      static_cast<long long>(queries.load()), static_cast<long long>(sat.load()),
+      static_cast<long long>(floored.load()), static_cast<unsigned long long>(f.Evictions()),
+      static_cast<unsigned long long>(f.Restored()), static_cast<unsigned long long>(f.Lost()),
+      static_cast<unsigned long long>(f.Promoted()), static_cast<unsigned long long>(f.HotRefused()));
   if (std::int64_t n = low.load(); n > 0)
     check::fail(__FILE__, __LINE__,
                 std::to_string(n) + " unflagged answers with Upper below the true count; first: " + firstLow);
@@ -393,16 +395,31 @@ Config fuzzConfig(gorand::Rand& rng, FuzzResult& res, std::int64_t& capacity, st
   cfg.SpillMin = 1;
   if (rng.IntN(4) == 0) cfg.Load = 0.5 + 0.5 * rng.Float64();
   switch (rng.IntN(8)) {
-    case 0: cfg.Stash = -1, res.noStash = 1; break;
-    case 1: case 2: cfg.Stash = 1 + rng.IntN(64); break;
+    case 0:
+      cfg.Stash = -1, res.noStash = 1;
+      break;
+    case 1:
+    case 2:
+      cfg.Stash = 1 + rng.IntN(64);
+      break;
   }
   switch (rng.IntN(8)) {
-    case 0: cfg.Overflow = -1, res.noOverflow = 1; break;
-    case 1: case 2: cfg.Overflow = 1 + rng.IntN(256), res.smallOverflow = 1; break;
+    case 0:
+      cfg.Overflow = -1, res.noOverflow = 1;
+      break;
+    case 1:
+    case 2:
+      cfg.Overflow = 1 + rng.IntN(256), res.smallOverflow = 1;
+      break;
   }
   switch (rng.IntN(8)) {
-    case 0: cfg.Hot = -1, res.noHot = 1; break;
-    case 1: case 2: cfg.Hot = 1 + rng.IntN(8), res.smallHot = 1; break;
+    case 0:
+      cfg.Hot = -1, res.noHot = 1;
+      break;
+    case 1:
+    case 2:
+      cfg.Hot = 1 + rng.IntN(8), res.smallHot = 1;
+      break;
   }
   return cfg;
 }
@@ -461,9 +478,9 @@ FuzzResult fuzzCase(std::uint64_t seed) {
   std::int64_t cnt[16];
   auto desc = [&] {
     return "capacity " + std::to_string(capacity) + " load " + std::to_string(cfg.Load) + " stash " +
-           std::to_string(cfg.Stash) + " overflow " + std::to_string(cfg.Overflow) + " hot " +
-           std::to_string(cfg.Hot) + " ct " + std::to_string(c.ct) + " bg " + std::to_string(c.bg) + " place 1/" +
-           std::to_string(placeEvery) + " horizon " + std::to_string(H) + " ticks unit " + std::to_string(unit) +
+           std::to_string(cfg.Stash) + " overflow " + std::to_string(cfg.Overflow) + " hot " + std::to_string(cfg.Hot) +
+           " ct " + std::to_string(c.ct) + " bg " + std::to_string(c.bg) + " place 1/" + std::to_string(placeEvery) +
+           " horizon " + std::to_string(H) + " ticks unit " + std::to_string(unit) +
            " lag <= " + std::to_string(maxLag) + " ops/horizon " + std::to_string(perH);
   };
   auto shared = [&](u64 h) {
@@ -574,8 +591,8 @@ FuzzResult fuzzCase(std::uint64_t seed) {
     } else if (op < 85) {
       if (!checkR("Count", h, window, now, f.CountAt(h, window, now))) return res;
     } else if (op < 90) {
-      f.ContainsAt(h, window, now);
-      f.VelocityCountAt(h, window, now);
+      std::ignore = f.ContainsAt(h, window, now);
+      std::ignore = f.VelocityCountAt(h, window, now);
       res.ops++;
     } else if (op < 97) {
       for (auto& x : hs) {
@@ -681,8 +698,8 @@ struct CfuzzShared {
 // shared keys. A straggler's calls run half a horizon to a horizon behind the
 // clock.
 FuzzResult cfuzzWorker(Filter& f, u64 g, u64 seed, std::uint64_t ops, std::int64_t share, u64 H, u64 maxLag,
-                       double perH, bool straggler, std::atomic<u64>& clock, std::atomic<u64>& newest,
-                       CfuzzShared& sh, helpers::TagAmp* amp) {
+                       double perH, bool straggler, std::atomic<u64>& clock, std::atomic<u64>& newest, CfuzzShared& sh,
+                       helpers::TagAmp* amp) {
   FuzzResult res;
   Core& c = core(f);
   gorand::Rand rng(seed, g);
@@ -767,9 +784,9 @@ FuzzResult cfuzzWorker(Filter& f, u64 g, u64 seed, std::uint64_t ops, std::int64
           if (std::int64_t exact = before.count(h, window, now);
               r.Upper < exact && !helpers::floorLive(c, h, window, now) && !(c.skW == 0 && c.lostRecently(now))) {
             res.fail = "thread " + std::to_string(g) + " op " + std::to_string(res.ops) + " shared Count: Upper " +
-                       std::to_string(r.Upper) + " < true " + std::to_string(exact) + " (result " +
-                       helpers::show(r) + "); key " + helpers::hex(h) + " window " + std::to_string(window) +
-                       " now " + std::to_string(now) + " newest " + std::to_string(before.newest) + "; events " +
+                       std::to_string(r.Upper) + " < true " + std::to_string(exact) + " (result " + helpers::show(r) +
+                       "); key " + helpers::hex(h) + " window " + std::to_string(window) + " now " +
+                       std::to_string(now) + " newest " + std::to_string(before.newest) + "; events " +
                        tailOf(evOf(before, h), 12) + "; " + helpers::whereIs(c, h, now);
             return res;
           }
@@ -805,8 +822,8 @@ FuzzResult cfuzzWorker(Filter& f, u64 g, u64 seed, std::uint64_t ops, std::int64
     } else if (op < 85) {
       if (!checkR("Count", h, window, now, f.CountAt(h, window, now))) return res;
     } else if (op < 90) {
-      f.ContainsAt(h, window, now);
-      f.VelocityCountAt(h, window, now);
+      std::ignore = f.ContainsAt(h, window, now);
+      std::ignore = f.VelocityCountAt(h, window, now);
       res.ops++;
     } else if (op < 97) {  // a batch of 16, drawn from 4 to 16 keys
       std::vector<u64> ks(static_cast<std::size_t>(4 + rng.IntN(13)));
@@ -871,11 +888,11 @@ FuzzResult cfuzzCase(std::uint64_t seed) {
   const u64 maxLag = lags[rng.IntN(4)];
   const double perHs[5] = {0.25, 1, 4, 16, 64};
   const double perH = static_cast<double>(capacity) * perHs[rng.IntN(5)];
-  std::string desc = "capacity " + std::to_string(capacity) + " stash " + std::to_string(cfg.Stash) +
-                     " overflow " + std::to_string(cfg.Overflow) + " hot " + std::to_string(cfg.Hot) + " ct " +
-                     std::to_string(c.ct) + " bg " + std::to_string(c.bg) + " threads " + std::to_string(workers) +
-                     " horizon " + std::to_string(H) + " unit " + std::to_string(c.unit) + " lag <= " +
-                     std::to_string(maxLag) + " ops/horizon " + std::to_string(perH);
+  std::string desc = "capacity " + std::to_string(capacity) + " stash " + std::to_string(cfg.Stash) + " overflow " +
+                     std::to_string(cfg.Overflow) + " hot " + std::to_string(cfg.Hot) + " ct " + std::to_string(c.ct) +
+                     " bg " + std::to_string(c.bg) + " threads " + std::to_string(workers) + " horizon " +
+                     std::to_string(H) + " unit " + std::to_string(c.unit) + " lag <= " + std::to_string(maxLag) +
+                     " ops/horizon " + std::to_string(perH);
   CfuzzShared sh;
   sh.keys.resize(static_cast<std::size_t>(1 + rng.IntN(16)));
   sh.tr.horizon = H;
@@ -890,9 +907,9 @@ FuzzResult cfuzzCase(std::uint64_t seed) {
   std::vector<std::thread> ts;
   for (int g = 0; g < workers; g++) {
     ts.emplace_back([&, g] {
-      FuzzResult r = cfuzzWorker(f, static_cast<u64>(g), seeds[static_cast<std::size_t>(g)], ops,
-                                 capacity / workers + 1, H, maxLag, perH, straggle && g == 0, clock, newest, sh,
-                                 amp.get());
+      FuzzResult r =
+          cfuzzWorker(f, static_cast<u64>(g), seeds[static_cast<std::size_t>(g)], ops, capacity / workers + 1, H,
+                      maxLag, perH, straggle && g == 0, clock, newest, sh, amp.get());
       std::lock_guard<std::mutex> lk(mu);
       res.add(r);
       if (!r.fail.empty() && res.fail.empty()) res.fail = r.fail + "; " + desc;

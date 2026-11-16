@@ -82,21 +82,21 @@ void Filter::Merge(Filter& g) { c_->merge(*g.c_); }
 std::int64_t Filter::WriteTo(std::ostream& w) { return c_->writeTo(w); }
 std::int64_t Filter::ReadFrom(std::istream& r) { return c_->readFrom(r); }
 
-std::uint64_t Filter::Evictions() const { return c_->evictions.load(); }
-std::uint64_t Filter::Relocations() const { return c_->relocations.load(); }
-std::uint64_t Filter::Lost() const { return c_->lost.load(); }
-std::uint64_t Filter::Folded() const { return c_->folded.load(); }
-std::uint64_t Filter::Shed() const { return c_->shed.load(); }
-std::uint64_t Filter::Waited() const { return c_->waited.load(); }
-std::int64_t Filter::Waiting() const { return c_->deferred.load(); }
-std::uint64_t Filter::Restored() const { return c_->restored.load(); }
-std::uint64_t Filter::Promoted() const { return c_->promoted.load(); }
-std::uint64_t Filter::HotRefused() const { return c_->hotRefused.load(); }
-std::uint64_t Filter::Demoted() const { return c_->demoted(); }
-std::int64_t Filter::HotInUse() const { return c_->hotInUse(); }
-std::uint64_t Filter::Floored() const { return c_->floored(); }
-std::int64_t Filter::Occupancy(std::uint64_t now) const { return c_->occupancy(now); }
-std::int64_t Filter::Slots() const { return c_->slots(); }
-std::int64_t Filter::Bytes() const { return c_->bytes(); }
+std::uint64_t Filter::Evictions() const noexcept { return c_->evictions.load(); }
+std::uint64_t Filter::Relocations() const noexcept { return c_->relocations.load(); }
+std::uint64_t Filter::Lost() const noexcept { return c_->lost.load(); }
+std::uint64_t Filter::Folded() const noexcept { return c_->folded.load(); }
+std::uint64_t Filter::Shed() const noexcept { return c_->shed.load(); }
+std::uint64_t Filter::Waited() const noexcept { return c_->waited.load(); }
+std::int64_t Filter::Waiting() const noexcept { return c_->deferred.load(); }
+std::uint64_t Filter::Restored() const noexcept { return c_->restored.load(); }
+std::uint64_t Filter::Promoted() const noexcept { return c_->promoted.load(); }
+std::uint64_t Filter::HotRefused() const noexcept { return c_->hotRefused.load(); }
+std::uint64_t Filter::Demoted() const noexcept { return c_->demoted(); }
+std::int64_t Filter::HotInUse() const noexcept { return c_->hotInUse(); }
+std::uint64_t Filter::Floored() const noexcept { return c_->floored(); }
+std::int64_t Filter::Occupancy(std::uint64_t now) const noexcept { return c_->occupancy(now); }
+std::int64_t Filter::Slots() const noexcept { return c_->slots(); }
+std::int64_t Filter::Bytes() const noexcept { return c_->bytes(); }
 
 }  // namespace clepsydra

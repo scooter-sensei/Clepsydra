@@ -1,0 +1,39 @@
+{
+  "version": 2,
+  "cmakeMinimumRequired": { "major": 3, "minor": 20, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "dev",
+      "displayName": "RelWithDebInfo, warnings as errors, a compile database for clang-tidy",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CLEPSYDRA_WERROR": "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "sanitize",
+      "inherits": "dev",
+      "displayName": "AddressSanitizer, UndefinedBehaviorSanitizer and the standard library's bounds checks",
+      "cacheVariables": { "CLEPSYDRA_SANITIZE": "address,undefined" }
+    },
+    {
+      "name": "tsan",
+      "inherits": "dev",
+      "displayName": "ThreadSanitizer (the stress tier's race detector)",
+      "cacheVariables": { "CLEPSYDRA_TSAN": "ON" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "dev", "configurePreset": "dev" },
+    { "name": "sanitize", "configurePreset": "sanitize" },
+    { "name": "tsan", "configurePreset": "tsan" }
+  ],
+  "testPresets": [
+    { "name": "dev", "configurePreset": "dev", "output": { "outputOnFailure": true } },
+    { "name": "sanitize", "configurePreset": "sanitize", "output": { "outputOnFailure": true } },
+    { "name": "tsan", "configurePreset": "tsan", "output": { "outputOnFailure": true } }
+  ]
+}

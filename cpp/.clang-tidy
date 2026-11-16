@@ -1,0 +1,63 @@
+# clang-tidy 18 for the library (src/, include/): the checks that find
+# defects, kept at zero findings. Run: cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON,
+# then clang-tidy -p <build> src/*.cpp.
+#
+# Left out because they flag the port's shape, which follows the Go reference
+# function for function (cpp/README.md, "Porting rules"):
+#   bugprone-easily-swappable-parameters    Go's signatures, kept as they are
+#   bugprone-implicit-widening-of-multiplication-result
+#                                           products of small constants only
+#   misc-non-private-member-variables-in-classes
+#                                           Core is Go's Filter, its fields package-visible
+#   misc-no-recursion                       relocate is Go's bounded cuckoo search
+#   readability-make-member-function-const  AlignedBuf's operator[] is shallow-const: the
+#                                           methods it names write the table
+#   readability-convert-member-functions-to-static
+#                                           methods stay methods, as in Go
+#   modernize-use-nodiscard                 the internal methods; the public API has it
+#   modernize-avoid-c-arrays, modernize-use-using
+#                                           a Windows handle pair, a snprintf buffer,
+#                                           the __extension__ typedef of u128
+#   clang-analyzer-optin.performance.Padding
+#                                           Core's and BuzzTable's padding is their alignas(64)
+#                                           fields, a cache line each (MSVC's C4324, off for it)
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-implicit-widening-of-multiplication-result,
+  clang-analyzer-*,
+  -clang-analyzer-optin.performance.Padding,
+  concurrency-*,
+  performance-*,
+  cppcoreguidelines-init-variables,
+  cppcoreguidelines-pro-type-member-init,
+  cppcoreguidelines-special-member-functions,
+  cppcoreguidelines-slicing,
+  cppcoreguidelines-virtual-class-destructor,
+  cppcoreguidelines-missing-std-forward,
+  cppcoreguidelines-rvalue-reference-param-not-moved,
+  cppcoreguidelines-no-malloc,
+  misc-*,
+  -misc-const-correctness,
+  -misc-include-cleaner,
+  -misc-non-private-member-variables-in-classes,
+  -misc-no-recursion,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  -modernize-use-nodiscard,
+  -modernize-avoid-c-arrays,
+  -modernize-use-using,
+  -modernize-use-auto,
+  readability-inconsistent-declaration-parameter-name,
+  readability-misleading-indentation,
+  readability-redundant-*,
+  readability-container-size-empty,
+  readability-delete-null-pointer,
+  readability-duplicate-include,
+  readability-static-definition-in-anonymous-namespace,
+  readability-non-const-parameter
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*/cpp/(src|include)/.*'
+CheckOptions:
+  cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor: true

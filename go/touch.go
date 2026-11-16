@@ -21,7 +21,7 @@ func (f *Filter) count(h, window, now uint64, i0 int) Result {
 	w0, w1, src := f.read(h, now, i0)
 	var r Result
 	if src != 0 && age(now, w0&tsMask) <= f.horizon {
-		r = f.estimateAt(h, w1, w0&tsMask, now, window, w0&satBit != 0)
+		r = f.estimateAt(h, w1, w0&tsMask, dripOf(w0), now, window, w0&satBit != 0)
 		r.Seen = r.Count > 0
 	} else {
 		r.Degraded = f.lostRecently(now)
@@ -40,22 +40,25 @@ func (f *Filter) count(h, window, now uint64, i0 int) Result {
 // meanwhile (a touch demoted it), the key's slot is looked up again,
 // without its stripe (the caller may hold it). If it can't be found, the
 // answer fails closed.
-func (f *Filter) estimateAt(h, w1, last, now, window uint64, sat bool) Result {
+func (f *Filter) estimateAt(h, w1, last, drip, now, window uint64, sat bool) Result {
 	if !isHot(w1) {
 		// A register's estimate never fails and reads no id (viewOf
 		// needs it only for a hot entry): the loop's first answer.
-		r, _ := f.estimate(0, w1, last, now, window, sat)
+		r, _ := f.estimate(0, w1, last, drip, now, window, sat)
 		return r
 	}
 	fp, tg := fingerprint(h), tag(h)
 	id := f.stashID(h, fp, tg)
 	for range 8 {
-		if r, ok := f.estimate(id, w1, last, now, window, sat); ok {
+		if r, ok := f.estimate(id, w1, last, drip, now, window, sat); ok {
 			return r
 		}
 		i, w0, nw1 := f.lookupStable(h, fp, tg, false)
 		if i < 0 {
 			break
+		}
+		if w0&tsMask >= last {
+			drip = dripOf(w0)
 		}
 		w1, last, sat = nw1, max(last, w0&tsMask), w0&satBit != 0
 	}
@@ -326,7 +329,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 				if !f.stamp(i, w0, old, tg, now) {
 					continue
 				}
-			} else if now > last && !atomic.CompareAndSwapUint64(&f.words[i], w0, w0&^tsMask|now) {
+			} else if n0 := f.next0(w0, now); n0 != w0 && !atomic.CompareAndSwapUint64(&f.words[i], w0, n0) {
 				continue
 			}
 			if nu > lu && testHookStamped != nil {
@@ -343,7 +346,13 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 		}
 		var r Result
 		if wantCount {
-			r = f.estimateAt(h, w1, max(now, ref), now, window, sat)
+			var drip uint64
+			if dripOn { // the drip log the slot holds at max(now, ref)
+				if x := atomic.LoadUint64(&f.words[i]); x>>47 == fpd && x&tsMask == max(now, ref) {
+					drip = dripOf(x)
+				}
+			}
+			r = f.estimateAt(h, w1, max(now, ref), drip, now, window, sat)
 		}
 		r.Seen = !stale && age(now, last) <= window
 		if held != nil {
@@ -389,7 +398,7 @@ func (f *Filter) farAhead(i int, nu, lu int64, stale bool) (old uint64, far, wai
 // without it (demoteSlot pins that unit the same way). False: a word
 // changed; look again.
 func (f *Filter) stamp(i int, w0, p, tg, now uint64) bool {
-	n0 := w0&^tsMask | now
+	n0 := f.next0(w0, now)
 	if cpu.HasCAS2 {
 		return cpu.CAS2(&f.words[i], w0, p, n0, p)
 	}
@@ -427,7 +436,7 @@ func (f *Filter) realign(h uint64, i int, w0, old, tg, now uint64, nu, lu int64)
 	if !atomic.CompareAndSwapUint64(&f.words[i+1], old, busy) {
 		return 0, false, false
 	}
-	if !atomic.CompareAndSwapUint64(&f.words[i], w0, w0&^tsMask|now) {
+	if !atomic.CompareAndSwapUint64(&f.words[i], w0, f.next0(w0, now)) {
 		atomic.StoreUint64(&f.words[i+1], old)
 		return 0, false, false
 	}
@@ -462,7 +471,7 @@ func (f *Filter) realign2(i int, w0, old, tg, now uint64) (w1 uint64, over, ok b
 // realign2U is realign2 with now's unit nu and the last touch's, lu.
 func (f *Filter) realign2U(i int, w0, old, tg, now uint64, nu, lu int64) (w1 uint64, over, ok bool) {
 	last := w0 & tsMask
-	n0 := w0&^tsMask | now
+	n0 := f.next0(w0, now)
 	w1, over = f.nextRegU(old, tg, last, now, lu, nu, age(now, last) > f.horizon)
 	var idx, id uint64
 	if over {

@@ -273,7 +273,7 @@ func (f *Filter) touchIfBuzz(h, window, limit, now uint64) (Result, bool) {
 	live := src != 0 && age(now, last) <= f.horizon
 	var r Result
 	if live {
-		r = f.estimateAt(h, w1, last, now, window, w0&satBit != 0)
+		r = f.estimateAt(h, w1, last, dripOf(w0), now, window, w0&satBit != 0)
 		r.Seen = r.Count > 0
 	} else {
 		r.Degraded = f.lostRecently(now)
@@ -356,7 +356,7 @@ func (f *Filter) touchIfBuzz(h, window, limit, now uint64) (Result, bool) {
 		} else {
 			stamp := max(now, last)
 			e.log(stamp, t.q, f.horizon)
-			e.w0, e.w1 = w0&^tsMask|stamp, want // checked at the key's next conditional touch
+			e.w0, e.w1 = f.next0(w0, now), want // checked at the key's next conditional touch
 		}
 	}
 	return res, true

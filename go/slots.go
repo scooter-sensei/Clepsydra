@@ -16,7 +16,7 @@ const (
 	// satBit marks a slot whose register overflowed (an event spilled to an
 	// older bucket or was dropped) within its span; see estimate.
 	satBit   = 1 << 46
-	tsMask   = satBit - 1
+	tsMask   = 1<<tsBits - 1 // satBit - 1 without the build tag tfdrip (drip_off.go)
 	tagBits  = 12
 	tagShift = 64 - tagBits
 	// word1's bits 48-51, between the tag and the register: the onset of

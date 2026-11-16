@@ -63,13 +63,13 @@ func (f *Filter) Merge(g *Filter) error {
 				sat = satBit
 			}
 			atomic.StoreUint64(&f.words[j+1], nw1)
-			atomic.StoreUint64(&f.words[j], fw0&^(tsMask|satBit)|sat|max(last, fw0&tsMask))
+			atomic.StoreUint64(&f.words[j], fw0&^(tsMask|satBit|dripMask<<dripShift)|sat|max(last, fw0&tsMask)) // a summed history: its drip log says nothing
 		} else {
 			// f may hold the key's evicted history in its stash: take it and
 			// sum it in. Background is refused, so recall finds nothing or
 			// the stash (srcStash), and with hot entries refused its word1
 			// is a register.
-			nw1, sat, stamp := w1, w0&satBit, last
+			nw1, sat, stamp := w1, w0&satBit, w0&(tsMask|dripMask<<dripShift) // g's history as it is, its drip log with it
 			s0, s1, src := f.recall(h, fp, tg, now, true)
 			if src == srcStash {
 				vf, _ := f.viewOf(id, s1, s0&tsMask)
@@ -79,7 +79,7 @@ func (f *Filter) Merge(g *Filter) error {
 				if over {
 					sat = satBit
 				}
-				stamp = max(last, s0&tsMask)
+				stamp = max(last, s0&tsMask) // summed: its drip log says nothing
 			}
 			placed := false
 			for range 8 {

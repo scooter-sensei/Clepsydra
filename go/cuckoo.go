@@ -29,9 +29,9 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 	room := src == srcRoom
 	w1, _ := f.nextReg(0, tg, now, now, true) // first event, published with the key
 	last, sat := now, uint64(0)
-	hotRestore := false
+	hotRestore, recalled := false, false
 	if src != 0 && age(now, s0&tsMask) <= f.horizon && !f.hotGone(f.stashID(h, fp, tg), s1) {
-		last = s0 & tsMask
+		last, recalled = s0&tsMask, true
 		if isHot(s1) { // it keeps its hot entry; the touch is counted once it is installed
 			w1, hotRestore = s1, true
 		} else {
@@ -51,17 +51,25 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 	// with the older clock, a later window starting between the two would
 	// miss the history's newest event.
 	stamp := max(now, last)
+	low := stamp // the installed word0's last touch, and its drip log
+	if dripOn {
+		if recalled {
+			low = f.next0(s0, now) & (tsMask | dripMask<<dripShift)
+		} else {
+			low = dripFresh(now)
+		}
+	}
 	mode := claimFull
 	if f.ct || f.bg {
 		mode = claimDefer
 	}
-	ci := f.claim(h, fp, w1, now, stamp, sat, mode)
+	ci := f.claim(h, fp, w1, now, low, sat, mode)
 	if ci == claimWait {
 		// No free slot: wait for one, in the stash (ConstantTime; pads place
 		// it) or the wait room (Background; the placer goroutine places it).
 		// If more than one key per 16 wait-room entries waits, the placer
 		// isn't keeping up: search now.
-		if (f.ct || f.deferred.Load() <= int64(f.roomN*stashWays/16)) && f.stashWait(f.stashID(h, fp, tg), fp<<48|sat|stamp, w1, now) {
+		if (f.ct || f.deferred.Load() <= int64(f.roomN*stashWays/16)) && f.stashWait(f.stashID(h, fp, tg), fp<<48|sat|low, w1, now) {
 			// An evicted history that waits came back all the same: this
 			// touch is Restored (and counted once; the touch that installs
 			// it later recalls a waiting entry, which isn't).
@@ -70,7 +78,7 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 				f.bgKick()
 			}
 		} else { // its set is full: search (and evict) now rather than drop a history
-			ci = f.claim(h, fp, w1, now, stamp, sat, claimFull)
+			ci = f.claim(h, fp, w1, now, low, sat, claimFull)
 		}
 	}
 	if ci == -1 && (src == srcStash || room) { // put it back for the retry
@@ -94,7 +102,7 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 	if !wantCount {
 		return r
 	}
-	e := f.estimateAt(h, w1, stamp, now, window, sat != 0)
+	e := f.estimateAt(h, w1, stamp, dripOf(low), now, window, sat != 0)
 	e.Seen, e.Restored, e.Degraded = r.Seen, r.Restored, r.Degraded
 	return e
 }

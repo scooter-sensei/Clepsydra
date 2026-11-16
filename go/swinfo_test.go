@@ -584,7 +584,9 @@ func TestShortWindowInformation(t *testing.T) {
 			pts = append(pts, pt{md.bits, max(scores[0][m].win(0), scores[1][m].win(0)), max(scores[0][m].mean(), scores[1][m].mean()), md.name})
 		}
 	}
-	sort.Slice(pts, func(i, j int) bool { return pts[i].bits < pts[j].bits || pts[i].bits == pts[j].bits && pts[i].e1 < pts[j].e1 })
+	sort.Slice(pts, func(i, j int) bool {
+		return pts[i].bits < pts[j].bits || pts[i].bits == pts[j].bits && pts[i].e1 < pts[j].e1
+	})
 	t.Logf("frontier (worse of the two seeds): bits, 1 s, mean, model")
 	best := math.Inf(1)
 	for _, p := range pts {

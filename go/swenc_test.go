@@ -215,10 +215,10 @@ func TestShortWindowEncodings(t *testing.T) {
 	t.Logf("normalized MAE per window (1 5 15 30 60 s) and mean on (9,9); 1 s and mean on the held-out (3,7); rule: B <= 15, mean <= 0.050 on both, no window over 1.01x the filter's")
 	t.Logf("%-36s %4s | %7s %7s %7s %7s %7s %7s | %7s %7s | %s", "model", "bits", "1s", "5s", "15s", "30s", "60s", "mean", "1s'", "mean'", "rule")
 	type row struct {
-		name string
-		bits int
+		name  string
+		bits  int
 		worst float64
-		pass bool
+		pass  bool
 	}
 	var rows []row
 	for m, md := range models {

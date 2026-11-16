@@ -173,3 +173,59 @@ unit/16 with the onset, at 12 and at 15 bits, on every workload reads a
 mean at most 0.8 of the filter's on that workload, and no window above the filter's by more than 1%. Target 7 is judged on
 tfbench's workload alone (W2); W3 asks only that the gain is not an
 artifact of its rates.
+
+### W3's reading (9ac9076's code, run once; `lab/w3.txt`)
+
+Mean as a share of the filter's on the same workload (filter's mean in
+brackets), unary log at unit/16 with the onset:
+
+| Workload | filter | 8 bits | 10 bits | 12 bits | 15 bits |
+|---|---|---|---|---|---|
+| tfbench's own | (0.0671) | 0.767 | 0.697 | 0.649 | 0.604 |
+| every rate halved | (0.0748) | 0.666 | 0.616 | 0.596 | 0.588 |
+| every rate doubled | (0.0564) | 0.886 | 0.835 | 0.789 | 0.725 |
+| log-uniform 0.05-12/s | (0.0578) | 0.749 | 0.684 | 0.628 | 0.571 |
+
+No window reads above the filter's on any workload at 12 or 15 bits. **The
+rule holds.** The doubled workload gains least: its busy keys have more
+events in a second than 12 bits hold (they are the hot entries' keys, whose
+own fovea B3 modelled). Without the onset the log loses 0.002-0.006 of
+mean; on log-uniform Poisson keys the onset adds nothing.
+
+## Phase 4: the drip log on the filter (W4)
+
+**W4, the drip log** (build tag `tfdrip`: `drip.go`, `drip_on.go`,
+`drip_off.go`; the default build has no log). word0 = fp(16) | displaced(1)
+| saturated(1) | drip log(12) | last touch(34): `MaxTick` falls to
+2^34-1 (4.8 hours at 1 µs; 199 days at 1 ms) in this arm; the bits' lasting
+source, a last touch that wraps under a reclaimer with a deadline, is W5's.
+Every event pushes its gap to the touch before as a unary code in quanta of
+unit/16 (`next0`, in the CAS that moves the last touch; a hit that leaves
+word0 as it was still skips it); a new key's field is all ones; 0 says
+nothing (a merge, or 13 events in one quantum) until a gap of 12 quanta;
+Count reads the log with the register and onset (`dripCount`, W1's interval
+model); `Upper`, `Seen`, saturation, eviction and every other answer read
+what they read today.
+
+**Rule (before the reading).** Worth building (a candidate for main) if:
+
+1. the default build is unchanged: `tfbench -exact` equals
+   `verify/expected/exact.txt`, and the answer digest equals
+   `verify/expected/answer-digest.txt`;
+2. with `tfdrip`, the filter's velocity error on tfbench's workload is at
+   most 0.050 on seed (9, 9) and on the held-out (3, 7), no window above the
+   default build's by more than 1%, and within 0.002 of W2's model (the
+   12-bit unary log at unit/16 with the onset) at every window;
+3. only Count moves: with Count left out (and the batch's counts), the
+   answer digest is identical between the builds in all 30 cells;
+4. `Upper` never below the truth: `TestAttackHeavyHitter` and
+   `TestUpperBoundRandom` pass with `tfdrip`;
+5. with `tfdrip`, the unit suite (`-short`, plain, ConstantTime, Background,
+   `TF_NOCAS2=1`), `TestSlotUnitRaces`, and 5 minutes each of the soak and
+   the concurrent fuzzer under `-race` pass, but for tests that fail for a
+   reason named before the run: ticks past the arm's `MaxTick` (2^34-1), the
+   conformance vectors' pinned Counts (a format change, as D29's), and
+   snapshot tests that write 46-bit ticks or compare Counts with a build
+   without the log;
+6. speed is reported, not judged (hits, counts, misses; 3 interleaved
+   rounds in one binary on the WSL2 guest: indicative only).

@@ -426,7 +426,7 @@ func (f *Filter) viewMass(v *view, now uint64) uint64 {
 // Saturated only for windows reaching back to the unit it was promoted in,
 // if the register it came from had overflowed. ok is false if w1 points to
 // an entry that is no longer the key's (a touch demoted it meanwhile).
-func (f *Filter) estimate(id, w1, last, now, window uint64, sat bool) (r Result, ok bool) {
+func (f *Filter) estimate(id, w1, last, drip, now, window uint64, sat bool) (r Result, ok bool) {
 	window = min(window, f.horizon)
 	if age(now, last) > window {
 		return Result{}, true
@@ -503,6 +503,9 @@ func (f *Filter) estimate(id, w1, last, now, window uint64, sat bool) (r Result,
 			est += a + (float64(c)-a)*(hi-from)/(hi-lo)
 		}
 		break
+	}
+	if dripOn && drip != 0 && v.e == f.unitOf(last) {
+		est = f.dripCount(&v, last, now, window, drip) // lab/sw W4: the drip log (drip.go)
 	}
 	n := max(1, int(est+0.5))
 	r = Result{Count: n, Upper: max(n, int(upper)), Saturated: sat && hit}

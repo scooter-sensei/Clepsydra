@@ -24,6 +24,25 @@ option(CLEPSYDRA_WERROR "Treat warnings as errors (the smoke tier's vet)" OFF)
 option(CLEPSYDRA_TSAN "Build with ThreadSanitizer (the stress tier's race detector)" OFF)
 option(CLEPSYDRA_TESTS "Build the test binary, the tools and the benchmarks" ${CLEPSYDRA_TOP_LEVEL})
 
+# Link-time optimization in the optimized configurations, on request. Go
+# compiles the reference's package as one unit and inlines across its files;
+# here each Go file is a translation unit of its own, and only the linker can
+# inline across them (cpp/README.md, "Speed"). Never under the sanitizers, and
+# not where the toolchain has no LTO archiver. The library's archive then holds
+# the compiler's intermediate code: link it with the same toolchain.
+option(CLEPSYDRA_LTO "Link-time optimization where the toolchain supports it" OFF)
+if(CLEPSYDRA_LTO AND NOT CLEPSYDRA_TSAN AND NOT CLEPSYDRA_SANITIZE)
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT clepsydra_lto LANGUAGES CXX)
+  if(clepsydra_lto)
+    foreach(config IN ITEMS RELEASE RELWITHDEBINFO MINSIZEREL)
+      set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_${config} ON)
+    endforeach()
+  else()
+    message(STATUS "clepsydra: the toolchain can't link-time optimize (Clang: no llvm-ar found); building without")
+  endif()
+endif()
+
 add_library(clepsydra
   src/api.cpp
   src/batch.cpp

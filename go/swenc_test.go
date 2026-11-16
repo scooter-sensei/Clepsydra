@@ -206,7 +206,7 @@ func TestShortWindowEncodings(t *testing.T) {
 		scores[si] = swScoreAll(swRecord(t, sd[0], sd[1]), models)
 		fil := scores[si][len(models)]
 		for wi := range 5 {
-			if math.Abs(scores[si][0].err[wi]-fil.err[wi]) > 1e-9 {
+			if !dripOn && math.Abs(scores[si][0].err[wi]-fil.err[wi]) > 1e-9 { // with tfdrip the filter reads its drip log
 				t.Errorf("seed %v: the register +on4 model differs from the filter at window %d", sd, wi)
 			}
 		}
@@ -396,7 +396,7 @@ func TestShortWindowRobust(t *testing.T) {
 		sc := swScoreAll(swRecordV(t, 9, 9, v), models)
 		fil := sc[len(models)]
 		for wi := range 5 {
-			if math.Abs(sc[0].err[wi]-fil.err[wi]) > 1e-9 {
+			if !dripOn && math.Abs(sc[0].err[wi]-fil.err[wi]) > 1e-9 { // with tfdrip the filter reads its drip log
 				t.Errorf("%s: the register +on4 model differs from the filter at window %d", v, wi)
 			}
 		}

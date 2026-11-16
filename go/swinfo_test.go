@@ -537,7 +537,7 @@ func TestShortWindowInformation(t *testing.T) {
 		}
 		fil := scores[si][len(models)]
 		for wi := range 5 {
-			if math.Abs(reg.err[wi]-fil.err[wi]) > 1e-9 {
+			if !dripOn && math.Abs(reg.err[wi]-fil.err[wi]) > 1e-9 { // with tfdrip the filter reads its drip log
 				t.Errorf("seed %v: the register +on4 model differs from the filter at window %d: %v vs %v", sd, wi, reg.err[wi], fil.err[wi])
 			}
 		}

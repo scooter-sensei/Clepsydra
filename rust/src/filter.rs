@@ -54,6 +54,9 @@ pub const MAX_TICK: u64 = TS_MASK;
 
 pub(crate) const ERR_TICK: &str = "temporalfilter: tick past MaxTick (2^46-1): see Config.Resolution";
 
+/// The most lines a table can have: its bytes (64 a line) fit an allocation.
+const MAX_LINES: u64 = isize::MAX as u64 / (WORDS_PER_LINE * 8);
+
 /// checkTick panics if now is past MaxTick.
 #[inline(always)]
 pub(crate) fn check_tick(now: u64) {
@@ -327,7 +330,8 @@ impl Core {
         if cfg.load <= 0.0 {
             cfg.load = 0.85;
         }
-        if cfg.load > 1.0 {
+        if cfg.load.is_nan() || cfg.load > 1.0 {
+            // NaN too: it passes both of the reference's checks
             return Err(Error::new("temporalfilter: Load must be <= 1"));
         }
         if let Some(c) = &cfg.clock {
@@ -335,7 +339,18 @@ impl Core {
                 return Err(Error::new(ERR_TICK));
             }
         }
-        let lines = 2u64.max((cfg.capacity as f64 / (cfg.load * SLOTS_PER_LINE as f64)).ceil() as u64);
+        // A table of 2^57 lines or more has more bytes than an allocation can
+        // (isize::MAX): the reference wraps its word count there and fails at
+        // its make or its first index, and a build without overflow checks
+        // would wrap it too, and build the filter on a short table. It is
+        // refused before any size is computed from it.
+        let want = (cfg.capacity as f64 / (cfg.load * SLOTS_PER_LINE as f64)).ceil();
+        if want >= MAX_LINES as f64 {
+            return Err(Error::new("temporalfilter: Capacity too large for Load"));
+        }
+        let lines = 2u64.max(want as u64);
+        let words = AlignedWords::try_new((lines * WORDS_PER_LINE) as usize)
+            .ok_or_else(|| Error::new("temporalfilter: no memory for the table (Capacity too large for Load)"))?;
         let (sip, keyed) = match &cfg.key {
             Some(k) => (siphash::Key::new(k), true),
             None => (siphash::Key::default(), false),
@@ -376,7 +391,7 @@ impl Core {
             None => (Clock::Own, true),
         };
         let mut f = Core {
-            words: AlignedWords::new((lines * WORDS_PER_LINE) as usize),
+            words,
             lines,
             horizon,
             unit,
@@ -463,7 +478,7 @@ impl Core {
                         f.coarse.store(f.read_own(), SeqCst);
                     }
                 })
-                .expect("clepsydra: the CoarseClock thread did not start");
+                .map_err(|e| Error::new(format!("temporalfilter: the CoarseClock thread did not start: {e}")))?;
         }
         Ok(f)
     }

@@ -77,8 +77,9 @@ impl<F: FnMut()> Drop for Defer<F> {
 }
 
 /// paddedMutex: a `sync.Mutex` on a cache line of its own. A panic while it
-/// is held (none in the library: a tick past MaxTick panics before any lock)
-/// leaves no poison behind: Go's mutexes have none.
+/// is held (a tick past MaxTick panics before any lock; a lazily allocated
+/// table sized past what an allocation holds can panic under one, README's
+/// porting rule 8) leaves no poison behind: Go's mutexes have none.
 #[repr(align(64))]
 #[derive(Default)]
 pub(crate) struct PaddedMutex(Mutex<()>);
@@ -145,15 +146,23 @@ unsafe impl Send for AlignedWords {}
 unsafe impl Sync for AlignedWords {}
 
 impl AlignedWords {
-    pub(crate) fn new(n: usize) -> Self {
+    /// n zeroed words, or `None` if the allocator has no memory for them
+    /// (the filter's table: `new` returns an error then).
+    pub(crate) fn try_new(n: usize) -> Option<Self> {
         assert!(n > 0 && n <= isize::MAX as usize / 8);
         let layout = Layout::from_size_align(n * 8, 64).unwrap();
         // SAFETY: the layout's size is not zero.
         let p = unsafe { alloc_zeroed(layout) } as *mut AtomicU64;
         if p.is_null() {
-            handle_alloc_error(layout);
+            return None;
         }
-        AlignedWords { p, n }
+        Some(AlignedWords { p, n })
+    }
+
+    /// n zeroed words; without memory for them the process aborts, as on
+    /// any failed allocation (the tables allocated on first use).
+    pub(crate) fn new(n: usize) -> Self {
+        Self::try_new(n).unwrap_or_else(|| handle_alloc_error(Layout::from_size_align(n * 8, 64).unwrap()))
     }
 
     /// prefault writes a word of every page, so a table allocated while the

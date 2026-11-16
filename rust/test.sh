@@ -286,7 +286,9 @@ run_tsan() { # run_tsan <env...> -- <libtest args...>: the instrumented suite, A
 	shift
 	local pre=()
 	if command -v setarch >/dev/null; then pre=(setarch "$(uname -m)" -R); fi
-	env "${envs[@]}" TSAN_OPTIONS="halt_on_error=1 ${TSAN_OPTIONS:-}" "${pre[@]}" "$TSAN_BIN" --test-threads=1 "$@"
+	# allocator_may_return_null: TestConfigUnaddressable asks for a table no allocator can give, and new
+	# returns an Error when the allocation returns null; TSan's allocator aborts instead by default.
+	env "${envs[@]}" TSAN_OPTIONS="halt_on_error=1 allocator_may_return_null=1 ${TSAN_OPTIONS:-}" "${pre[@]}" "$TSAN_BIN" --test-threads=1 "$@"
 }
 
 stress() {

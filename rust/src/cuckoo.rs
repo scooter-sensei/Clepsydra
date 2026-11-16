@@ -43,8 +43,13 @@ impl Core {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn miss(&self, h: u64, fp: u64, tg: u64, window: u64, now: u64, want_count: bool, s0: u64, s1: u64, src: i32) -> Result {
         let mut r = Result::default();
-        // Taken out of the wait room (srcRoom): its move ends once it is placed.
+        // Taken out of the wait room (srcRoom): its move ends once it is
+        // placed, or as a panic out of the placement unwinds (a lazy table
+        // sized past what an allocation holds): every later first touch on
+        // the stripe would wait for it forever otherwise. Go's equivalent
+        // failures are fatal.
         let room = src == SRC_ROOM;
+        let room_done = room.then(|| Defer(|| inc(&self.move_of(tg).done)));
         let (mut w1, _) = self.next_reg(0, tg, now, now, true); // first event, published with the key
         let (mut last, mut sat) = (now, 0u64);
         let mut hot_restore = false;
@@ -99,10 +104,7 @@ impl Core {
             // put it back for the retry
             self.put_back(self.stash_id(h, fp, tg), s0, s1, now);
         }
-        if room {
-            // in the table, or back in the room or the stash
-            inc(&self.move_of(tg).done);
-        }
+        drop(room_done); // in the table, or back in the room or the stash
         if ci == -1 {
             return Result { count: -1, ..Result::default() };
         }

@@ -123,3 +123,53 @@ within B <= 15 bits, on both seeds: the mean is at most 0.050, no window
 reads above the filter's own on that seed by more than 1%, and its state is
 maintained as above. The candidate with the lowest worse-seed mean goes
 first.
+
+### W2's reading (a3f87ff's code, run once; `lab/w2.txt`)
+
+40 candidates pass; the best per budget are all variable-length logs whose
+codes are unary (Rice k = 0) at a quantum of unit/16 (156 ms at a 60 s
+horizon), read with the onset:
+
+| Candidate (with the onset) | bits | 1 s | 5 s | 15 s | 30 s | 60 s | mean | held-out 1 s, mean |
+|---|---|---|---|---|---|---|---|---|
+| the filter | 0 | 0.1671 | 0.0503 | 0.0506 | 0.0435 | 0.0239 | 0.0671 | 0.1663, 0.0666 |
+| unary log, 12 bits, unit/16 | 12 | 0.0522 | 0.0474 | 0.0505 | 0.0435 | 0.0239 | 0.0435 | 0.0510, 0.0429 |
+| unary log, 12 bits, unit/8 | 12 | 0.0637 | 0.0472 | 0.0505 | 0.0435 | 0.0239 | 0.0458 | 0.0648, 0.0456 |
+| unary log, 12 bits, unit/32 | 12 | 0.0877 | 0.0481 | 0.0505 | 0.0435 | 0.0239 | 0.0508 | 0.0873, 0.0503 |
+| fixed log, 4 gaps of 3 bits, unit/16 | 12 | 0.0895 | 0.0482 | 0.0506 | 0.0435 | 0.0239 | 0.0512 | 0.0888, 0.0507 |
+| unary log, 14 bits, unit/16 | 14 | 0.0415 | 0.0470 | 0.0505 | 0.0435 | 0.0239 | 0.0413 | 0.0412, 0.0409 |
+| unary log, 15 bits, unit/16 | 15 | 0.0379 | 0.0469 | 0.0505 | 0.0435 | 0.0239 | 0.0405 | 0.0375, 0.0401 |
+| fixed log, 5 gaps of 3 bits, unit/16 | 15 | 0.0739 | 0.0477 | 0.0506 | 0.0435 | 0.0239 | 0.0479 | 0.0728, 0.0474 |
+| two traces (0.25 s, 0.5 s), 7 bits each | 14 | 0.0812 | 0.0474 | 0.0504 | 0.0435 | 0.0239 | 0.0493 | 0.0819, 0.0491 |
+| two traces (0.25 s, 0.5 s), 8 bits each | 16 | 0.0755 | 0.0472 | 0.0504 | 0.0435 | 0.0239 | 0.0481 | 0.0759, 0.0478 |
+
+Gamma and Rice k = 1, 2 codes come next (0.043-0.047 at 12-15 bits).
+
+**Verdict by the rule:** the unary log of 15 bits at unit/16 goes first
+(worse-seed mean 0.0405); every budget from 12 bits passes. Why unary wins:
+a busy key's gaps are a quantum or less, so most events cost one or two
+bits and a 12-bit field holds the 6-10 events of the last second; a quiet
+key's one event costs more bits but its short windows hold little; a code
+the field cuts still bounds the next gap, so the unlogged events are placed
+below it. Unit/16 balances how many events fit against how exactly each is
+placed for the 1 s window; at unit/32 a busy key's log covers half a second,
+at unit/8 each event is uncertain by 312 ms. It is also the onset's grid,
+and quanta never straddle a unit, so a logged event's bucket is exact.
+
+That optimum is a property of this workload's rates (0.1-10 events/s): W3
+reads it on others before anything is built.
+
+## Phase 3: robustness (W3)
+
+**W3** (`TestShortWindowRobust`, `TF_EXP=1`, a model). The unary log at
+unit/16 (and unit/8, unit/32 beside it) at budgets 6, 8, 10, 12 and 15 bits,
+with and without the onset, on seed (9, 9) of four workloads: tfbench's
+own; every rate halved (bursts every ~20 s); every rate doubled (bursts
+every ~5 s, the ramp to 20/s); and 2,000 Poisson keys at rates log-uniform
+in 0.05-12 events/s. Each against the filter on the same workload.
+
+**Rule (before the reading).** The candidate holds if the unary log at
+unit/16 with the onset, at 12 and at 15 bits, on every workload reads a
+mean at most 0.8 of the filter's on that workload, and no window above the filter's by more than 1%. Target 7 is judged on
+tfbench's workload alone (W2); W3 asks only that the gain is not an
+artifact of its rates.

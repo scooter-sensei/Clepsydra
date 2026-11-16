@@ -6,10 +6,12 @@ package temporalfilter
 import (
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"os"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Variable-length codes of a gap g >= 0 (in quanta), newest first in a
@@ -273,4 +275,147 @@ func TestSwCodes(t *testing.T) {
 			}
 		}
 	}
+}
+
+// swWorkloadV is swWorkload on a variant workload: "base" (tfbench's own,
+// the same draws), "half" and "double" (every rate scaled, bursts every
+// ~20 s or ~5 s), "loguni" (Poisson keys at rates log-uniform in 0.05-12/s).
+func swWorkloadV(s1, s2 uint64, variant string, touch func(k int, t uint64), visit func(k int, ts []uint64, wi int, now uint64)) {
+	const hTicks = 60_000
+	r := rand.New(rand.NewPCG(s1, s2))
+	const nkeys, end = 2000, 5 * hTicks
+	sc := map[string]float64{"base": 1, "half": 0.5, "double": 2, "loguni": 1}[variant]
+	type ev struct {
+		t uint64
+		k int
+	}
+	var evs []ev
+	poisson := func(t0, t1, rate float64, k int) {
+		for t := t0 + r.ExpFloat64()/rate; t < t1; t += r.ExpFloat64() / rate {
+			evs = append(evs, ev{uint64(t) + 1, k})
+		}
+	}
+	for k := range nkeys {
+		if variant == "loguni" {
+			poisson(0, end, math.Exp(math.Log(0.05)+r.Float64()*math.Log(12/0.05))/1000, k)
+			continue
+		}
+		switch k % 5 {
+		case 0:
+			poisson(0, end, sc*(0.2+r.Float64()*4.8)/1000, k)
+		case 1:
+			for t := r.ExpFloat64() * 10_000 / sc; t < end; t += r.ExpFloat64() * 10_000 / sc {
+				for range 5 + r.IntN(16) {
+					evs = append(evs, ev{uint64(t+r.Float64()*200) + 1, k})
+				}
+			}
+		case 2:
+			for t := 0.0; t < end; {
+				t += r.ExpFloat64() / (sc * (0.1 + 9.9*t/end) / 1000)
+				evs = append(evs, ev{uint64(t) + 1, k})
+			}
+		case 3:
+			poisson(0, end, sc/20_000, k)
+		case 4:
+			for t := 0.0; t < end; t += 10_000 {
+				poisson(t, t+5000, sc*4.0/1000, k)
+			}
+		}
+	}
+	sort.Slice(evs, func(i, j int) bool { return evs[i].t < evs[j].t })
+	times := make([][]uint64, nkeys)
+	i := 0
+	for now := uint64(hTicks); now < end; now++ {
+		for i < len(evs) && evs[i].t <= now {
+			touch(evs[i].k, evs[i].t)
+			times[evs[i].k] = append(times[evs[i].k], evs[i].t)
+			i++
+		}
+		k, wi := r.IntN(nkeys), r.IntN(5)
+		visit(k, times[k], wi, now)
+	}
+}
+
+// swRecordV is swRecord on a variant workload.
+func swRecordV(t testing.TB, s1, s2 uint64, variant string) *swRun {
+	f, err := New(Config{Capacity: 200_000, Horizon: time.Minute, Resolution: time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hs := make([]uint64, 2000)
+	for k := range hs {
+		hs[k] = mix64(uint64(k) + 1<<50)
+	}
+	run := &swRun{times: make([][]uint64, 2000)}
+	swWorkloadV(s1, s2, variant, func(k int, tk uint64) {
+		f.CheckAndTouchAt(hs[k], 0, tk)
+		run.times[k] = append(run.times[k], tk)
+	}, func(k int, ts []uint64, wi int, now uint64) {
+		w := velWins[wi]
+		exact := float64(len(ts) - sort.Search(len(ts), func(j int) bool { return ts[j]+w >= now }))
+		run.qs = append(run.qs, swQuery{k, len(ts), wi, now, exact, float64(f.VelocityCountAt(hs[k], w, now))})
+	})
+	return run
+}
+
+// TestShortWindowRobust (TF_EXP=1) is lab/sw's W3: see SW-RESULTS.md.
+func TestShortWindowRobust(t *testing.T) {
+	if os.Getenv("TF_EXP") == "" {
+		t.Skip("set TF_EXP=1")
+	}
+	g := swCur
+	unit := float64(g.unit)
+	model := func(name string, B, rd, on int) swModel {
+		r := unit / float64(rd)
+		return swModel{name, B, func(ts []uint64, now, w uint64) float64 {
+			span := swSpan(ts)
+			L := span[len(span)-1]
+			var logged []swLogged
+			hiCap := math.Inf(1)
+			if B > 0 {
+				logged, hiCap = swVarLog(span, B, swCode{"rice0", false, 0}, r)
+			}
+			iv := swIvals(span, g.buckets(span), unit, on, logged, hiCap, 0, false)
+			return swRound(swCount(iv, float64(now)-float64(w)), now-L <= w)
+		}}
+	}
+	models := []swModel{model("register +on4", 0, 16, 4)}
+	for _, on := range []int{4, 0} {
+		for _, B := range []int{6, 8, 10, 12, 15} {
+			for _, rd := range []int{16, 8, 32} {
+				name := fmt.Sprintf("unary B%d r=u/%d", B, rd)
+				if on > 0 {
+					name += " +on4"
+				}
+				models = append(models, model(name, B, rd, on))
+			}
+		}
+	}
+	verdict := true
+	for _, v := range []string{"base", "half", "double", "loguni"} {
+		sc := swScoreAll(swRecordV(t, 9, 9, v), models)
+		fil := sc[len(models)]
+		for wi := range 5 {
+			if math.Abs(sc[0].err[wi]-fil.err[wi]) > 1e-9 {
+				t.Errorf("%s: the register +on4 model differs from the filter at window %d", v, wi)
+			}
+		}
+		t.Logf("workload %s: filter %s %s %s %s %s mean %s", v, swPad(fil.win(0)), swPad(fil.win(1)), swPad(fil.win(2)), swPad(fil.win(3)), swPad(fil.win(4)), swPad(fil.mean()))
+		for m, md := range models[1:] {
+			s := sc[m+1]
+			ok := s.mean() <= 0.8*fil.mean()
+			for wi := range 5 {
+				ok = ok && s.win(wi) <= 1.01*fil.win(wi)
+			}
+			if (md.name == "unary B12 r=u/16 +on4" || md.name == "unary B15 r=u/16 +on4") && !ok {
+				verdict = false
+			}
+			mark := ""
+			if ok {
+				mark = "ok"
+			}
+			t.Logf("  %-24s %s %s %s %s %s mean %s (%.3f of the filter's) %s", md.name, swPad(s.win(0)), swPad(s.win(1)), swPad(s.win(2)), swPad(s.win(3)), swPad(s.win(4)), swPad(s.mean()), s.mean()/fil.mean(), mark)
+		}
+	}
+	t.Logf("W3's rule (unary at unit/16 with the onset, 12 and 15 bits, on every workload): holds = %v", verdict)
 }

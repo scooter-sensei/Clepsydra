@@ -40,11 +40,16 @@ impl Core {
     /// fresh register, or its evicted history from the stash. Count < 0 means
     /// it lost a race for a slot and the caller should look again. The caller
     /// holds h's claim stripe, so no other first touch of h runs meanwhile.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "the reference's signature, parameter for parameter")]
     pub(crate) fn miss(&self, h: u64, fp: u64, tg: u64, window: u64, now: u64, want_count: bool, s0: u64, s1: u64, src: i32) -> Result {
         let mut r = Result::default();
-        // Taken out of the wait room (srcRoom): its move ends once it is placed.
+        // Taken out of the wait room (srcRoom): its move ends once it is
+        // placed, or as a panic out of the placement unwinds (a lazy table
+        // sized past what an allocation holds): every later first touch on
+        // the stripe would wait for it forever otherwise. Go's equivalent
+        // failures are fatal.
         let room = src == SRC_ROOM;
+        let room_done = room.then(|| Defer(|| inc(&self.move_of(tg).done)));
         let (mut w1, _) = self.next_reg(0, tg, now, now, true); // first event, published with the key
         let (mut last, mut sat) = (now, 0u64);
         let mut hot_restore = false;
@@ -99,10 +104,7 @@ impl Core {
             // put it back for the retry
             self.put_back(self.stash_id(h, fp, tg), s0, s1, now);
         }
-        if room {
-            // in the table, or back in the room or the stash
-            inc(&self.move_of(tg).done);
-        }
+        drop(room_done); // in the table, or back in the room or the stash
         if ci == -1 {
             return Result { count: -1, ..Result::default() };
         }
@@ -137,7 +139,7 @@ impl Core {
     /// nothing: with no free slot it returns claimWait, and the key waits for
     /// a slot (miss). The entry's last touch is stamp; now is the caller's
     /// clock (expiry, eviction scores).
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "the reference's signature, parameter for parameter")]
     pub(crate) fn claim(&self, h: u64, fp: u64, w1: u64, now: u64, stamp: u64, sat: u64, mode: i32) -> isize {
         let p = self.primary(h);
         self.claim_at(
@@ -154,7 +156,7 @@ impl Core {
     /// claimAt is claim for an entry with lines and words mine (primary,
     /// alternate), on claim stripe stripe, which the caller holds (noStripe:
     /// none). put installs the entry (None: install; see putNew).
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "the reference's signature, parameter for parameter")]
     pub(crate) fn claim_at(&self, lines: [u64; 2], mine: [u64; 2], w1: u64, now: u64, stripe: u64, mode: i32, put: PutFunc<'_>) -> isize {
         for (li, &line) in lines.iter().enumerate() {
             let base = (line * WORDS_PER_LINE) as isize;
@@ -182,7 +184,7 @@ impl Core {
         // budget shrinks as recent searches fail, so an overfull table falls
         // back to cheap eviction instead of searching in vain.
         let p = self.pressure.load(SeqCst);
-        let mut budget = 8 + (((RELOC_BUDGET - 8) * (PRESSURE_ONE as u64 - p as u64)) >> PRESSURE_SHIFT) as i64;
+        let mut budget = 8 + (((RELOC_BUDGET - 8) * (u64::from(PRESSURE_ONE) - u64::from(p))) >> PRESSURE_SHIFT) as i64;
         self.warm_alts(lines);
         for depth in 0..=RELOC_DEPTH {
             for (li, &line) in lines.iter().enumerate() {
@@ -231,7 +233,7 @@ impl Core {
     /// evict is claimAt's eviction of the slot at word index victim (in
     /// line, holding victimW0/victimW1) for the new entry mine0/mine1:
     /// claimAt's return.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "the reference's signature, parameter for parameter")]
     pub(crate) fn evict(
         &self,
         line: u64,
@@ -378,7 +380,7 @@ impl Core {
     /// alone. parent is the move whose copy (mine0; mine1 is busy, the parent
     /// publishes it) this one installs, None for a new key, which put
     /// installs.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "the reference's signature, parameter for parameter")]
     pub(crate) fn relocate(
         &self,
         i: isize,

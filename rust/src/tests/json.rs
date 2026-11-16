@@ -14,7 +14,6 @@ pub(crate) enum Json {
 
 static NULL: Json = Json::Null;
 
-#[allow(dead_code)]
 impl Json {
     pub(crate) fn parse(s: &str) -> Result<Json, String> {
         let mut p = Parser { b: s.as_bytes(), i: 0 };

@@ -30,7 +30,7 @@ fn flood(f: &Filter, now: &TestClock, mult: i64, weight: i64) -> (Vec<u64>, Rand
         f.touch_at(rng.uint64(), 0, now.add(1));
     }
     let mut offs = vec![0u64; OFFENDERS];
-    for o in offs.iter_mut() {
+    for o in &mut offs {
         *o = rng.uint64();
         for _ in 0..K {
             f.touch_at(*o, 0, now.get());

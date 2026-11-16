@@ -434,7 +434,7 @@ impl Core {
     /// false if the slot changed meanwhile.
     ///
     /// Returns (w1, over, ok).
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "the reference's signature, parameter for parameter")]
     pub(crate) fn realign(&self, _h: u64, i: isize, w0: u64, old: u64, tg: u64, now: u64, nu: i64, lu: i64) -> (u64, bool, bool) {
         check_tick(now);
         if (old >> TAG_SHIFT) != tg || (is_hot(old) && age(now, w0 & TS_MASK) <= self.horizon) {
@@ -476,14 +476,14 @@ impl Core {
     /// handed meanwhile to a key of old's tag can hold old bit for bit
     /// (promote). A promotion takes its entry first and publishes it by the
     /// same CAS, and closes it again if the CAS fails.
-    #[allow(dead_code)] // the tests'
+    #[cfg(all(test, target_arch = "x86_64"))] // cas2_test's, as Go's cas2_amd64_test.go
     pub(crate) fn realign2(&self, i: isize, w0: u64, old: u64, tg: u64, now: u64) -> (u64, bool, bool) {
         self.realign2_u(i, w0, old, tg, now, self.unit_of(now), self.unit_of(w0 & TS_MASK))
     }
 
     /// realign2U is realign2 with now's unit nu and the last touch's, lu.
     #[inline]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "the reference's signature, parameter for parameter")]
     pub(crate) fn realign2_u(&self, i: isize, w0: u64, old: u64, tg: u64, now: u64, nu: i64, lu: i64) -> (u64, bool, bool) {
         let last = w0 & TS_MASK;
         let n0 = (w0 & !TS_MASK) | now;

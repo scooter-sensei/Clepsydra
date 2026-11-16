@@ -82,7 +82,7 @@ fn TestStressSoak() {
                 // pool whose size cycles to push the table past capacity.
                 let mut cache = HashMap::new();
                 let mut heavy = [0u64; 8];
-                for x in heavy.iter_mut() {
+                for x in &mut heavy {
                     *x = amp_h(amp, rng.uint64(), Some(&mut cache));
                 }
                 let mut logs: HashMap<u64, Vec<u64>> = HashMap::new();
@@ -130,7 +130,7 @@ fn TestStressSoak() {
                             ));
                         }
                     } else {
-                        for x in hs.iter_mut() {
+                        for x in &mut hs {
                             *x = heavy[rng.int_n(heavy.len() as i64) as usize];
                         }
                         f.check_and_touch_batch(&hs, HORIZON, now, &mut res);
@@ -463,7 +463,7 @@ impl FuzzCase<'_> {
     /// (before this touch, for Touch). Events older than the newest clock's
     /// horizon may have been expired by a call at that clock, so they needn't
     /// be seen.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "a helper of the Go test, parameter for parameter")]
     fn high(&self, tr: &FuzzTruth, res: &mut FuzzResult, op: &str, h: u64, window: u64, now: u64, r: &Result) -> bool {
         let (f, hz) = (self.f, self.horizon);
         let mut s = Result::default();
@@ -501,7 +501,7 @@ impl FuzzCase<'_> {
         false
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "a helper of the Go test, parameter for parameter")]
     fn check(&self, tr: &FuzzTruth, res: &mut FuzzResult, op: &str, h: u64, window: u64, now: u64, r: &Result) -> bool {
         res.checks += 1;
         if !self.high(tr, res, op, h, window, now, r) {
@@ -574,7 +574,7 @@ fn fuzz_case(seed: u64) -> FuzzResult {
 
 /// fuzzCase's operations, from the configuration on (it returns at the first
 /// failure, as the reference's returns from fuzzCase).
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments, reason = "a helper of the Go test, parameter for parameter")]
 fn fuzz_run(
     f: &Filter,
     cfg: &Config,
@@ -691,7 +691,7 @@ fn fuzz_run(
             trace(&tr, res.ops, *tt, "Contains+VelocityCount", h, now, &|| format!("[{s} {v}]"));
             res.ops += 1;
         } else if op < 97 {
-            for x in hs.iter_mut() {
+            for x in &mut hs {
                 *x = if rng.int_n(2) == 0 { heavy[rng.int_n(heavy.len() as i64) as usize] } else { key(rng.uint64_n(pool)) };
             }
             if rng.int_n(2) == 0 {
@@ -1106,16 +1106,16 @@ impl CfuzzWorker<'_> {
                     return res;
                 }
             } else if op < 90 {
-                f.contains_at(h, window, now);
-                f.velocity_count_at(h, window, now);
+                let _ = f.contains_at(h, window, now);
+                let _ = f.velocity_count_at(h, window, now);
                 res.ops += 1;
             } else if op < 97 {
                 // a batch of 16, drawn from 4 to 16 keys
                 let mut ks = vec![0u64; 4 + rng.int_n(13) as usize];
-                for k in ks.iter_mut() {
+                for k in &mut ks {
                     *k = if rng.int_n(2) == 0 { heavy[rng.int_n(heavy.len() as i64) as usize] } else { key(rng.uint64_n(pool)) };
                 }
-                for x in hs.iter_mut() {
+                for x in &mut hs {
                     *x = ks[rng.int_n(ks.len() as i64) as usize];
                 }
                 if rng.int_n(2) == 0 {

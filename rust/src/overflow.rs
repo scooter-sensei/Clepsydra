@@ -147,9 +147,9 @@ impl Sketch {
             loop {
                 let old = w.load(SeqCst);
                 let c = (old >> sh) & full;
-                let v = (c & self.cmask) as u64 + n;
-                let mut nc = (v.min(self.cmask as u64) as u32) | (c & self.csat);
-                if sat || v >= self.cmask as u64 {
+                let v = u64::from(c & self.cmask) + n;
+                let mut nc = (v.min(u64::from(self.cmask)) as u32) | (c & self.csat);
+                if sat || v >= u64::from(self.cmask) {
                     nc |= self.csat;
                 }
                 if w.compare_exchange(old, (old & !(full << sh)) | (nc << sh), SeqCst, SeqCst).is_ok() {
@@ -175,7 +175,7 @@ impl Sketch {
     /// after the clear: an expired slice's events then count in the new one,
     /// which only raises answers.
     pub(crate) fn renew(&self, p: u64, sl: u64) {
-        let _g = self.mu.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = self.mu.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if self.epochs[p as usize].load(SeqCst) >= sl + 1 {
             return;
         }
@@ -212,7 +212,7 @@ impl Sketch {
             for sl in oldest..=cur {
                 let p = (sl % self.nsl) as usize;
                 let v = self.cell(base, p as u64);
-                c[p][row] = (v & self.cmask) as u64;
+                c[p][row] = u64::from(v & self.cmask);
                 sat[p] = sat[p] && (v & self.csat) != 0;
                 any = any || (v != 0 && self.epochs[p].load(SeqCst) == sl + 1);
             }

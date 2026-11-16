@@ -31,6 +31,16 @@ jobs:
       - run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy,rustfmt && rustup default "$RUST_TOOLCHAIN"
       - run: ./test.sh sanity
       - run: ./test.sh regression
+      # The library and the suite under the other jobs' targets, and arm64
+      # Linux's: clippy denies its warnings there too (code under cfg(target_arch)
+      # and cfg(windows) compiles only for its target, and the jobs below don't
+      # run clippy).
+      - name: clippy for the other targets
+        run: |
+          rustup target add x86_64-pc-windows-msvc aarch64-apple-darwin aarch64-unknown-linux-musl
+          for t in x86_64-pc-windows-msvc aarch64-apple-darwin aarch64-unknown-linux-musl; do
+            cargo clippy --all-targets --target "$t" -- -D warnings
+          done
       - if: failure()
         uses: actions/upload-artifact@v4
         with:

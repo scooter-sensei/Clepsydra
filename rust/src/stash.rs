@@ -295,12 +295,14 @@ impl Core {
     pub(crate) fn bg_kick(&self) {
         if !self.bg_manual && !self.placing.load(SeqCst) && self.placing.compare_exchange(false, true, SeqCst, SeqCst).is_ok() {
             // The reference's `go f.bgPlace()`: the thread shares the filter
-            // while it runs.
+            // while it runs. A goroutine always starts; a thread the system
+            // refuses leaves the keys waiting for the next wait's kick, and
+            // first touches search inline once more than one key per 16
+            // wait-room entries waits (miss), as when the placer falls behind.
             let me = self.me.upgrade().expect("clepsydra: a filter in use is alive");
-            std::thread::Builder::new()
-                .name("clepsydra-placer".into())
-                .spawn(move || me.bg_place())
-                .expect("clepsydra: the Background placer thread did not start");
+            if std::thread::Builder::new().name("clepsydra-placer".into()).spawn(move || me.bg_place()).is_err() {
+                self.placing.store(false, SeqCst);
+            }
         }
     }
 
@@ -352,7 +354,7 @@ impl Core {
     /// events in the horizon if that has fewer than it. Whichever history is
     /// dropped, Lost counts it.
     pub(crate) fn stash_put(&self, id: u64, w0: u64, w1: u64, now: u64) {
-        self.stash_put_as(id, w0, w1, now, false)
+        self.stash_put_as(id, w0, w1, now, false);
     }
 
     /// stashPutAs is stashPut; wait marks the entry as waiting for a slot.

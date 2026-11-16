@@ -41,7 +41,7 @@ fn TestTimingLeak() {
             };
             let mut rng = Rand::new(3, 4);
             let mut seen = vec![0u64; CAPACITY as usize];
-            for s in seen.iter_mut() {
+            for s in &mut seen {
                 *s = f.hash_uint64(rng.uint64());
                 f.touch_at(*s, 0, clock.get());
             }
@@ -104,7 +104,7 @@ fn TestCTPadEndIsDithered() {
     };
     const N: usize = 20_000;
     let mut ds = vec![0f64; N];
-    for d in ds.iter_mut() {
+    for d in &mut ds {
         let (t0, pad) = f.ct_begin(OP_TOUCH, 1);
         f.ct_end(OP_TOUCH, 0, t0, t0, pad);
         *d = t0.elapsed().as_nanos() as f64;

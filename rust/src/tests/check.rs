@@ -41,26 +41,22 @@ pub(crate) fn env_on(name: &str) -> bool {
 }
 
 /// `os.Getenv(name)`.
-#[allow(dead_code)]
 pub(crate) fn getenv(name: &str) -> String {
     std::env::var(name).unwrap_or_default()
 }
 
 /// `testing.Short()`.
-#[allow(dead_code)]
 pub(crate) fn short() -> bool {
     env_on("TF_SHORT")
 }
 
 /// `forceCT`.
-#[allow(dead_code)]
 pub(crate) fn force_ct() -> bool {
     init();
     hooks::FORCE_CT.load(SeqCst)
 }
 
 /// `forceBG`.
-#[allow(dead_code)]
 pub(crate) fn force_bg() -> bool {
     init();
     hooks::FORCE_BG.load(SeqCst)
@@ -83,13 +79,13 @@ fn log_file() -> Option<&'static Mutex<std::fs::File>> {
 
 fn out_file(line: &str) {
     if let Some(f) = log_file() {
-        let mut f = f.lock().unwrap_or_else(|e| e.into_inner());
+        let mut f = f.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let _ = writeln!(f, "{line}");
     }
 }
 
 fn out(line: &str) {
-    let _g = OUT.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = OUT.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut o = std::io::stdout().lock();
     let _ = writeln!(o, "{line}");
     let _ = o.flush();
@@ -102,7 +98,6 @@ pub(crate) struct T {
     failed: AtomicBool,
 }
 
-#[allow(dead_code)]
 impl T {
     pub(crate) fn new(name: &'static str) -> T {
         init();
@@ -129,11 +124,6 @@ impl T {
     /// regression tier compares with go/verify/expected/).
     pub(crate) fn print(&self, msg: &str) {
         out(msg);
-    }
-
-    /// t.Failed.
-    pub(crate) fn failed(&self) -> bool {
-        self.failed.load(SeqCst)
     }
 
     pub(crate) fn skipped(&self, msg: &str) {
@@ -194,7 +184,6 @@ impl<A: 'static> Drop for HookReset<A> {
 }
 
 /// `testHookX = f`, undone at scope end.
-#[allow(dead_code)]
 #[must_use]
 pub(crate) fn set_hook<A: 'static>(h: &'static Hook<A>, f: impl Fn(A) + Send + Sync + 'static) -> HookReset<A> {
     h.set(f);
@@ -206,7 +195,6 @@ pub(crate) fn set_hook<A: 'static>(h: &'static Hook<A>, f: impl Fn(A) + Send + S
 #[derive(Clone)]
 pub(crate) struct TestClock(pub(crate) Arc<AtomicU64>);
 
-#[allow(dead_code)]
 impl TestClock {
     pub(crate) fn new(now: u64) -> TestClock {
         TestClock(Arc::new(AtomicU64::new(now)))
@@ -215,7 +203,7 @@ impl TestClock {
         self.0.load(SeqCst)
     }
     pub(crate) fn set(&self, now: u64) {
-        self.0.store(now, SeqCst)
+        self.0.store(now, SeqCst);
     }
     pub(crate) fn add(&self, d: u64) -> u64 {
         self.0.fetch_add(d, SeqCst) + d
@@ -228,7 +216,6 @@ impl TestClock {
 }
 
 /// `New(cfg)`, failing the test on an error (`if err != nil { t.Fatal(err) }`).
-#[allow(dead_code)]
 #[track_caller]
 pub(crate) fn must(cfg: Config) -> Filter {
     match Filter::new(cfg) {
@@ -239,23 +226,19 @@ pub(crate) fn must(cfg: Config) -> Filter {
 
 pub(crate) const MINUTE: Duration = Duration::from_secs(60);
 
-#[allow(dead_code)]
 pub(crate) fn secs(n: u64) -> Duration {
     Duration::from_secs(n)
 }
 
-#[allow(dead_code)]
 pub(crate) fn ms(n: u64) -> Duration {
     Duration::from_millis(n)
 }
 
-#[allow(dead_code)]
 pub(crate) fn us(n: u64) -> Duration {
     Duration::from_micros(n)
 }
 
 /// newTest: a filter of the given capacity and horizon at a 1 ms resolution.
-#[allow(dead_code)]
 #[track_caller]
 pub(crate) fn new_test(capacity: i64, horizon: Duration) -> Filter {
     must(Config { capacity, horizon, resolution: ms(1), ..Config::default() })
@@ -263,7 +246,6 @@ pub(crate) fn new_test(capacity: i64, horizon: Duration) -> Filter {
 
 /// settle waits until a Background filter's placer has placed every waiting
 /// key and exited, for tests that read the table's words directly.
-#[allow(dead_code)]
 pub(crate) fn settle(f: &Filter) {
     while f.placing.load(SeqCst) || (f.bg && !f.ct && f.deferred.load(SeqCst) > 0) {
         std::thread::sleep(us(100));
@@ -271,13 +253,11 @@ pub(crate) fn settle(f: &Filter) {
 }
 
 /// Reports whether call panics (the reference's `recover() != nil`).
-#[allow(dead_code)]
 pub(crate) fn panics(call: impl FnOnce()) -> bool {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(call)).is_err()
 }
 
 /// Go's `%.<prec>e`: the exponent signed, with at least two digits.
-#[allow(dead_code)]
 pub(crate) fn go_e(x: f64, prec: usize) -> String {
     let s = format!("{x:.prec$e}");
     match s.split_once('e') {
@@ -300,7 +280,6 @@ thread_local! {
 
 /// `rand.Uint64()` of math/rand/v2's top-level functions: a per-thread
 /// generator, randomly seeded, no state shared between threads.
-#[allow(dead_code)]
 pub(crate) fn rand_uint64() -> u64 {
     RAND.with(|s| {
         // xorshift64*
@@ -313,18 +292,11 @@ pub(crate) fn rand_uint64() -> u64 {
     })
 }
 
-/// `rand.IntN(n)` of the top-level functions.
-#[allow(dead_code)]
-pub(crate) fn rand_int_n(n: i64) -> i64 {
-    (((rand_uint64() >> 32) * n as u64) >> 32) as i64
-}
-
 /// Go's `%v` (and `%g`) of a float64: strconv's shortest 'g'. The shortest
 /// digits that read back; `%e` form when the exponent is < -4 or >= 21 never
 /// applies here: strconv decides, for the shortest, at < -4 or >= 6 (Go
 /// prints 100000 and 1e+06); exponents have two digits or more; NaN and the
 /// infinities as Go's.
-#[allow(dead_code)]
 pub(crate) fn go_g(x: f64) -> String {
     if x.is_nan() {
         return "NaN".into();
@@ -338,7 +310,7 @@ pub(crate) fn go_g(x: f64) -> String {
     let s = format!("{x:e}"); // the shortest digits that read back: d[.ddd]e[-]x
     let (m, e) = s.split_once('e').expect("an exponent");
     let exp: i32 = e.parse().expect("an exponent");
-    let digits = m.chars().filter(|c| c.is_ascii_digit()).count() as i32;
+    let digits = m.chars().filter(char::is_ascii_digit).count() as i32;
     if !(-4..6).contains(&exp) {
         return format!("{m}e{}{:02}", if exp < 0 { '-' } else { '+' }, exp.abs());
     }
@@ -346,7 +318,6 @@ pub(crate) fn go_g(x: f64) -> String {
 }
 
 /// Go's `time.Duration.String`, of nanoseconds: "1m0s", "1.5s", "250ms", "0s".
-#[allow(dead_code)]
 pub(crate) fn go_duration(d: i64) -> String {
     if d == 0 {
         return "0s".into();
@@ -397,7 +368,6 @@ pub(crate) fn go_duration(d: i64) -> String {
 /// `math.Lgamma`'s value: the C library's (as the C++ port's `std::lgamma`),
 /// which the standard library doesn't offer yet. Its arguments here are small
 /// positive integers.
-#[allow(dead_code)]
 pub(crate) fn lgamma(x: f64) -> f64 {
     unsafe extern "C" {
         #[link_name = "lgamma"]
@@ -409,7 +379,6 @@ pub(crate) fn lgamma(x: f64) -> f64 {
 }
 
 /// Go's `%7.4f`.
-#[allow(dead_code)]
 pub(crate) fn pad7(x: f64) -> String {
     format!("{x:7.4}")
 }

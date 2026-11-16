@@ -40,8 +40,10 @@ build() { # build <spec> <name>: $tmp/<name>.run runs that version's benchmarks 
 			git -C "$top" cat-file -e "$1:rust" 2>/dev/null || { echo "ab.sh: $1 has no rust/" >&2; exit 2; }
 			git -C "$top" archive "$1" rust | tar -x -C "$d" && rmdir "$d/src" && mv "$d/rust" "$d/src"
 		fi
+		# The bench's executable, by name: the build lists tfbench's too (cargo builds a package's binaries
+		# for its benches), before or after the bench's as the two finish compiling.
 		exe=$(CARGO_TARGET_DIR="$d/target" "$CARGO" bench --manifest-path "$d/src/Cargo.toml" --bench bench --no-run \
-			--message-format=json-render-diagnostics 2>"$d.log" | grep -o '"executable":"[^"]*"' | tail -1 | cut -d'"' -f4)
+			--message-format=json-render-diagnostics 2>"$d.log" | grep -o '"executable":"[^"]*/bench-[0-9a-f]*"' | tail -1 | cut -d'"' -f4)
 		[ -x "$exe" ] || { cat "$d.log" >&2; exit 1; }
 		printf '#!/bin/sh\nexec "%s" -bench "$1" -count 1\n' "$exe" >"$d.run"
 	fi

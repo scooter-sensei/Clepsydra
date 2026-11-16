@@ -100,7 +100,7 @@ impl B {
 
     /// RunParallel: body runs on GOMAXPROCS threads, which share b.N's
     /// iterations in grains of about 100 µs (at most 1e4).
-    fn run_parallel(&mut self, body: impl Fn(&mut Pb) + Sync) {
+    fn run_parallel(&mut self, body: impl Fn(&mut Pb<'_>) + Sync) {
         let mut grain = 0u64;
         if self.previous_n > 0 && !self.previous_duration.is_zero() {
             grain = (1e5 * self.previous_n as f64 / self.previous_duration.as_nanos() as f64) as u64;
@@ -139,7 +139,7 @@ fn go_g4(v: f64) -> String {
 }
 
 fn procs() -> usize {
-    std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)
+    std::thread::available_parallelism().map(std::num::NonZero::get).unwrap_or(1)
 }
 
 /// mix64 is the SplitMix64 finalizer (the reference's benchmarks' keys).
@@ -311,7 +311,7 @@ fn contains_absent(b: &mut B) {
     b.reset_timer();
     let mut s = 0u64;
     for i in 0..b.n {
-        s += f.contains_at(mix64((1 << 40) + i as u64), w, 2000) as u64;
+        s += u64::from(f.contains_at(mix64((1 << 40) + i as u64), w, 2000));
     }
     SINK.fetch_add(s, Ordering::Relaxed);
 }

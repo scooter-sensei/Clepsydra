@@ -2,8 +2,9 @@
 # Test tiers for the Rust port. docs/specification/conformance.md defines them
 # for every language; go/test.sh is the reference's, cpp/test.sh the C++ port's.
 #
-#   ./test.sh smoke        build every target, clippy with warnings as errors (the Go tier's vet), rustfmt, the
-#                          doctest, every public operation once (TestSmoke, TestSmokeOptional), SipHash vectors
+#   ./test.sh smoke        build every target, clippy with warnings as errors (the Go tier's vet; Cargo.toml's
+#                          [lints] table), rustfmt, rustdoc with its lints as errors, the doctests, every public
+#                          operation once (TestSmoke, TestSmokeOptional), SipHash vectors
 #   ./test.sh sanity       smoke + the unit suite (-short) + ConstantTime (TF_CT=1) and Background (TF_BG=1)
 #                          modes + realign's hold instead of its 16-byte CAS on x86-64 (TF_NOCAS2=1) +
 #                          conformance vectors
@@ -139,6 +140,7 @@ smoke() {
 	check build build_suite
 	check clippy "$CARGO" clippy --all-targets -- -D warnings
 	check rustfmt "$CARGO" fmt --check
+	check rustdoc env RUSTDOCFLAGS="-D warnings" "$CARGO" doc --no-deps
 	check doctest "$CARGO" test --doc
 	[ -x "$BIN" ] || return
 	check smoke run -- -run '^(TestSmoke|TestSmokeOptional|TestSipHashVectors)$' -v
@@ -286,7 +288,9 @@ run_tsan() { # run_tsan <env...> -- <libtest args...>: the instrumented suite, A
 	shift
 	local pre=()
 	if command -v setarch >/dev/null; then pre=(setarch "$(uname -m)" -R); fi
-	env "${envs[@]}" TSAN_OPTIONS="halt_on_error=1 ${TSAN_OPTIONS:-}" "${pre[@]}" "$TSAN_BIN" --test-threads=1 "$@"
+	# allocator_may_return_null: TestConfigUnaddressable asks for a table no allocator can give, and new
+	# returns an Error when the allocation returns null; TSan's allocator aborts instead by default.
+	env "${envs[@]}" TSAN_OPTIONS="halt_on_error=1 allocator_may_return_null=1 ${TSAN_OPTIONS:-}" "${pre[@]}" "$TSAN_BIN" --test-threads=1 "$@"
 }
 
 stress() {

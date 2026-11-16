@@ -212,7 +212,7 @@ impl Core {
 
     /// nextRegU is nextReg with last's and now's units, lastU and nowU.
     #[inline]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "the reference's signature, parameter for parameter")]
     pub(crate) fn next_reg_u(&self, old: u64, tg: u64, last: u64, now: u64, last_u: i64, now_u: i64, reset: bool) -> (u64, bool) {
         if !reset && (old >> TAG_SHIFT) == tg && last_u == now_u {
             // Fast path, same unit: increment the first bucket with room in
@@ -276,7 +276,7 @@ impl Core {
     ///
     /// Returns (w1, ref, overflow, ok).
     #[inline]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "the reference's signature, parameter for parameter")]
     pub(crate) fn bump(&self, i: isize, fpd: u64, tg: u64, now: u64, nu: i64, last: u64, lu: i64, mut reset: bool) -> (u64, u64, bool, bool) {
         loop {
             let old = ld(self.w(i + 1));
@@ -348,7 +348,7 @@ impl Core {
     /// changed: look again.
     ///
     /// Returns (w1, ref, ok).
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "the reference's signature, parameter for parameter")]
     pub(crate) fn unpoint(&self, i: isize, mut w0: u64, old: u64, fpd: u64, tg: u64, now: u64, nu: i64) -> (u64, u64, bool) {
         if cpu::has_cas2() {
             let rf = w0 & TS_MASK;

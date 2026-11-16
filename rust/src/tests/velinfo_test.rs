@@ -58,7 +58,7 @@ impl Geom {
             top = lo;
         }
         for &t in ts {
-            for b in out.iter_mut() {
+            for b in &mut out {
                 if t as f64 >= b.lo {
                     b.c += 1;
                     break;

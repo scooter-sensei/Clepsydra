@@ -118,7 +118,7 @@ fn TestTouchIfSustained() {
             }
             let (mut over, mut positions, mut sum) = (0, 0i64, 0i64);
             let mut min_w = 1i64 << 30;
-            for ts in per.iter_mut() {
+            for ts in &mut per {
                 gosort::slice(ts, |a, b| a < b);
                 let mut lo = 0;
                 for hi in 0..ts.len() {

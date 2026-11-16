@@ -193,7 +193,7 @@ fn section_ends(snap: &[u8]) -> Vec<usize> {
         let w = word(snap, i);
         if (w >> 32) == ends.len() as u64 {
             let from = ends.last().copied().unwrap_or(0);
-            if crc32c_of(&snap[from..i]) as u64 == (w & 0xffffffff) {
+            if u64::from(crc32c_of(&snap[from..i])) == (w & 0xffffffff) {
                 ends.push(i + 8);
             }
         }
@@ -295,7 +295,7 @@ fn TestSnapshotRefusesWildIndices() {
         let mut b = snap.to_vec();
         b[at..at + 8].copy_from_slice(&x.to_le_bytes());
         let (from, end) = (if sec == 0 { 0 } else { ends[sec - 1] }, ends[sec] - 8);
-        let check = crc32c_of(&b[from..end]) as u64 | ((sec as u64) << 32);
+        let check = u64::from(crc32c_of(&b[from..end])) | ((sec as u64) << 32);
         b[end..end + 8].copy_from_slice(&check.to_le_bytes());
         b
     };
@@ -508,7 +508,7 @@ fn TestSnapshotNoOverflow() {
     let mut r = Rand::new(1, 2);
     let mut ops = vec![(0u64, 0u64); 20_000]; // k, at
     let mut at = 1u64;
-    for o in ops.iter_mut() {
+    for o in &mut ops {
         at += r.int_n(3) as u64;
         *o = (snap_key(r.int_n(400) as usize), at);
     }

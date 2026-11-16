@@ -130,7 +130,7 @@ impl HotEntry {
         let c0 = self.c0.load(SeqCst);
         (v.c[0], v.on) = (c0 & HOT_COUNT, c0 >> HOT_ON_SHIFT);
         for j in 1..N_BUCKETS {
-            v.c[j] = self.c[j - 1].load(SeqCst) as u64;
+            v.c[j] = u64::from(self.c[j - 1].load(SeqCst));
         }
         v
     }
@@ -139,8 +139,8 @@ impl HotEntry {
     /// per second for a unit) is kept as a floor.
     pub(crate) fn store(&self, v: &mut View) {
         for j in 0..N_BUCKETS {
-            if v.c[j] > u32::MAX as u64 {
-                (v.c[j], v.sat) = (u32::MAX as u64, v.sat.max(v.e));
+            if v.c[j] > u64::from(u32::MAX) {
+                (v.c[j], v.sat) = (u64::from(u32::MAX), v.sat.max(v.e));
             }
             if j == 0 {
                 self.c0.store((self.c0.load(SeqCst) & !(HOT_COUNT | HOT_ON_MASK)) | v.c[0] | (v.on << HOT_ON_SHIFT), SeqCst);
@@ -169,7 +169,7 @@ impl HotTable {
 
     #[inline]
     pub(crate) fn guard(&self) -> std::sync::MutexGuard<'_, HotFree> {
-        self.mu.lock().unwrap_or_else(|e| e.into_inner())
+        self.mu.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// read returns entry idx's state if it belongs to id.
@@ -198,7 +198,7 @@ impl HotTable {
     /// whose word1 points here (old), a touch that starts a new unit with
     /// every bucket at most half the register's width hands the counts back
     /// to the slot as a register and frees the entry (demote).
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "the reference's signature, parameter for parameter")]
     pub(crate) fn add(&self, f: &Core, idx: u64, id: u64, n: u64, u: i64, now: u64, slot: isize, old: u64) -> bool {
         let e = &self.e[idx as usize];
         loop {
@@ -384,7 +384,7 @@ impl Core {
         {
             let mut g = t.guard();
             if let Some(x) = g.free.pop() {
-                idx = x as u64;
+                idx = u64::from(x);
             } else if g.next < t.e.len() as u64 {
                 idx = g.next;
                 g.next += 1;

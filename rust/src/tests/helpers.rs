@@ -21,7 +21,7 @@ pub(crate) fn show(r: &Result) -> String {
 
 /// Go's `%v` of a slice or array of integers: `[1 2 3]`.
 pub(crate) fn gov<X: std::fmt::Display>(xs: &[X]) -> String {
-    let parts: Vec<String> = xs.iter().map(|x| x.to_string()).collect();
+    let parts: Vec<String> = xs.iter().map(ToString::to_string).collect();
     format!("[{}]", parts.join(" "))
 }
 
@@ -372,23 +372,23 @@ impl Signal {
 
     /// `close(ch)`.
     pub(crate) fn close(&self) {
-        *self.0.0.lock().unwrap_or_else(|e| e.into_inner()) = true;
+        *self.0.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = true;
         self.0.1.notify_all();
     }
 
     /// `<-ch`.
     pub(crate) fn wait(&self) {
-        let mut c = self.0.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut c = self.0.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         while !*c {
-            c = self.0.1.wait(c).unwrap_or_else(|e| e.into_inner());
+            c = self.0.1.wait(c).unwrap_or_else(std::sync::PoisonError::into_inner);
         }
     }
 
     /// `select { case <-ch: ... case <-time.After(d): ... }`: whether ch is
     /// closed within d.
     pub(crate) fn wait_timeout(&self, d: std::time::Duration) -> bool {
-        let c = self.0.0.lock().unwrap_or_else(|e| e.into_inner());
-        let (c, _) = self.0.1.wait_timeout_while(c, d, |closed| !*closed).unwrap_or_else(|e| e.into_inner());
+        let c = self.0.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (c, _) = self.0.1.wait_timeout_while(c, d, |closed| !*closed).unwrap_or_else(std::sync::PoisonError::into_inner);
         *c
     }
 }
@@ -446,7 +446,7 @@ impl Fnv64a {
     /// `fmt.Fprintf(h, ...)` of an already formatted string.
     pub(crate) fn write(&mut self, s: &str) {
         for &b in s.as_bytes() {
-            self.0 = (self.0 ^ b as u64).wrapping_mul(0x100000001b3);
+            self.0 = (self.0 ^ u64::from(b)).wrapping_mul(0x100000001b3);
         }
     }
 
@@ -491,7 +491,7 @@ impl TagAmp {
             }
         }
         let fp = {
-            let mut g = self.mu.lock().unwrap_or_else(|e| e.into_inner());
+            let mut g = self.mu.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let (fps, next) = &mut *g;
             match fps.get(&x) {
                 Some(&fp) => fp,
@@ -552,7 +552,7 @@ pub(crate) fn parse_duration(s: &str) -> Option<std::time::Duration> {
 
 /// `runtime.GOMAXPROCS(0)`: the threads that run at once.
 pub(crate) fn procs() -> usize {
-    std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)
+    std::thread::available_parallelism().map(std::num::NonZero::get).unwrap_or(1)
 }
 
 /// Go's `%+v` of a Config, for the fuzzers' failure reports.

@@ -55,8 +55,8 @@ fn cpu_has_cx16() -> bool {
 #[inline(always)]
 pub(crate) fn cas2(p: &[AtomicU64], old0: u64, old1: u64, new0: u64, new1: u64) -> bool {
     assert!(p.len() >= 2 && (p.as_ptr() as usize) % 16 == 0);
-    let old = ((old1 as u128) << 64) | old0 as u128;
-    let new = ((new1 as u128) << 64) | new0 as u128;
+    let old = (u128::from(old1) << 64) | u128::from(old0);
+    let new = (u128::from(new1) << 64) | u128::from(new0);
     // SAFETY: p is two adjacent, live AtomicU64 at a 16-byte aligned address
     // (checked above), which CMPXCHG16B reads and writes as one little-endian
     // 128-bit word: word0 is the low half. has_cas2 found the instruction by
@@ -64,7 +64,7 @@ pub(crate) fn cas2(p: &[AtomicU64], old0: u64, old1: u64, new0: u64, new1: u64) 
     // 64-bit one: mixed-size atomics are outside Rust's memory model and
     // inside every x86-64 CPU's (as the reference's assembly, and the C++
     // port's, rely on).
-    unsafe { cmpxchg16b(p.as_ptr() as *mut u128, old, new) == old }
+    unsafe { cmpxchg16b(p.as_ptr().cast_mut().cast::<u128>(), old, new) == old }
 }
 
 /// LOCK CMPXCHG16B in assembly, as the reference's and the C++ port's: it
@@ -103,7 +103,7 @@ unsafe fn cmpxchg16b(dst: *mut u128, old: u128, new: u128) -> u128 {
             options(nostack),
         );
     }
-    ((hi as u128) << 64) | lo as u128
+    (u128::from(hi) << 64) | u128::from(lo)
 }
 
 #[cfg(not(all(target_arch = "x86_64", not(miri))))]
@@ -120,16 +120,16 @@ pub(crate) fn prefetch(w: &AtomicU64) {
         use core::arch::x86_64::{_MM_HINT_T0, _mm_prefetch};
         // SAFETY: a prefetch reads nothing and faults on nothing; the address
         // is a live reference's.
-        #[allow(unused_unsafe)]
+        #[allow(unused_unsafe, reason = "_mm_prefetch is an unsafe function at the declared minimum (1.85), a safe one in later releases")]
         unsafe {
-            _mm_prefetch::<_MM_HINT_T0>(w as *const AtomicU64 as *const i8)
+            _mm_prefetch::<_MM_HINT_T0>(std::ptr::from_ref(w).cast::<i8>());
         };
     }
     #[cfg(all(target_arch = "aarch64", not(miri)))]
     {
         // SAFETY: PRFM is a hint: it reads nothing and faults on nothing.
         unsafe {
-            core::arch::asm!("prfm pldl1keep, [{p}]", p = in(reg) w as *const AtomicU64, options(nostack, preserves_flags, readonly));
+            core::arch::asm!("prfm pldl1keep, [{p}]", p = in(reg) std::ptr::from_ref(w), options(nostack, preserves_flags, readonly));
         }
     }
     #[cfg(not(any(all(target_arch = "x86_64", not(miri)), all(target_arch = "aarch64", not(miri)))))]
@@ -150,13 +150,13 @@ pub(crate) fn prefetch_lines(words: &[AtomicU64], lines: &[u64]) {
 /// `bits.Mul64`'s high word: floor(a * b / 2^64).
 #[inline(always)]
 pub(crate) fn mul_hi(a: u64, b: u64) -> u64 {
-    ((a as u128 * b as u128) >> 64) as u64
+    ((u128::from(a) * u128::from(b)) >> 64) as u64
 }
 
 /// `bits.Mul64`: (hi, lo) of a * b.
 #[inline(always)]
 pub(crate) fn mul64(a: u64, b: u64) -> (u64, u64) {
-    let p = a as u128 * b as u128;
+    let p = u128::from(a) * u128::from(b);
     ((p >> 64) as u64, p as u64)
 }
 
@@ -165,5 +165,5 @@ pub(crate) fn mul64(a: u64, b: u64) -> (u64, u64) {
 #[inline(always)]
 pub(crate) fn div64(hi: u64, lo: u64, y: u64) -> u64 {
     assert!(y > hi, "integer overflow");
-    ((((hi as u128) << 64) | lo as u128) / y as u128) as u64
+    (((u128::from(hi) << 64) | u128::from(lo)) / u128::from(y)) as u64
 }

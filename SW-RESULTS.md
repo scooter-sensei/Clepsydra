@@ -66,7 +66,7 @@ against the 1 s error that a mechanism must beat.
 exact (or finest) form, on both seeds, 1 s <= 0.082 and no window above the
 filter's own reading on that seed by more than 1%.
 
-### W1's reading (ef69b0e's code, run once; `lab/w1.txt`)
+### W1's reading (ea96ec7's code, run once; `lab/w1.txt`)
 
 The interval model of the register with its 4-bit onset equals the filter
 on both seeds, per window (the test's check). The filter reads 0.1671 /

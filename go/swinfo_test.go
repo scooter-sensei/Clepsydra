@@ -322,6 +322,12 @@ func swG(lo, hi, L, lambda float64) float64 {
 // of how many of the cut interval's events lie in the window, under the
 // intervals' uniform model (the cut's split binomial, positions uniform).
 func swTraceEst(iv []swIval, L, from float64, taus, s []float64) float64 {
+	return swTraceEstNoise(iv, L, from, taus, s, nil)
+}
+
+// swTraceEstNoise is swTraceEst with qv[a] added to trace a's variance (a
+// stored trace's rounding), if qv is not nil.
+func swTraceEstNoise(iv []swIval, L, from float64, taus, s, qv []float64) float64 {
 	cut := -1
 	base := 0.0
 	for k, b := range iv {
@@ -376,6 +382,9 @@ func swTraceEst(iv []swIval, L, from float64, taus, s []float64) float64 {
 			cov[a][bb] = e + v*D[a]*D[bb]
 		}
 		cov[a][a] += 1e-12
+		if qv != nil {
+			cov[a][a] += qv[a]
+		}
 	}
 	var gain float64
 	switch n {

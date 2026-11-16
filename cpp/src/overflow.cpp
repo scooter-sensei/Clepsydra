@@ -151,6 +151,7 @@ std::pair<Result, bool> Sketch::estimate(u64 id, u64 window, u64 now, bool full)
     }
   }
   if (r.Upper == 0) return {Result{}, false};
+  // NOLINTNEXTLINE(bugprone-incorrect-roundings): the reference rounds as int(x + 0.5)
   r.Count = static_cast<i64>(std::min(std::max(est, 0.0), static_cast<double>(r.Upper)) + 0.5);
   r.Seen = r.Count > 0;
   return {r, true};

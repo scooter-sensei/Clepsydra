@@ -318,6 +318,7 @@ std::pair<Result, bool> Core::estimate(u64 id, u64 w1, u64 last, u64 now, u64 wi
     if (from < hi) est += a + (static_cast<double>(c) - a) * (hi - from) / (hi - lo);
     break;
   }
+  // NOLINTNEXTLINE(bugprone-incorrect-roundings): the reference rounds as int(x + 0.5)
   i64 n = std::max<i64>(1, static_cast<i64>(est + 0.5));
   Result r;
   r.Count = n;

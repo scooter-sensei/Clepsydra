@@ -15,6 +15,8 @@ cmake -S . -B build -G Ninja && cmake --build build
 
 The same with CMake's presets (`CMakePresets.json`; `sanitize` and `tsan` besides `dev`): `cmake --preset dev && cmake --build --preset dev && ctest --preset dev`. `ctest` runs the suite as the sanity tier does (`-short`, plain and in each mode) and the conformance vectors. As a subproject (`add_subdirectory(cpp)`, target `clepsydra::clepsydra`) the build makes the library alone, and C++20 carries over to whatever links it.
 
+Layout and lint (LLVM 18, as zig's Clang and Ubuntu 24.04 ship): `.clang-format` is Google's style at 120 columns, checked with `clang-format --dry-run --Werror` (`.clang-format-ignore` names the generated `tests/goexp.inc`); `.clang-tidy` holds the checks that find defects in the library, kept at zero findings, and says why each check left out flags the port's Go shape; run it on the `dev` preset's compile database: `clang-tidy -p build/dev src/*.cpp`.
+
 `test.sh` takes `CXX`, `CMAKE`, `GENERATOR`, `BUILD` (build root, default `./build`) and `OUT` (reports, default `./verify-report/<tier>`) from the environment. The suite reads the same switches as the Go suite: `TF_CT=1` (every filter ConstantTime), `TF_BG=1` (every filter Background), `TF_NOCAS2=1` (realign, stamp, unpoint and demotion hold word1 instead of using CMPXCHG16B).
 
 On a Linux host without a system C++ compiler, zig's bundled Clang works: a wrapper `zcxx` running `zig c++ -target x86_64-linux-gnu "$@"`, then `CXX=zcxx ./test.sh sanity`. ThreadSanitizer needs ASLR off on kernels with high mmap entropy ("unexpected memory mapping"); the stress tier runs its binaries under `setarch -R`.

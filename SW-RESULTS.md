@@ -581,3 +581,43 @@ The code is W5b's (c0cea9e, with `TestWrapTranslateDiverge` added). **Rule
    (past the first horizon, never wrapping) byte for byte;
 
 with W5b's clauses 1 and 4-6 as read.
+
+### W5c's reading (d4d0187's tree; outputs in `lab/w5c/`)
+
+2'. **Holds.** W5b's `tfbench -exact` against W4c's: only the churn rows'
+   relocation and eviction counts differ, by 0.02%, 0.008% and 0.07%
+   (relocations) and 0.50% (evictions at load 1.15).
+3'. **Holds.** The 30-cell digest at K = 566,935,680,000, 1,013,612,280,000
+   and 1,460,288,880,000, whose runs cross a multiple of 2^34 after 3,072,
+   1,856 and 640 ticks, equals the digest at K = 1,200,000 byte for byte, in
+   every mode (plain, Background, ConstantTime, SpillMin 1, the count-min
+   overflow). (K = 1,200,000 against K = 0 differs, by the first horizon's
+   clamp.)
+
+**Verdict: W5c holds.** The wrapped last touch answers as the full one: a
+history crossing a 2^34 wrap mid-run answers byte for byte as the same
+history far from one; a key aliased by a whole wrap reads unseen, idle or
+not, from the table or the stash; the concurrent checks pass. The 12 bits
+the drip log needs come out of word0 without lowering callers' `MaxTick`
+(2^46-1), at Horizon <= 2^31 ticks and callers' clocks within 2^31 of each
+other.
+
+## Where the lab leaves the weakness
+
+| | 1 s | 5 s | 15 s | 30 s | 60 s | mean (target 7: <= 0.05) |
+|---|---|---|---|---|---|---|
+| the filter (8b3ba44) | 0.1671 | 0.0503 | 0.0506 | 0.0435 | 0.0239 | 0.0671 |
+| the drip log, W4c / W5b (`tfdrip`) | 0.0592 | 0.0476 | 0.0505 | 0.0435 | 0.0239 | **0.0450** |
+| held-out seed (3, 7), the filter → `tfdrip` | 0.1663 → 0.0580 | | | | | 0.0666 → 0.0444 |
+
+At the same 16 bytes a slot (18.8 B per key), with 12 bits of word0 that
+the 46-bit last touch held: an 11-bit unary-coded log of the key's recent
+gaps in quanta of unit/16 and its valid bit, read by Count with the register
+and the onset; the stored last touch keeps 34 bits and wraps under a
+deadline sweep. What it costs, as read here: hits 1.05x, counts 1.07x,
+TouchAndCount 1.12x, batched touches 1.17x of the default build on this
+guest (indicative); `tfbench -exact`'s steady 1 s lines (periodic touches
+read at a touch's instant) are no longer exact; a merged history's log says
+nothing until a gap; Horizon at most 2^31 ticks. Open: MAWI (the trace is
+not on this host), speed on bare metal, a TLA+ model of the log beside the
+slot protocol, the ports.

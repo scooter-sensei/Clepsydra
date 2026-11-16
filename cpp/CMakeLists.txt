@@ -4,16 +4,25 @@
 cmake_minimum_required(VERSION 3.20)
 project(clepsydra VERSION 0.1.0 LANGUAGES CXX)
 
+# Built on its own, or inside another project (add_subdirectory): there it
+# builds the library alone and leaves the build type to that project.
+# (PROJECT_IS_TOP_LEVEL needs CMake 3.21.)
+if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+  set(CLEPSYDRA_TOP_LEVEL ON)
+else()
+  set(CLEPSYDRA_TOP_LEVEL OFF)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+if(CLEPSYDRA_TOP_LEVEL AND NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE RelWithDebInfo)
 endif()
 
 option(CLEPSYDRA_WERROR "Treat warnings as errors (the smoke tier's vet)" OFF)
 option(CLEPSYDRA_TSAN "Build with ThreadSanitizer (the stress tier's race detector)" OFF)
-option(CLEPSYDRA_TESTS "Build the test binary" ON)
+option(CLEPSYDRA_TESTS "Build the test binary, the tools and the benchmarks" ${CLEPSYDRA_TOP_LEVEL})
 
 add_library(clepsydra
   src/api.cpp
@@ -34,6 +43,10 @@ add_library(clepsydra
   src/stash.cpp
   src/touch.cpp
 )
+add_library(clepsydra::clepsydra ALIAS clepsydra)
+# The public header needs C++20 (std::span, a defaulted operator==): every
+# target that links the library builds as C++20 or later.
+target_compile_features(clepsydra PUBLIC cxx_std_20)
 target_include_directories(clepsydra PUBLIC include PRIVATE src)
 find_package(Threads REQUIRED)
 target_link_libraries(clepsydra PUBLIC Threads::Threads)
@@ -49,8 +62,16 @@ if(MSVC)
     target_compile_options(clepsydra PRIVATE /WX)
   endif()
 else()
-  target_compile_options(clepsydra PRIVATE -ffp-contract=off -fno-fast-math -Wall -Wextra -Wpedantic
-                                           -Wno-c++17-extensions)
+  target_compile_options(clepsydra PRIVATE -ffp-contract=off -fno-fast-math -Wall -Wextra -Wpedantic)
+  # Clang also checks what MSVC's /W4 does (a local hiding a member: C4458)
+  # and what the C++ Core Guidelines and OpenSSF's hardening guide ask for,
+  # all clean here. Sign conversions stay off: Go's index arithmetic mixes
+  # int and uint64 at 112 sites; narrowing ones are none, and stay so.
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(clepsydra PRIVATE -Wshadow-all -Wconversion -Wno-sign-conversion -Wimplicit-fallthrough
+                                             -Wformat=2 -Wold-style-cast -Wextra-semi -Wnon-virtual-dtor
+                                             -Woverloaded-virtual -Wcast-align -Wnull-dereference -Wdouble-promotion)
+  endif()
   if(CLEPSYDRA_WERROR)
     target_compile_options(clepsydra PRIVATE -Werror)
   endif()
@@ -92,6 +113,17 @@ if(CLEPSYDRA_TESTS)
   if(NOT MSVC)
     target_compile_options(clepsydra_test PRIVATE -ffp-contract=off -Wall -Wextra)
   endif()
+
+  # ctest (and the test views of IDEs) runs the suite as the sanity tier
+  # does: -short, plain and in each mode, then the conformance vectors.
+  # test.sh runs every tier.
+  enable_testing()
+  add_test(NAME suite COMMAND clepsydra_test -short)
+  foreach(mode IN ITEMS CT BG NOCAS2)
+    add_test(NAME suite-${mode} COMMAND clepsydra_test -short)
+    set_tests_properties(suite-${mode} PROPERTIES ENVIRONMENT TF_${mode}=1)
+  endforeach()
+  add_test(NAME conformance COMMAND clepsydra_test -run ^TestConformance$)
 
   # go/cmd/tfbench -exact: the scorecard's deterministic metrics (the
   # regression tier diffs them with go/verify/expected/exact.txt).

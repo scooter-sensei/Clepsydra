@@ -1,5 +1,7 @@
 package temporalfilter
 
+import "sync/atomic"
+
 // The drip log (lab/sw-2026-11, arm W4; a lab arm behind the build tag
 // tfdrip). word0 keeps, beside the key's exact last touch, a shift register
 // of dripBits bits that each event shifts its gap to the touch before into,
@@ -38,15 +40,17 @@ func (f *Filter) next0(w0, now uint64) uint64 {
 		return w0
 	}
 	d := dripOf(w0)
-	var g uint64
-	if now > last {
-		g = uint64(f.quantum(now) - f.quantum(last))
-	}
 	switch {
-	case g >= dripBits:
-		d = dripMask
-	case d != 0:
-		d = (d<<(g+1) | (1<<g - 1)) & dripMask
+	case now > last:
+		if g := uint64(f.quantum(now) - f.quantum(last)); g >= dripBits {
+			d = dripMask
+		} else if d != 0 {
+			d = (d<<(g+1) | (1<<g - 1)) & dripMask
+		}
+	case f.unitOf(now) < f.unitOf(last):
+		d = 0 // the register counts it at the last touch's unit, not its own (W4b)
+	default:
+		d = d << 1 & dripMask // at or behind the last touch in its unit: a gap of 0
 	}
 	return w0&^(tsMask|dripMask<<dripShift) | d<<dripShift | max(now, last)
 }
@@ -131,4 +135,18 @@ func (f *Filter) dripCount(v *view, last, now, window, d uint64) float64 {
 		top = start
 	}
 	return est
+}
+
+// dripForget makes the drip log of slot i (word0 index), if it still holds
+// the key fpd (fingerprint and displaced bit), say nothing: the touch's count
+// landed at a later unit than its event's (a touch moved the last touch into
+// a later unit between this touch's word0 CAS and its count), where the log
+// keeps the event at its own tick (W4b).
+func (f *Filter) dripForget(i int, fpd uint64) {
+	for {
+		x := atomic.LoadUint64(&f.words[i])
+		if x>>47 != fpd || dripOf(x) == 0 || atomic.CompareAndSwapUint64(&f.words[i], x, x&^(dripMask<<dripShift)) {
+			return
+		}
+	}
 }

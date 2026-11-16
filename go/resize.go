@@ -91,7 +91,7 @@ func (z *Resizable) move(h, now uint64) {
 	mu.Lock()
 	ok := false
 	for range 8 {
-		if f.claim(h, fp, w1, now, w0&tsMask, w0&satBit, claimFull) >= 0 {
+		if f.claim(h, fp, w1, now, w0&(tsMask|dripMask<<dripShift), w0&satBit, claimFull) >= 0 { // the drip log with it (W4b)
 			ok = true
 			break
 		}

@@ -340,6 +340,9 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 		if !ok {
 			continue // the slot was handed to another key, or moved on, meanwhile; look again
 		}
+		if dripOn && ref > now && f.unitOf(ref) > nu {
+			f.dripForget(i, fpd) // counted at a later unit than its own (W4b)
+		}
 		sat := w0&satBit != 0
 		if over != sat {
 			sat = f.markSat(i, fpd, over)

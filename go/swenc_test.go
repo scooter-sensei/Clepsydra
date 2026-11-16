@@ -284,7 +284,7 @@ func swWorkloadV(s1, s2 uint64, variant string, touch func(k int, t uint64), vis
 	const hTicks = 60_000
 	r := rand.New(rand.NewPCG(s1, s2))
 	const nkeys, end = 2000, 5 * hTicks
-	sc := map[string]float64{"base": 1, "half": 0.5, "double": 2, "loguni": 1}[variant]
+	sc := map[string]float64{"base": 1, "half": 0.5, "double": 2, "loguni": 1, "periodic": 1, "sustained": 1}[variant]
 	type ev struct {
 		t uint64
 		k int
@@ -296,6 +296,22 @@ func swWorkloadV(s1, s2 uint64, variant string, touch func(k int, t uint64), vis
 		}
 	}
 	for k := range nkeys {
+		if variant == "sustained" { // 5/s Poisson, and 15 events in 200 ms every ~10 s
+			poisson(0, end, 5.0/1000, k)
+			for t := r.ExpFloat64() * 10_000; t < end; t += r.ExpFloat64() * 10_000 {
+				for range 15 {
+					evs = append(evs, ev{uint64(t+r.Float64()*200) + 1, k})
+				}
+			}
+			continue
+		}
+		if variant == "periodic" { // a fixed period log-uniform in 0.1-20 s, a random phase
+			p := math.Exp(math.Log(100) + r.Float64()*math.Log(20_000/100))
+			for t := r.Float64() * p; t < end; t += p {
+				evs = append(evs, ev{uint64(t) + 1, k})
+			}
+			continue
+		}
 		if variant == "loguni" {
 			poisson(0, end, math.Exp(math.Log(0.05)+r.Float64()*math.Log(12/0.05))/1000, k)
 			continue
@@ -392,7 +408,11 @@ func TestShortWindowRobust(t *testing.T) {
 		}
 	}
 	verdict := true
-	for _, v := range []string{"base", "half", "double", "loguni"} {
+	workloads := []string{"base", "half", "double", "loguni"}
+	if w := os.Getenv("TF_SW_WORKLOADS"); w != "" {
+		workloads = strings.Split(w, ",")
+	}
+	for _, v := range workloads {
 		sc := swScoreAll(swRecordV(t, 9, 9, v), models)
 		fil := sc[len(models)]
 		for wi := range 5 {

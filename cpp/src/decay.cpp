@@ -6,7 +6,7 @@ namespace clepsydra::detail {
 // decayStep sweeps up to budget lines, paced by the clock: one table pass per
 // horizon. Returns lines swept.
 i64 Core::decayStep(u64 now, u64 budget) {
-  u64 hi, lo;
+  u64 hi = 0, lo = 0;
   mul64(now, lines, hi, lo);
   if (hi >= horizon) return 0;
   u64 target = div64(hi, lo, horizon);

@@ -114,6 +114,7 @@ The two deterministic tests fail on every run of the mutants they cover (the fre
 | `panic(errTick)` | `throw clepsydra::TickError` | before any lock, as the reference |
 | `make`'s panic (a length past the address space) | `throw std::length_error` | as `std::vector` throws; a Config whose table is that large is refused at construction |
 | an allocation failure (fatal in Go) | `std::bad_alloc` out of the call | a stripe the call holds by hand is released and a move it began is ended on the way out (`TestThrowReleasesStripe`, `TestThrowBalancesMoves`); the filter stays usable, and a history the call was moving is lost without counting in `Lost` |
+| a variable's zero value (`var w0 uint64`) | an initializer (`u64 w0 = 0`, `std::array<…> a{}`) | out-parameters too: no local is read before it is written, as in Go |
 | `sync/atomic` on `[]uint64` | `std::atomic<std::uint64_t>` arrays | Go's atomics are sequentially consistent: every operation here is `seq_cst` (the default); a plain Go access to a word others access atomically is an atomic access too |
 | `atomic.CompareAndSwap(p, old, new)` | `detail::cas(a, old, new)` | takes `old` by value (`compare_exchange` writes it back) |
 | `atomic.Pointer[T]` | `std::atomic<T*>` plus an owning `unique_ptr` | Go's garbage collector frees a replaced table; here the filter owns every table until it is destroyed |

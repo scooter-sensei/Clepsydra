@@ -121,7 +121,7 @@ void Core::placeSet(StashTable* p, u64 i, u64 now) {
     // stash or overflow table allocation throws (as in touch).
     std::unique_lock<PaddedMutex> cm(claimMu[stripe], std::try_to_lock);
     if (!cm) continue;
-    u64 w0, w1;
+    u64 w0 = 0, w1 = 0;
     if (tableGet(p, id, now, true, w0, w1)) {
       u64 pl = id >> 28;
       u64 al = alt(pl, fp);

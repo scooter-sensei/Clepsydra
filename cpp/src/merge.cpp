@@ -51,7 +51,7 @@ void Core::merge(Core& g) {
       throw Error("temporalfilter: Merge: identity does not round-trip");
     View vg = g.viewOf(id, w1, last).first;
     std::unique_lock<PaddedMutex> lk(claimMu[h >> (64 - claimStripeBits)]);
-    u64 fw0, fw1;
+    u64 fw0 = 0, fw1 = 0;
     if (i64 j = lookupStable(h, fp, tg, false, fw0, fw1); j >= 0) {
       View vf = viewOf(id, fw1, fw0 & tsMask).first;
       auto [nw1, over] = sumRegisters(vf, vg, tg);
@@ -66,7 +66,7 @@ void Core::merge(Core& g) {
       Found s = recall(h, fp, tg, now, true);
       if (s.src == srcStash) {
         View vf = viewOf(id, s.w1, s.w0 & tsMask).first;
-        bool over;
+        bool over = false;
         std::tie(nw1, over) = sumRegisters(vf, vg, tg);
         sat = (s.w0 | w0) & satBit;
         if (over) sat = satBit;

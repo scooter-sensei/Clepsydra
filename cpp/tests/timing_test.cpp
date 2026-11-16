@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "check.hpp"
@@ -75,7 +76,7 @@ TEST(TestTimingLeak) {
       for (int i = 0; i < probes; i++) {
         auto t0 = std::chrono::steady_clock::now();
         if (op == "Count") {
-          f.CountAt(hs[static_cast<std::size_t>(i)], 60'000, now);
+          std::ignore = f.CountAt(hs[static_cast<std::size_t>(i)], 60'000, now);
         } else {
           f.TouchAt(hs[static_cast<std::size_t>(i)], 60'000, now);
         }

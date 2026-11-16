@@ -98,7 +98,7 @@ std::pair<Result, bool> Sketch::estimate(u64 id, u64 window, u64 now, bool full)
   u64 oldest = 0;
   if (cur >= nsl - 1) oldest = cur - (nsl - 2);
   std::array<std::array<u64, maxRows>, maxSlices> c{};
-  std::array<bool, maxSlices> sat;
+  std::array<bool, maxSlices> sat{};
   sat.fill(true);
   for (int row = 0; row < rows; row++) {
     u64 base = col(id, row);
@@ -166,7 +166,7 @@ void Core::spill(u64 id, u64 w0, u64 w1, u64 now) {
   if (age(now, last) > horizon) return;
   View v;
   if (isHot(w1)) {
-    bool ok;
+    bool ok = false;
     std::tie(v, ok) = hotClose(hotIdx(w1), id);
     if (!ok) return;
   } else {

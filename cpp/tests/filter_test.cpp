@@ -2,6 +2,7 @@
 // and TestBatchMatchesSingle are in properties_test.cpp.
 #include <atomic>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 #include "check.hpp"
@@ -209,7 +210,7 @@ TEST(TestConcurrentMixedRace) {
             f.CheckAndTouchAt(h, f.Ticks(50ms), now);
             break;
           case 1: {
-            f.VelocityCountAt(h, f.Ticks(50ms), now);
+            std::ignore = f.VelocityCountAt(h, f.Ticks(50ms), now);
             u64 hs[3] = {h, h ^ 1, h ^ 2};
             f.CheckAndTouchBatch(hs, f.Ticks(50ms), now, out);
             break;

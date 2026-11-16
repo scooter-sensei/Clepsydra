@@ -27,7 +27,7 @@ Result Core::miss(u64 h, u64 fp, u64 tg, u64 window, u64 now, bool wantCount, u6
       w1 = s1;
       hotRestore = true;
     } else {
-      bool over;
+      bool over = false;
       std::tie(w1, over) = nextReg(s1, tg, last, now, false);
       if (over || ((s0 & satBit) != 0 && detail::hot(w1))) sat = satBit;
     }

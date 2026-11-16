@@ -6,6 +6,7 @@
 #include <chrono>
 #include <fstream>
 #include <thread>
+#include <tuple>
 #include <unordered_map>
 
 #include "check.hpp"
@@ -590,8 +591,8 @@ FuzzResult fuzzCase(std::uint64_t seed) {
     } else if (op < 85) {
       if (!checkR("Count", h, window, now, f.CountAt(h, window, now))) return res;
     } else if (op < 90) {
-      f.ContainsAt(h, window, now);
-      f.VelocityCountAt(h, window, now);
+      std::ignore = f.ContainsAt(h, window, now);
+      std::ignore = f.VelocityCountAt(h, window, now);
       res.ops++;
     } else if (op < 97) {
       for (auto& x : hs) {
@@ -821,8 +822,8 @@ FuzzResult cfuzzWorker(Filter& f, u64 g, u64 seed, std::uint64_t ops, std::int64
     } else if (op < 85) {
       if (!checkR("Count", h, window, now, f.CountAt(h, window, now))) return res;
     } else if (op < 90) {
-      f.ContainsAt(h, window, now);
-      f.VelocityCountAt(h, window, now);
+      std::ignore = f.ContainsAt(h, window, now);
+      std::ignore = f.VelocityCountAt(h, window, now);
       res.ops++;
     } else if (op < 97) {  // a batch of 16, drawn from 4 to 16 keys
       std::vector<u64> ks(static_cast<std::size_t>(4 + rng.IntN(13)));

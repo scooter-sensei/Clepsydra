@@ -120,7 +120,7 @@ bool Core::bump(i64 i, u64 fpd, u64 tg, u64 now, i64 nu, u64 last, i64 lu, bool 
       }
       // The entry aged out with the key's history (or the caller resets it):
       // start afresh, at the unit word0 has when the register replaces it.
-      u64 nw, nref;
+      u64 nw = 0, nref = 0;
       if (unpoint(i, w0, old, fpd, tg, now, nu, nw, nref)) {
         if (reset) slotDrop(id, old);
         w1 = nw;
@@ -140,7 +140,7 @@ bool Core::bump(i64 i, u64 fpd, u64 tg, u64 now, i64 nu, u64 last, i64 lu, bool 
     }
     auto [nw, over] = nextRegU(old, tg, ref, now, refU, nu, reset);
     if (over) {
-      u64 pw;
+      u64 pw = 0;
       if (promote(i, w0, old, tg, ref, now, pw)) {
         w1 = pw;
         overflow = false;

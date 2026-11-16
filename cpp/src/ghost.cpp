@@ -77,9 +77,9 @@ void Ghost::add(u64 id, u64 n, u64 last, bool isSat, u64 now) {
       if (cur >= u || cas(until, cur, u)) break;
     }
   }
-  std::array<i64, 2> bases;
-  int nbk;
-  u64 fp;
+  std::array<i64, 2> bases{};
+  int nbk = 0;
+  u64 fp = 0;
   slot(id, bases, nbk, fp);
   for (;;) {  // Go: outer
     // A write is committed only if ep is still the epoch.
@@ -135,7 +135,7 @@ void Ghost::add(u64 id, u64 n, u64 last, bool isSat, u64 now) {
       if (freeK[i] >= 0 && (bi < 0 || liveN[i] < liveN[bi])) bi = i;
     }
     if (bi >= 0) {
-      unsigned sh;
+      unsigned sh = 0;
       AU64* w = at(bases[bi], freeK[bi], sh);
       u64 old = w->load();
       u64 e = (old >> sh) & ghEntryMask;
@@ -153,7 +153,7 @@ void Ghost::add(u64 id, u64 n, u64 last, bool isSat, u64 now) {
       raiseFloor(bases[fb], fp, n, sl, now);
       return;
     }
-    unsigned sh;
+    unsigned sh = 0;
     AU64* w = at(bases[vb], victim, sh);
     u64 old = w->load();
     u64 e = (old >> sh) & ghEntryMask;
@@ -219,12 +219,12 @@ void Ghost::advance(u64 ns) {
 // Count and Upper, the floors in Upper only. The lines are decoded against
 // the epoch they were loaded under (claims A34).
 std::pair<Result, bool> Ghost::estimate(u64 id, u64 window, u64 now) const {
-  std::array<i64, 2> bases;
-  int nbk;
-  u64 fp;
+  std::array<i64, 2> bases{};
+  int nbk = 0;
+  u64 fp = 0;
   slot(id, bases, nbk, fp);
   std::array<std::array<u64, ghWords>, 2> line{};
-  u64 ep;
+  u64 ep = 0;
   for (;;) {
     ep = epoch.load();
     if (ep == 0 || now > until.load()) return {Result{}, false};

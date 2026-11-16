@@ -241,7 +241,7 @@ std::pair<View, bool> Core::hotClose(u64 idx, u64 id) {
 // promote moves the register of the key in slot i to a hot entry with this
 // touch counted, published under a hold (claims A29).
 bool Core::promote(i64 i, u64 w0, u64 old, u64 tg, u64 last, u64 now, u64& w1) {
-  u64 idx, id;
+  u64 idx = 0, id = 0;
   w1 = hotEntryFor(i, w0, old, tg, last, now, idx, id);
   if (w1 == 0) return false;
   AU64* w = &words[static_cast<std::size_t>(i)];
@@ -267,7 +267,7 @@ bool Core::promote(i64 i, u64 w0, u64 old, u64 tg, u64 last, u64 now, u64& w1) {
 // promoteHeld is promote for a touch that holds slot i's word1 busy (realign),
 // which publishes w1 itself.
 bool Core::promoteHeld(i64 i, u64 w0, u64 old, u64 tg, u64 last, u64 now, u64& w1) {
-  u64 idx, id;
+  u64 idx = 0, id = 0;
   if (w1 = hotEntryFor(i, w0, old, tg, last, now, idx, id); w1 == 0) return false;
   promoted.fetch_add(1);
   return true;

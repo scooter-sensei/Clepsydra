@@ -174,18 +174,23 @@ inline u64 mix64(u64 x) {
 // cas is Go's atomic CompareAndSwap: old is taken by value (C++'s
 // compare_exchange writes the current value back into its first argument).
 template <class T, class V>
-inline bool cas(std::atomic<T>& a, V old, V nw) {
+[[nodiscard]] inline bool cas(std::atomic<T>& a, V old, V nw) {
   T o = static_cast<T>(old);
   return a.compare_exchange_strong(o, static_cast<T>(nw));
 }
 
 // Defer runs f when it goes out of scope: Go's defer, when declared at the
 // function's own scope (Go runs every defer at function return, never at the
-// end of a block).
+// end of a block). Neither copyable nor movable: a copy would run f twice.
 template <class F>
 struct Defer {
-  F f;
+  explicit Defer(F fn) : f(std::move(fn)) {}
+  Defer(const Defer&) = delete;
+  Defer& operator=(const Defer&) = delete;
+  Defer(Defer&&) = delete;
+  Defer& operator=(Defer&&) = delete;
   ~Defer() { f(); }
+  F f;
 };
 template <class F>
 Defer(F) -> Defer<F>;
@@ -384,7 +389,7 @@ inline u64 ghFP(u64 e) { return e >> (ghCntBits + ghSlBits); }
 inline u64 ghCnt(u64 e) { return (e >> ghSlBits) & ghCntMax; }
 
 struct Ghost {
-  Ghost(u64 bytes, u64 horizon, int choices, int sub);
+  Ghost(u64 bytes, u64 hz, int ch, int sb);
   void slot(u64 id, std::array<i64, 2>& base, int& nb, u64& fp) const;
   u64 real(u64 e, u64 ep) const;
   bool live(u64 sl, u64 window, u64 now) const;
@@ -431,7 +436,7 @@ struct SketchShape {
 inline constexpr SketchShape defaultShape{4, 8, 2};
 
 struct Sketch {
-  Sketch(u64 w, u64 horizon, SketchShape sh);
+  Sketch(u64 width, u64 hz, SketchShape sh);
   u64 col(u64 id, int r) const;
   std::uint32_t cell(u64 base, u64 p) const;
   void add(u64 id, u64 t, u64 n, bool sat, u64 now);
@@ -518,10 +523,12 @@ struct Found {
 
 // Core is Go's Filter.
 struct Core {
-  explicit Core(const Config& cfg);
+  explicit Core(const Config& in);
   ~Core();
   Core(const Core&) = delete;
   Core& operator=(const Core&) = delete;
+  Core(Core&&) = delete;
+  Core& operator=(Core&&) = delete;
 
   // ---- filter.go ----
   void close();

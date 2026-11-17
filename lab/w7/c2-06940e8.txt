@@ -1,0 +1,13 @@
+=== RUN   TestDripConcurrentCounts
+    dripcount_test.go:206: tfdrip build, mode bg, shape spread: 3000 rounds, 864000 answers; wrong: Count high 137, Count low 0, another field 0; log lost 0; set apart: collisions 0, in 31 rounds that folded or lost a history 89; Degraded 108; waited 3779565, evictions 2134110, restored 1306931, relocations 28380, folded 89, lost 0
+    dripcount_test.go:212: tfdrip build, mode bg, shape spread: differences by window: 250ms:0 500ms:3 1s:9 2s:27 4s:16 8s:22 15s:20 30s:20 1m0s:20
+    dripcount_test.go:214:   Count high: round 0 key 4 (20 events) window 500ms: {Seen:true Count:4 Upper:4 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:3 Upper:4 Saturated:false Restored:false Degraded:false}; log 0x765, shadow's 0xbb5
+    dripcount_test.go:214:   Count high: round 0 key 4 (20 events) window 1s: {Seen:true Count:5 Upper:5 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:4 Upper:4 Saturated:false Restored:false Degraded:false}; log 0x765, shadow's 0xbb5
+    dripcount_test.go:214:   Count high: round 0 key 4 (20 events) window 2s: {Seen:true Count:7 Upper:8 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:6 Upper:8 Saturated:false Restored:false Degraded:false}; log 0x765, shadow's 0xbb5
+    dripcount_test.go:214:   Count high: round 0 key 4 (20 events) window 4s: {Seen:true Count:9 Upper:10 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:8 Upper:10 Saturated:false Restored:false Degraded:false}; log 0x765, shadow's 0xbb5
+    dripcount_test.go:214:   Count high: round 0 key 4 (20 events) window 8s: {Seen:true Count:13 Upper:20 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:12 Upper:20 Saturated:false Restored:false Degraded:false}; log 0x765, shadow's 0xbb5
+    dripcount_test.go:217: tfdrip build, mode bg, shape spread: 137 answers wrong, 0 with the log lost
+--- FAIL: TestDripConcurrentCounts (5.75s)
+FAIL
+FAIL	github.com/scooter-sensei/clepsydra/go	5.757s
+FAIL

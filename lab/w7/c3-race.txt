@@ -1,0 +1,16 @@
+=== RUN   TestDripConcurrentCounts
+    dripcount_test.go:206: tfdrip build, mode plain, shape spread: 1000 rounds, 288000 answers; wrong: Count high 0, Count low 0, another field 0; log lost 0; set apart: collisions 0, in 8 rounds that folded or lost a history 14; Degraded 18; waited 0, evictions 802116, restored 526113, relocations 11795, folded 12, lost 0
+    dripcount_test.go:212: tfdrip build, mode plain, shape spread: differences by window: 250ms:0 500ms:0 1s:0 2s:0 4s:0 8s:0 15s:0 30s:0 1m0s:0
+    dripcount_test.go:206: tfdrip build, mode plain, shape burst: 1000 rounds, 288000 answers; wrong: Count high 0, Count low 0, another field 0; log lost 0; set apart: collisions 0, in 5 rounds that folded or lost a history 0; Degraded 0; waited 0, evictions 436196, restored 160196, relocations 12026, folded 5, lost 0
+    dripcount_test.go:212: tfdrip build, mode plain, shape burst: differences by window: 250ms:0 500ms:0 1s:0 2s:0 4s:0 8s:0 15s:0 30s:0 1m0s:0
+    dripcount_test.go:206: tfdrip build, mode bg, shape spread: 1000 rounds, 288000 answers; wrong: Count high 0, Count low 0, another field 0; log lost 0; set apart: collisions 0, in 8 rounds that folded or lost a history 14; Degraded 18; waited 1042193, evictions 740764, restored 464763, relocations 10179, folded 10, lost 0
+    dripcount_test.go:212: tfdrip build, mode bg, shape spread: differences by window: 250ms:0 500ms:0 1s:0 2s:0 4s:0 8s:0 15s:0 30s:0 1m0s:0
+    dripcount_test.go:206: tfdrip build, mode bg, shape burst: 1000 rounds, 288000 answers; wrong: Count high 0, Count low 0, another field 0; log lost 0; set apart: collisions 0, in 7 rounds that folded or lost a history 0; Degraded 0; waited 2728028, evictions 391507, restored 115507, relocations 10253, folded 8, lost 0
+    dripcount_test.go:212: tfdrip build, mode bg, shape burst: differences by window: 250ms:0 500ms:0 1s:0 2s:0 4s:0 8s:0 15s:0 30s:0 1m0s:0
+    dripcount_test.go:206: tfdrip build, mode ct, shape spread: 1000 rounds, 288000 answers; wrong: Count high 0, Count low 0, another field 0; log lost 0; set apart: collisions 0, in 7 rounds that folded or lost a history 28; Degraded 36; waited 6910491, evictions 32089, restored 11814, relocations 0, folded 10, lost 0
+    dripcount_test.go:212: tfdrip build, mode ct, shape spread: differences by window: 250ms:0 500ms:0 1s:0 2s:0 4s:0 8s:0 15s:0 30s:0 1m0s:0
+    dripcount_test.go:206: tfdrip build, mode ct, shape burst: 1000 rounds, 288000 answers; wrong: Count high 0, Count low 0, another field 0; log lost 0; set apart: collisions 0, in 2 rounds that folded or lost a history 0; Degraded 0; waited 6939473, evictions 20352, restored 72, relocations 0, folded 2, lost 0
+    dripcount_test.go:212: tfdrip build, mode ct, shape burst: differences by window: 250ms:0 500ms:0 1s:0 2s:0 4s:0 8s:0 15s:0 30s:0 1m0s:0
+--- PASS: TestDripConcurrentCounts (220.10s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	221.123s

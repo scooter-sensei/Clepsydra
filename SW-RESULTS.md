@@ -1067,3 +1067,63 @@ Reported, not judged: the differences by window, kind and direction;
 Degraded answers; the waits, evictions, restores, relocations, folds and
 losses each mode's rounds had (that the paths were taken); the rounds and
 differences set apart.
+
+### W7's reading (67638ea's tree; `lab/w7.sh`, outputs in `lab/w7/`)
+
+1. **Spread: holds. Burst: fails.** Default build, 20,000 rounds a mode
+   (5,760,000 answers each): spread, no answer differs in any mode (set
+   apart: 628, 597 and 396 differences in 208, 195 and 75 rounds that folded
+   a history; no collision); burst, plain 1,147 differ (Count low 395,
+   another field 752), Background 3,454 (1,090, 2,364), ConstantTime 4,497
+   (914, 3,583), none Count high, no log lost.
+2. **Holds.** W4b's tree, Background, spread: 137 answers Count high in
+   3,000 rounds, none low or in another field, at every window from 500 ms
+   to 60 s (W4b reads the log at every window). W4c's tree: 29 Count high in
+   20,000 rounds, none otherwise, at windows from 250 ms to 15 s and none at
+   30 or 60 s (the shortcut: those windows cut no bucket). The check sees
+   both double pushes, by their signature, and reads the log on a tree with
+   the shortcut.
+3. **Spread: holds. Burst: not judged.** W4d's library with `tfdrip`, 20,000
+   rounds a mode: spread, no answer differs in any mode (set apart 613, 651
+   and 427 in 246, 232 and 78 fold rounds); burst, plain 163 (low 50, another
+   field 113), Background 343 (92, 251), ConstantTime 1,620 (255, 1,365), none
+   Count high, no log lost. Under `-race`, 1,000 rounds in each mode and
+   shape: no answer differs, burst included.
+
+The paths were taken: on W4d's spread runs, 18.5 M evictions, 13.0 M
+restores and 266,000 relocations (plain), 27.0 M waits (Background), 137 M
+waits and 498,000 evictions (ConstantTime), 0 histories lost.
+
+**Verdict: W7 fails its rule as written** (clause 1, the burst shape), and
+by its rule says nothing of W4d under bursts. For the spread shape, the
+scenario both double pushes were found in, all three clauses hold: the
+check sees both known defects and finds no wrong answer on W4d in 60,000
+rounds (17.3 M answers), nor in 3,000 under `-race`.
+
+**Diagnosis of clause 1's burst failure** (after the reading; a copy of the
+test that splits the differences by flag, `lab/w7/diag/`, never in the
+tree; 2,000 and 10,000 rounds, which are not readings). The rule's "at most
+~14 events in a unit" was wrong: the shared clock moves 25 ticks for any
+worker's step, and when the workers do not interleave, a key's touches are
+~100 ticks apart, not ~800, so up to three of its bursts fall in a second
+(the shadow's Upper reaches 33 at 1 s). Those keys pass the register's 31
+and contend for the filter's 16 hot entries, which a key wins or loses by
+timing; the shadow, of Capacity 4,096, has 32. Every difference carries a
+flag the API gives for it, in both builds: a refused promotion answers
+Saturated (Upper capped at 31), and a key whose hot entry was shed answers
+from the overflow table's floors flagged Degraded (high: Seen at 250 ms for
+a key last touched 425 ms before). With the shadow given the filter's 16
+hot entries: in 2,000 rounds a mode, 18-676 differences with an answer
+Saturated, none with neither flag but in Background, where 10,000 rounds
+give 7 (`tfdrip`) and 14 (default), every one Degraded. The logs are equal
+in every difference printed, and no difference is a log lost. The rule's
+set-apart named rounds that folded or lost a history, not a shed hot entry,
+and so caught none of these.
+
+What W7 leaves: the drip log under bursts, against a shadow, unjudged; and
+the differences set apart in fold rounds (about 1% of rounds) unexamined.
+A W7b would read the burst shape again with every answer either filter
+flags Saturated or Degraded set apart (in place of whole fold rounds) and
+the shadow given the filter's hot entries; it would be written after this
+diagnosis, which has already read the burst shape that way for 2,000 to
+10,000 rounds, and would have to say so.

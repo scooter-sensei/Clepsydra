@@ -1,0 +1,32 @@
+=== RUN   TestDripConcurrentCountsDiag
+    dripdiag_test.go:223: default build, mode plain, shape burst: 2000 rounds, 576000 answers; wrong: Count high 0, Count low 38, another field 82; log lost 0; set apart: collisions 0, in 17 rounds that folded or lost a history 9; Degraded 9; waited 0, evictions 875073, restored 323059, relocations 26646, folded 30, lost 0
+    dripdiag_test.go:225: DIAG default build, mode plain, shape burst, shadow hot entries as the filter's false: differences with either answer Saturated 129, with neither 0; largest shadow Upper at 1 s 33; hot entries: filter 16
+    dripdiag_test.go:231: default build, mode plain, shape burst: differences by window: 250ms:4 500ms:4 1s:4 2s:12 4s:16 8s:20 15s:20 30s:20 1m0s:20
+    dripdiag_test.go:233:   another field: round 418 key 2 (64 events) window 250ms: {Seen:true Count:7 Upper:31 Saturated:true Restored:false Degraded:false}, shadow {Seen:true Count:7 Upper:31 Saturated:false Restored:false Degraded:false}; log 0x0, shadow's 0x0
+    dripdiag_test.go:233:   another field: round 418 key 2 (64 events) window 500ms: {Seen:true Count:15 Upper:31 Saturated:true Restored:false Degraded:false}, shadow {Seen:true Count:15 Upper:31 Saturated:false Restored:false Degraded:false}; log 0x0, shadow's 0x0
+    dripdiag_test.go:233:   another field: round 418 key 2 (64 events) window 1s: {Seen:true Count:31 Upper:31 Saturated:true Restored:false Degraded:false}, shadow {Seen:true Count:31 Upper:31 Saturated:false Restored:false Degraded:false}; log 0x0, shadow's 0x0
+    dripdiag_test.go:233:   Count low: round 418 key 2 (64 events) window 2s: {Seen:true Count:43 Upper:62 Saturated:true Restored:false Degraded:false}, shadow {Seen:true Count:44 Upper:64 Saturated:false Restored:false Degraded:false}; log 0x0, shadow's 0x0
+    dripdiag_test.go:233:   Count low: round 418 key 2 (64 events) window 4s: {Seen:true Count:62 Upper:64 Saturated:true Restored:false Degraded:false}, shadow {Seen:true Count:64 Upper:64 Saturated:false Restored:false Degraded:false}; log 0x0, shadow's 0x0
+    dripdiag_test.go:236: default build, mode plain, shape burst: 120 answers wrong, 0 with the log lost
+    dripdiag_test.go:223: default build, mode bg, shape burst: 2000 rounds, 576000 answers; wrong: Count high 0, Count low 85, another field 198; log lost 0; set apart: collisions 0, in 14 rounds that folded or lost a history 42; Degraded 0; waited 3293293, evictions 790333, restored 238807, relocations 18681, folded 15, lost 0
+    dripdiag_test.go:225: DIAG default build, mode bg, shape burst, shadow hot entries as the filter's false: differences with either answer Saturated 325, with neither 0; largest shadow Upper at 1 s 33; hot entries: filter 16
+    dripdiag_test.go:231: default build, mode bg, shape burst: differences by window: 250ms:22 500ms:22 1s:22 2s:34 4s:34 8s:35 15s:38 30s:38 1m0s:38
+    dripdiag_test.go:233:   another field: round 10 key 18 (64 events) window 250ms: {Seen:true Count:8 Upper:31 Saturated:true Restored:false Degraded:false}, shadow {Seen:true Count:8 Upper:32 Saturated:false Restored:false Degraded:false}; log 0x0, shadow's 0x0
+    dripdiag_test.go:233:   another field: round 10 key 18 (64 events) window 500ms: {Seen:true Count:16 Upper:31 Saturated:true Restored:false Degraded:false}, shadow {Seen:true Count:16 Upper:32 Saturated:false Restored:false Degraded:false}; log 0x0, shadow's 0x0
+    dripdiag_test.go:233:   Count low: round 10 key 18 (64 events) window 1s: {Seen:true Count:31 Upper:31 Saturated:true Restored:false Degraded:false}, shadow {Seen:true Count:32 Upper:32 Saturated:false Restored:false Degraded:false}; log 0x0, shadow's 0x0
+    dripdiag_test.go:233:   Count low: round 10 key 18 (64 events) window 2s: {Seen:true Count:37 Upper:47 Saturated:true Restored:false Degraded:false}, shadow {Seen:true Count:38 Upper:47 Saturated:false Restored:false Degraded:false}; log 0x0, shadow's 0x0
+    dripdiag_test.go:233:   another field: round 10 key 18 (64 events) window 4s: {Seen:true Count:48 Upper:50 Saturated:true Restored:false Degraded:false}, shadow {Seen:true Count:48 Upper:50 Saturated:false Restored:false Degraded:false}; log 0x0, shadow's 0x0
+    dripdiag_test.go:236: default build, mode bg, shape burst: 283 answers wrong, 0 with the log lost
+    dripdiag_test.go:223: default build, mode ct, shape burst: 2000 rounds, 576000 answers; wrong: Count high 0, Count low 66, another field 306; log lost 0; set apart: collisions 0, in 7 rounds that folded or lost a history 0; Degraded 0; waited 14642611, evictions 40460, restored 56, relocations 0, folded 7, lost 0
+    dripdiag_test.go:225: DIAG default build, mode ct, shape burst, shadow hot entries as the filter's false: differences with either answer Saturated 372, with neither 0; largest shadow Upper at 1 s 33; hot entries: filter 16
+    dripdiag_test.go:231: default build, mode ct, shape burst: differences by window: 250ms:20 500ms:20 1s:20 2s:26 4s:26 8s:26 15s:78 30s:78 1m0s:78
+    dripdiag_test.go:233:   another field: round 4 key 17 (64 events) window 15s: {Seen:true Count:57 Upper:64 Saturated:true Restored:false Degraded:false}, shadow {Seen:true Count:57 Upper:64 Saturated:false Restored:false Degraded:false}; log 0x0, shadow's 0x0
+    dripdiag_test.go:233:   another field: round 4 key 17 (64 events) window 30s: {Seen:true Count:64 Upper:64 Saturated:true Restored:false Degraded:false}, shadow {Seen:true Count:64 Upper:64 Saturated:false Restored:false Degraded:false}; log 0x0, shadow's 0x0
+    dripdiag_test.go:233:   another field: round 4 key 17 (64 events) window 1m0s: {Seen:true Count:64 Upper:64 Saturated:true Restored:false Degraded:false}, shadow {Seen:true Count:64 Upper:64 Saturated:false Restored:false Degraded:false}; log 0x0, shadow's 0x0
+    dripdiag_test.go:233:   another field: round 4 key 25 (64 events) window 15s: {Seen:true Count:58 Upper:64 Saturated:true Restored:false Degraded:false}, shadow {Seen:true Count:58 Upper:64 Saturated:false Restored:false Degraded:false}; log 0x0, shadow's 0x0
+    dripdiag_test.go:233:   another field: round 4 key 25 (64 events) window 30s: {Seen:true Count:64 Upper:64 Saturated:true Restored:false Degraded:false}, shadow {Seen:true Count:64 Upper:64 Saturated:false Restored:false Degraded:false}; log 0x0, shadow's 0x0
+    dripdiag_test.go:236: default build, mode ct, shape burst: 372 answers wrong, 0 with the log lost
+--- FAIL: TestDripConcurrentCountsDiag (14.37s)
+FAIL
+FAIL	github.com/scooter-sensei/clepsydra/go	14.374s
+FAIL

@@ -1322,10 +1322,14 @@ If clause 1 fails, the model does not reach the defects it was built for,
 and its pass of clause 2 clears nothing: W8 fails. If clause 2 fails, the
 trace is read against the code before anything else: a trace the code can
 follow revises W4d's clause 5; one it cannot is a defect of the model, said
-as such. Reported, not judged: `"w4c"` with relocation only (the table
-path's rule should cover it); NotRepushed with `"w4d"` at 1 and 2 touches
-with eviction; `"noHandoffCheck"` at one touch with relocation only,
-NotRepushed spread and LogComplete in a burst; every run's distinct states.
+as such. A Termination counterexample is a behavior that never ends (a
+retry that loops while every other process waits or is done), read the same
+way: a loop the code can follow is a livelock of W4d's protocol, and one it
+cannot is the model's. Reported, not judged: `"w4c"` with relocation only
+(the table path's rule should cover it); NotRepushed with `"w4d"` at 1 and 2
+touches with eviction; `"noHandoffCheck"` at one touch with relocation
+only, NotRepushed spread and LogComplete in a burst; every run's distinct
+states.
 
 **What a pass means.** One owner of the key, the table's same-unit path,
 relocation's hidden copy and eviction to the stash, as `Relocate.tla` has
@@ -1335,12 +1339,13 @@ from before its push (the hand-off and the eviction both compare word0
 before they take the slot), and clause 2 then judges only the half of W4d's
 rule that skips: the half that pushes again exists for paths the model
 leaves out (the wait room and its put-back, ConstantTime's stale stash copy,
-a second toucher). `"noHandoffCheck"` in a burst shows what the tick test
-does with a copy from before the push whose last touch is at the touch's
-tick: it takes it for one that holds the push, and the push is lost. A
-second toucher is the other way such a copy's last touch could reach the
-touch's tick, and matters only with a path that hands such a copy back. A
-pass does not clear `miss`'s hot restore (below). W4c's defect was found in
+a second toucher). If `"noHandoffCheck"` violates LogComplete in a burst,
+that is the tick test's blind side shown: a copy from before the push whose
+last touch is at the touch's tick is taken for one that holds the push, and
+the push is lost. By the model's steps (an argument, not shown), a second
+toucher is the other way such a copy's last touch could reach the touch's
+tick, and would matter only with a path that hands such a copy back. A pass
+does not clear `miss`'s hot restore (below). W4c's defect was found in
 a Background scenario; its path through `miss` after an eviction is
 modelled, the wait room's is not.
 
@@ -1380,8 +1385,9 @@ model and the script against W4d's code):
   the table's path had pushed. The retry pushes again, in the table's path
   (`touch.go:333`) or, if the history waits, in `miss` (`cuckoo.go:59`);
   `bump` then finds the reclaimed pointer and `unpoint` starts a fresh
-  register (`register.go:263`). The log holds the event twice: Count one
-  high at windows that cut a bucket. Any `unpoint` reset also keeps the
-  log's older events, which Count then reads though the register no longer
-  counts them. Neither is in the model (no hot entries); nothing is mended
-  here.
+  register (`register.go:263`). The log holds the event twice: at windows
+  that cut a bucket, Count reads one above what a single push would. Not
+  shown to be above the truth: the reset register no longer counts the
+  history's older events, and any `unpoint` reset keeps the log's older
+  events, which Count then reads though the register does not. Neither is
+  in the model (no hot entries); nothing is mended here.

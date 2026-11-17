@@ -1247,8 +1247,9 @@ the move read; an abandoned copy is cleared; evictions and moves of K's
 stripe exclude each other with counts; a miss is trusted only between
 unchanged move counts, and restores K's history from the stash under K's
 claim stripe), with word0 carrying the drip log as the sequence of events
-pushed into it. The owner touches K `Touches` times, one at a time, touch n
-at tick n, or with `Burst` every touch at tick 0, the tick of the event
+pushed into it. `Touchers` owners (one or two) each touch K `Touches` times,
+one at a time, touch n at tick n, so that two owners' n-th touches fall at
+one tick, or with `Burst` every touch at tick 0, the tick of the event
 before the run. A touch pushes its event in word0's CAS (`next0`), then
 counts it in word1 (bump); a count that fails because the slot changed hands
 sends the touch back to its lookup; the miss path restores K's history from
@@ -1265,10 +1266,13 @@ the stash and counts there. The push-once rule as each tree has it:
 - `"noHandoffCheck"`, a broken protocol kept for sight: W4d's rule, with a
   hand-off that takes src whatever it holds (`Relocate.tla`'s variant), so
   a copy from before a touch's push can survive a move and the touch meets
-  it.
+  it (with two owners, one whose last touch the other's push has moved to
+  the touch's tick).
 
 Invariants: **PushOnce**, no copy of K's history (in a slot, hidden or not,
-or the stash) holds an event twice; **LogComplete**, once every process is
+or the stash) holds an event twice; **CountLogged**, a touch is counted only
+into a history whose log holds its event (a push skipped by the tick test is
+not lost); **LogComplete**, once every process is
 done, K's history holds every event of the run exactly once (a lost push
 breaks it as a double one does); and `Relocate.tla`'s TouchNotLow, OneHome
 and Conserved, so the moves still keep every event (its ReadNotLow cannot
@@ -1281,10 +1285,10 @@ move, an eviction, and a second push by a touch that pushed already, into a
 history behind its tick (the half of W4d's rule that pushes again).
 
 Not modelled, named now: the log's 11-bit bound, its quanta and its valid bit
-(only which events the log holds, and how often); a second toucher of the
-key (W7's scenario has one owner per key; two touchers at one tick are where
-"last touch at or after its tick" could mistake another touch's push for
-its own, and that is left for a later model); the wait room and its placer
+(only which events the log holds, and how often); a toucher whose clock
+lags the other's (the two owners touch at the same ticks: neither is ever
+behind the last touch, nor in an earlier unit), and two touchers of two
+touches each (not run); the wait room and its placer
 (`WaitRoom.tla`'s ground), ConstantTime's stash path, `realign` and `stamp`
 (a touch into a new unit, which pushes with its register by one CAS or under
 a hold, and after `stamp` retries through the same rule), `dripForget`,
@@ -1302,52 +1306,65 @@ throughout: a read moves no log.
 to, checks in 15 s (795,231 states) with eviction and 3 s (39,699) without.
 Each W8 run is capped at 30 minutes (`TLC_TIMEOUT`); a run that does not
 finish is reported with its states and not judged, and a clause judged on
-fewer runs says so. `lab/w8.sh small` reads every run at one touch (clause
-1, the reported runs, clause 2's one-touch configurations); `lab/w8.sh
-large` every run at two touches. Outputs in `lab/w8/small` and
-`lab/w8/large`.
+fewer runs says so. `lab/w8.sh small` reads every run with one toucher and
+one touch (clause 1's one-toucher sight, the reported runs, clause 2's
+one-touch configurations); `lab/w8.sh large` every run with one toucher and
+two touches; `lab/w8.sh two` every run with two touchers of one touch each
+(clause 1's two-toucher sight, clause 3, a reported run). No base sizes two
+touchers: `Relocate.tla` has one. Outputs in `lab/w8/small`,
+`lab/w8/large` and `lab/w8/two`.
 
 **Rule (before the reading; revised before it, below).** W8 holds if:
 
 1. sight: PushOnce is violated by `"w4b"` with one touch and relocation only
    (no eviction), and by `"w4c"` with one touch and eviction; LogComplete is
    violated by `"tickOnly"` with one touch in a burst, relocation only; each
-   in at least one of the two scan orders (`CopyFirst`); and with `"w4d"`, a
+   in at least one of the two scan orders (`CopyFirst`); with `"w4d"`, a
    move and an eviction are reachable (NotMoved and NotEvicted violated);
-2. W4d: with `"w4d"`, no invariant is violated and Termination holds, at 1
-   and 2 touches, spread and burst, with and without eviction, in both scan
-   orders (16 configurations, 32 runs).
+   and with two touchers of one touch each, spread, relocation only,
+   CountLogged is violated by `"noHandoffCheck"` in at least one scan order
+   (the second toucher reaches what it was added for: a copy from before a
+   touch's push, its last touch moved to the touch's tick by the other's
+   push, taken for one that holds the push);
+2. W4d, one toucher: with `"w4d"`, no invariant is violated and Termination
+   holds, at 1 and 2 touches, spread and burst, with and without eviction,
+   in both scan orders (16 configurations, 32 runs);
+3. W4d, two touchers: the same with two touchers of one touch each (8
+   configurations, 16 runs).
 
 If clause 1 fails, the model does not reach the defects it was built for,
-and its pass of clause 2 clears nothing: W8 fails. If clause 2 fails, the
-trace is read against the code before anything else: a trace the code can
+and its passes of clauses 2 and 3 clear nothing: W8 fails. If clause 2 or 3
+fails, the trace is read against the code before anything else: a trace the code can
 follow revises W4d's clause 5; one it cannot is a defect of the model, said
 as such. A Termination counterexample is a behavior that never ends (a
 retry that loops while every other process waits or is done), read the same
 way: a loop the code can follow is a livelock of W4d's protocol, and one it
 cannot is the model's. Reported, not judged: `"w4c"` with relocation only
 (the table path's rule should cover it); NotRepushed with `"w4d"` at 1 and 2
-touches with eviction; `"noHandoffCheck"` at one touch with relocation
-only, NotRepushed spread and LogComplete in a burst; every run's distinct
-states.
+touches with eviction, and with two touchers with eviction;
+`"noHandoffCheck"` with one toucher of one touch, relocation only:
+NotRepushed spread, CountLogged in a burst, and CountLogged spread (the
+contrast to clause 1's two-toucher sight: with one toucher, a copy from
+before the push is behind the touch's tick); every run's distinct states.
 
-**What a pass means.** One owner of the key, the table's same-unit path,
-relocation's hidden copy and eviction to the stash, as `Relocate.tla` has
-them. If NotRepushed is never violated with `"w4d"` and is with
-`"noHandoffCheck"`, no path in the model hands a touch that pushed a history
-from before its push (the hand-off and the eviction both compare word0
-before they take the slot), and clause 2 then judges only the half of W4d's
-rule that skips: the half that pushes again exists for paths the model
-leaves out (the wait room and its put-back, ConstantTime's stale stash copy,
-a second toucher). If `"noHandoffCheck"` violates LogComplete in a burst,
-that is the tick test's blind side shown: a copy from before the push whose
-last touch is at the touch's tick is taken for one that holds the push, and
-the push is lost. By the model's steps (an argument, not shown), a second
-toucher is the other way such a copy's last touch could reach the touch's
-tick, and would matter only with a path that hands such a copy back. A pass
-does not clear `miss`'s hot restore (below). W4c's defect was found in
-a Background scenario; its path through `miss` after an eviction is
-modelled, the wait room's is not.
+**What a pass means.** One or two owners of the key at the same ticks, the
+table's same-unit path, relocation's hidden copy and eviction to the stash,
+as `Relocate.tla` has them. If NotRepushed is never violated with `"w4d"`
+and is with `"noHandoffCheck"`, no path in the model hands a touch that
+pushed a history from before its push (the hand-off and the eviction both
+compare word0 before they take the slot), and clauses 2 and 3 then judge
+only the half of W4d's rule that skips: the half that pushes again exists
+for paths the model leaves out (the wait room and its put-back,
+ConstantTime's stale stash copy, a toucher whose clock lags). If
+`"noHandoffCheck"` violates CountLogged in a burst with one toucher and in
+spread with two, and not in spread with one, the tick test's blind side is
+shown both ways the model can reach it: a copy from before the push whose
+last touch is at the touch's own tick, and one moved to that tick by the
+other toucher's push; clause 3's pass then says that with the hand-off and
+the eviction as committed no such copy reaches a touch, two touchers at one
+tick included. A pass does not clear `miss`'s hot restore (below). W4c's
+defect was found in a Background scenario; its path through `miss` after
+an eviction is modelled, the wait room's is not.
 
 **Revised before its reading** (no TLC run of `DripPush.tla` or of
 `lab/w8.sh` preceded the revision; written after an audit of the rule, the
@@ -1391,3 +1408,22 @@ model and the script against W4d's code):
   history's older events, and any `unpoint` reset keeps the log's older
   events, which Count then reads though the register does not. Neither is
   in the model (no hot entries); nothing is mended here.
+
+**Revised again before its reading** (the second toucher, an open decision
+taken before any TLC run of `DripPush.tla`):
+
+- Two touchers: the owner is a process set of `Touchers` (1 or 2), touch n
+  of each at tick n; clause 1's two-toucher sight, clause 3 and a reported
+  NotRepushed run, in `lab/w8.sh two`. With one toucher the steps are those
+  of the model as first revised, CountLogged's ghost aside.
+- CountLogged, judged in clauses 2 and 3, and the `"noHandoffCheck"` runs
+  read through it: the reported LogComplete run in a burst could not show
+  the tick test's blind side, as the first revision said it would, because
+  a hand-off that takes src whatever it holds also overwrites a touch
+  already counted there, push and count together, which breaks LogComplete
+  as well. CountLogged fails only where a count lands in a history without
+  its event.
+- The script was run end to end on a stub module (32, 17 and 19 runs; exit
+  0 as wanted, 1 on a failing W4d run, 2 on a model that differs from the
+  commit), not on `DripPush.tla`; an error's line now carries TLC's
+  message.

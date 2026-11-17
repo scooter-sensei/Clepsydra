@@ -6,11 +6,13 @@
 (* abandoned copy is cleared; evictions and moves of the stripe exclude    *)
 (* each other with counts), with word0 carrying the key's drip log as the  *)
 (* sequence of the events pushed into it (event 0 before the run, event n  *)
-(* the owner's n-th touch). The log's 11-bit bound, its quanta and its     *)
-(* valid bit are not modelled: only which events it holds, and how often.  *)
+(* the first owner's n-th touch, event Touches + n the second's). The      *)
+(* log's 11-bit bound, its quanta and its valid bit are not modelled: only *)
+(* which events it holds, and how often.                                   *)
 (*                                                                         *)
-(* The owner touches K Touches times, one at a time, touch n at tick       *)
-(* Tick(n) (Burst: every touch at tick 0, the tick of event 0). A touch:   *)
+(* Touchers owners (1 or 2) each touch K Touches times, one at a time,     *)
+(* touch n at tick Tick(n), so the two owners' n-th touches are at one     *)
+(* tick (Burst: every touch at tick 0, the tick of event 0). A touch:      *)
 (* a lookup; word0's CAS by next0, which pushes the event (touch.go,       *)
 (* touch: next0's CAS); bump, the count's CAS of word1, which fails if the *)
 (* slot changed hands meanwhile and sends the touch back to its lookup     *)
@@ -34,10 +36,13 @@
 (*   "noHandoffCheck"  W4d's rule with a broken hand-off, for sight: the   *)
 (*          hand-off takes src whatever it holds (Relocate's variant), so  *)
 (*          a copy from before the touch's push can survive it, and the    *)
-(*          touch meets a history from before its push                     *)
+(*          touch meets a history from before its push (with two owners,   *)
+(*          one whose last touch the other's push has moved to its tick)   *)
 (* Invariants: PushOnce (no copy of K's history, in a slot or the stash,   *)
-(* holds an event twice), LogComplete (once every process is done, K's     *)
-(* history holds every event exactly once), with Relocate's TouchNotLow,   *)
+(* holds an event twice), CountLogged (a touch is counted only into a      *)
+(* history whose log holds its event: a skipped push is not lost),         *)
+(* LogComplete (once every process is done, K's history holds every event *)
+(* exactly once), with Relocate's TouchNotLow,                             *)
 (* ReadNotLow, OneHome and Conserved (the moves still keep every event).  *)
 (* NotMoved, NotEvicted and NotRepushed check that a move, an eviction and *)
 (* a second push by a touch that pushed already (into a history behind its *)
@@ -47,12 +52,15 @@
 (***************************************************************************)
 EXTENDS Integers, FiniteSets, Sequences, TLC
 
-CONSTANTS Touches, Burst, Reads, Evict, CopyFirst, Variant
+CONSTANTS Touches, Touchers, Burst, Reads, Evict, CopyFirst, Variant
 
 ASSUME /\ Variant \in {"w4d", "w4c", "w4b", "tickOnly", "noHandoffCheck"}
-       /\ Touches \in Nat /\ Reads \in Nat
+       /\ Touches \in Nat /\ Touchers \in {1, 2} /\ Reads \in Nat
        /\ Burst \in BOOLEAN /\ Evict \in BOOLEAN /\ CopyFirst \in BOOLEAN
 
+Owners == IF Touchers = 1 THEN {"owner"} ELSE {"owner", "owner2"}
+Ev(p, n) == (IF p = "owner" THEN 0 ELSE Touches) + n   \* the event of owner p's touch n
+Events == Touchers * Touches                           \* the run's events: 1..Events, after event 0
 Slots == {"src", "dst"}
 Order == IF CopyFirst THEN <<"dst", "src">> ELSE <<"src", "dst">>
 FlagTable == Variant \in {"w4c", "w4d", "noHandoffCheck"}
@@ -76,20 +84,21 @@ variables
   lock = "none",                   \* K's claim stripe
   truth = 1,                       \* ghost: K's events recorded (one before the run)
   readOK = TRUE, touchOK = TRUE,   \* ghost
-  seen = {};                       \* ghost: "moved", "abandoned", "evicted" (reachability)
+  seen = {};                       \* ghost: "moved", "abandoned", "evicted", "repushed" (reachability); "unlogged" (CountLogged)
 
 define
   Match(s) == w0[s].k = "K" /\ w1[s].k = "K"
   Where == {s \in Slots : Match(s)}
   Dup(l) == \E a, b \in 1..Len(l) : a < b /\ l[a] = l[b]
+  InLog(l, e) == \E x \in 1..Len(l) : l[x] = e
   Logs == {w0[s].log : s \in {x \in Slots : w0[x].k = "K"}} \cup (IF stash.k = "K" THEN {stash.log} ELSE {})
-  Final == \A p \in {"owner", "reader", "mover", "evictor"} : pc[p] = "Done"
+  Final == \A p \in Owners \cup {"reader", "mover", "evictor"} : pc[p] = "Done"
   Live == IF Where = {} THEN (IF stash.k = "K" THEN stash.log ELSE <<>>)
           ELSE w0[CHOOSE s \in Where : TRUE].log
   Total == IF Where = {} THEN (IF stash.k = "K" THEN stash.c ELSE 0)
            ELSE w1[CHOOSE s \in Where : TRUE].c
   PushOnce == \A l \in Logs : ~Dup(l)
-  LogComplete == Final => Len(Live) = Touches + 1 /\ {Live[x] : x \in 1..Len(Live)} = 0..Touches
+  LogComplete == Final => Len(Live) = Events + 1 /\ {Live[x] : x \in 1..Len(Live)} = 0..Events
   ReadNotLow == readOK
   TouchNotLow == touchOK
   OneHome == Cardinality(Where) <= 1
@@ -97,9 +106,10 @@ define
   NotMoved == "moved" \notin seen
   NotEvicted == "evicted" \notin seen
   NotRepushed == "repushed" \notin seen
+  CountLogged == "unlogged" \notin seen
 end define;
 
-fair process owner = "owner"
+fair process owner \in Owners
 variables i = 0, os = "none", last = Free0, old = Free1, start = 0, b = 0, d = 0, pushed = FALSE;
 begin
 o_start:
@@ -118,19 +128,20 @@ o_m3:
   if b /= d \/ begun /= b then goto o_s1; end if;
 o_lock:
   await lock = "none";
-  lock := "owner";
+  lock := self;
 o_st:                                         \* miss: restore from the stash (its log pushed, or as it is), or a fresh history
   if stash.k = "K" then
     touchOK := touchOK /\ stash.c + 1 >= start + 1;
     if (FlagMiss /\ pushed /\ Tick(i + 1) <= stash.t) \/ (TickOnly /\ Tick(i + 1) <= stash.t) then
       stash.c := stash.c + 1;                 \* the event is in the log already (W4d)
+      seen := IF InLog(stash.log, Ev(self, i + 1)) THEN seen ELSE seen \cup {"unlogged"};
     else
-      stash := [Push(stash, Tick(i + 1), i + 1) EXCEPT !.c = stash.c + 1];
+      stash := [Push(stash, Tick(i + 1), Ev(self, i + 1)) EXCEPT !.c = stash.c + 1];
       seen := IF pushed THEN seen \cup {"repushed"} ELSE seen;
     end if;
   else
     touchOK := touchOK /\ 1 >= start + 1;
-    stash := [k |-> "K", c |-> 1, t |-> Tick(i + 1), log |-> <<i + 1>>];
+    stash := [k |-> "K", c |-> 1, t |-> Tick(i + 1), log |-> <<Ev(self, i + 1)>>];
   end if;
   truth := truth + 1;
   lock := "none";
@@ -143,7 +154,7 @@ o_cas0:                                       \* next0's CAS, skipped by a touch
   if (FlagTable /\ pushed /\ Tick(i + 1) <= last.t) \/ (TickOnly /\ Tick(i + 1) <= last.t) then
     pushed := TRUE;
   elsif w0[os] = last then
-    w0[os] := Push(last, Tick(i + 1), i + 1) || pushed := TRUE || seen := IF pushed THEN seen \cup {"repushed"} ELSE seen;
+    w0[os] := Push(last, Tick(i + 1), Ev(self, i + 1)) || pushed := TRUE || seen := IF pushed THEN seen \cup {"repushed"} ELSE seen;
   else
     goto o_s1;
   end if;
@@ -154,6 +165,7 @@ o_b2:
 o_b3:
   if w1[os] = old then
     w1[os].c := old.c + 1;
+    seen := IF InLog(w0[os].log, Ev(self, i + 1)) THEN seen ELSE seen \cup {"unlogged"};
     touchOK := touchOK /\ old.c + 1 >= start + 1;
     truth := truth + 1;
     i := i + 1;

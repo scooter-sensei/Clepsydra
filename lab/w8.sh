@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # lab/sw W8's readings (SW-RESULTS.md): TLC on go/verify/tla/experiments/DripPush.tla.
-#   lab/w8.sh [small|large|all]   small: every run at one touch (clause 1, the reported runs, clause 2's
-#                                 one-touch configurations); large: every run at two touches (clause 2's
-#                                 two-touch configurations, NotRepushed's two-touch run); all (default): both
-# Outputs in lab/w8/small and lab/w8/large, each cleared when its phase starts: results.txt, and every
-# run's tlc.log and cfg (runN.log, runN.cfg), numbered from 1 within the phase.
+#   lab/w8.sh [small|large|two|all]   small: one toucher, one touch (clause 1's one-toucher sight, the
+#                                     reported runs, clause 2's one-touch configurations); large: one
+#                                     toucher, two touches (clause 2's two-touch configurations, NotRepushed's
+#                                     two-touch run); two: two touchers, one touch each (clause 1's
+#                                     two-toucher sight, clause 3, NotRepushed's two-toucher run);
+#                                     all (default): the three, in that order
+# Outputs in lab/w8/small, lab/w8/large and lab/w8/two, each cleared when its phase starts: results.txt,
+# and every run's tlc.log and cfg (runN.log, runN.cfg), numbered from 1 within the phase.
 # A run is "ok" only if TLC exits 0 and prints its completion line with no error; "violation" only if
 # TLC reports the invariant or property the run names; "timeout" (TLC_TIMEOUT, default 1800 s: Relocate.tla
 # at 2 touches and 0 reads, the base, takes 15 s) is reported with its states and not judged; anything else
@@ -12,7 +15,7 @@
 # disk (TMPDIR_DISK, default ~/tlc-tmp). Exits 1 if a judged outcome is not as wanted, 2 if it cannot start.
 set -uo pipefail
 what=${1:-all}
-case $what in small | large | all) ;; *) echo "usage: lab/w8.sh [small|large|all]"; exit 2 ;; esac
+case $what in small | large | two | all) ;; *) echo "usage: lab/w8.sh [small|large|two|all]"; exit 2 ;; esac
 L=$HOME/lab-sw M=go/verify/tla/experiments/DripPush.tla
 J=${TLA2TOOLS:-$HOME/tools/tla/tla2tools.jar}
 [ -f "$J" ] || { echo "tla2tools.jar not found (set TLA2TOOLS)"; exit 2; }
@@ -59,6 +62,9 @@ classify() {
 	[ "$got" = violation ] && return
 	if [ "$rc" = 0 ] && grep -q '^Model checking completed. No error has been found.' "$log" && ! grep -q '^Error:' "$log"; then
 		got=ok
+	elif [ -z "$why" ]; then # an error TLC names otherwise, or none (exit code)
+		why=$(grep -m1 -i 'error\|exception\|not found' "$log" | cut -c1-90)
+		why=${why:-"exit $rc"}
 	fi
 }
 
@@ -114,56 +120,70 @@ either() {
 	echo "    $3: $msg" | tee -a "$O/results.txt"
 }
 
-# clause2 <touches>: W4d at that size in the 8 configurations, each with the invariants and with Termination
-clause2() {
-	local bu e cf c
-	echo "== clause 2: w4d, $1 touch(es)" | tee -a "$O/results.txt"
+# pair <judged|report> <what a violation shows> <label> <checks> <constant definitions but CopyFirst...>:
+# a sight pair, the two scan orders, judged (or reported) as one by either
+pair() {
+	local how=$1 shows=$2 label=$3 checks=$4 g1 g2
+	shift 4
+	run report "$label, copy first TRUE" "$checks" "$@" 'CopyFirst = TRUE'; g1=$got
+	run report "$label, copy first FALSE" "$checks" "$@" 'CopyFirst = FALSE'; g2=$got
+	if [ "$how" = judged ]; then either "$g1" "$g2" "$shows (${checks#* })"; else either "$g1" "$g2" "$shows (${checks#* })" report; fi
+}
+
+# configs <clause> <touchers> <touches>: W4d in the 8 configurations, each with the invariants and with Termination
+configs() {
+	local bu e cf c n="$2 toucher(s) x $3 touch(es)"
+	echo "== clause $1: w4d, $n" | tee -a "$O/results.txt"
 	for bu in FALSE TRUE; do
 		for e in FALSE TRUE; do
 			for cf in TRUE FALSE; do
-				c=("Touches = $1" "Burst = $bu" "$r0" "Evict = $e" "CopyFirst = $cf" 'Variant = "w4d"')
-				run ok "w4d, $1 touch(es), burst $bu, evict $e, copy first $cf" "INVARIANTS $inv" "${c[@]}"
-				run ok "w4d, $1 touch(es), burst $bu, evict $e, copy first $cf: Termination" "PROPERTY Termination" "${c[@]}"
+				c=("Touchers = $2" "Touches = $3" "Burst = $bu" "$r0" "Evict = $e" "CopyFirst = $cf" 'Variant = "w4d"')
+				run ok "w4d, $n, burst $bu, evict $e, copy first $cf" "INVARIANTS $inv" "${c[@]}"
+				run ok "w4d, $n, burst $bu, evict $e, copy first $cf: Termination" "PROPERTY Termination" "${c[@]}"
 			done
 		done
 	done
 }
 
 # --- the readings ---
-inv="PushOnce LogComplete TouchNotLow OneHome Conserved" # ReadNotLow cannot fail at Reads = 0
+inv="PushOnce CountLogged LogComplete TouchNotLow OneHome Conserved" # ReadNotLow cannot fail at Reads = 0
 r0='Reads = 0'
-if [ "$what" != large ]; then
+one=('Touchers = 1' 'Touches = 1' "$r0")
+if [ "$what" = small ] || [ "$what" = all ]; then
 	phase small
-	echo "== clause 1: sight" | tee -a "$O/results.txt"
-	run report "w4b, 1 touch, relocation only, copy first TRUE" "INVARIANTS PushOnce" 'Touches = 1' 'Burst = FALSE' "$r0" 'Evict = FALSE' 'CopyFirst = TRUE' 'Variant = "w4b"'; g1=$got
-	run report "w4b, 1 touch, relocation only, copy first FALSE" "INVARIANTS PushOnce" 'Touches = 1' 'Burst = FALSE' "$r0" 'Evict = FALSE' 'CopyFirst = FALSE' 'Variant = "w4b"'; g2=$got
-	either $g1 $g2 "W4b's double push (PushOnce)"
-	run report "w4c, 1 touch, evict, copy first TRUE" "INVARIANTS PushOnce" 'Touches = 1' 'Burst = FALSE' "$r0" 'Evict = TRUE' 'CopyFirst = TRUE' 'Variant = "w4c"'; g1=$got
-	run report "w4c, 1 touch, evict, copy first FALSE" "INVARIANTS PushOnce" 'Touches = 1' 'Burst = FALSE' "$r0" 'Evict = TRUE' 'CopyFirst = FALSE' 'Variant = "w4c"'; g2=$got
-	either $g1 $g2 "W4c's double push through miss (PushOnce)"
-	run report "tickOnly, 1 touch, burst, relocation only, copy first TRUE" "INVARIANTS LogComplete" 'Touches = 1' 'Burst = TRUE' "$r0" 'Evict = FALSE' 'CopyFirst = TRUE' 'Variant = "tickOnly"'; g1=$got
-	run report "tickOnly, 1 touch, burst, relocation only, copy first FALSE" "INVARIANTS LogComplete" 'Touches = 1' 'Burst = TRUE' "$r0" 'Evict = FALSE' 'CopyFirst = FALSE' 'Variant = "tickOnly"'; g2=$got
-	either $g1 $g2 "a lost push (LogComplete)"
+	echo "== clause 1: sight, one toucher" | tee -a "$O/results.txt"
+	pair judged "W4b's double push" "w4b, 1 touch, relocation only" "INVARIANTS PushOnce" "${one[@]}" 'Burst = FALSE' 'Evict = FALSE' 'Variant = "w4b"'
+	pair judged "W4c's double push through miss" "w4c, 1 touch, evict" "INVARIANTS PushOnce" "${one[@]}" 'Burst = FALSE' 'Evict = TRUE' 'Variant = "w4c"'
+	pair judged "a lost push" "tickOnly, 1 touch, burst, relocation only" "INVARIANTS LogComplete" "${one[@]}" 'Burst = TRUE' 'Evict = FALSE' 'Variant = "tickOnly"'
 	for r in NotMoved NotEvicted; do
-		run violation "w4d, reachable: $r" "INVARIANTS $r" 'Touches = 1' 'Burst = FALSE' "$r0" 'Evict = TRUE' 'CopyFirst = TRUE' 'Variant = "w4d"'
+		run violation "w4d, reachable: $r" "INVARIANTS $r" "${one[@]}" 'Burst = FALSE' 'Evict = TRUE' 'CopyFirst = TRUE' 'Variant = "w4d"'
 	done
 	echo "== reported" | tee -a "$O/results.txt"
-	run report "w4c, 1 touch, relocation only, copy first TRUE" "INVARIANTS $inv" 'Touches = 1' 'Burst = FALSE' "$r0" 'Evict = FALSE' 'CopyFirst = TRUE' 'Variant = "w4c"'
-	run report "w4d, 1 touch, evict, reachable: NotRepushed" "INVARIANTS NotRepushed" 'Touches = 1' 'Burst = FALSE' "$r0" 'Evict = TRUE' 'CopyFirst = TRUE' 'Variant = "w4d"'
-	run report "noHandoffCheck, 1 touch, relocation only, copy first TRUE: NotRepushed" "INVARIANTS NotRepushed" 'Touches = 1' 'Burst = FALSE' "$r0" 'Evict = FALSE' 'CopyFirst = TRUE' 'Variant = "noHandoffCheck"'; g1=$got
-	run report "noHandoffCheck, 1 touch, relocation only, copy first FALSE: NotRepushed" "INVARIANTS NotRepushed" 'Touches = 1' 'Burst = FALSE' "$r0" 'Evict = FALSE' 'CopyFirst = FALSE' 'Variant = "noHandoffCheck"'; g2=$got
-	either $g1 $g2 "a push again into a history from before it (NotRepushed)" report
-	run report "noHandoffCheck, 1 touch, burst, relocation only, copy first TRUE" "INVARIANTS LogComplete" 'Touches = 1' 'Burst = TRUE' "$r0" 'Evict = FALSE' 'CopyFirst = TRUE' 'Variant = "noHandoffCheck"'; g1=$got
-	run report "noHandoffCheck, 1 touch, burst, relocation only, copy first FALSE" "INVARIANTS LogComplete" 'Touches = 1' 'Burst = TRUE' "$r0" 'Evict = FALSE' 'CopyFirst = FALSE' 'Variant = "noHandoffCheck"'; g2=$got
-	either $g1 $g2 "the tick test skipping a copy from before the push at its own tick (LogComplete)" report
-	clause2 1
+	run report "w4c, 1 touch, relocation only, copy first TRUE" "INVARIANTS $inv" "${one[@]}" 'Burst = FALSE' 'Evict = FALSE' 'CopyFirst = TRUE' 'Variant = "w4c"'
+	run report "w4d, 1 touch, evict, reachable: NotRepushed" "INVARIANTS NotRepushed" "${one[@]}" 'Burst = FALSE' 'Evict = TRUE' 'CopyFirst = TRUE' 'Variant = "w4d"'
+	pair report "a push again into a history from before it" "noHandoffCheck, 1 touch, relocation only" "INVARIANTS NotRepushed" "${one[@]}" 'Burst = FALSE' 'Evict = FALSE' 'Variant = "noHandoffCheck"'
+	pair report "a count into a copy from before the push, at the touch's tick, the push skipped" "noHandoffCheck, 1 touch, burst, relocation only" "INVARIANTS CountLogged" "${one[@]}" 'Burst = TRUE' 'Evict = FALSE' 'Variant = "noHandoffCheck"'
+	for cf in TRUE FALSE; do # one toucher, spread: a copy from before the push is behind the touch's tick
+		run report "noHandoffCheck, 1 touch, relocation only, copy first $cf: CountLogged" "INVARIANTS CountLogged" "${one[@]}" 'Burst = FALSE' 'Evict = FALSE' "CopyFirst = $cf" 'Variant = "noHandoffCheck"'
+	done
+	configs 2 1 1
 	phase_end
 fi
-if [ "$what" != small ]; then
+if [ "$what" = large ] || [ "$what" = all ]; then
 	phase large
 	echo "== reported" | tee -a "$O/results.txt"
-	run report "w4d, 2 touches, evict, reachable: NotRepushed" "INVARIANTS NotRepushed" 'Touches = 2' 'Burst = FALSE' "$r0" 'Evict = TRUE' 'CopyFirst = TRUE' 'Variant = "w4d"'
-	clause2 2
+	run report "w4d, 2 touches, evict, reachable: NotRepushed" "INVARIANTS NotRepushed" 'Touchers = 1' 'Touches = 2' "$r0" 'Burst = FALSE' 'Evict = TRUE' 'CopyFirst = TRUE' 'Variant = "w4d"'
+	configs 2 1 2
+	phase_end
+fi
+if [ "$what" = two ] || [ "$what" = all ]; then
+	phase two
+	two=('Touchers = 2' 'Touches = 1' "$r0")
+	echo "== clause 1: sight, two touchers" | tee -a "$O/results.txt"
+	pair judged "a count into a copy from before the push, moved to the touch's tick by the other toucher's push" "noHandoffCheck, 2 touchers x 1 touch, relocation only" "INVARIANTS CountLogged" "${two[@]}" 'Burst = FALSE' 'Evict = FALSE' 'Variant = "noHandoffCheck"'
+	echo "== reported" | tee -a "$O/results.txt"
+	run report "w4d, 2 touchers x 1 touch, evict, reachable: NotRepushed" "INVARIANTS NotRepushed" "${two[@]}" 'Burst = FALSE' 'Evict = TRUE' 'CopyFirst = TRUE' 'Variant = "w4d"'
+	configs 3 2 1
 	phase_end
 fi
 exit $bad

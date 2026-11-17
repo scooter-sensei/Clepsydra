@@ -1,0 +1,5 @@
+=== RUN   TestWrapTranslateDiverge
+    wrap_test.go:211: no divergence in 400,000 operations at K = 85893840000
+--- PASS: TestWrapTranslateDiverge (9.60s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	9.604s

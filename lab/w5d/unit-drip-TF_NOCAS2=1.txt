@@ -1,0 +1,42 @@
+heavy hitter: 74319 queries, 0 Saturated, 0 unflagged with Upper < exact, 290 unflagged with Count >10% low
+upper bound: 18382 queries, 0 Saturated, 0 unflagged with Upper < exact; unflagged Upper exceeds exact by 16.7% of events
+--- FAIL: TestConformance (0.02s)
+    --- FAIL: TestConformance/basic (0.00s)
+        conformance_test.go:313: op 60 {Op:touch Key:user:1 WindowMs:250 NowMs:12363 Want:{Seen:false Count:2 Upper:4 Saturated:false Restored:false Degraded:false}}: got {Seen:false Count:1 Upper:4 Saturated:false Restored:false Degraded:false}
+        conformance_test.go:313: op 76 {Op:touch Key:user:7 WindowMs:1000 NowMs:15526 Want:{Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+        conformance_test.go:313: op 94 {Op:touch Key:user:0 WindowMs:1000 NowMs:19324 Want:{Seen:false Count:2 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+        conformance_test.go:313: op 141 {Op:touch Key:user:9 WindowMs:1000 NowMs:27851 Want:{Seen:false Count:2 Upper:3 Saturated:false Restored:false Degraded:false}}: got {Seen:false Count:1 Upper:3 Saturated:false Restored:false Degraded:false}
+        conformance_test.go:313: op 147 {Op:touch Key:user:9 WindowMs:1000 NowMs:28971 Want:{Seen:false Count:2 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+        conformance_test.go:318: ... 11 ops differ in all
+    --- FAIL: TestConformance/burst (0.00s)
+        conformance_test.go:313: op 217 {Op:count Key:hot WindowMs:100 NowMs:173 Want:{Seen:true Count:105 Upper:181 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:110 Upper:181 Saturated:false Restored:false Degraded:false}
+        conformance_test.go:313: op 241 {Op:count Key:hot WindowMs:100 NowMs:194 Want:{Seen:true Count:104 Upper:201 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:109 Upper:201 Saturated:false Restored:false Degraded:false}
+        conformance_test.go:313: op 265 {Op:count Key:hot WindowMs:100 NowMs:215 Want:{Seen:true Count:103 Upper:221 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:109 Upper:221 Saturated:false Restored:false Degraded:false}
+        conformance_test.go:313: op 289 {Op:count Key:hot WindowMs:100 NowMs:228 Want:{Seen:true Count:106 Upper:241 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:112 Upper:241 Saturated:false Restored:false Degraded:false}
+        conformance_test.go:313: op 313 {Op:count Key:hot WindowMs:100 NowMs:246 Want:{Seen:true Count:107 Upper:261 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:113 Upper:261 Saturated:false Restored:false Degraded:false}
+        conformance_test.go:318: ... 162 ops differ in all
+--- FAIL: TestTickRange (0.00s)
+    filter_test.go:489: ContinuousDecay at 70368744177664: panicked false
+--- FAIL: TestMerge (1.13s)
+    merge_test.go:83: checkpoints 47, comparisons 470000; Upper < exact flagged Saturated 12
+    merge_test.go:94: window  1s  MAE merged 0.2245  single 0.0740
+    merge_test.go:96: window 1s: merged count error 50202 over 1.5x the single filter's 16537
+    merge_test.go:94: window  5s  MAE merged 0.0014  single 0.0014
+    merge_test.go:94: window 15s  MAE merged 0.0188  single 0.0189
+    merge_test.go:94: window 30s  MAE merged 0.0408  single 0.0408
+    merge_test.go:94: window 60s  MAE merged 0.0233  single 0.0233
+    merge_test.go:110: absent probes 1e6: false Seen merged 0, single 0
+--- FAIL: TestUnitOfMatchesDivision (0.01s)
+    register_test.go:101: temporalfilter: Horizon too large for Resolution (more than 2^31 ticks, with the wrapped last touch)
+--- FAIL: TestCountsLastTouchWhole (0.00s)
+    register_test.go:128: window 200 ms: Count 1, want 2 ({Seen:true Count:1 Upper:11 Saturated:false Restored:false Degraded:false})
+FAIL
+FAIL	github.com/scooter-sensei/clepsydra/go	48.823s
+?   	github.com/scooter-sensei/clepsydra/go/cmd/h2h	[no test files]
+?   	github.com/scooter-sensei/clepsydra/go/cmd/tfbench	[no test files]
+?   	github.com/scooter-sensei/clepsydra/go/internal/cpu	[no test files]
+ok  	github.com/scooter-sensei/clepsydra/go/internal/ecm	1.906s
+ok  	github.com/scooter-sensei/clepsydra/go/internal/registersim	0.003s
+ok  	github.com/scooter-sensei/clepsydra/go/internal/siphash	0.107s
+?   	github.com/scooter-sensei/clepsydra/go/internal/workload	[no test files]
+FAIL

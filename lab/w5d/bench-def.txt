@@ -1,0 +1,39 @@
+goos: linux
+goarch: amd64
+pkg: github.com/scooter-sensei/clepsydra/go
+cpu: AMD Ryzen 5 4600H with Radeon Graphics         
+BenchmarkCheckAndTouchHit-12           	 6211556	       202.4 ns/op	       568.8 cycles/op
+BenchmarkCheckAndTouchMissInsert-12    	  892594	      1833 ns/op	      5142 cycles/op
+BenchmarkTouchAndCount-12              	 5595506	       211.0 ns/op	       595.1 cycles/op
+BenchmarkVelocityCount-12              	 6078865	       187.7 ns/op	       537.1 cycles/op
+BenchmarkCheckAndTouchHitHot-12        	15699090	        74.56 ns/op	       211.9 cycles/op
+BenchmarkCheckAndTouchBatch-12         	11483170	        92.18 ns/op	       261.8 cycles/op
+BenchmarkVelocityCountHot-12           	11733522	       101.5 ns/op	       291.8 cycles/op
+BenchmarkContainsAbsent-12             	 6972520	       172.7 ns/op	       490.5 cycles/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/scooter-sensei/clepsydra/go
+cpu: AMD Ryzen 5 4600H with Radeon Graphics         
+BenchmarkCheckAndTouchHit-12           	 6149953	       194.4 ns/op	       551.1 cycles/op
+BenchmarkCheckAndTouchMissInsert-12    	  572112	      2013 ns/op	      5647 cycles/op
+BenchmarkTouchAndCount-12              	 5806233	       207.6 ns/op	       591.8 cycles/op
+BenchmarkVelocityCount-12              	 5904742	       195.2 ns/op	       548.6 cycles/op
+BenchmarkCheckAndTouchHitHot-12        	15861100	        74.26 ns/op	       213.2 cycles/op
+BenchmarkCheckAndTouchBatch-12         	12032262	        92.58 ns/op	       263.4 cycles/op
+BenchmarkVelocityCountHot-12           	11798062	       101.3 ns/op	       290.4 cycles/op
+BenchmarkContainsAbsent-12             	 7084872	       170.3 ns/op	       483.1 cycles/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/scooter-sensei/clepsydra/go
+cpu: AMD Ryzen 5 4600H with Radeon Graphics         
+BenchmarkCheckAndTouchHit-12           	 6217261	       187.5 ns/op	       536.1 cycles/op
+BenchmarkCheckAndTouchMissInsert-12    	 1000000	      1786 ns/op	      5053 cycles/op
+BenchmarkTouchAndCount-12              	 5651311	       206.6 ns/op	       585.0 cycles/op
+BenchmarkVelocityCount-12              	 6064515	       192.9 ns/op	       540.2 cycles/op
+BenchmarkCheckAndTouchHitHot-12        	15808718	        74.43 ns/op	       213.2 cycles/op
+BenchmarkCheckAndTouchBatch-12         	11627658	        92.48 ns/op	       263.1 cycles/op
+BenchmarkVelocityCountHot-12           	11653278	       101.1 ns/op	       290.1 cycles/op
+BenchmarkContainsAbsent-12             	 6837031	       172.1 ns/op	       491.1 cycles/op
+PASS

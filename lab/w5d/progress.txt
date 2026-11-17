@@ -1,0 +1,29 @@
+[10:46:06] 1: default build
+[10:46:26] 1 exact: IDENTICAL
+[10:47:37] 1 digest: IDENTICAL
+[10:47:37] 2: tfdrip against W4d's
+[10:47:58] 2 exact: 3 lines differ
+[10:49:19] 2 digest: IDENTICAL
+[10:49:19] 3: translation
+[10:52:09] 3 K=566935680000: IDENTICAL
+[10:53:39] 3 K=1013612280000: IDENTICAL
+[10:55:04] 3 K=1460288880000: IDENTICAL
+[10:55:04] 4: lockstep with a fast clock
+[10:55:14] 4 K=17175600000: wrap_test.go:211: no divergence in 400,000 operations at K = 17174400000 ok  	github.com/scooter-sensei/clepsydra/go	9.554s
+[10:55:24] 4 K=34355520000: wrap_test.go:211: no divergence in 400,000 operations at K = 34354320000 ok  	github.com/scooter-sensei/clepsydra/go	9.469s
+[10:55:34] 4 K=51535320000: wrap_test.go:211: no divergence in 400,000 operations at K = 51534120000 ok  	github.com/scooter-sensei/clepsydra/go	9.533s
+[10:55:44] 4 K=85895040000: wrap_test.go:211: no divergence in 400,000 operations at K = 85893840000 ok  	github.com/scooter-sensei/clepsydra/go	9.604s
+[10:55:54] 4 K=120254880000: wrap_test.go:211: no divergence in 400,000 operations at K = 120253680000 ok  	github.com/scooter-sensei/clepsydra/go	9.509s
+[10:55:54] 5: ok  	github.com/scooter-sensei/clepsydra/go	0.272s
+[10:55:54] 6: suites
+[10:56:47] 6 plain: TestConformance TestCountsLastTouchWhole TestMerge TestTickRange TestUnitOfMatchesDivision | W4d's: TestConformance TestCountsLastTouchWhole TestMerge TestUnitOfMatchesDivision 
+[10:57:18] 6 TF_CT=1: TestConformance TestCountsLastTouchWhole TestTickRange TestUnitOfMatchesDivision TestWrapDeadlineEntries | W4d's: TestConformance TestCountsLastTouchWhole TestUnitOfMatchesDivision 
+[10:57:44] 6 TF_BG=1: TestConformance TestCountsLastTouchWhole TestTickRange TestUnitOfMatchesDivision TestWrapAlias TestWrapDeadlineEntries | W4d's: TestConformance TestCountsLastTouchWhole TestUnitOfMatchesDivision 
+[10:58:34] 6 TF_NOCAS2=1: TestConformance TestCountsLastTouchWhole TestMerge TestTickRange TestUnitOfMatchesDivision | W4d's: TestConformance TestCountsLastTouchWhole TestMerge TestUnitOfMatchesDivision 
+[10:58:34] 7: soak and fuzzer across a wrap, under -race
+[11:03:39] 7 soak: ok  	github.com/scooter-sensei/clepsydra/go	301.051s 45129831 ops, 13540427 counts checked (0 Saturated, 0 low behind a live bucket floor)
+[11:08:40] 7 cfuzz: ok  	github.com/scooter-sensei/clepsydra/go	301.035s 94 cases from seed 1 in 5m0s (0.2 M ops/s): 66729361 ops, 17309563 answers checked (2963181 Saturated, 3537 low behind a live floor, 16074 low after a loss with the overflow off, 0 off for a key whose identity another shares)
+[11:08:40] 8: the catch-up stall (reported)
+[11:08:42] 8: idle 2147483649 ticks: the first call took 34.536589ms ({Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}); lines 308405;idle 6442450944 ticks: the first call took 34.603663ms ({Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}); lines 308405;
+[11:08:42] 9: speed (reported)
+[11:11:52] W5d readings finished

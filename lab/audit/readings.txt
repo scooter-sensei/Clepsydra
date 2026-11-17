@@ -1,0 +1,76 @@
+The record audited: the audit's readings, as printed (a1.sh, a2.sh, a3.sh in this directory;
+audit_test.go copied into a detached worktree of each tree named, never committed to one).
+audit_test.go here is the last version (a4.sh), with the two "ahead" subtests a3.sh did not have.
+
+== a1.sh (W5d's tree)
+9db48f9 lab/sw W5d: ContinuousDecay keeps up first; ReadFrom takes the deadline from the restored cursor; TestWrapDeadlineEntries, TestWrapCatchUpStall; a fast clock for the lockstep; clock bases for the soak and the fuzzer, and idle jumps
+TestWrapAlias plain: 0 of 40 fail
+TestWrapAlias TF_BG=1: 11 of 40 fail
+TestWrapAlias TF_CT=1: 0 of 40 fail
+TestTickRange plain:
+--- FAIL: TestTickRange (0.00s)
+    filter_test.go:489: ContinuousDecay at 70368744177664: panicked false
+FAIL
+TestTickRange TF_BG=1:
+--- FAIL: TestTickRange (0.00s)
+    filter_test.go:489: ContinuousDecay at 70368744177664: panicked false
+FAIL
+--- FAIL: TestWrapAlias (0.29s)
+    --- FAIL: TestWrapAlias/stash (0.00s)
+        wrap_test.go:90: key df840c3ecf436b57 at the alias: {Seen:true Count:3 Upper:3 Saturated:false Restored:false Degraded:false}, want unseen
+FAIL
+
+== a2.sh (before W5d: 4e4966e, W5b's code rebased onto W4d; d4d0187, the tree W5c read)
+4e4966e TestWrapAlias TF_BG=1: 14 of 40 fail
+4e4966e TestTickRange: PASS
+d4d0187 TestWrapAlias TF_BG=1: 12 of 40 fail
+d4d0187 TestTickRange: PASS
+
+== a3.sh (TestAuditTickPoison, TestAuditAliasSettled)
+=== 9db48f9 tfdrip: poison
+audit_test.go:48: none past MaxTick: panicked false; key before 3/true, after 3/true; doneAt 1 cursor 0
+audit_test.go:48: TouchAt past MaxTick: panicked true; key before 3/true, after 0/false; doneAt 70368744177664 cursor 345979659168
+audit_test.go:51: TouchAt: a call past MaxTick changed a live key's Count 3 -> 0
+audit_test.go:61: TouchAt: a key touched after the bad call reads {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} a wrap later, want unseen (deadline off)
+audit_test.go:48: CountAt past MaxTick: panicked false; key before 3/true, after 0/false; doneAt 70368744177664 cursor 345979659168
+audit_test.go:51: CountAt: a call past MaxTick changed a live key's Count 3 -> 0
+audit_test.go:61: CountAt: a key touched after the bad call reads {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} a wrap later, want unseen (deadline off)
+audit_test.go:48: ContinuousDecay past MaxTick: panicked false; key before 3/true, after 0/false; doneAt 70368744177664 cursor 345979659168
+audit_test.go:51: ContinuousDecay: a call past MaxTick changed a live key's Count 3 -> 0
+audit_test.go:61: ContinuousDecay: a key touched after the bad call reads {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} a wrap later, want unseen (deadline off)
+--- FAIL: TestAuditTickPoison (0.00s)
+FAIL
+=== 9db48f9 default build: poison
+audit_test.go:48: none past MaxTick: panicked false; key before 3/true, after 3/true; doneAt 0 cursor 0
+audit_test.go:48: TouchAt past MaxTick: panicked true; key before 3/true, after 3/true; doneAt 0 cursor 0
+audit_test.go:48: CountAt past MaxTick: panicked false; key before 3/true, after 3/true; doneAt 0 cursor 0
+audit_test.go:48: ContinuousDecay past MaxTick: panicked true; key before 3/true, after 3/true; doneAt 0 cursor 0
+--- PASS: TestAuditTickPoison (0.00s)
+9db48f9 TestAuditAliasSettled TF_BG=1 (placer drained first): 0 of 40 fail
+=== d4d0187 tfdrip: poison
+audit_test.go:48: none past MaxTick: panicked false; key before 3/true, after 3/true; doneAt 1 cursor 0
+audit_test.go:48: TouchAt past MaxTick: panicked true; key before 3/true, after 0/false; doneAt 70368744177664 cursor 345979659168
+audit_test.go:51: TouchAt: a call past MaxTick changed a live key's Count 3 -> 0
+audit_test.go:61: TouchAt: a key touched after the bad call reads {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} a wrap later, want unseen (deadline off)
+audit_test.go:48: CountAt past MaxTick: panicked false; key before 3/true, after 0/false; doneAt 70368744177664 cursor 345979659168
+audit_test.go:51: CountAt: a call past MaxTick changed a live key's Count 3 -> 0
+audit_test.go:61: CountAt: a key touched after the bad call reads {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} a wrap later, want unseen (deadline off)
+audit_test.go:48: ContinuousDecay past MaxTick: panicked true; key before 3/true, after 3/true; doneAt 1 cursor 0
+--- FAIL: TestAuditTickPoison (0.00s)
+FAIL
+d4d0187 TestAuditAliasSettled TF_BG=1 (placer drained first): 0 of 40 fail
+
+== a4.sh (TestAuditTickPoison with two calls ahead within MaxTick, on W5d's tree; the log's
+   "past MaxTick" label is the format string's, the two "ahead" calls are within it)
+=== 9db48f9 tfdrip: poison and ahead
+audit_test.go:52: CountAt ahead 2^31+2 past MaxTick: panicked false; key before 3/true, after 0/false; doneAt 2148483650 cursor 10563672
+audit_test.go:55: CountAt ahead 2^31+2: the call changed a live key's Count 3 -> 0
+audit_test.go:52: CountAt ahead 2^35 past MaxTick: panicked false; key before 3/true, after 0/false; doneAt 34360738368 cursor 168940591
+audit_test.go:55: CountAt ahead 2^35: the call changed a live key's Count 3 -> 0
+audit_test.go:65: CountAt ahead 2^35: a key touched after the bad call reads {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} a wrap later, want unseen (deadline off)
+(the four subtests of a3.sh read as before)
+--- FAIL: TestAuditTickPoison (0.00s)
+=== 9db48f9 default build: poison and ahead
+audit_test.go:52: CountAt ahead 2^31+2 past MaxTick: panicked false; key before 3/true, after 3/true; doneAt 0 cursor 0
+audit_test.go:52: CountAt ahead 2^35 past MaxTick: panicked false; key before 3/true, after 3/true; doneAt 0 cursor 0
+--- PASS: TestAuditTickPoison (0.00s)

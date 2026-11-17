@@ -1,0 +1,6 @@
+=== RUN   TestWrapCatchUpStall
+    wrap_test.go:305: idle 2147483649 ticks: the first call took 34.536589ms ({Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}); lines 308405
+    wrap_test.go:305: idle 6442450944 ticks: the first call took 34.603663ms ({Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}); lines 308405
+--- PASS: TestWrapCatchUpStall (1.63s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	1.633s

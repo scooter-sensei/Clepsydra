@@ -722,3 +722,206 @@ after idle gaps of 2^31+1 and 3x2^31 ticks), and speed against W4d's
 9. `BenchmarkCheckAndTouchBatch` 91.4 → 98.3 ns/key (1.08x).
 
 **Verdict: W4d passes its rule.**
+
+### W5d's reading (9db48f9's tree; `lab/w5d.sh`, outputs in `lab/w5d/`)
+
+1. **Holds.** Default build: `tfbench -exact` and the answer digest equal
+   `verify/expected/`'s.
+2. **Holds.** `tfdrip`: the answer digest with Count equals W4d's; `tfbench
+   -exact` equals W4d's but for the churn rows' relocation and eviction
+   counts (relocations 148,716 → 148,685, 379,688 → 379,659, 932,499 →
+   931,823; evictions at load 1.15 4,577 → 4,600), within 1%.
+3. **Holds.** The 30-cell digest at the three offsets equals the digest at
+   1,200,000 byte for byte.
+4. **Holds.** The lockstep with a fast clock finds no difference in any slot
+   or answer in 400,000 operations at each of the five offsets.
+5. **Holds as run:** `TestWrapAlias` and `TestWrapDeadlineEntries` pass in
+   the plain mode, the only one the script ran them in.
+6. **Fails.** The suites with `tfdrip` fail tests that W4d's tree passes:
+   `TestTickRange` in all four modes (`ContinuousDecay` at 2^46 does not
+   panic: its new `keepUp` finds the tick past the deadline, catches the
+   sweep up at it and leaves the cursor past the tick's target, so
+   `decayStep` returns before its check); `TestWrapDeadlineEntries/snapshot`
+   under `TF_CT=1` and `TF_BG=1` (snapshots of those modes are refused: the
+   test's defect, not the filter's); `TestWrapAlias/stash` under `TF_BG=1`
+   (a key reads Seen, Count 1, a wrap later).
+7. **Holds.** Under `-race`, the soak with its clock from 2^34 - 10,000,000
+   (a tick per 20 µs: it crosses 2^34 after 200 s of its 300): 45,129,831
+   operations, 13,540,427 counts checked, 0 low; the concurrent fuzzer from
+   2^34 - 2^29 with idle jumps: 94 cases, 66,729,361 operations, 17,309,563
+   answers checked, none failed. (Both fail only on an answer below the
+   truth: see the audit below, item 3.)
+
+Reported. The catch-up: the first call after an idle gap of 2^31 + 1 ticks,
+and of 3 x 2^31, on the stall test's table (308,405 lines) took 34.5 ms and
+34.6 ms. Speed, ns/op medians of 3 (default / W4d `tfdrip` / W5d `tfdrip`):
+CheckAndTouchHit 194.4 / 201.4 / 207.4; CheckAndTouchHitHot 74.4 / 67.4 /
+74.3; CheckAndTouchMissInsert 1833 / 1915 / 1908; TouchAndCount 207.6 /
+220.0 / 225.8; VelocityCount 192.9 / 192.1 / 203.7; VelocityCountHot 101.3
+/ 93.8 / 106.6; ContainsAbsent 172.1 / 172.5 / 178.2; CheckAndTouchBatch
+92.5 / 97.0 / 105.7. Against the default build: hits 1.07x, counts 1.06x,
+TouchAndCount 1.09x, batched touches 1.14x; the wrap over W4d: 1.03x,
+1.06x, 1.03x, 1.09x (VelocityCountHot 1.14x).
+
+**Verdict: W5d fails its rule** (clause 6). The audit below finds that two
+of clause 6's failures are not W5d's alone.
+
+## The record audited
+
+Every verdict from W1 to W5d was read again against its evidence and its
+code after W5d's reading. The audit's readings were taken on the trees as
+committed, with a probe (`TestAuditTickPoison`, `TestAuditAliasSettled`)
+copied into detached worktrees and never committed to one; they are in
+`lab/audit/` (`audit_test.go`, `a1.sh`-`a3.sh`, `readings.txt`). They are
+no arm's reading, and nothing was mended. In order of weight:
+
+**1. A call past `MaxTick`, or one 2^31 ticks ahead of the others, empties
+the filter, and can turn the deadline off, on every wrap tree; A35's
+guarantee does not hold under the wrap.**
+`keepUp` runs first in every call (`touch`, `read`, the batches,
+`Occupancy`, and since W5d `ContinuousDecay`), before any tick check. A tick
+past `MaxTick` is more than 2^31 past `doneAt`, so the call runs `catchUp`
+at it: every live key is swept as expired, `doneAt` becomes that tick, and
+the cursor goes a lap past its target. After that no call catches up (none
+passes `doneAt` + 2^31) and no decay step sweeps (the cursor is past every
+target), so no stored tick is cleared again, and each aliases a wrap later.
+`TestAuditTickPoison` (a key touched 3 times at 1,000,000; one call past
+`MaxTick`; a second key touched, then read a wrap and 500 ticks later): on
+d4d0187 (W5b's code, the tree W5c read) and on 9db48f9, after a `TouchAt`
+past `MaxTick` (which still panics, after the sweep) or a `CountAt` past it
+(which does not check, as in the default build) the first key reads Count 0
+for 3, and the second reads Seen, Count 1 a wrap later; on 9db48f9 a
+`ContinuousDecay` past `MaxTick` does the same, without its panic. The
+default build reads 3 for 3 after all three, and its panics stand. A35 (an
+insert past `MaxTick` panics before taking any lock, so a caller that
+recovers keeps a usable filter) and `format.md`'s MUST do not hold under the
+wrap. `TestTickRange` did not see it before W5d: its filters either read
+only keys inserted after the panic or had caught up to within a unit of
+`MaxTick` first. A call within `MaxTick` that is more than 2^31 ticks past
+`doneAt` takes the same path (9db48f9): one `CountAt` at 1,000,000 + 2^31 +
+2 (35.8 minutes ahead at 1 µs) leaves the first key at Count 0 for 3; one at
+1,000,000 + 2^35 also leaves the second key Seen a wrap later, the other
+callers' clocks staying behind the new `doneAt`. The default build reads 3
+for 3 after both. The precondition that callers' clocks stay within 2^31 of
+each other is not checked, and breaking it once, with a read, empties the
+table; an idle filter's first call looks the same when it arrives.
+
+**2. The wrap's alias test fails under Background, on every wrap tree.**
+`TestWrapAlias/stash` with `TF_BG=1` fails 11 of 40 runs on 9db48f9, 14 of
+40 on 4e4966e (W5b's code on W4d) and 12 of 40 on d4d0187; plain and under
+`TF_CT=1`, 0 of 40. A failing key reads Seen with its old count (1 or 3) a
+wrap later. With the Background placer drained (`Waiting()` 0) before the
+clock jumps (`TestAuditAliasSettled`), 0 of 40 on both trees: the failures
+need the placer at work during the catch-up. From the code, an entry the
+placer is committing is busy, which `sweepSet` skips, and lands in a line
+`catchUp` may already have passed; that is not shown beyond the drained
+runs. W5b's clause 4 and W5d's clause 5 ran `TestWrapAlias` in the plain
+mode alone (`lab/w5.sh`, `lab/w5d.sh`), and W5b's Background suite passed
+it by chance; W5c read no suites, taking W5b's clauses as read.
+**W5c's verdict is narrowed again:** a key aliased by a whole wrap reads
+unseen from the table and the stash, idle or not, except under Background
+while the placer has keys in hand.
+
+**3. The concurrent checks of the wrap cannot fail on its failure.** The
+soak and the concurrent fuzzer fail only on an answer below the truth
+(every answer check in `soak_test.go` and `fuzzconc_test.go` is Upper below
+the true count; their other checks are on occupancy). A wrap that fails decodes a dead key's tick as recent, and the
+answer reads high: Seen, with a count the key no longer has. W5b's clause 6
+and W5d's clause 7 could not fail on it whatever their clocks met; the
+fuzzer's Background cases passed while item 2's test fails one run in
+three. The wrap's evidence against aliasing is sequential (`TestWrapAlias`,
+`TestWrapDeadlineEntries`, the digests, the lockstep). A check that could
+see it: count the answers that read Seen for a key whose events are all more
+than a horizon old, with the default build on the same stream as the bar.
+It is the shape of W4c's blind clause 5: a check on a path that never reads
+what it judges. The same holds for the drip log: the soak and the fuzzer
+assert nothing of Count, the one answer the log moves, so their passes from
+W4 to W4d say only that `Upper` held; the log's concurrent evidence is
+`TestSlotUnitRaces`, `TestDripPushOnce` (the log against the register, not
+the answer) and the suites' racy tests, whose windows were not audited
+here.
+
+**4. The held-out seed is not held out.** W1's and W2's rules judged and
+chose on both seeds (W2: the candidate with the lowest worse-seed mean goes
+first), so (3, 7) took part in choosing unit/16 and the log's width; W3
+read its other workloads on (9, 9) alone. 0.0450 and 0.0444 are both
+in-sample: no seed that took no part in the choice has been read.
+
+**5. The record is out of step.**
+
+- "Where the lab leaves the weakness" (after W5c) still names W4c and W5b
+  and says the wrap answers as the full one; both were revised after it. It
+  is restated below.
+- The patches exported for the main repository (`go/verify/experiments/`,
+  not committed there) and its `experiments.md` section were made before
+  W4c's revision: `drip-log.patch` is W4c's code (`miss`'s second push),
+  `wrapped-last-touch.patch` is W5b's without W5d, the notebook patch ends
+  at W5c's reading, and the section reports W4c as passed and W5c
+  unnarrowed. `export.sh` takes `lab/sw-2026-11` for W4c's tree; it is
+  W4d's now. They must be exported again before anything is recorded from
+  them.
+- W5d's outputs were in `~/lab-sw-out/w5d` alone; they are in `lab/w5d/`
+  now (without the `.test` binaries), with the W4d outputs W5d compared
+  against in `lab/w5d/w4d-ref/`.
+- The costs in the summary (hits 1.05x, counts 1.07x, TouchAndCount 1.12x,
+  batched touches 1.17x) are W5b's run; W5d's reads 1.07x, 1.06x, 1.09x and
+  1.14x. All on the WSL2 guest, indicative.
+
+**6. Limits the rules never weighed.**
+
+- Horizon at most 2^31 ticks is 35.8 minutes at the default 1 µs
+  Resolution: under the wrap `New` refuses any longer horizon unless the
+  caller coarsens Resolution, where the default build takes up to `MaxTick`.
+- Snapshots are version 3 in both builds, and nothing in the stream says
+  that its word0s hold a drip log and a wrapped 34-bit tick, so by the code
+  a `tfdrip` snapshot restores into a default build, and the reverse, and
+  is misread. Not read.
+- `TestMerge`: merged 1 s MAE 0.2245 against the single filter's 0.0740 (a
+  merge drops every log). The default build's merged figure on the same test
+  was not set beside it, so whether the merge is worse than the default
+  build's, or only no better, is not known.
+- The catch-up is one call of 34.5 ms (308,405 lines) holding `catchMu`
+  against every other call that finds the deadline passed; the reclaimer the
+  paper describes frees at most 4 lines a call. No bound was set for it.
+- Adopting the log changes pinned outputs: the conformance vectors' Counts,
+  `TestCountsLastTouchWhole`, `tfbench -exact`'s steady 1 s lines. Each is a
+  claim or a specification change; the rules named them and did not weigh
+  them.
+
+**7. Never read** (open since W5c): MAWI; speed on bare metal; a TLA+ model
+of the log beside the slot protocol (both double pushes, W4b's and W4c's
+through `miss`, were found late by tests; push-once across a retry, the
+stash, the wait room, a relocation and a resize is the kind of interleaving
+in which `SlotUnit.tla` found B13's defect); the ports.
+
+Checked and not a gap: W4d's `robust-drip.txt` prints that W3's rule holds
+false because under `tfdrip` the test's "filter" row is the drip filter, so
+W3's rule there sets the model against itself; the W4d reading uses the
+filter rows alone.
+
+### Where the lab leaves the weakness, restated
+
+| | 1 s | 5 s | 15 s | 30 s | 60 s | mean (target 7: <= 0.05) |
+|---|---|---|---|---|---|---|
+| the filter (8b3ba44) | 0.1671 | 0.0503 | 0.0506 | 0.0435 | 0.0239 | 0.0671 |
+| the drip log, W4d (`tfdrip`, `MaxTick` 2^34-1) | 0.0592 | 0.0476 | 0.0505 | 0.0435 | 0.0239 | **0.0450** |
+| seed (3, 7) (in-sample), the filter → W4d | 0.1663 → 0.0580 | | | | | 0.0666 → 0.0444 |
+
+What stands: the drip log as W4d builds it is the 11-bit model on the
+filter and passes its rule, at a `MaxTick` of 2^34-1 (4.8 hours at 1 µs).
+What does not: the wrap that would give it those bits without lowering
+`MaxTick` (W5b-W5d). A call past `MaxTick`, or one read 2^31 ticks ahead
+of the others, empties the filter, and past `MaxTick` or far enough ahead
+stops the deadline (item 1); a key can alias under
+Background (item 2); and the concurrent checks that passed the wrap could
+not have failed on aliasing (item 3). The figures are on seeds that chose
+the design (item 4).
+
+Next, each with its rule before its reading (none run): W5e, the wrap
+mended, with the tick checked before `keepUp`, the placer's commits kept out
+of a catch-up, and a decision on a caller far ahead of the others (refused,
+or a documented precondition); `TestWrapAlias` and `TestWrapDeadlineEntries`
+in all four modes over repeated runs; and an over-count check in the soak
+and the fuzzer, read first on a tree that fails item 2, so that it is shown
+to see the failure. Then target 7 on fresh seeds that took no part in the
+choice.

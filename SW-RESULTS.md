@@ -925,3 +925,37 @@ in all four modes over repeated runs; and an over-count check in the soak
 and the fuzzer, read first on a tree that fails item 2, so that it is shown
 to see the failure. Then target 7 on fresh seeds that took no part in the
 choice.
+
+## Phase 6: the drip log on fresh seeds (W6)
+
+The audit found that seed (3, 7) took part in choosing the design (W1's and
+W2's rules judged on both seeds), so W4d's 0.0450 and 0.0444 are in-sample.
+W6 reads W4d's filter, its library code unchanged, on 40 seeds that no arm
+of this lab has read: (2026, 1) to (2026, 40), tfbench's velocity workload
+otherwise as it is (`swWorkload`, Capacity 200,000, Resolution 1 ms, as
+tfbench's and as every W4-W4d reading). `TestShortWindowFreshSeeds`
+(`TF_EXP=1`, `swseeds_test.go`) replays each seed once and scores the
+register with its onset, the 11-bit unary log at unit/8, unit/16 and
+unit/32 with the onset, and the filter of the build it runs in; it runs
+once in the default build and once with `tfdrip`.
+
+**Rule (before the reading).** W6 holds if, on every one of the 40 seeds:
+
+1. default build: the register-with-onset model equals the filter at every
+   window (the estimator still reads the default filter, so the model
+   stands for the default build in the `tfdrip` run);
+2. `tfdrip`: the filter is within 0.002 of the 11-bit unary log at unit/16
+   with the onset at every window;
+3. `tfdrip`: target 7's metric (the mean of the five windows) is at most
+   0.050;
+4. `tfdrip`: no window above the default build's on the same seed (the
+   register-with-onset model's) by more than 1%.
+
+If clause 3 fails on any seed, the drip log meets target 7's bound on some
+draws of tfbench's workload and not on others, and the record says so; the
+workload, the metric and the target are not changed (they are the user's).
+
+Reported, not judged: per seed, the filter's five windows and mean in both
+builds; across the seeds, each window's and the mean's minimum, median and
+maximum; on how many seeds unit/16 is still the best of the three quanta
+(it was chosen on (9, 9) and (3, 7)).

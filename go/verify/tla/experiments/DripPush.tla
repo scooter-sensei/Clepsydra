@@ -111,7 +111,7 @@ o_lock:
 o_st:                                         \* miss: restore from the stash (its log pushed, or as it is), or a fresh history
   if stash.k = "K" then
     touchOK := touchOK /\ stash.c + 1 >= start + 1;
-    if FlagMiss /\ pushed /\ Tick(i + 1) <= stash.t \/ TickOnly /\ Tick(i + 1) <= stash.t then
+    if (FlagMiss /\ pushed /\ Tick(i + 1) <= stash.t) \/ (TickOnly /\ Tick(i + 1) <= stash.t) then
       stash.c := stash.c + 1;                 \* the event is in the log already (W4d)
     else
       stash := [Push(stash, Tick(i + 1), i + 1) EXCEPT !.c = stash.c + 1];
@@ -129,7 +129,7 @@ o_st:                                         \* miss: restore from the stash (i
 o_w0:
   if w0[os].k /= "K" then goto o_s1; else last := w0[os]; end if;
 o_cas0:                                       \* next0's CAS, skipped by a touch that pushed into a history at or after its tick
-  if FlagTable /\ pushed /\ Tick(i + 1) <= last.t \/ TickOnly /\ Tick(i + 1) <= last.t then
+  if (FlagTable /\ pushed /\ Tick(i + 1) <= last.t) \/ (TickOnly /\ Tick(i + 1) <= last.t) then
     pushed := TRUE;
   elsif w0[os] = last then
     w0[os] := Push(last, Tick(i + 1), i + 1) || pushed := TRUE || seen := IF pushed THEN seen \cup {"repushed"} ELSE seen;

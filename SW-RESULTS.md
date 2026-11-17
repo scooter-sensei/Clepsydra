@@ -1261,16 +1261,24 @@ the stash and counts there. The push-once rule as each tree has it:
 - `"w4b"` (06940e8): no rule; every attempt pushes;
 - `"tickOnly"`, a wrong mend kept for sight: the tick test without the flag
   (no push into a history at or after the touch's tick, pushed or not),
-  which loses pushes.
+  which loses pushes;
+- `"noHandoffCheck"`, a broken protocol kept for sight: W4d's rule, with a
+  hand-off that takes src whatever it holds (`Relocate.tla`'s variant), so
+  a copy from before a touch's push can survive a move and the touch meets
+  it.
 
 Invariants: **PushOnce**, no copy of K's history (in a slot, hidden or not,
 or the stash) holds an event twice; **LogComplete**, once every process is
 done, K's history holds every event of the run exactly once (a lost push
-breaks it as a double one does); and `Relocate.tla`'s TouchNotLow, ReadNotLow,
-OneHome and Conserved, so the moves still keep every event. NotMoved,
-NotEvicted and NotRepushed check reachability: a move, an eviction, and a
-second push by a touch that pushed already, into a history behind its tick
-(the half of W4d's rule that pushes again).
+breaks it as a double one does); and `Relocate.tla`'s TouchNotLow, OneHome
+and Conserved, so the moves still keep every event (its ReadNotLow cannot
+fail at 0 reads and is not judged). LogComplete and Conserved are read only
+where every process is done, so each configuration is also checked for
+**Termination** (the translation's: every fair behavior ends with every
+process done): no state from which the run cannot end, where a lost push
+would go unread. NotMoved, NotEvicted and NotRepushed check reachability: a
+move, an eviction, and a second push by a touch that pushed already, into a
+history behind its tick (the half of W4d's rule that pushes again).
 
 Not modelled, named now: the log's 11-bit bound, its quanta and its valid bit
 (only which events the log holds, and how often); a second toucher of the
@@ -1280,26 +1288,35 @@ its own, and that is left for a later model); the wait room and its placer
 (`WaitRoom.tla`'s ground), ConstantTime's stash path, `realign` and `stamp`
 (a touch into a new unit, which pushes with its register by one CAS or under
 a hold, and after `stamp` retries through the same rule), `dripForget`,
-merges and snapshots. A restored history stays in the stash, as in
-`Relocate.tla`. Reads are 0 throughout: a read moves no log.
+merges and snapshots; hot entries (promotion, `hotAdd`, `unpoint`) and
+`bump`'s strayed count; `miss`'s two failures (a claim that loses its race
+puts the recalled words back as they were, its push never placed; a hot
+restore whose entry is reclaimed after `hotGone` fails with its push
+placed, below): the model's `miss` always succeeds. A restored history stays
+in the stash, as in `Relocate.tla`, and the mover and the evictor act once,
+so no move or eviction of a restored copy is reached. Reads are 0
+throughout: a read moves no log.
 
 **Sizing, before the rule** (not a reading of W8): the committed
 `Relocate.tla` at 2 touches and 0 reads, the base this model adds the log
 to, checks in 15 s (795,231 states) with eviction and 3 s (39,699) without.
 Each W8 run is capped at 30 minutes (`TLC_TIMEOUT`); a run that does not
 finish is reported with its states and not judged, and a clause judged on
-fewer runs says so. `lab/w8.sh small` reads clause 1, the reported runs and
-clause 2's one-touch runs; `lab/w8.sh large` the two-touch runs.
+fewer runs says so. `lab/w8.sh small` reads every run at one touch (clause
+1, the reported runs, clause 2's one-touch configurations); `lab/w8.sh
+large` every run at two touches. Outputs in `lab/w8/small` and
+`lab/w8/large`.
 
-**Rule (before the reading).** W8 holds if:
+**Rule (before the reading; revised before it, below).** W8 holds if:
 
 1. sight: PushOnce is violated by `"w4b"` with one touch and relocation only
    (no eviction), and by `"w4c"` with one touch and eviction; LogComplete is
    violated by `"tickOnly"` with one touch in a burst, relocation only; each
    in at least one of the two scan orders (`CopyFirst`); and with `"w4d"`, a
    move and an eviction are reachable (NotMoved and NotEvicted violated);
-2. W4d: with `"w4d"`, no invariant is violated at 1 and 2 touches, spread and
-   burst, with and without eviction, in both scan orders (16 runs).
+2. W4d: with `"w4d"`, no invariant is violated and Termination holds, at 1
+   and 2 touches, spread and burst, with and without eviction, in both scan
+   orders (16 configurations, 32 runs).
 
 If clause 1 fails, the model does not reach the defects it was built for,
 and its pass of clause 2 clears nothing: W8 fails. If clause 2 fails, the
@@ -1307,15 +1324,64 @@ trace is read against the code before anything else: a trace the code can
 follow revises W4d's clause 5; one it cannot is a defect of the model, said
 as such. Reported, not judged: `"w4c"` with relocation only (the table
 path's rule should cover it); NotRepushed with `"w4d"` at 1 and 2 touches
-with eviction; every run's distinct states.
+with eviction; `"noHandoffCheck"` at one touch with relocation only,
+NotRepushed spread and LogComplete in a burst; every run's distinct states.
 
 **What a pass means.** One owner of the key, the table's same-unit path,
 relocation's hidden copy and eviction to the stash, as `Relocate.tla` has
-them. If NotRepushed is never violated, no path in the model hands a touch
-that pushed a history from before its push (the hand-off and the eviction
-both compare word0 before they take the slot), and clause 2 then judges
-only the half of W4d's rule that skips: the half that pushes again exists
-for paths the model leaves out (the wait room and its put-back,
-ConstantTime's stale stash copy, a second toucher). W4c's defect was found
-in a Background scenario; its path through `miss` after an eviction is
+them. If NotRepushed is never violated with `"w4d"` and is with
+`"noHandoffCheck"`, no path in the model hands a touch that pushed a history
+from before its push (the hand-off and the eviction both compare word0
+before they take the slot), and clause 2 then judges only the half of W4d's
+rule that skips: the half that pushes again exists for paths the model
+leaves out (the wait room and its put-back, ConstantTime's stale stash copy,
+a second toucher). `"noHandoffCheck"` in a burst shows what the tick test
+does with a copy from before the push whose last touch is at the touch's
+tick: it takes it for one that holds the push, and the push is lost. A
+second toucher is the other way such a copy's last touch could reach the
+touch's tick, and matters only with a path that hands such a copy back. A
+pass does not clear `miss`'s hot restore (below). W4c's defect was found in
+a Background scenario; its path through `miss` after an eviction is
 modelled, the wait room's is not.
+
+**Revised before its reading** (no TLC run of `DripPush.tla` or of
+`lab/w8.sh` preceded the revision; written after an audit of the rule, the
+model and the script against W4d's code):
+
+- `lab/w8.sh` judged what the rule did not say. A run passed unless TLC's
+  log held one of three strings, so a crash, a killed run or a missing
+  `java` read as a pass; any `Error:` line or a deadlock counted as a
+  violation, so a sight pair could be "seen" on a TLC error; a timeout
+  failed its run, where the rule leaves it unjudged; a second `small` kept
+  the first's logs and numbered its runs after them. Revised: ok only on
+  TLC's completion line with exit 0; a violation only of the invariant or
+  property the run names; a timeout reported and not judged (a sight pair
+  is seen if either run violated, not judged if both timed out); anything
+  else an error, never as wanted; each phase in its own directory, cleared
+  when it starts; the script refuses a model or script that differs from the
+  commit and exits non-zero on a judged outcome not as wanted. The
+  classification was tried on a scratch spec (ok, violation, deadlock,
+  livelock, a TLC error, a timeout, a failed translation), not on
+  `DripPush.tla`. `go/verify/tla.sh` on main, which the script copied, has
+  the same blind spots.
+- Termination added to clause 2; ReadNotLow taken out of the judged
+  invariants; the two-touch NotRepushed run moved to `large`.
+- `"noHandoffCheck"` added, reported: NotRepushed's silence under `"w4d"`
+  said nothing while no run showed that the ghost can fire.
+- The constants are checked (`ASSUME`): a misspelt variant ran as `"w4b"`.
+- Found by reading W4d's code during the audit, not a reading: **`miss` can
+  push a touch's event twice through a hot restore.** `miss` places a
+  recalled history with `low = next0(s0, now)`, this touch's push in it
+  (`cuckoo.go:59`; by `claim`, `:68`, or waiting, `:74`), and only then counts
+  a hot history by `hotAdd`. If the entry was reclaimed since `hotGone` (a
+  call whose clock is past the entry's newest event by a horizon, claims
+  A25), `miss` returns Count -1 with the history in place (`:95-100`), and
+  `touch` retries with `pushed` as it was (`touch.go:288-290`): false unless
+  the table's path had pushed. The retry pushes again, in the table's path
+  (`touch.go:333`) or, if the history waits, in `miss` (`cuckoo.go:59`);
+  `bump` then finds the reclaimed pointer and `unpoint` starts a fresh
+  register (`register.go:263`). The log holds the event twice: Count one
+  high at windows that cut a bucket. Any `unpoint` reset also keeps the
+  log's older events, which Count then reads though the register no longer
+  counts them. Neither is in the model (no hot entries); nothing is mended
+  here.

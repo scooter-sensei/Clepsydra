@@ -31,23 +31,34 @@
 (*   "tickOnly"  a wrong mend, for sight: the tick test without the flag   *)
 (*          (no push into a history at or after the touch's tick), which   *)
 (*          loses pushes                                                   *)
+(*   "noHandoffCheck"  W4d's rule with a broken hand-off, for sight: the   *)
+(*          hand-off takes src whatever it holds (Relocate's variant), so  *)
+(*          a copy from before the touch's push can survive it, and the    *)
+(*          touch meets a history from before its push                     *)
 (* Invariants: PushOnce (no copy of K's history, in a slot or the stash,   *)
 (* holds an event twice), LogComplete (once every process is done, K's     *)
 (* history holds every event exactly once), with Relocate's TouchNotLow,   *)
 (* ReadNotLow, OneHome and Conserved (the moves still keep every event).  *)
 (* NotMoved, NotEvicted and NotRepushed check that a move, an eviction and *)
 (* a second push by a touch that pushed already (into a history behind its *)
-(* tick) are reachable.                                                    *)
+(* tick) are reachable. Termination (the translation's) checks that every  *)
+(* fair behavior ends with every process done, where LogComplete and       *)
+(* Conserved are read.                                                     *)
 (***************************************************************************)
 EXTENDS Integers, FiniteSets, Sequences, TLC
 
 CONSTANTS Touches, Burst, Reads, Evict, CopyFirst, Variant
 
+ASSUME /\ Variant \in {"w4d", "w4c", "w4b", "tickOnly", "noHandoffCheck"}
+       /\ Touches \in Nat /\ Reads \in Nat
+       /\ Burst \in BOOLEAN /\ Evict \in BOOLEAN /\ CopyFirst \in BOOLEAN
+
 Slots == {"src", "dst"}
 Order == IF CopyFirst THEN <<"dst", "src">> ELSE <<"src", "dst">>
-FlagTable == Variant \in {"w4c", "w4d"}
-FlagMiss == Variant = "w4d"
+FlagTable == Variant \in {"w4c", "w4d", "noHandoffCheck"}
+FlagMiss == Variant \in {"w4d", "noHandoffCheck"}
 TickOnly == Variant = "tickOnly"
+HandoffCheck == Variant /= "noHandoffCheck"
 Tick(n) == IF Burst THEN 0 ELSE n
 Max(a, b) == IF a > b THEN a ELSE b
 Free0 == [k |-> "free", t |-> 0, log |-> <<>>]
@@ -207,10 +218,10 @@ v_i0:
   if w0["dst"] /= Free0 then w1["dst"] := Free1; goto v_dn; else w0["dst"] := m0; end if;
 v_i2:
   w1["dst"] := Busy;
-v_h1:                                         \* the hand-off: src to N, if it still holds m0/m1
-  if w1["src"] = m1 then w1["src"] := Busy; else goto v_ab; end if;
+v_h1:                                         \* the hand-off: src to N, if it still holds m0/m1 (noHandoffCheck: whatever it holds)
+  if ~HandoffCheck \/ w1["src"] = m1 then w1["src"] := Busy; else goto v_ab; end if;
 v_h0:
-  if w0["src"] = m0 then
+  if ~HandoffCheck \/ w0["src"] = m0 then
     w0["src"] := [k |-> "N", t |-> 0, log |-> <<>>];
   else
     w1["src"] := m1;

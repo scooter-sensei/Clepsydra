@@ -959,3 +959,33 @@ Reported, not judged: per seed, the filter's five windows and mean in both
 builds; across the seeds, each window's and the mean's minimum, median and
 maximum; on how many seeds unit/16 is still the best of the three quanta
 (it was chosen on (9, 9) and (3, 7)).
+
+### W6's reading (4cf2d97's tree; `lab/w6.sh`, outputs in `lab/w6/`)
+
+1. **Holds.** Default build: the register-with-onset model equals the
+   filter at every window on all 40 seeds.
+2. **Holds.** `tfdrip`: the filter is within 0.002 of the 11-bit unary log
+   at unit/16 with the onset at every window on all 40 seeds; their means
+   are equal to the fourth decimal on every seed.
+3. **Holds.** Target 7's metric with `tfdrip` reads 0.0445 to 0.0454, median
+   0.0449, on the 40 seeds (the default build 0.0661 to 0.0674, median
+   0.0668).
+4. **Holds.** No window above the default build's by more than 1% on any
+   seed.
+
+Across the seeds, minimum / median / maximum, `tfdrip` (the default build in
+brackets): 1 s 0.0581 / 0.0594 / 0.0610 (0.1638 / 0.1667 / 0.1694); 5 s
+0.0470 / 0.0481 / 0.0492 (0.0493 / 0.0506 / 0.0514); 15 s 0.0490 / 0.0497 /
+0.0504 (0.0491 / 0.0498 / 0.0504); 30 s 0.0427 / 0.0434 / 0.0441 and 60 s
+0.0235 / 0.0239 / 0.0241, the default build's on every seed. Unit/16 is the
+best of the three quanta on 40 of 40 seeds (means at unit/8 0.0462-0.0470,
+at unit/32 0.0522-0.0534).
+
+**Verdict: W6 holds.** W4d's 0.0450 on (9, 9) is a typical draw of the
+workload, not a property of the seeds that chose the design: on 40 seeds
+that took no part in the choice the drip log reads 0.0445-0.0454, each under
+target 7's 0.050 by at least 0.0046, and unit/16 stays the best quantum on
+every one. Item 4 of the audit is closed for tfbench's workload. What W6
+does not read: other shapes and rates (the seeds draw the same five shapes
+at the same rates; W3 read other rates, on (9, 9) alone). Target 7's status
+is the user's.

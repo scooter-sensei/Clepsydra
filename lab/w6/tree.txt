@@ -1,0 +1,1 @@
+4cf2d97 lab/sw W6: TestShortWindowFreshSeeds (W4d's drip log on 40 seeds no arm has read); W6's rule, before its reading

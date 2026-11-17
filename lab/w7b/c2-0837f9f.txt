@@ -1,0 +1,15 @@
+=== RUN   TestDripConcurrentCounts
+    dripcount_test.go:241: tfdrip build, mode bg, shape spread: 20000 rounds, 5760000 answers, 5759217 judged (100.0%); wrong: Count high 46, Count low 0, another field 0; log lost 0; set apart: flagged Saturated or Degraded 783, a key in the overflow table 0, collisions 0, in 0 rounds that lost a history 0; the filter's Degraded 783; waited 26943751, evictions 15556751, restored 10039777, relocations 190023, folded 500, lost 0
+    dripcount_test.go:247: tfdrip build, mode bg, shape spread: differences by window: 250ms:1 500ms:6 1s:7 2s:8 4s:8 8s:8 15s:8 30s:0 1m0s:0
+    dripcount_test.go:249:   Count high: round 5271 key 17 (20 events) window 8s: {Seen:true Count:8 Upper:8 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:7 Upper:8 Saturated:false Restored:false Degraded:false}; log 0xdde, shadow's 0xeef
+    dripcount_test.go:249:   Count high: round 5271 key 17 (20 events) window 15s: {Seen:true Count:19 Upper:20 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:18 Upper:20 Saturated:false Restored:false Degraded:false}; log 0xdde, shadow's 0xeef
+    dripcount_test.go:249:   Count high: round 9431 key 8 (20 events) window 2s: {Seen:true Count:3 Upper:6 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:2 Upper:6 Saturated:false Restored:false Degraded:false}; log 0xcf7, shadow's 0xef7
+    dripcount_test.go:249:   Count high: round 10149 key 28 (20 events) window 500ms: {Seen:true Count:4 Upper:5 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:3 Upper:5 Saturated:false Restored:false Degraded:false}; log 0xd65, shadow's 0xeb5
+    dripcount_test.go:249:   Count high: round 10149 key 28 (20 events) window 1s: {Seen:true Count:6 Upper:6 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:5 Upper:5 Saturated:false Restored:false Degraded:false}; log 0xd65, shadow's 0xeb5
+    dripcount_test.go:252: tfdrip build, mode bg, shape spread: 46 answers wrong, 0 with the log lost
+    dripcount_test.go:241: tfdrip build, mode bg, shape burst: 20000 rounds, 5760000 answers, 5759507 judged (100.0%); wrong: Count high 0, Count low 0, another field 0; log lost 0; set apart: flagged Saturated or Degraded 493, a key in the overflow table 0, collisions 0, in 0 rounds that lost a history 0; the filter's Degraded 45; waited 34002379, evictions 9434068, restored 3914034, relocations 190236, folded 323, lost 0
+    dripcount_test.go:247: tfdrip build, mode bg, shape burst: differences by window: 250ms:0 500ms:0 1s:0 2s:0 4s:0 8s:0 15s:0 30s:0 1m0s:0
+--- FAIL: TestDripConcurrentCounts (99.79s)
+FAIL
+FAIL	github.com/scooter-sensei/clepsydra/go	99.796s
+FAIL

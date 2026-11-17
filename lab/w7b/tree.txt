@@ -1,0 +1,1 @@
+6ffe62d lab/sw W7b: the check sets apart answers flagged Saturated or Degraded and keys in the overflow table (in place of whole fold rounds), both filters with 16 hot entries; W7b's rule and script, written after W7's diagnosis, before its reading

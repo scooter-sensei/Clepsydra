@@ -1,0 +1,21 @@
+=== RUN   TestDripConcurrentCounts
+    dripcount_test.go:241: tfdrip build, mode bg, shape spread: 3000 rounds, 864000 answers, 863847 judged (100.0%); wrong: Count high 102, Count low 0, another field 0; log lost 0; set apart: flagged Saturated or Degraded 153, a key in the overflow table 0, collisions 0, in 0 rounds that lost a history 0; the filter's Degraded 153; waited 3809476, evictions 2133798, restored 1306576, relocations 28035, folded 87, lost 0
+    dripcount_test.go:247: tfdrip build, mode bg, shape spread: differences by window: 250ms:2 500ms:5 1s:5 2s:17 4s:13 8s:15 15s:15 30s:15 1m0s:15
+    dripcount_test.go:249:   Count high: round 55 key 14 (20 events) window 4s: {Seen:true Count:4 Upper:6 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:3 Upper:6 Saturated:false Restored:false Degraded:false}; log 0xeee, shadow's 0x777
+    dripcount_test.go:249:   Count high: round 55 key 14 (20 events) window 8s: {Seen:true Count:11 Upper:15 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:10 Upper:15 Saturated:false Restored:false Degraded:false}; log 0xeee, shadow's 0x777
+    dripcount_test.go:249:   Count high: round 55 key 14 (20 events) window 15s: {Seen:true Count:20 Upper:20 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:19 Upper:20 Saturated:false Restored:false Degraded:false}; log 0xeee, shadow's 0x777
+    dripcount_test.go:249:   Count high: round 55 key 14 (20 events) window 30s: {Seen:true Count:21 Upper:21 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:20 Upper:20 Saturated:false Restored:false Degraded:false}; log 0xeee, shadow's 0x777
+    dripcount_test.go:249:   Count high: round 55 key 14 (20 events) window 1m0s: {Seen:true Count:21 Upper:21 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:20 Upper:20 Saturated:false Restored:false Degraded:false}; log 0xeee, shadow's 0x777
+    dripcount_test.go:252: tfdrip build, mode bg, shape spread: 102 answers wrong, 0 with the log lost
+    dripcount_test.go:241: tfdrip build, mode bg, shape burst: 3000 rounds, 864000 answers, 863910 judged (100.0%); wrong: Count high 0, Count low 0, another field 0; log lost 1002; set apart: flagged Saturated or Degraded 90, a key in the overflow table 0, collisions 0, in 0 rounds that lost a history 0; the filter's Degraded 9; waited 4983589, evictions 1263966, restored 435964, relocations 28576, folded 41, lost 0
+    dripcount_test.go:247: tfdrip build, mode bg, shape burst: differences by window: 250ms:167 500ms:280 1s:0 2s:451 4s:98 8s:6 15s:0 30s:0 1m0s:0
+    dripcount_test.go:249:   log lost: round 4 key 1 (64 events) window 2s: {Seen:true Count:6 Upper:15 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:2 Upper:15 Saturated:false Restored:false Degraded:false}; log 0x0, shadow's 0x7f7
+    dripcount_test.go:249:   log lost: round 11 key 0 (64 events) window 4s: {Seen:true Count:5 Upper:18 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:9 Upper:18 Saturated:false Restored:false Degraded:false}; log 0x0, shadow's 0x7b
+    dripcount_test.go:249:   log lost: round 23 key 28 (64 events) window 2s: {Seen:true Count:13 Upper:30 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:16 Upper:30 Saturated:false Restored:false Degraded:false}; log 0x0, shadow's 0x1b
+    dripcount_test.go:249:   log lost: round 28 key 2 (64 events) window 250ms: {Seen:true Count:4 Upper:14 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:1 Upper:14 Saturated:false Restored:false Degraded:false}; log 0x0, shadow's 0x1d
+    dripcount_test.go:249:   log lost: round 28 key 2 (64 events) window 500ms: {Seen:true Count:8 Upper:14 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:2 Upper:14 Saturated:false Restored:false Degraded:false}; log 0x0, shadow's 0x1d
+    dripcount_test.go:252: tfdrip build, mode bg, shape burst: 0 answers wrong, 1002 with the log lost
+--- FAIL: TestDripConcurrentCounts (14.10s)
+FAIL
+FAIL	github.com/scooter-sensei/clepsydra/go	14.106s
+FAIL

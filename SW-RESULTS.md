@@ -1184,3 +1184,48 @@ mended. A log lost on W4d is reported and diagnosed, as in W7.
 Reported, not judged: the answers set apart by each reason, the judged
 share per mode and shape, the differences by window, kind and direction,
 and the paths taken.
+
+### W7b's reading (6ffe62d's tree; `lab/w7b.sh`, outputs in `lab/w7b/`)
+
+1. **Holds.** Default build, 20,000 rounds in each mode and shape: no
+   judged answer differs, in any of the six; 99.9% to 100.0% of answers
+   judged (set apart, flagged Saturated or Degraded: 549 to 4,001 a run; no
+   unflagged answer for a key in the overflow table, no collision, no round
+   that lost a history).
+2. **Fails as written.** Spread: W4b's tree 102 answers Count high in 3,000
+   rounds, W4c's 46 in 20,000, nothing else differing on either: holds.
+   Burst on W4b's tree: 1,002 answers differ in 3,000 rounds, at windows
+   from 250 ms to 8 s, and none is counted Count high: the test classes a
+   difference as "log lost" before it looks at the direction, and every one
+   has the filter's log saying nothing where the shadow's does not (the
+   examples printed read Count high and Count low both, the count then
+   coming from the register alone). The clause asked for a Count high in
+   each shape. W4c's burst leg, reported: nothing differs in 20,000 rounds.
+3. **Holds.** W4d's library with `tfdrip`, 20,000 rounds in each mode and
+   shape: no judged answer wrong and no log lost, in any of the six (34.6 M
+   answers); under `-race`, 1,000 rounds in each, none.
+4. **Holds.** The burst shape's judged share is at least 99.9% in every mode
+   in both builds.
+
+**Verdict: W7b fails its rule as written** (clause 2, W4b's burst leg), not
+by the failure the rule named for it: the narrower set-apart did not blind
+the check, which found 1,002 differences on W4b under bursts against none in
+the default build and none on W4d. From W4b's code: its log says nothing
+once 13 events fall in one quantum (the defect W4b's reading 8 found), so a
+burst of 12 that a retried touch pushes once more crosses it where the
+shadow's 12 do not, and W4b's double push shows under bursts as a lost log
+rather than as a count one high. That is read from the code and from the
+log fields printed (the filter's 0, the shadow's nonzero, in every example),
+not shown further. The rule took the double push's signature from the
+spread shape, where it is Count high, and that signature does not carry to
+a tree whose log has no valid bit.
+
+What W7b reads of W4d: in the scenario both double pushes were found in,
+in both shapes and all three modes, no judged answer differs from a
+single-threaded shadow's in 120,000 rounds (34.6 M answers), nor in 6,000
+under `-race`; under bursts the drip log's full field of zero codes is read
+as a valid burst and answers as the shadow's. What it leaves: the check's
+sight of W4c's kind of double push (through `miss`) under bursts is not
+shown (W4c's burst leg found nothing in 20,000 rounds); answers flagged
+Saturated or Degraded are not judged (0.01% to 0.07% of answers); and the
+soak and the fuzzer still assert nothing of Count.

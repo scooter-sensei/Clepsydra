@@ -1108,14 +1108,15 @@ worker's step, and when the workers do not interleave, a key's touches are
 ~100 ticks apart, not ~800, so up to three of its bursts fall in a second
 (the shadow's Upper reaches 33 at 1 s). Those keys pass the register's 31
 and contend for the filter's 16 hot entries, which a key wins or loses by
-timing; the shadow, of Capacity 4,096, has 32. Every difference carries a
+timing; the shadow, of Capacity 4,096, has more. Every difference carries a
 flag the API gives for it, in both builds: a refused promotion answers
 Saturated (Upper capped at 31), and a key whose hot entry was shed answers
 from the overflow table's floors flagged Degraded (high: Seen at 250 ms for
 a key last touched 425 ms before). With the shadow given the filter's 16
 hot entries: in 2,000 rounds a mode, 18-676 differences with an answer
 Saturated, none with neither flag but in Background, where 10,000 rounds
-give 7 (`tfdrip`) and 14 (default), every one Degraded. The logs are equal
+give 7 (`tfdrip`) and 14 (default), each printed one Degraded (all 7, and
+12 of the 14: the copy prints 12). The logs are equal
 in every difference printed, and no difference is a log lost. The rule's
 set-apart named rounds that folded or lost a history, not a shed hot entry,
 and so caught none of these.

@@ -989,3 +989,81 @@ every one. Item 4 of the audit is closed for tfbench's workload. What W6
 does not read: other shapes and rates (the seeds draw the same five shapes
 at the same rates; W3 read other rates, on (9, 9) alone). Target 7's status
 is the user's.
+
+## Phase 7: every answer checked both ways under concurrency (W7)
+
+The audit (item 3) found that no concurrent check reads Count against the
+truth in both directions: the soak and the fuzzer fail only on `Upper`
+below the true count; `TestBackgroundConcurrentCounts` asks a 60 s window,
+which cuts no bucket and so, since W4c's shortcut, never reads the log; and
+`TestDripPushOnce` audits the log against the register, not the answer. The
+drip log's two double pushes (W4b's on a retried count, W4c's through
+`miss`) were each found late. W7 builds the missing check, shows it on the
+trees that hold those two defects, and then reads W4d with it.
+
+**The check** (`TestDripConcurrentCounts`, `dripcount_test.go`, `TF_EXP=1`,
+both builds): `TestBackgroundConcurrentCounts`'s scenario, the one both
+double pushes were found in. 8 workers each own 4 of 32 keys and touch each
+20 times at ticks 25 apart from a shared clock, in a filter of Capacity 64
+(Stash 4,096, SpillMin 1) under a flood of other keys, so the keys wait,
+are evicted to the stash, come back and are moved while their owners touch
+them. Three modes: plain, Background, and ConstantTime (functional, as the
+concurrent fuzzer's). Two shapes: *spread*, the scenario as it is (a key's
+touches ~800 ticks, ~5 quanta, apart: one or two codes in the field, never
+a zero gap); and *burst*, where a key's 3rd, 8th, 13th and 18th touches are
+12 touches at one tick each (11 zero codes: a full field of a valid burst;
+at most ~14 events in a unit, under the register's 31). After each round a
+shadow filter (Capacity 4,096, the same Horizon, Resolution, Stash, SpillMin
+and mode, no Background, no flood) is given the 32 keys' events in tick
+order on one goroutine, and every key is read in both at the round's end at
+nine windows, 250 ms, 500 ms, 1, 2, 4, 8, 15, 30 and 60 s: Seen, Count,
+Upper and Saturated must be equal.
+
+Why equal: a key touched by one goroutine at increasing ticks has slot
+words that are a function of its own events alone, wherever the filter
+moves them, and an answer is a function of the words, the window and the
+tick. The code's paths that make a log say nothing are, for such a key:
+`next0`'s event at an earlier unit than the last touch (a lagging clock:
+not reachable, ticks increase), `dripForget` (another touch of the same key
+moving its last touch: not reachable, one owner), `Merge` and snapshots
+(not called), and a new word0 for a history that was not recalled (reachable
+only after the key's history was folded into the overflow table or lost).
+So a difference is counted as *log lost* when the filter's log says nothing
+where the shadow's does not, and as *wrong* otherwise, by direction (Count
+high, Count low, another field). Set apart and reported: a key whose
+fingerprint and tag another key of the round shares (a collision), and
+every difference in a round whose filter folded or lost a history. The
+check judges the state the concurrent writes left, not answers given while
+touches race, and this one scenario only: the soak and the fuzzer still
+assert nothing of Count. The script is `lab/w7.sh`.
+
+**Rule (before the reading).** W7 holds if:
+
+1. control: in the default build, 20,000 rounds in each mode and shape, no
+   answer differs from the shadow's but those set apart (the shadow is a
+   valid reference: without the log, every short window already reads the
+   moved words);
+2. sight: the check finds the two known defects, as Count high, the double
+   push's signature. On W4b's tree (06940e8) with `tfdrip`, Background,
+   spread, at least one Count high within 3,000 rounds
+   (`TestBackgroundConcurrentCounts` failed 36 of 60 runs of 200 rounds
+   there); on W4c's tree (0837f9f), the same, within 20,000 rounds (the probe
+   found 3 keys in 5,000 rounds there). W4c's leg is also the evidence that
+   the check reads the log on a tree with the shortcut. The test file is
+   copied into detached worktrees of those commits, as the audit's probes
+   were;
+3. W4d's library with `tfdrip`: 20,000 rounds in each mode and shape, no
+   wrong answer; and 1,000 rounds in each under `-race`, none.
+
+If clause 1 fails, the shadow is no reference and W7 says nothing of W4d.
+If clause 2 fails, the check is blind to a defect it was built for, and
+clause 3's pass would not clear W4d: W7 fails. If clause 3 fails, W4d's
+clause 5 is revised as W4c's was, and the failing path is diagnosed before
+anything is mended. A log lost on W4d is reported and diagnosed (a path the
+reading above missed) without revising W4d by itself: it costs accuracy,
+not a wrong answer from the words it holds.
+
+Reported, not judged: the differences by window, kind and direction;
+Degraded answers; the waits, evictions, restores, relocations, folds and
+losses each mode's rounds had (that the paths were taken); the rounds and
+differences set apart.

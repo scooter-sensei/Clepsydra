@@ -17,7 +17,26 @@ import (
 	"time"
 )
 
-// TestDripConcurrentCounts (TF_EXP=1) is lab/sw's W7.
+// dripInOverflow reports whether f's overflow table holds an entry for h at
+// now: a folded history, h's own or one sharing its identity (W7b).
+func dripInOverflow(f *Filter, h, now uint64) bool {
+	if !f.sketchLive(now) {
+		return false
+	}
+	id := f.stashID(h, fingerprint(h), tag(h))
+	var s Result
+	var ok bool
+	if !f.cms {
+		if gt := f.gh.Load(); gt != nil {
+			s, ok = gt.estimate(id, f.horizon, now)
+		}
+	} else if sk := f.sk.Load(); sk != nil {
+		s, ok = sk.estimate(id, f.horizon, now, f.ct)
+	}
+	return ok && (s.Seen || s.Count > 0 || s.Upper > 0)
+}
+
+// TestDripConcurrentCounts (TF_EXP=1) is lab/sw's W7, as W7b revised it.
 // TestBackgroundConcurrentCounts's scenario in each mode of TF_DRIP_MODES
 // (default "plain,bg,ct") and shape of TF_DRIP_SHAPES (default
 // "spread,burst"), TF_DRIP_ROUNDS rounds each (default 200): 8 workers each
@@ -37,12 +56,18 @@ import (
 //
 // A difference is "log lost" if the filter's drip log for the key says
 // nothing where the shadow's does not, and "wrong" otherwise (Count high,
-// Count low, or another field). Set apart: a key whose fingerprint and tag
-// another key of the round shares (a collision), and every difference in a
-// round whose filter folded a history into the overflow table or lost one
-// (Folded, Lost: the key comes back from the overflow table's floors with a
-// fresh log). Answers given while touches race are not judged: only the
-// state the concurrent writes left.
+// Count low, or another field). Set apart, answer by answer (W7b; W7 set
+// apart whole rounds that folded or lost a history): an answer either
+// filter flags Saturated or Degraded (a refused or shed hot entry, an
+// answer from the overflow table: the API's own disclaimers); an answer for
+// a key the filter's overflow table holds an entry for (a folded history,
+// its own or one sharing its identity, which can add to Upper unflagged);
+// a key whose fingerprint and tag another key of the round shares (a
+// collision); and every difference in a round whose filter lost a history
+// outright (Lost). Both filters have the Capacity-64 filter's 16 hot
+// entries (W7b; in W7 the shadow had its own capacity's). Answers given
+// while touches race are not judged: only the state the concurrent writes
+// left.
 func TestDripConcurrentCounts(t *testing.T) {
 	if os.Getenv("TF_EXP") == "" {
 		t.Skip("set TF_EXP=1")
@@ -69,7 +94,7 @@ func TestDripConcurrentCounts(t *testing.T) {
 	for _, mode := range modes {
 		mk := func(capacity int, clock func() uint64, bg bool) *Filter {
 			f, err := New(Config{Capacity: capacity, Horizon: time.Minute, Resolution: time.Millisecond,
-				Clock: clock, Stash: 1 << 12, SpillMin: 1, Background: bg})
+				Clock: clock, Stash: 1 << 12, SpillMin: 1, Background: bg, Hot: 16})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -79,7 +104,7 @@ func TestDripConcurrentCounts(t *testing.T) {
 			return f
 		}
 		for _, shape := range shapes {
-			var answers, high, low, other, logLost, collided, apart, apartRounds, degraded int
+			var answers, high, low, other, logLost, collided, apart, apartRounds, degraded, flagged, overflowed int
 			var waited, evictions, restored, relocations, folded, lost uint64
 			byWin := make([]int, len(wins))
 			var firsts []string
@@ -147,17 +172,26 @@ func TestDripConcurrentCounts(t *testing.T) {
 					}
 					return false
 				}
-				setApart := f.Folded() > 0 || f.Lost() > 0
+				setApart := f.Lost() > 0
 				if setApart {
 					apartRounds++
 				}
 				for k, h := range keys {
+					inOver := dripInOverflow(f, h, now)
 					for wi, w := range wins {
 						wt := f.Ticks(w)
 						a, b := f.CountAt(h, wt, now), g.CountAt(h, wt, now)
 						answers++
 						if a.Degraded {
 							degraded++
+						}
+						if a.Saturated || b.Saturated || a.Degraded || b.Degraded {
+							flagged++
+							continue
+						}
+						if inOver {
+							overflowed++
+							continue
 						}
 						if a.Seen == b.Seen && a.Count == b.Count && a.Upper == b.Upper && a.Saturated == b.Saturated {
 							continue
@@ -203,8 +237,9 @@ func TestDripConcurrentCounts(t *testing.T) {
 				f.Close()
 				g.Close()
 			}
-			t.Logf("%s build, mode %s, shape %s: %d rounds, %d answers; wrong: Count high %d, Count low %d, another field %d; log lost %d; set apart: collisions %d, in %d rounds that folded or lost a history %d; Degraded %d; waited %d, evictions %d, restored %d, relocations %d, folded %d, lost %d",
-				build, mode, shape, rounds, answers, high, low, other, logLost, collided, apartRounds, apart, degraded, waited, evictions, restored, relocations, folded, lost)
+			judged := answers - flagged - overflowed
+			t.Logf("%s build, mode %s, shape %s: %d rounds, %d answers, %d judged (%.1f%%); wrong: Count high %d, Count low %d, another field %d; log lost %d; set apart: flagged Saturated or Degraded %d, a key in the overflow table %d, collisions %d, in %d rounds that lost a history %d; the filter's Degraded %d; waited %d, evictions %d, restored %d, relocations %d, folded %d, lost %d",
+				build, mode, shape, rounds, answers, judged, 100*float64(judged)/float64(max(answers, 1)), high, low, other, logLost, flagged, overflowed, collided, apartRounds, apart, degraded, waited, evictions, restored, relocations, folded, lost)
 			s := ""
 			for wi, w := range wins {
 				s += fmt.Sprintf(" %v:%d", w, byWin[wi])

@@ -1128,3 +1128,59 @@ flags Saturated or Degraded set apart (in place of whole fold rounds) and
 the shadow given the filter's hot entries; it would be written after this
 diagnosis, which has already read the burst shape that way for 2,000 to
 10,000 rounds, and would have to say so.
+
+## W7b: the burst shape, with the API's disclaimers set apart
+
+**Written after W7's reading and its diagnosis.** That diagnosis already
+read the burst shape with the differences split by flag, for 2,000 rounds
+a mode in both builds, with the shadow given the filter's hot entries and
+without, and for 10,000 rounds in Background: every difference it printed
+had an answer flagged Saturated or Degraded. So this rule is not blind on
+the burst shape; what it adds is the reading at full length, with
+Degraded set apart and with the narrower set-apart below judging the fold
+rounds W7 left unexamined.
+
+**What changes in the check** (`TestDripConcurrentCounts` as W7b revises it,
+test code only, no library change):
+
+- set apart answer by answer, in place of W7's whole rounds that folded a
+  history: every answer either filter flags Saturated or Degraded (a
+  promotion refused or a hot entry shed under contention for the filter's
+  hot entries, an answer that includes the overflow table: the API's own
+  disclaimers), and every answer for a key the filter's overflow table holds
+  an entry for (a folded history, its own or one that shares its identity:
+  `addSketch` flags Degraded only when the overflow table adds a Count, and
+  can add to Upper unflagged); still set apart, collisions, and rounds that
+  lost a history outright (`Lost`, 0 in all of W7);
+- both filters get the Capacity-64 filter's 16 hot entries (in W7 the
+  shadow had its own capacity's, so its keys were promoted where the
+  filter's were refused);
+- the test reports how many answers it judged.
+
+Everything else is W7's: the scenario, the two shapes, the three modes, the
+nine windows, the shadow, the kinds of difference. The script is
+`lab/w7b.sh`, outputs in `lab/w7b/`.
+
+**Rule (before the reading).** W7b holds if:
+
+1. control: in the default build, 20,000 rounds in each mode and shape, no
+   judged answer differs from the shadow's;
+2. sight, as W7's with the new set-apart: on W4b's tree (06940e8) with
+   `tfdrip`, Background, at least one Count high within 3,000 rounds in each
+   shape, spread and burst; on W4c's tree (0837f9f), at least one within
+   20,000 rounds in the spread shape (its burst shape reported, not judged:
+   its defect's rate there is unknown);
+3. W4d's library with `tfdrip`: 20,000 rounds in each mode and shape, no
+   judged answer wrong; and 1,000 rounds in each under `-race`, none;
+4. the burst shape leaves at least half its answers judged in every mode,
+   in both builds; if not, the burst shape is too thin to clear W4d, and
+   W7b says so without failing on it.
+
+If clause 1 fails, the shadow is no reference again. If clause 2 fails, the
+narrower set-apart has blinded the check: W7b fails. If clause 3 fails,
+W4d's clause 5 is revised and the path diagnosed before anything is
+mended. A log lost on W4d is reported and diagnosed, as in W7.
+
+Reported, not judged: the answers set apart by each reason, the judged
+share per mode and shape, the differences by window, kind and direction,
+and the paths taken.

@@ -1227,5 +1227,6 @@ under `-race`; under bursts the drip log's full field of zero codes is read
 as a valid burst and answers as the shadow's. What it leaves: the check's
 sight of W4c's kind of double push (through `miss`) under bursts is not
 shown (W4c's burst leg found nothing in 20,000 rounds); answers flagged
-Saturated or Degraded are not judged (0.01% to 0.07% of answers); and the
+Saturated or Degraded are not judged (72 to 1,531 of W4d's 5.76 M a run, under
+0.03%); and the
 soak and the fuzzer still assert nothing of Count.

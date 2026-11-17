@@ -1,0 +1,1202 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 84 and seed -493936474335779575 with 4 workers on 12 cores with 1701MB heap and 64MB offheap memory [pid: 666] (Linux 6.18.58.1-microsoft-standard-WSL2 amd64, Ubuntu 21.0.13.0.3 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/darkcom/tlc-tmp/tmp.Wd1adh1WA9/two-2/DripPush.tla
+Parsing file /tmp/Integers.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/TLC.tla
+Parsing file /tmp/Naturals.tla
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module DripPush
+Starting... (2026-11-17 17:13:51)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-17 17:13:51.
+Progress(27) at 2026-11-17 17:13:54: 718,039 states generated (718,039 s/min), 218,194 distinct states found (218,194 ds/min), 46,217 states left on queue.
+Error: Invariant CountLogged is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 0, owner2 |-> 0]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "none", owner2 |-> "none"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_start",
+  reader |-> "r_start",
+  mover |-> "v_r0",
+  evictor |-> "e_scan",
+  owner2 |-> "o_start" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "free", t |-> 0, log |-> <<>>],
+  owner2 |-> [k |-> "free", t |-> 0, log |-> <<>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> FALSE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  dst |-> [k |-> "free", t |-> 0, log |-> <<>>] ]
+/\ w1 = [src |-> [k |-> "K", c |-> 1], dst |-> [k |-> "free", c |-> 0]]
+/\ vs = "none"
+/\ begun = 0
+/\ m0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ m1 = [k |-> "free", c |-> 0]
+/\ seen = {}
+
+State 2: <v_r0 line 662, col 9 to line 669, col 69 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 0, owner2 |-> 0]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "none", owner2 |-> "none"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_start",
+  reader |-> "r_start",
+  mover |-> "v_r1",
+  evictor |-> "e_scan",
+  owner2 |-> "o_start" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "free", t |-> 0, log |-> <<>>],
+  owner2 |-> [k |-> "free", t |-> 0, log |-> <<>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> FALSE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  dst |-> [k |-> "free", t |-> 0, log |-> <<>>] ]
+/\ w1 = [src |-> [k |-> "K", c |-> 1], dst |-> [k |-> "free", c |-> 0]]
+/\ vs = "none"
+/\ begun = 0
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "free", c |-> 0]
+/\ seen = {}
+
+State 3: <v_r1 line 671, col 9 to line 676, col 69 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 0, owner2 |-> 0]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "none", owner2 |-> "none"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_start",
+  reader |-> "r_start",
+  mover |-> "v_pre",
+  evictor |-> "e_scan",
+  owner2 |-> "o_start" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "free", t |-> 0, log |-> <<>>],
+  owner2 |-> [k |-> "free", t |-> 0, log |-> <<>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> FALSE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  dst |-> [k |-> "free", t |-> 0, log |-> <<>>] ]
+/\ w1 = [src |-> [k |-> "K", c |-> 1], dst |-> [k |-> "free", c |-> 0]]
+/\ vs = "none"
+/\ begun = 0
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {}
+
+State 4: <v_pre line 678, col 10 to line 684, col 74 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 0, owner2 |-> 0]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "none", owner2 |-> "none"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_start",
+  reader |-> "r_start",
+  mover |-> "v_beg",
+  evictor |-> "e_scan",
+  owner2 |-> "o_start" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "free", t |-> 0, log |-> <<>>],
+  owner2 |-> [k |-> "free", t |-> 0, log |-> <<>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> FALSE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  dst |-> [k |-> "free", t |-> 0, log |-> <<>>] ]
+/\ w1 = [src |-> [k |-> "K", c |-> 1], dst |-> [k |-> "free", c |-> 0]]
+/\ vs = "none"
+/\ begun = 0
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {}
+
+State 5: <v_beg line 686, col 10 to line 691, col 66 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 0, owner2 |-> 0]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "none", owner2 |-> "none"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_start",
+  reader |-> "r_start",
+  mover |-> "v_ev",
+  evictor |-> "e_scan",
+  owner2 |-> "o_start" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "free", t |-> 0, log |-> <<>>],
+  owner2 |-> [k |-> "free", t |-> 0, log |-> <<>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> FALSE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  dst |-> [k |-> "free", t |-> 0, log |-> <<>>] ]
+/\ w1 = [src |-> [k |-> "K", c |-> 1], dst |-> [k |-> "free", c |-> 0]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {}
+
+State 6: <v_ev line 693, col 9 to line 699, col 73 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 0, owner2 |-> 0]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "none", owner2 |-> "none"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_start",
+  reader |-> "r_start",
+  mover |-> "v_i1",
+  evictor |-> "e_scan",
+  owner2 |-> "o_start" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "free", t |-> 0, log |-> <<>>],
+  owner2 |-> [k |-> "free", t |-> 0, log |-> <<>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> FALSE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  dst |-> [k |-> "free", t |-> 0, log |-> <<>>] ]
+/\ w1 = [src |-> [k |-> "K", c |-> 1], dst |-> [k |-> "free", c |-> 0]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {}
+
+State 7: <v_i1 line 701, col 9 to line 709, col 65 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 0, owner2 |-> 0]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "none", owner2 |-> "none"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_start",
+  reader |-> "r_start",
+  mover |-> "v_i0",
+  evictor |-> "e_scan",
+  owner2 |-> "o_start" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "free", t |-> 0, log |-> <<>>],
+  owner2 |-> [k |-> "free", t |-> 0, log |-> <<>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> FALSE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  dst |-> [k |-> "free", t |-> 0, log |-> <<>>] ]
+/\ w1 = [src |-> [k |-> "K", c |-> 1], dst |-> [k |-> "busy", c |-> 0]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {}
+
+State 8: <v_i0 line 711, col 9 to line 721, col 65 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 0, owner2 |-> 0]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "none", owner2 |-> "none"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_start",
+  reader |-> "r_start",
+  mover |-> "v_i2",
+  evictor |-> "e_scan",
+  owner2 |-> "o_start" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "free", t |-> 0, log |-> <<>>],
+  owner2 |-> [k |-> "free", t |-> 0, log |-> <<>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> FALSE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  dst |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ w1 = [src |-> [k |-> "K", c |-> 1], dst |-> [k |-> "busy", c |-> 0]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {}
+
+State 9: <v_i2 line 723, col 9 to line 728, col 65 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 0, owner2 |-> 0]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "none", owner2 |-> "none"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_start",
+  reader |-> "r_start",
+  mover |-> "v_h1",
+  evictor |-> "e_scan",
+  owner2 |-> "o_start" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "free", t |-> 0, log |-> <<>>],
+  owner2 |-> [k |-> "free", t |-> 0, log |-> <<>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> FALSE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  dst |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ w1 = [src |-> [k |-> "K", c |-> 1], dst |-> [k |-> "busy", c |-> 0]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {}
+
+State 10: <o_start line 376, col 18 to line 385, col 46 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 0, owner2 |-> 1]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "none", owner2 |-> "none"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_start",
+  reader |-> "r_start",
+  mover |-> "v_h1",
+  evictor |-> "e_scan",
+  owner2 |-> "o_s1" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "free", t |-> 0, log |-> <<>>],
+  owner2 |-> [k |-> "free", t |-> 0, log |-> <<>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> FALSE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  dst |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ w1 = [src |-> [k |-> "K", c |-> 1], dst |-> [k |-> "busy", c |-> 0]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {}
+
+State 11: <o_s1 line 387, col 15 to line 396, col 43 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 0, owner2 |-> 1]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "none", owner2 |-> "src"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_start",
+  reader |-> "r_start",
+  mover |-> "v_h1",
+  evictor |-> "e_scan",
+  owner2 |-> "o_w0" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "free", t |-> 0, log |-> <<>>],
+  owner2 |-> [k |-> "free", t |-> 0, log |-> <<>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> FALSE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  dst |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ w1 = [src |-> [k |-> "K", c |-> 1], dst |-> [k |-> "busy", c |-> 0]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {}
+
+State 12: <v_h1 line 730, col 9 to line 738, col 65 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 0, owner2 |-> 1]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "none", owner2 |-> "src"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_start",
+  reader |-> "r_start",
+  mover |-> "v_h0",
+  evictor |-> "e_scan",
+  owner2 |-> "o_w0" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "free", t |-> 0, log |-> <<>>],
+  owner2 |-> [k |-> "free", t |-> 0, log |-> <<>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> FALSE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  dst |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ w1 = [src |-> [k |-> "busy", c |-> 0], dst |-> [k |-> "busy", c |-> 0]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {}
+
+State 13: <o_start line 376, col 18 to line 385, col 46 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 1, owner2 |-> 1]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "none", owner2 |-> "src"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_s1",
+  reader |-> "r_start",
+  mover |-> "v_h0",
+  evictor |-> "e_scan",
+  owner2 |-> "o_w0" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "free", t |-> 0, log |-> <<>>],
+  owner2 |-> [k |-> "free", t |-> 0, log |-> <<>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> FALSE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  dst |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ w1 = [src |-> [k |-> "busy", c |-> 0], dst |-> [k |-> "busy", c |-> 0]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {}
+
+State 14: <o_w0 line 482, col 15 to line 491, col 35 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 1, owner2 |-> 1]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "none", owner2 |-> "src"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_s1",
+  reader |-> "r_start",
+  mover |-> "v_h0",
+  evictor |-> "e_scan",
+  owner2 |-> "o_cas0" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "free", t |-> 0, log |-> <<>>],
+  owner2 |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> FALSE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  dst |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ w1 = [src |-> [k |-> "busy", c |-> 0], dst |-> [k |-> "busy", c |-> 0]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {}
+
+State 15: <o_s1 line 387, col 15 to line 396, col 43 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 1, owner2 |-> 1]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "none", owner2 |-> "src"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_s2",
+  reader |-> "r_start",
+  mover |-> "v_h0",
+  evictor |-> "e_scan",
+  owner2 |-> "o_cas0" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "free", t |-> 0, log |-> <<>>],
+  owner2 |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> FALSE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  dst |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ w1 = [src |-> [k |-> "busy", c |-> 0], dst |-> [k |-> "busy", c |-> 0]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {}
+
+State 16: <o_cas0 line 493, col 17 to line 507, col 73 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 1, owner2 |-> 1]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "none", owner2 |-> "src"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_s2",
+  reader |-> "r_start",
+  mover |-> "v_h0",
+  evictor |-> "e_scan",
+  owner2 |-> "o_b1" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "free", t |-> 0, log |-> <<>>],
+  owner2 |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> TRUE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "K", t |-> 1, log |-> <<0, 2>>],
+  dst |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ w1 = [src |-> [k |-> "busy", c |-> 0], dst |-> [k |-> "busy", c |-> 0]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {}
+
+State 17: <v_h0 line 740, col 9 to line 750, col 65 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 1, owner2 |-> 1]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "none", owner2 |-> "src"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_s2",
+  reader |-> "r_start",
+  mover |-> "v_h2",
+  evictor |-> "e_scan",
+  owner2 |-> "o_b1" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "free", t |-> 0, log |-> <<>>],
+  owner2 |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> TRUE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "N", t |-> 0, log |-> <<>>],
+  dst |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ w1 = [src |-> [k |-> "busy", c |-> 0], dst |-> [k |-> "busy", c |-> 0]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {}
+
+State 18: <v_h2 line 752, col 9 to line 757, col 65 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 1, owner2 |-> 1]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "none", owner2 |-> "src"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_s2",
+  reader |-> "r_start",
+  mover |-> "v_pub",
+  evictor |-> "e_scan",
+  owner2 |-> "o_b1" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "free", t |-> 0, log |-> <<>>],
+  owner2 |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> TRUE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "N", t |-> 0, log |-> <<>>],
+  dst |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ w1 = [src |-> [k |-> "N", c |-> 0], dst |-> [k |-> "busy", c |-> 0]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {}
+
+State 19: <v_pub line 759, col 10 to line 765, col 59 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 1, owner2 |-> 1]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "none", owner2 |-> "src"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_s2",
+  reader |-> "r_start",
+  mover |-> "v_dn",
+  evictor |-> "e_scan",
+  owner2 |-> "o_b1" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "free", t |-> 0, log |-> <<>>],
+  owner2 |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> TRUE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "N", t |-> 0, log |-> <<>>],
+  dst |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ w1 = [src |-> [k |-> "N", c |-> 0], dst |-> [k |-> "K", c |-> 1]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {"moved"}
+
+State 20: <o_s2 line 398, col 15 to line 407, col 43 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 1, owner2 |-> 1]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "dst", owner2 |-> "src"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_w0",
+  reader |-> "r_start",
+  mover |-> "v_dn",
+  evictor |-> "e_scan",
+  owner2 |-> "o_b1" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "free", t |-> 0, log |-> <<>>],
+  owner2 |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> TRUE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "N", t |-> 0, log |-> <<>>],
+  dst |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ w1 = [src |-> [k |-> "N", c |-> 0], dst |-> [k |-> "K", c |-> 1]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {"moved"}
+
+State 21: <o_w0 line 482, col 15 to line 491, col 35 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 1, owner2 |-> 1]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "dst", owner2 |-> "src"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_cas0",
+  reader |-> "r_start",
+  mover |-> "v_dn",
+  evictor |-> "e_scan",
+  owner2 |-> "o_b1" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  owner2 |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> TRUE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "N", t |-> 0, log |-> <<>>],
+  dst |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ w1 = [src |-> [k |-> "N", c |-> 0], dst |-> [k |-> "K", c |-> 1]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {"moved"}
+
+State 22: <o_b1 line 509, col 15 to line 515, col 35 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 1, owner2 |-> 1]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "dst", owner2 |-> "src"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_cas0",
+  reader |-> "r_start",
+  mover |-> "v_dn",
+  evictor |-> "e_scan",
+  owner2 |-> "o_b2" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "N", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  owner2 |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> TRUE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "N", t |-> 0, log |-> <<>>],
+  dst |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ w1 = [src |-> [k |-> "N", c |-> 0], dst |-> [k |-> "K", c |-> 1]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {"moved"}
+
+State 23: <o_b2 line 517, col 15 to line 524, col 43 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 1, owner2 |-> 1]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "dst", owner2 |-> "src"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_cas0",
+  reader |-> "r_start",
+  mover |-> "v_dn",
+  evictor |-> "e_scan",
+  owner2 |-> "o_s1" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "N", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  owner2 |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> TRUE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "N", t |-> 0, log |-> <<>>],
+  dst |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ w1 = [src |-> [k |-> "N", c |-> 0], dst |-> [k |-> "K", c |-> 1]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {"moved"}
+
+State 24: <o_s1 line 387, col 15 to line 396, col 43 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 1, owner2 |-> 1]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "dst", owner2 |-> "src"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_cas0",
+  reader |-> "r_start",
+  mover |-> "v_dn",
+  evictor |-> "e_scan",
+  owner2 |-> "o_s2" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "N", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  owner2 |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ pushed = [owner |-> FALSE, owner2 |-> TRUE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "N", t |-> 0, log |-> <<>>],
+  dst |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ w1 = [src |-> [k |-> "N", c |-> 0], dst |-> [k |-> "K", c |-> 1]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {"moved"}
+
+State 25: <o_cas0 line 493, col 17 to line 507, col 73 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 1, owner2 |-> 1]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "dst", owner2 |-> "src"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_b1",
+  reader |-> "r_start",
+  mover |-> "v_dn",
+  evictor |-> "e_scan",
+  owner2 |-> "o_s2" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "N", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  owner2 |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ pushed = [owner |-> TRUE, owner2 |-> TRUE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "N", t |-> 0, log |-> <<>>],
+  dst |-> [k |-> "K", t |-> 1, log |-> <<0, 1>>] ]
+/\ w1 = [src |-> [k |-> "N", c |-> 0], dst |-> [k |-> "K", c |-> 1]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {"moved"}
+
+State 26: <o_s2 line 398, col 15 to line 407, col 43 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 1, owner2 |-> 1]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "dst", owner2 |-> "dst"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_b1",
+  reader |-> "r_start",
+  mover |-> "v_dn",
+  evictor |-> "e_scan",
+  owner2 |-> "o_w0" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "N", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  owner2 |-> [k |-> "K", t |-> 0, log |-> <<0>>] ]
+/\ pushed = [owner |-> TRUE, owner2 |-> TRUE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "N", t |-> 0, log |-> <<>>],
+  dst |-> [k |-> "K", t |-> 1, log |-> <<0, 1>>] ]
+/\ w1 = [src |-> [k |-> "N", c |-> 0], dst |-> [k |-> "K", c |-> 1]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {"moved"}
+
+State 27: <o_w0 line 482, col 15 to line 491, col 35 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 1, owner2 |-> 1]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "dst", owner2 |-> "dst"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_b1",
+  reader |-> "r_start",
+  mover |-> "v_dn",
+  evictor |-> "e_scan",
+  owner2 |-> "o_cas0" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "N", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  owner2 |-> [k |-> "K", t |-> 1, log |-> <<0, 1>>] ]
+/\ pushed = [owner |-> TRUE, owner2 |-> TRUE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "N", t |-> 0, log |-> <<>>],
+  dst |-> [k |-> "K", t |-> 1, log |-> <<0, 1>>] ]
+/\ w1 = [src |-> [k |-> "N", c |-> 0], dst |-> [k |-> "K", c |-> 1]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {"moved"}
+
+State 28: <o_cas0 line 493, col 17 to line 507, col 73 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 1, owner2 |-> 1]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "dst", owner2 |-> "dst"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_b1",
+  reader |-> "r_start",
+  mover |-> "v_dn",
+  evictor |-> "e_scan",
+  owner2 |-> "o_b1" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "N", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  owner2 |-> [k |-> "K", t |-> 1, log |-> <<0, 1>>] ]
+/\ pushed = [owner |-> TRUE, owner2 |-> TRUE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "N", t |-> 0, log |-> <<>>],
+  dst |-> [k |-> "K", t |-> 1, log |-> <<0, 1>>] ]
+/\ w1 = [src |-> [k |-> "N", c |-> 0], dst |-> [k |-> "K", c |-> 1]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {"moved"}
+
+State 29: <o_b1 line 509, col 15 to line 515, col 35 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 1, owner2 |-> 1]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "dst", owner2 |-> "dst"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_b1",
+  reader |-> "r_start",
+  mover |-> "v_dn",
+  evictor |-> "e_scan",
+  owner2 |-> "o_b2" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "K", c |-> 1]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  owner2 |-> [k |-> "K", t |-> 1, log |-> <<0, 1>>] ]
+/\ pushed = [owner |-> TRUE, owner2 |-> TRUE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "N", t |-> 0, log |-> <<>>],
+  dst |-> [k |-> "K", t |-> 1, log |-> <<0, 1>>] ]
+/\ w1 = [src |-> [k |-> "N", c |-> 0], dst |-> [k |-> "K", c |-> 1]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {"moved"}
+
+State 30: <o_b2 line 517, col 15 to line 524, col 43 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 1, owner2 |-> 1]
+/\ truth = 1
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 0]
+/\ j = 0
+/\ os = [owner |-> "dst", owner2 |-> "dst"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_b1",
+  reader |-> "r_start",
+  mover |-> "v_dn",
+  evictor |-> "e_scan",
+  owner2 |-> "o_b3" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "K", c |-> 1]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  owner2 |-> [k |-> "K", t |-> 1, log |-> <<0, 1>>] ]
+/\ pushed = [owner |-> TRUE, owner2 |-> TRUE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "N", t |-> 0, log |-> <<>>],
+  dst |-> [k |-> "K", t |-> 1, log |-> <<0, 1>>] ]
+/\ w1 = [src |-> [k |-> "N", c |-> 0], dst |-> [k |-> "K", c |-> 1]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {"moved"}
+
+State 31: <o_b3 line 526, col 15 to line 544, col 78 of module DripPush>
+/\ done = 0
+/\ touchOK = TRUE
+/\ start = [owner |-> 1, owner2 |-> 1]
+/\ truth = 2
+/\ stash = [k |-> "none", t |-> 0, log |-> <<>>, c |-> 0]
+/\ b = [owner |-> 0, owner2 |-> 0]
+/\ d = [owner |-> 0, owner2 |-> 0]
+/\ i = [owner |-> 0, owner2 |-> 1]
+/\ j = 0
+/\ os = [owner |-> "dst", owner2 |-> "none"]
+/\ e0 = [k |-> "free", t |-> 0, log |-> <<>>]
+/\ e1 = [k |-> "free", c |-> 0]
+/\ pc = [ owner |-> "o_b1",
+  reader |-> "r_start",
+  mover |-> "v_dn",
+  evictor |-> "e_scan",
+  owner2 |-> "o_start" ]
+/\ lock = "none"
+/\ rb = 0
+/\ rd = 0
+/\ old = [owner |-> [k |-> "free", c |-> 0], owner2 |-> [k |-> "free", c |-> 0]]
+/\ res = 0
+/\ rs = 0
+/\ readOK = TRUE
+/\ last = [ owner |-> [k |-> "K", t |-> 0, log |-> <<0>>],
+  owner2 |-> [k |-> "free", t |-> 0, log |-> <<>>] ]
+/\ pushed = [owner |-> TRUE, owner2 |-> FALSE]
+/\ evicting = 0
+/\ w0 = [ src |-> [k |-> "N", t |-> 0, log |-> <<>>],
+  dst |-> [k |-> "K", t |-> 1, log |-> <<0, 1>>] ]
+/\ w1 = [src |-> [k |-> "N", c |-> 0], dst |-> [k |-> "K", c |-> 2]]
+/\ vs = "none"
+/\ begun = 1
+/\ m0 = [k |-> "K", t |-> 0, log |-> <<0>>]
+/\ m1 = [k |-> "K", c |-> 1]
+/\ seen = {"moved", "unlogged"}
+
+2120966 states generated, 626426 distinct states found, 116375 states left on queue.
+The depth of the complete state graph search is 32.
+The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 5 and the 95th percentile is 3).
+Finished in 08s at (2026-11-17 17:13:59)

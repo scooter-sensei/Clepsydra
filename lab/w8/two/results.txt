@@ -1,0 +1,26 @@
+4461e7a lab/sw W8: a second toucher (Touchers, touch n of each at tick n) and CountLogged (a touch counted only into a history whose log holds its event), before the reading; clause 1's two-toucher sight (noHandoffCheck), clause 3 (W4d, two touchers), lab/w8.sh two; noHandoffCheck's runs read through CountLogged (its LogComplete could not show the tick test's blind side)
+lab/w8.sh two
+== clause 1: sight, two touchers
+1   noHandoffCheck, 2 touchers x 1 touch, relocation only, copy first TRUE violation (want report) 379709 distinct states found; Invariant CountLogged is violated
+2   noHandoffCheck, 2 touchers x 1 touch, relocation only, copy first FALSE violation (want report) 626426 distinct states found; Invariant CountLogged is violated
+    a count into a copy from before the push, moved to the touch's tick by the other toucher's push (CountLogged): seen
+== reported
+3   w4d, 2 touchers x 1 touch, evict, reachable: NotRepushed           ok        (want report) 43415628 distinct states found
+== clause 3: w4d, 2 toucher(s) x 1 touch(es)
+4   w4d, 2 toucher(s) x 1 touch(es), burst FALSE, evict FALSE, copy first TRUE ok        (want ok) 1082007 distinct states found
+5   w4d, 2 toucher(s) x 1 touch(es), burst FALSE, evict FALSE, copy first TRUE: Termination ok        (want ok) 1082007 distinct states found
+6   w4d, 2 toucher(s) x 1 touch(es), burst FALSE, evict FALSE, copy first FALSE ok        (want ok) 1109538 distinct states found
+7   w4d, 2 toucher(s) x 1 touch(es), burst FALSE, evict FALSE, copy first FALSE: Termination ok        (want ok) 1109538 distinct states found
+8   w4d, 2 toucher(s) x 1 touch(es), burst FALSE, evict TRUE, copy first TRUE ok        (want ok) 43415628 distinct states found
+9   w4d, 2 toucher(s) x 1 touch(es), burst FALSE, evict TRUE, copy first TRUE: Termination timeout   (want ok) 18,989,969 distinct states found
+10  w4d, 2 toucher(s) x 1 touch(es), burst FALSE, evict TRUE, copy first FALSE ok        (want ok) 43908288 distinct states found
+11  w4d, 2 toucher(s) x 1 touch(es), burst FALSE, evict TRUE, copy first FALSE: Termination timeout   (want ok) 19,717,362 distinct states found
+12  w4d, 2 toucher(s) x 1 touch(es), burst TRUE, evict FALSE, copy first TRUE ok        (want ok) 1082007 distinct states found
+13  w4d, 2 toucher(s) x 1 touch(es), burst TRUE, evict FALSE, copy first TRUE: Termination ok        (want ok) 1082007 distinct states found
+14  w4d, 2 toucher(s) x 1 touch(es), burst TRUE, evict FALSE, copy first FALSE ok        (want ok) 1109538 distinct states found
+15  w4d, 2 toucher(s) x 1 touch(es), burst TRUE, evict FALSE, copy first FALSE: Termination ok        (want ok) 1109538 distinct states found
+16  w4d, 2 toucher(s) x 1 touch(es), burst TRUE, evict TRUE, copy first TRUE ok        (want ok) 43415628 distinct states found
+17  w4d, 2 toucher(s) x 1 touch(es), burst TRUE, evict TRUE, copy first TRUE: Termination timeout   (want ok) 19,523,320 distinct states found
+18  w4d, 2 toucher(s) x 1 touch(es), burst TRUE, evict TRUE, copy first FALSE ok        (want ok) 43908288 distinct states found
+19  w4d, 2 toucher(s) x 1 touch(es), burst TRUE, evict TRUE, copy first FALSE: Termination timeout   (want ok) 19,791,411 distinct states found
+W8 readings (two) finished: every judged outcome as wanted; 4 judged run(s) or pair(s) timed out, not judged: their clause is judged on fewer runs

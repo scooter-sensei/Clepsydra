@@ -1,0 +1,22 @@
+4461e7a lab/sw W8: a second toucher (Touchers, touch n of each at tick n) and CountLogged (a touch counted only into a history whose log holds its event), before the reading; clause 1's two-toucher sight (noHandoffCheck), clause 3 (W4d, two touchers), lab/w8.sh two; noHandoffCheck's runs read through CountLogged (its LogComplete could not show the tick test's blind side)
+lab/w8.sh large
+== reported
+1   w4d, 2 touches, evict, reachable: NotRepushed                      ok        (want report) 389919 distinct states found
+== clause 2: w4d, 1 toucher(s) x 2 touch(es)
+2   w4d, 1 toucher(s) x 2 touch(es), burst FALSE, evict FALSE, copy first TRUE ok        (want ok) 17370 distinct states found
+3   w4d, 1 toucher(s) x 2 touch(es), burst FALSE, evict FALSE, copy first TRUE: Termination ok        (want ok) 17370 distinct states found
+4   w4d, 1 toucher(s) x 2 touch(es), burst FALSE, evict FALSE, copy first FALSE ok        (want ok) 17154 distinct states found
+5   w4d, 1 toucher(s) x 2 touch(es), burst FALSE, evict FALSE, copy first FALSE: Termination ok        (want ok) 17154 distinct states found
+6   w4d, 1 toucher(s) x 2 touch(es), burst FALSE, evict TRUE, copy first TRUE ok        (want ok) 389919 distinct states found
+7   w4d, 1 toucher(s) x 2 touch(es), burst FALSE, evict TRUE, copy first TRUE: Termination ok        (want ok) 389919 distinct states found
+8   w4d, 1 toucher(s) x 2 touch(es), burst FALSE, evict TRUE, copy first FALSE ok        (want ok) 389052 distinct states found
+9   w4d, 1 toucher(s) x 2 touch(es), burst FALSE, evict TRUE, copy first FALSE: Termination ok        (want ok) 389052 distinct states found
+10  w4d, 1 toucher(s) x 2 touch(es), burst TRUE, evict FALSE, copy first TRUE ok        (want ok) 17370 distinct states found
+11  w4d, 1 toucher(s) x 2 touch(es), burst TRUE, evict FALSE, copy first TRUE: Termination ok        (want ok) 17370 distinct states found
+12  w4d, 1 toucher(s) x 2 touch(es), burst TRUE, evict FALSE, copy first FALSE ok        (want ok) 17154 distinct states found
+13  w4d, 1 toucher(s) x 2 touch(es), burst TRUE, evict FALSE, copy first FALSE: Termination ok        (want ok) 17154 distinct states found
+14  w4d, 1 toucher(s) x 2 touch(es), burst TRUE, evict TRUE, copy first TRUE ok        (want ok) 389919 distinct states found
+15  w4d, 1 toucher(s) x 2 touch(es), burst TRUE, evict TRUE, copy first TRUE: Termination ok        (want ok) 389919 distinct states found
+16  w4d, 1 toucher(s) x 2 touch(es), burst TRUE, evict TRUE, copy first FALSE ok        (want ok) 389052 distinct states found
+17  w4d, 1 toucher(s) x 2 touch(es), burst TRUE, evict TRUE, copy first FALSE: Termination ok        (want ok) 389052 distinct states found
+W8 readings (large) finished: every judged outcome as wanted

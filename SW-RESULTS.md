@@ -1427,3 +1427,82 @@ taken before any TLC run of `DripPush.tla`):
   0 as wanted, 1 on a failing W4d run, 2 on a model that differs from the
   commit), not on `DripPush.tla`; an error's line now carries TLC's
   message.
+
+### W8's reading (4461e7a's tree; `lab/w8.sh`, outputs in `lab/w8/`)
+
+1. **Holds.** One toucher of one touch (`small`): PushOnce violated by
+   `"w4b"`, relocation only, in both scan orders (4,139 and 3,346 states), and
+   by `"w4c"` with eviction in both (73,041 and 72,585); LogComplete by
+   `"tickOnly"` in a burst, relocation only, in both (4,880 and 4,682); with
+   `"w4d"`, NotMoved and NotEvicted violated (1,861 and 1,376). Two touchers
+   of one touch each (`two`): CountLogged violated by `"noHandoffCheck"`,
+   spread, relocation only, in both scan orders (379,709 and 626,426).
+2. **Holds.** `"w4d"`, one toucher, 16 configurations: no invariant violated
+   and Termination holds in all 32 runs; 7,776 to 138,360 states at 1 touch,
+   17,154 to 389,919 at 2, the longest run 29 s.
+3. **Holds on 12 of its 16 runs; 4 not judged.** `"w4d"`, two touchers of one
+   touch each: no invariant violated in any of the 8 configurations
+   (1,082,007 and 1,109,538 states without eviction, 43,415,628 and
+   43,908,288 with, the latter 13 minutes each), every search complete and
+   none reaching a deadlock (TLC's check, on in every run); Termination holds
+   in the four without eviction, and timed out at 30 minutes in the four with
+   (18,989,969 to 19,791,411 states at the cap, TLC's last progress line,
+   under half of what the invariant runs found), not judged.
+
+Every phase's line reads "every judged outcome as wanted"; `two`'s adds the
+four timeouts. Reported: `"w4c"` with relocation only violates nothing (7,776
+states, as `"w4d"`'s); NotRepushed is never violated by `"w4d"`, at 1 touch
+(137,742 states), at 2 (389,919) and with two touchers (43,415,628), each
+with eviction, and is violated by `"noHandoffCheck"` with one toucher in both
+scan orders (4,625 and 4,984); `"noHandoffCheck"` with one toucher,
+relocation only, violates CountLogged in a burst in both scan orders (6,781
+and 7,409) and not spread (9,000 and 9,081). Every `"w4d"` configuration has
+as many distinct states in a burst as spread, at 1 and 2 touches and with
+two touchers.
+
+The counterexamples read state by state follow the paths their sights
+name. `"w4c"` (`small` run 3): the touch pushes into src, the evictor moves
+the history with its push to the stash, the count fails, and `miss` restores
+it and pushes again (the stash's log 0, 1, 1). `"noHandoffCheck"` in a burst
+(`small` run 13): the touch pushes into src after the mover's copy, the
+hand-off takes src unchecked and publishes the copy from before the push,
+whose last touch is the touch's tick (0), and the retry skips and counts
+there. Two touchers (`two` runs 1 and 2): the second toucher pushes event 2
+into src after the mover's copy, the hand-off takes src unchecked, the first
+pushes event 1 into the published copy at tick 1, and the second, pushed and
+meeting a last touch at its tick, skips and counts there: a count whose event
+no copy holds. `"tickOnly"`'s sight (`small` run 5) needs no race: in a burst
+the touch's first attempt is already at the history's last touch, so it
+never pushes, and the count lands in src. It shows that LogComplete can fail
+and that runs reach their end, not a push lost to relocation. `"w4b"`'s run
+1 was read by its steps only, and the sights' other runs not past their
+results.
+
+**Verdict: W8 passes its rule**, clause 3 judged on 12 of its 16 runs: with
+two touchers and eviction, Termination is not judged.
+
+What W8 reads of W4d, in the model (one or two touchers at the same ticks,
+the table's same-unit path, relocation's hidden copy and eviction to the
+stash, as `Relocate.tla` has them): every touch's event is pushed once into
+K's history and every count lands in a history that holds its event, and,
+where Termination was judged, every run ends. The conditions "What a pass
+means" names came out as written: NotRepushed is never violated by `"w4d"`
+and is by `"noHandoffCheck"`, so no path in the model hands a touch that
+pushed a history from before its push, and clauses 2 and 3 judged only the
+half of W4d's rule that skips; the half that pushes again was never taken.
+The equal state counts in a burst and spread are consistent with that: under
+W4d's rule the touch's tick decides no step in the model. `"noHandoffCheck"`
+violates CountLogged in a burst with one toucher and spread with two, and
+not spread with one: the tick test's blind side is shown both ways the model
+can reach it, and with the hand-off and the eviction as committed no such
+copy reaches a touch, two touchers at one tick included.
+
+What W8 leaves: Termination with two touchers and eviction (four runs cut at
+30 minutes at under half their space), so a livelock there, under which
+LogComplete and Conserved would go unread, is not excluded; the half of W4d's
+rule that pushes again, whose paths the model leaves out (the wait room and
+its put-back, ConstantTime's stash copy, a toucher whose clock lags); two
+touchers of two touches; hot entries and `miss`'s two failures, among them the
+hot restore's double push found in the audit, read from the code and neither
+reached nor mended; the log's bound, quanta and valid bit; and moves or
+evictions of a restored copy.

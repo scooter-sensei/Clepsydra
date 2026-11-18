@@ -1679,20 +1679,34 @@ K's goroutine, between two of K's steps).
    path: the same hooks, Promoted 2, the retry, a register of 1 event.
 
 Reported: Count is 1 at 250 ms, 1 s, 10 s and 30 s in every leg in both
-builds, the truth. From the code, not a reading: every Count here was read
-at tK, the last touch, of a register whose one event is in bucket 0, which
-`estimate` answers from the register alone (`register.go:441`) without the
-log; and tK is the last tick of its unit, so the probe has no later read in
-that unit, where a window that cuts bucket 0 would read the log (`:509`).
-The probe neither shows nor rules out a Count high: what the extra event
-does to K's later answers is not read.
+builds, the truth; every read was at tK. From the code, not a reading: in
+the reclaim legs K's slot holds a register whose one event is in bucket 0,
+and a read at its last touch is answered from the register alone
+(`register.go:441`), without the log. A later read whose window starts
+inside bucket 0 reaches the log (`:509` compares the register's unit with
+the last touch's, not with the read's): traced by hand at tK + 100 ms with
+a 1 s window, `dripCount` takes the extra zero code for a second event and
+answers 2 against a truth of 1. That read was not made; the probe neither
+shows nor rules out a Count high.
 
 **Verdict: W9 confirms the audit's finding.** On W4d's library, a touch
 whose hot restore loses its entry after `hotGone` pushes its event into K's
 drip log twice, at the install into a free slot and in a claim that
 relocates: W4d's push-once fails on the hot restore. W4d's readings and W8's
-stand as read; neither reached the path (W4d's tests have no reclaim inside
-a restore built with `tfdrip`; W8's model has no hot entries). By W9's rule a
-mend (W4e) is written with its own rule before its reading; none is made
-here. What W9 leaves: whether the extra event moves Count; ConstantTime,
-Background and the wait room's leg; a reclaim by a concurrent caller.
+stand as read. W4d's suite took this path with `tfdrip`
+(`TestHotEntryReclaimedDuringRestore`, in `lab/w4.sh` step 5's `go test
+-tags tfdrip -short ./...`) and passed: that test reads Upper alone. W8's
+model has no hot entries. By W9's rule a mend (W4e) is written with its own
+rule before its reading; none is made here. What W9 leaves: whether the
+extra event moves Count; a restore whose claim evicts (the full lines'
+leg relocated); ConstantTime, Background and the wait room's leg; a reclaim
+by a concurrent caller.
+
+**Worded again after the reading** (no rerun; from the code and
+`lab/w4.sh`): the Count note first said that tK, the last tick of its unit,
+left no later read in that unit where the log is read, and that every Count
+was a register's; the log is read at any later read whose window starts
+inside bucket 0, and the controls' slots hold hot pointers. The verdict
+first said W4d's tests have no reclaim inside a restore built with
+`tfdrip`. The rule's "in the default build" was wrong the same way: the
+tree's test has no build tag, and W4d's reading ran it with `tfdrip`.

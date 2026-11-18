@@ -19,10 +19,17 @@ const (
 // noStripe, as claimAt's stripe: the caller holds no claim stripe.
 const noStripe = 1 << claimStripeBits
 
+// missPlaced, as miss's Count: look again, but the history went in (or
+// waits) with this touch's event pushed into its drip log, so the look must
+// not push it again (W4e). -1: look again, nothing was placed.
+const missPlaced = -2
+
 // miss installs h, absent from the table, with this touch counted: a fresh
-// register, or its evicted history from the stash. Count < 0 means it lost a
-// race for a slot and the caller should look again. The caller holds h's
-// claim stripe, so no other first touch of h runs meanwhile.
+// register, or its evicted history from the stash. Count < 0 means the
+// caller should look again: -1 if it lost a race for a slot (the recalled
+// words went back as they were), missPlaced if the history was placed but
+// its hot entry was reclaimed since hotGone. The caller holds h's claim
+// stripe, so no other first touch of h runs meanwhile.
 func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint64, src int, pushed bool) Result {
 	var r Result
 	// Taken out of the wait room (srcRoom): its move ends once it is placed.
@@ -95,8 +102,10 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 	if hotRestore && !f.hotAdd(w1, f.stashID(h, fp, tg), now, nil) {
 		// The entry was reclaimed since hotGone: look again. The key's slot
 		// (or wait) now points to another key's entry; the next look finds
-		// that and counts this touch afresh (bump's reset, or hotGone).
-		return Result{Count: -1}
+		// that and counts this touch afresh (bump's reset, or hotGone). The
+		// history went in with this touch's push (low): before, the look
+		// pushed it again, and the log held the event twice (lab/sw W9).
+		return Result{Count: missPlaced}
 	}
 	if src == srcStash && r.Restored {
 		f.restored.Add(1)

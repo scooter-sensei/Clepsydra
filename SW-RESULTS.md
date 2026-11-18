@@ -1710,3 +1710,64 @@ inside bucket 0, and the controls' slots hold hot pointers. The verdict
 first said W4d's tests have no reclaim inside a restore built with
 `tfdrip`. The rule's "in the default build" was wrong the same way: the
 tree's test has no build tag, and W4d's reading ran it with `tfdrip`.
+
+## W4e: the hot restore's push, mended
+
+**Written after W9's reading**, which found the double push, and after its
+note's hand trace of a later read (Count 2 against 1), which was not read.
+
+**The mend** (library, both builds). `miss`'s return after a hot restore
+whose entry was reclaimed since `hotGone` (`cuckoo.go`; the history placed,
+or waiting, with this touch's push) is `missPlaced` (-2) in place of -1, and
+`touch` then looks again with `pushed` set (both call sites, `touch.go`): the
+look skips the push into a history at or after the touch's tick, as W4d's
+rule does after the table's push. The lost race (`ci == -1`: the recalled
+words put back as they were, no push placed) still returns -1 and leaves
+`pushed` as it was; setting it there would skip a push at `now <= last` into
+a history that does not hold it, the tick test's blind side (W8's
+`"noHandoffCheck"`). Where the history waits (wait room, stash) rather than
+going in, the look's `hotGone` finds the entry gone and starts the key
+afresh, which does not read `pushed`. In the default build `pushed` moves
+nothing (a touch at or behind the last touch leaves word0 as it is there).
+
+**The test** (`go/drip_hot_test.go`, `tfdrip`, plain mode,
+`TestDripHotRestorePushOnce`): W9's four legs as assertions. In the reclaim
+legs, the reclaim happens inside K's claim and K's touch looks again
+through `bump`'s hot add on K's slot; then K's log holds one push, its slot
+a register, its last touch tK, and K reads Count 1, the truth, at 250 ms,
+1 s and 10 s, 100 ms after its touch. The controls restore K with its entry
+and one push. The mend and the test were compiled in both builds and not
+run; `lab/w4e.sh`'s new steps (clauses 1 and 2) were tried on a scratch
+clone with the tree's own `TestHotEntryReclaimedDuringRestore` in the
+test's place (exit 2 on a tree not committed); its other steps are
+`lab/w4.sh`'s and `lab/w4d.sh`'s as read. Outputs in `lab/w4e/`.
+
+**Rule (before the reading).** W4e holds if:
+
+1. sight: the test, copied onto W4e's parent (W4d's library, b7a33a7's),
+   fails, both reclaim legs' logs holding two pushes, and their Count 100 ms
+   after the touch reading 2 at 250 ms and 1 s (the hand trace's
+   prediction); the controls pass. If both reclaim legs read Count 1 there,
+   the Count check cannot see the defect, and clause 2's Count half is not
+   judged;
+2. the mend: on W4e's tree the test passes;
+3. the default build is unchanged: `tfbench -exact` and the answer digest
+   equal `verify/expected/`'s;
+4. with `tfdrip`, `tfbench -exact` equals W4d's reading's
+   (`lab/w4d/exact-drip.txt`) byte for byte: single-threaded runs never take
+   the path;
+5. no regression with `tfdrip`, W4d's clause 5 as read: `TestDripPushOnce`
+   0 keys in 5,000 rounds and in 500 under `-race`;
+   `TestBackgroundConcurrentCounts` 0 of 200 runs and 0 of 20 under `-race`;
+   the suites in four modes fail only what W4d's failed (TestConformance,
+   TestUnitOfMatchesDivision, TestCountsLastTouchWhole; TestMerge on its
+   1 s bar alone), with `TestDripHotRestorePushOnce` passing plain and with
+   `TF_NOCAS2` (skipped under `TF_CT` and `TF_BG`); `TestSlotUnitRaces`,
+   the soak and the concurrent fuzzer under `-race` pass.
+
+If clause 1 fails (the test passes on W4d's library), the test is blind,
+and W4e says nothing of the mend. If clause 2 fails, the mend is wrong. If
+clause 3 or 4 fails, the mend moved answers off the path; diagnosed before
+anything else. Not covered, as in W9: a restore whose claim evicts;
+ConstantTime, Background and the wait room's leg; a reclaim by a concurrent
+caller.

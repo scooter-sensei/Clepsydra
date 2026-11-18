@@ -228,7 +228,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 	}
 	fp, tg := fingerprint(h), tag(h)
 	var held *paddedMutex // ConstantTime: h's stripe, while held
-	pushed := false       // this touch's event is in its slot's drip log (W4c)
+	pushed := false       // this touch's event is in its slot's drip log (W4c; or in the history miss placed: W4e)
 	for first := true; ; first = false {
 		if held != nil { // released between attempts: a claim that fails on another stripe's TryLock must not hold its own while it retries
 			held.Unlock()
@@ -244,6 +244,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 			if i < 0 {
 				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src, pushed)
 				if r.Count < 0 {
+					pushed = pushed || r.Count == missPlaced // the history went in with this touch's push (W4e)
 					continue
 				}
 				held.Unlock()
@@ -286,6 +287,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src, pushed)
 				mu.Unlock()
 				if r.Count < 0 {
+					pushed = pushed || r.Count == missPlaced // the history went in with this touch's push (W4e)
 					continue
 				}
 				if f.sketchLive(now) {

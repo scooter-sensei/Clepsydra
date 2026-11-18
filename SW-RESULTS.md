@@ -1581,3 +1581,82 @@ item: the model has no livelock with two touchers and eviction under which
 LogComplete and Conserved would go unread. The rest of that list stands,
 the half of W4d's rule that pushes again and the hot restore's double push
 among it.
+
+## Phase 9: the hot restore's push, probed (W9)
+
+**Written after W8's and W8b's readings**, from the code reading W8's
+revision recorded ("Found by reading W4d's code during the audit, not a
+reading"); no run has taken the path. `miss` places a recalled history with
+this touch's push in it (`cuckoo.go:59`) and only then counts a hot history
+by `hotAdd` (`:95`). If the entry was reclaimed after `hotGone` passed
+(`:33`), `miss` returns Count -1 with the history in place, and `touch`
+retries with `pushed` false (`touch.go:288-290`): the retry pushes the event
+again (`touch.go:333`), and `bump`, finding the pointer no longer the key's,
+starts a fresh register (`register.go:263`). The tree's own test of the
+corner, `TestHotEntryReclaimedDuringRestore` (`hot_test.go:273`), reclaims
+the entry from a hook inside the restore's claim and checks only that Upper
+counts the touch, in the default build. W8's model has no hot entries.
+
+**The probe** (`lab/w9_test.go`, run by `lab/w9.sh` in a detached worktree of
+the lab's head, whose library is b7a33a7's, W4d's; never in the tree;
+outputs in `lab/w9/`). As that test: a filter of one hot entry, Horizon 1
+minute at 1 ms; K promoted by 32 touches at t0 = 60,000, its words moved to
+the stash and its slot freed, as `claimAt`'s eviction does; a key L whose
+lines are not K's, promoted by 32 touches at tL = t0 + horizon + 3 units,
+which reclaims K's entry; K's restoring touch at tK = t0 + horizon - 1,
+behind L's clock and within a horizon of K's last touch. Four legs, plain
+mode:
+
+1. control, free slot: no reclaim; K's restore takes its freed slot;
+2. reclaim at install, free slot: L's touches run from `testHookInstalling`,
+   inside K's install, after `hotGone` and before `hotAdd`;
+3. control, full lines: K's two lines first filled with keys live until t0 +
+   horizon, so the restore relocates or evicts; no reclaim;
+4. reclaim in the search, full lines: L's touches run from `testHookCopied`
+   or `testHookVictim`, whichever K's claim reaches first (the tree's test).
+
+During K's touch the probe records `testHookHotAdding`, which runs only in
+`bump`'s add to a hot entry: on K's slot it shows the retry's look after
+`miss` returned (`miss` adds to the entry itself). After the touch it reads
+K's slot: the drip log against word0's after one push (`next0` of K's
+stashed word0 at tK) and after two; word1 (a hot pointer and whose entry, or
+a register and its events); and Count at 250 ms, 1 s, 10 s and 30 s, where
+the truth is 1 (K's other events are 59.999 s earlier). In both builds:
+`tfdrip` (the log) and the default build (Count's reference; no log). Only
+hooks the tree has are used; the library is unchanged. The probe was
+compiled in both builds and not run; `lab/w9.sh` was tried on a scratch
+clone with the tree's own test in the probe's place (both builds; exit 2
+on a probe not committed, 1 when no test runs). A first try ran it on the
+lab itself before the probe was there: it copied nothing, ran no test ("no
+tests to run" in both builds) and left `lab/w9/`, since removed; the script
+then refused nothing, and now refuses a probe that is not committed.
+
+**Rule (before the reading).**
+
+1. The probe's checks: in legs 2 and 4 the hook fires and L is promoted on
+   K's entry (Promoted 2); in legs 1 and 3, K is restored with its entry
+   (word1 a hot pointer to K's entry, Restored up by 1, no `bump` add on
+   K's slot) and its log holds one push; in every leg one push and two
+   leave different logs. If a check fails, the probe is at fault, and W9
+   says nothing of the hot restore until the probe is mended (a mend after
+   a peek, said so).
+2. The reading, `tfdrip`, legs 2 and 4, each judged only if its touch
+   retried through `bump`'s add on K's slot (else: path not taken,
+   reported): K's log holds the touch's event once, twice, or neither. The
+   audit's reading predicts twice, beside a fresh register of 1 event.
+
+If either reclaim leg reads twice, W4d's push-once fails on the hot restore,
+as the audit read it; W4d's readings and W8's stand as read (neither reached
+the path), and a mend (W4e) is written with its own rule before its reading,
+not here. If both take the path and read once, the audit's reading was
+wrong, and why is diagnosed (not a reading). "Neither", or a path not
+taken in both, settles nothing and is diagnosed. Reported, not judged:
+Count at the four windows in both builds against the truth; the paths taken
+(relocations, evictions, restores).
+
+Not probed: ConstantTime and Background (their claims also install on the
+call path when a slot is free, but run on paths this probe does not set up);
+the wait room's leg, where the history waits with its push and the retry
+pushes in `miss` (`cuckoo.go:74`, `:59`), with no hook between `hotGone`
+and `hotAdd`; a reclaim by a concurrent caller (the hooks run L's touches in
+K's goroutine, between two of K's steps).

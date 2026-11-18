@@ -93,6 +93,7 @@ type fuzzResult struct {
 	ops, checks, sat, floored, lostLow, shared                  uint64
 	ct, bg, noStash, noOverflow, smallOverflow, noHot, smallHot uint64 // cases by configuration
 	evictions, folded, promoted, waited                         uint64
+	high, highGhost, highShared, logs, logVacuous               uint64 // the concurrent fuzzer's W10 checks (countcheck_test.go)
 	fail                                                        string
 }
 
@@ -114,6 +115,17 @@ func (r *fuzzResult) add(o fuzzResult) {
 	r.folded += o.folded
 	r.promoted += o.promoted
 	r.waited += o.waited
+	r.high += o.high
+	r.highGhost += o.highGhost
+	r.highShared += o.highShared
+	r.logs += o.logs
+	r.logVacuous += o.logVacuous
+}
+
+// w10 summarizes the concurrent fuzzer's W10 checks.
+func (r *fuzzResult) w10() string {
+	return fmt.Sprintf("W10: %d answers' Upper checked against the events in their reach (%d with the overflow table's part taken out; %d over for a key whose identity another shares); at rest, %d keys' drip logs checked (%d saying nothing or absent)",
+		r.high, r.highGhost, r.highShared, r.logs, r.logVacuous)
 }
 
 func (r *fuzzResult) summary() string {

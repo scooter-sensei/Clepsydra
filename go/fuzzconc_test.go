@@ -32,6 +32,15 @@ import (
 // streams come from its seed (TF_CFUZZ_SEED, default 1, for the first), but
 // its run depends on its races: TF_CFUZZ_CASE=<seed> runs one case
 // TF_CFUZZ_RUNS times (default 20).
+//
+// On each goroutine's own keys (not the shared keys, nor a straggler's) it
+// also checks the other direction, as TestFuzzUpper's high does (lab/sw
+// W10; countcheck_test.go): an answer's Upper, the overflow table's part
+// aside, counts no event from further back than the window reaches by
+// reach; and when a case's goroutines are done, at rest, every live key's
+// drip log (with tfdrip) holds no more events from any quantum on than the
+// key had. Both are off with TF_CFUZZ_TAGS, where a same-tag hand-over is
+// made common, which reads one high (claims A29).
 func TestFuzzConcurrent(t *testing.T) {
 	if s := os.Getenv("TF_CFUZZ_CASE"); s != "" {
 		seed, err := strconv.ParseUint(s, 10, 64)
@@ -50,7 +59,7 @@ func TestFuzzConcurrent(t *testing.T) {
 				t.Fatalf("case %d: %s", seed, r.fail)
 			}
 		}
-		t.Logf("case %d: %s", seed, sum.summary())
+		t.Logf("case %d: %s; %s", seed, sum.summary(), sum.w10())
 		return
 	}
 	d, err := time.ParseDuration(os.Getenv("TF_CFUZZ"))
@@ -74,8 +83,8 @@ func TestFuzzConcurrent(t *testing.T) {
 		}
 	}
 	el := time.Since(t0)
-	t.Logf("%d cases from seed %d in %v (%.1f M ops/s): %s", seed-first, first, el.Round(time.Second),
-		float64(sum.ops)/el.Seconds()/1e6, sum.summary())
+	t.Logf("%d cases from seed %d in %v (%.1f M ops/s): %s; %s", seed-first, first, el.Round(time.Second),
+		float64(sum.ops)/el.Seconds()/1e6, sum.summary(), sum.w10())
 }
 
 // cfuzzCase runs one concurrent case.
@@ -122,12 +131,14 @@ func cfuzzCase(seed uint64) (res fuzzResult) {
 	}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
+	trs := make([]*fuzzTruth, workers) // each goroutine's events, for the logs' check at rest
 	for g := range workers {
 		wseed := rng.Uint64()
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			r := cfuzzWorker(f, uint64(g), wseed, ops, capacity/workers+1, H, maxLag, perH, straggle && g == 0, &clock, &newest, sh, amp)
+			r, tr := cfuzzWorker(f, uint64(g), wseed, ops, capacity/workers+1, H, maxLag, perH, straggle && g == 0, &clock, &newest, sh, amp)
+			trs[g] = tr
 			mu.Lock()
 			defer mu.Unlock()
 			res.add(r)
@@ -137,6 +148,28 @@ func cfuzzCase(seed uint64) (res fuzzResult) {
 		}()
 	}
 	wg.Wait()
+	if amp == nil { // W10: every live key's drip log, at rest
+		now := newest.Load()
+		for g, tr := range trs {
+			if straggle && g == 0 {
+				continue
+			}
+			for h, l := range tr.ev {
+				if len(l) == 0 || now-l[len(l)-1] > H {
+					continue
+				}
+				m, ok := f.logHigh(h, now, maxLag, l)
+				if !ok {
+					res.logVacuous++
+					continue
+				}
+				res.logs++
+				if m != "" && res.fail == "" && !f.sharesIdentity(h, tr.ev) {
+					res.fail = fmt.Sprintf("at rest, goroutine %d's key %x: %s; events %v; %s; %s", g, h, m, tail(l, 12), f.whereIs(h, now), desc)
+				}
+			}
+		}
+	}
 	res.evictions, res.folded, res.promoted, res.waited = f.Evictions(), f.Folded(), f.Promoted(), f.Waited()
 	if occ := f.Occupancy(newest.Load()); occ > f.Slots() && res.fail == "" {
 		res.fail = fmt.Sprintf("occupancy %d > %d slots; %s", occ, f.Slots(), desc)
@@ -171,7 +204,7 @@ func (s *cfuzzShared) snapshot(h uint64) *fuzzTruth {
 // clock: a caller descheduled that long, or one passing its own timestamps.
 // Its events stay in the truth while a horizon of the newest clock holds
 // them; its touches then race inserts and sweeps that see its keys expired.
-func cfuzzWorker(f *Filter, g, seed uint64, ops, share int, H, maxLag uint64, perH float64, straggler bool, clock, newest *atomic.Uint64, sh *cfuzzShared, amp *tagAmp) (res fuzzResult) {
+func cfuzzWorker(f *Filter, g, seed uint64, ops, share int, H, maxLag uint64, perH float64, straggler bool, clock, newest *atomic.Uint64, sh *cfuzzShared, amp *tagAmp) (res fuzzResult, tr *fuzzTruth) {
 	rng := rand.New(rand.NewPCG(seed, g))
 	cache := map[uint64]uint64{}
 	key := func(k uint64) uint64 { return amp.h(mix64(g<<48^k), cache) }
@@ -179,7 +212,9 @@ func cfuzzWorker(f *Filter, g, seed uint64, ops, share int, H, maxLag uint64, pe
 	for i := range heavy {
 		heavy[i] = key(1<<40 | uint64(i))
 	}
-	tr := &fuzzTruth{ev: map[uint64][]uint64{}, horizon: H, newest: newest.Load()}
+	// W10's checks: on this goroutine's own keys, unless it straggles or tags are amplified
+	cc, reach := amp == nil && !straggler, f.countReach(maxLag)
+	tr = &fuzzTruth{ev: map[uint64][]uint64{}, horizon: H, newest: newest.Load(), keep: reach + maxLag}
 	pools := []float64{0.25, 0.5, 1, 2, 4, 8}
 	pool, phaseLeft := uint64(share), 0
 	tick, acc := float64(H)/perH, 0.0
@@ -187,8 +222,30 @@ func cfuzzWorker(f *Filter, g, seed uint64, ops, share int, H, maxLag uint64, pe
 	hs := make([]uint64, 16)
 	out := make([]bool, 16)
 	cnt := make([]int, 16)
-	check := func(op string, h, window, now uint64, r Result) bool {
+	// ghost is the overflow table's part of an answer for h before the call
+	ghost := func(h, window, now uint64) int {
+		if !cc {
+			return 0
+		}
+		return f.ghostUpper(h, window, now)
+	}
+	check := func(op string, h, window, now uint64, r Result, gb int) bool {
 		res.checks++
+		if cc { // W10: Upper, the overflow table's part (before or after the call) aside, within the events of the window's reach
+			gh := max(gb, f.ghostUpper(h, window, now))
+			res.high++
+			if gh > 0 {
+				res.highGhost++
+			}
+			if m := f.countHigh(r, gh, tr.ev[h], window, now, maxLag); m != "" {
+				if !f.sharesIdentity(h, tr.ev) {
+					res.fail = fmt.Sprintf("goroutine %d op %d %s: %s (result %+v); key %x window %d now %d newest %d; events %v; %s",
+						g, res.ops, op, m, r, h, window, now, tr.newest, tail(tr.ev[h], 12), f.whereIs(h, now))
+					return false
+				}
+				res.highShared++
+			}
+		}
 		if r.Saturated {
 			res.sat++
 			return true
@@ -258,7 +315,7 @@ func cfuzzWorker(f *Filter, g, seed uint64, ops, share int, H, maxLag uint64, pe
 					res.checks++
 					res.fail = fmt.Sprintf("goroutine %d op %d shared Count: Upper %d < true %d (result %+v); key %x window %d now %d newest %d; events %v; %s",
 						g, res.ops, r.Upper, exact, r, h, window, now, before.newest, tail(before.ev[h], 12), f.whereIs(h, now))
-					return res
+					return res, tr
 				}
 				res.checks++
 			}
@@ -282,8 +339,9 @@ func cfuzzWorker(f *Filter, g, seed uint64, ops, share int, H, maxLag uint64, pe
 		switch op := rng.IntN(100); {
 		case op < 40:
 			tr.add(h, now)
-			if !check("Touch", h, window, now, f.TouchAt(h, window, now)) {
-				return res
+			gb := ghost(h, window, now)
+			if !check("Touch", h, window, now, f.TouchAt(h, window, now), gb) {
+				return res, tr
 			}
 		case op < 45:
 			n := 1 + rng.IntN(64)
@@ -299,8 +357,9 @@ func cfuzzWorker(f *Filter, g, seed uint64, ops, share int, H, maxLag uint64, pe
 			f.TouchAndCountAt(h, window, now)
 			tr.add(h, now)
 		case op < 85:
-			if !check("Count", h, window, now, f.CountAt(h, window, now)) {
-				return res
+			gb := ghost(h, window, now)
+			if !check("Count", h, window, now, f.CountAt(h, window, now), gb) {
+				return res, tr
 			}
 		case op < 90:
 			f.ContainsAt(h, window, now)
@@ -336,5 +395,5 @@ func cfuzzWorker(f *Filter, g, seed uint64, ops, share int, H, maxLag uint64, pe
 			trimAt = tr.newest + H
 		}
 	}
-	return res
+	return res, tr
 }

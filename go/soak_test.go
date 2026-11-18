@@ -23,6 +23,13 @@ import (
 // moved by its own goroutine. Run it under -race too (go/test.sh stress).
 // TF_STRESS_TAGS=n amplifies tag coincidences as the concurrent fuzzer's
 // TF_CFUZZ_TAGS does (tagAmp; the soak uses fewer than 20,000 keys).
+//
+// It also checks the other direction (lab/sw W10; countcheck_test.go): a
+// Count's Upper, the overflow table's part aside, counts no event of the
+// key from further back than the window reaches; and at the end, at rest,
+// every live key's drip log (with tfdrip) holds no more events from any
+// quantum on than the key had. Both are off with TF_STRESS_TAGS, where a
+// same-tag hand-over is made common, which reads one high (claims A29).
 func TestStressSoak(t *testing.T) {
 	d, err := time.ParseDuration(os.Getenv("TF_STRESS"))
 	if err != nil || d <= 0 {
@@ -65,6 +72,10 @@ func TestStressSoak(t *testing.T) {
 	var ops, queries, sat, low, floored atomic.Int64
 	amp := newTagAmp("TF_STRESS_TAGS")
 	var firstLow atomic.Value
+	reach := f.countReach(0) // one writer per key, its clock never behind its last touch
+	var highChecks, highGhost, highShared, highOver atomic.Int64
+	var firstHigh atomic.Value
+	keys := make([]map[uint64][]uint64, workers) // each worker's events, for the logs' check at rest
 	for g := range workers {
 		wg.Add(1)
 		go func() {
@@ -78,6 +89,7 @@ func TestStressSoak(t *testing.T) {
 				heavy[i] = amp.h(rng.Uint64(), cache)
 			}
 			logs := map[uint64][]uint64{}
+			defer func() { keys[g] = logs }()
 			hs := make([]uint64, 16)
 			res := make([]bool, 16)
 			cnt := make([]int, 16)
@@ -102,7 +114,25 @@ func TestStressSoak(t *testing.T) {
 					logs[h] = append(logs[h], now)
 				case op < 9:
 					w := 1 + rng.Uint64N(horizon)
+					gb := 0
+					if amp == nil {
+						gb = f.ghostUpper(h, w, now)
+					}
 					r := f.CountAt(h, w, now)
+					if amp == nil { // W10: the overflow table's part, read before and after the call
+						gh := max(gb, f.ghostUpper(h, w, now))
+						highChecks.Add(1)
+						if gh > 0 {
+							highGhost.Add(1)
+						}
+						if m := f.countHigh(r, gh, logs[h], w, now, 0); m != "" {
+							if f.sharesIdentity(h, logs) {
+								highShared.Add(1)
+							} else if highOver.Add(1) == 1 {
+								firstHigh.Store(fmt.Sprintf("%s (result %+v); window %d ms, now %d, events %v; %s", m, r, w, now, logs[h], f.whereIs(h, now)))
+							}
+						}
+					}
 					// Other goroutines may have run at a later clock and
 					// rightly expired events that are older than the horizon
 					// by then; the clock read after the call bounds theirs.
@@ -135,11 +165,11 @@ func TestStressSoak(t *testing.T) {
 					f.VelocityCountBatch(hs, horizon, now, cnt)
 				}
 				ops.Add(1)
-				if n%4096 == 0 { // forget events older than the horizon
+				if n%4096 == 0 { // forget events older than the horizon and the checks' reach
 					f.ContinuousDecay()
 					for k, l := range logs {
 						i := 0
-						for i < len(l) && now-l[i] > horizon {
+						for i < len(l) && now-l[i] > horizon+reach {
 							i++
 						}
 						if i == len(l) {
@@ -159,6 +189,40 @@ func TestStressSoak(t *testing.T) {
 		workers, d, ops.Load(), queries.Load(), sat.Load(), floored.Load(), f.Evictions(), f.Restored(), f.Lost(), f.Promoted(), f.HotRefused())
 	if n := low.Load(); n > 0 {
 		t.Errorf("%d unflagged answers with Upper below the true count; first: %v", n, firstLow.Load())
+	}
+	if amp != nil {
+		t.Logf("W10: checks off (TF_STRESS_TAGS)")
+	} else {
+		now := clock.Load()
+		var logChecks, logVacuous, logOver, expired int
+		var firstLog string
+		for _, logs := range keys {
+			for h, l := range logs {
+				if len(l) == 0 || now-l[len(l)-1] > horizon {
+					expired++
+					continue
+				}
+				m, ok := f.logHigh(h, now, 0, l)
+				if !ok {
+					logVacuous++
+					continue
+				}
+				logChecks++
+				if m != "" && !f.sharesIdentity(h, logs) {
+					if logOver++; logOver == 1 {
+						firstLog = fmt.Sprintf("key %x: %s; events %v; %s", h, m, tail(l, 12), f.whereIs(h, now))
+					}
+				}
+			}
+		}
+		t.Logf("W10: %d answers' Upper checked against the events in their reach (%d with the overflow table's part taken out; %d over for a key whose identity another of its worker's shares), %d over; at rest, %d live keys' drip logs checked (%d saying nothing or absent; %d keys past the horizon left out), %d over",
+			highChecks.Load(), highGhost.Load(), highShared.Load(), highOver.Load(), logChecks, logVacuous, expired, logOver)
+		if n := highOver.Load(); n > 0 {
+			t.Errorf("%d answers with Upper above the key's events in the window's reach; first: %v", n, firstHigh.Load())
+		}
+		if logOver > 0 {
+			t.Errorf("%d drip logs hold more events than their keys had; first: %s", logOver, firstLog)
+		}
 	}
 	if occ := f.Occupancy(clock.Load()); occ > f.Slots() {
 		t.Errorf("occupancy %d > %d slots", occ, f.Slots())

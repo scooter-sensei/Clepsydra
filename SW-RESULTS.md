@@ -1822,3 +1822,77 @@ whose word1 is the dead pointer, `hotGone` finds the entry gone
 mend paragraph says. That leg drops the waiting history rather than pushing
 twice (claims A25: the restoring touch "went nowhere"); neither the drop nor
 the absence of a second push is probed.
+
+## Phase 10: Count and the drip log checked under concurrency (W10)
+
+**Written after W4e's reading.** W4d's suite ran W9's path with `tfdrip` and
+passed: nothing it runs asserts the drip log, and nothing under concurrency
+asserts that an answer is not too high. The soak (`TestStressSoak`) and the
+concurrent fuzzer (`TestFuzzConcurrent`) check one direction, Upper never
+below a key's true count; the single-threaded fuzzer (`TestFuzzUpper`) also
+checks the other (its `high`: Upper, the overflow table's part aside, counts
+no event from further back than the window reaches by `reach`, 9 units and
+the lag).
+
+**The checks** (`go/countcheck_test.go`, and the soak's and the fuzzer's
+changes; both builds), on keys with one writer (a goroutine's own keys; not
+the fuzzer's shared keys, nor a straggler's), and off with tag amplification
+(`TF_STRESS_TAGS`, `TF_CFUZZ_TAGS`), where a same-tag hand-over is made
+common, which reads one high (claims A29):
+
+- **high**, on every Count the soak makes and every Touch and Count the
+  fuzzer checks: Upper, less the overflow table's part (the larger of two
+  reads, before and after the call, since other goroutines fold histories
+  meanwhile), is at most the key's events back to `now - min(window,
+  horizon) - reach`. Count is never above Upper, so this bounds Count too;
+  a Count one high shows only where Upper then reaches past those events, so
+  a bucket of spread events can hide it. An answer over for a key whose
+  identity another key of its goroutine shares is counted, not failed, as in
+  `TestFuzzUpper`.
+- **log**, at rest (the soak's end; the end of each fuzzer case), with
+  `tfdrip`, for every key whose last event is within a horizon: taking the
+  log's events newest first (the last touch, then one per code), the k
+  newest lie at some quantum q or later, and the key must have had at least
+  k events that could be logged there (`quantum(t + lag) >= q`: a touch
+  behind the last touch pushes at the last touch's quantum). The reference
+  is the key's own events, not its register: a register reset (`unpoint`)
+  keeps the log's older events while the register restarts at 1. A log that
+  says nothing, or a key with no history, is not checked, and how many is
+  reported.
+
+The workers keep their events past the checks' reach (the soak trimmed them
+at a horizon). Nothing new is drawn from the workers' random streams, so a
+seed runs the same case.
+
+**Sight.** `lab/w10_test.go` (copied into worktrees by `lab/w10.sh`, never in
+the tree): W9's restore with the reclaim at install, a control, and the
+control with the touch's event pushed a second time by hand; both checks
+100 ms after the touch, against K's events. The checks were compiled on the
+head, on W4d's tree (23f03b6) and on W4c's (0837f9f), in both builds, and not
+run; `lab/w10.sh` was tried on a scratch clone with stand-in tests (exit 2 on
+a tree not committed, 1 when a run prints no summary). Outputs in
+`lab/w10/`.
+
+**Rule (before the reading).** W10 holds if:
+
+1. sight: on 23f03b6 (W4d's library) both checks flag the reclaim leg, and on
+   the head neither does; on both, the control passes and the second push
+   made by hand is flagged by both (the probe's own assertions);
+2. on the head, the soak and the fuzzer, 5 minutes each, with `tfdrip` plain
+   and under `-race` and in the default build, and the fuzzer with a
+   straggler (`tfdrip`): no answer over and no log over; every existing
+   check passing as before; no data race; every run printing its summary;
+3. thinness: the answers `high` checks and the live keys' logs checked are
+   reported against those left out; if fewer than half the live keys' logs
+   are checked in a `tfdrip` run, the log check is thin there, and W10 says
+   so without failing on it.
+
+Reported, not judged: the head's soak and fuzzer files on W4c's tree
+(0837f9f), `tfdrip`, the fuzzer for 5 minutes: whether either check finds
+W4c's double push through `miss` under the fuzzer's concurrency (its rate
+there unknown).
+
+A failure is read against the code before anything else: a defect of the
+filter, or of the check, said as such. An answer over by one whose trace is
+claims A29's residual (a same-tag hand-over just after a count) is that
+documented case.

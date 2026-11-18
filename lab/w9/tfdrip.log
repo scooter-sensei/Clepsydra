@@ -1,0 +1,16 @@
+=== RUN   TestW9HotRestorePush
+=== RUN   TestW9HotRestorePush/control,_free_slot
+    w9_test.go:143: W9 control, free slot: hook "", promoted 1; retried through bump's hot add on K's slot: false; relocations 0, evictions 0, restored 1; last touch at tK true; log 0xfff (one push 0xfff, two 0xffe): pushed once; slot: hot pointer, the entry K's: true; Count at 250 ms, 1 s, 10 s, 30 s: [1 1 1 1] (truth 1)
+=== RUN   TestW9HotRestorePush/reclaim_at_install,_free_slot
+    w9_test.go:143: W9 reclaim at install, free slot: hook "installing", promoted 2; retried through bump's hot add on K's slot: true; relocations 0, evictions 0, restored 0; last touch at tK true; log 0xffe (one push 0xfff, two 0xffe): pushed twice; slot: register of 1 events; Count at 250 ms, 1 s, 10 s, 30 s: [1 1 1 1] (truth 1)
+=== RUN   TestW9HotRestorePush/control,_full_lines
+    w9_test.go:143: W9 control, full lines: hook "", promoted 1; retried through bump's hot add on K's slot: false; relocations 1, evictions 0, restored 1; last touch at tK true; log 0xfff (one push 0xfff, two 0xffe): pushed once; slot: hot pointer, the entry K's: true; Count at 250 ms, 1 s, 10 s, 30 s: [1 1 1 1] (truth 1)
+=== RUN   TestW9HotRestorePush/reclaim_in_the_search,_full_lines
+    w9_test.go:143: W9 reclaim in the search, full lines: hook "copied", promoted 2; retried through bump's hot add on K's slot: true; relocations 1, evictions 0, restored 0; last touch at tK true; log 0xffe (one push 0xfff, two 0xffe): pushed twice; slot: register of 1 events; Count at 250 ms, 1 s, 10 s, 30 s: [1 1 1 1] (truth 1)
+--- PASS: TestW9HotRestorePush (0.00s)
+    --- PASS: TestW9HotRestorePush/control,_free_slot (0.00s)
+    --- PASS: TestW9HotRestorePush/reclaim_at_install,_free_slot (0.00s)
+    --- PASS: TestW9HotRestorePush/control,_full_lines (0.00s)
+    --- PASS: TestW9HotRestorePush/reclaim_in_the_search,_full_lines (0.00s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	0.005s

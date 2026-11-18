@@ -1660,3 +1660,39 @@ the wait room's leg, where the history waits with its push and the retry
 pushes in `miss` (`cuckoo.go:74`, `:59`), with no hook between `hotGone`
 and `hotAdd`; a reclaim by a concurrent caller (the hooks run L's touches in
 K's goroutine, between two of K's steps).
+
+### W9's reading (fb7eeb3's tree; `lab/w9.sh`, outputs in `lab/w9/`)
+
+1. **Holds.** The probe's checks, in both builds: the controls restored K
+   with its entry (word1 a hot pointer to K's entry, Restored 1, no `bump`
+   add on K's slot; the free slot by its install, the full lines by one
+   relocation) and, with `tfdrip`, K's log holds one push (0xfff); in the
+   reclaim legs the hook fired (`testHookInstalling`; in the full lines
+   `testHookCopied`, K's claim relocating once) and L was promoted on K's
+   entry (Promoted 2); one push and two leave different logs (0xfff and
+   0xffe).
+2. **Twice, in both reclaim legs.** Each took the path: K's touch retried
+   through `bump`'s add on K's slot (Restored 0: `miss` returned before
+   counting the restore), and K's log reads 0xffe, the log after two pushes
+   of the touch's event at tK, beside a register of 1 event (the retry's
+   fresh register) and a last touch at tK. The default build takes the same
+   path: the same hooks, Promoted 2, the retry, a register of 1 event.
+
+Reported: Count is 1 at 250 ms, 1 s, 10 s and 30 s in every leg in both
+builds, the truth. From the code, not a reading: every Count here was read
+at tK, the last touch, of a register whose one event is in bucket 0, which
+`estimate` answers from the register alone (`register.go:441`) without the
+log; and tK is the last tick of its unit, so the probe has no later read in
+that unit, where a window that cuts bucket 0 would read the log (`:509`).
+The probe neither shows nor rules out a Count high: what the extra event
+does to K's later answers is not read.
+
+**Verdict: W9 confirms the audit's finding.** On W4d's library, a touch
+whose hot restore loses its entry after `hotGone` pushes its event into K's
+drip log twice, at the install into a free slot and in a claim that
+relocates: W4d's push-once fails on the hot restore. W4d's readings and W8's
+stand as read; neither reached the path (W4d's tests have no reclaim inside
+a restore built with `tfdrip`; W8's model has no hot entries). By W9's rule a
+mend (W4e) is written with its own rule before its reading; none is made
+here. What W9 leaves: whether the extra event moves Count; ConstantTime,
+Background and the wait room's leg; a reclaim by a concurrent caller.

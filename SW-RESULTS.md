@@ -1804,7 +1804,21 @@ caller.
 
 **Verdict: W4e passes its rule.** A hot restore whose entry is reclaimed
 after `hotGone` pushes its touch's event once, and K's Count read after it
-is the truth where W4d's read one high; nothing else W4d's reading measured
-moved, single-threaded answers in both builds included. What W4e leaves, as
-W9 does: a restore whose claim evicts; ConstantTime, Background and the wait
-room's leg; a reclaim by a concurrent caller.
+is the truth where W4d's read one high. Of what W4d's reading measured, W4e
+re-read clause 1 (the default build), the `tfbench -exact` part of clause
+2 and clause 5, and none moved. W4d's clauses 3, 4 and 6 to 9 (the digest
+without Count, Upper, speed, the periodic and sustained workloads, batched
+throughput) were not re-read as clauses; that single-threaded runs never
+take the path is an argument, not a reading. What W4e leaves, as W9 does: a
+restore whose claim evicts; ConstantTime and Background; the wait room's
+leg (below); a reclaim by a concurrent caller.
+
+**The wait room's leg, worded again** (from the code, not a reading). W8's
+audit note and W9's "Not probed" said that when the restored history waits
+for a slot rather than going in, the retry pushes the event again in
+`miss` (`cuckoo.go:59`). It does not: the retry recalls the waiting entry,
+whose word1 is the dead pointer, `hotGone` finds the entry gone
+(`cuckoo.go:33`), and `miss` starts the key afresh (`dripFresh`), as W4e's
+mend paragraph says. That leg drops the waiting history rather than pushing
+twice (claims A25: the restoring touch "went nowhere"); neither the drop nor
+the absence of a second push is probed.

@@ -1,0 +1,22 @@
+=== RUN   TestSlotUnitRaces
+=== RUN   TestSlotUnitRaces/demote
+=== RUN   TestSlotUnitRaces/demote/cas2
+=== RUN   TestSlotUnitRaces/demote/hold
+=== RUN   TestSlotUnitRaces/stamp
+=== RUN   TestSlotUnitRaces/stamp/cas2
+=== RUN   TestSlotUnitRaces/stamp/hold
+=== RUN   TestSlotUnitRaces/unpoint
+=== RUN   TestSlotUnitRaces/unpoint/cas2
+=== RUN   TestSlotUnitRaces/unpoint/hold
+--- PASS: TestSlotUnitRaces (0.00s)
+    --- PASS: TestSlotUnitRaces/demote (0.00s)
+        --- PASS: TestSlotUnitRaces/demote/cas2 (0.00s)
+        --- PASS: TestSlotUnitRaces/demote/hold (0.00s)
+    --- PASS: TestSlotUnitRaces/stamp (0.00s)
+        --- PASS: TestSlotUnitRaces/stamp/cas2 (0.00s)
+        --- PASS: TestSlotUnitRaces/stamp/hold (0.00s)
+    --- PASS: TestSlotUnitRaces/unpoint (0.00s)
+        --- PASS: TestSlotUnitRaces/unpoint/cas2 (0.00s)
+        --- PASS: TestSlotUnitRaces/unpoint/hold (0.00s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	0.005s

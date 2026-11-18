@@ -1,0 +1,5 @@
+=== RUN   TestStressSoak
+    soak_test.go:158: 24 workers, 5m0s: 52322116 ops, 15699186 counts checked (0 Saturated, 0 low behind a live bucket floor); evictions 1533348, restored 119604, lost 0, promoted 106583, hot refused 0
+--- PASS: TestStressSoak (300.02s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	301.048s

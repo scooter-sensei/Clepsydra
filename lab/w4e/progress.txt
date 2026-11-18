@@ -1,0 +1,62 @@
+[07:03:40] W4e: head ae28817, parent 23f03b6 with library b7a33a7's (W4d); go1.24.7
+[07:03:40] 1: sight, the head's TestDripHotRestorePushOnce on the parent (W4d's library)
+[07:03:43] 1: go test exit 1 (want 1, the test failing on W4d's library); 3 FAIL lines
+drip_hot_test.go:119: hook "", promoted 1, retried false, restored 1; log 0xfff (one push 0xfff); word1 hot true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+drip_hot_test.go:119: hook "installing", promoted 2, retried true, restored 0; log 0xffe (one push 0xfff); word1 hot false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [2 2 1] (truth 1)
+drip_hot_test.go:131: K reads Count 2 at window 1 of 3 100 ms after its touch, want 1
+drip_hot_test.go:131: K reads Count 2 at window 2 of 3 100 ms after its touch, want 1
+drip_hot_test.go:141: K's log 0xffe, want one push of the touch's event (0xfff)
+drip_hot_test.go:119: hook "", promoted 1, retried false, restored 1; log 0xfff (one push 0xfff); word1 hot true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+drip_hot_test.go:119: hook "copied", promoted 2, retried true, restored 0; log 0xffe (one push 0xfff); word1 hot false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [2 2 1] (truth 1)
+drip_hot_test.go:131: K reads Count 2 at window 1 of 3 100 ms after its touch, want 1
+drip_hot_test.go:131: K reads Count 2 at window 2 of 3 100 ms after its touch, want 1
+drip_hot_test.go:141: K's log 0xffe, want one push of the touch's event (0xfff)
+--- FAIL: TestDripHotRestorePushOnce (0.00s)
+--- PASS: TestDripHotRestorePushOnce/control,_free_slot (0.00s)
+--- FAIL: TestDripHotRestorePushOnce/reclaim_at_install,_free_slot (0.00s)
+--- PASS: TestDripHotRestorePushOnce/control,_full_lines (0.00s)
+--- FAIL: TestDripHotRestorePushOnce/reclaim_in_the_search,_full_lines (0.00s)
+[07:03:43] 2: the mend, TestDripHotRestorePushOnce on the head
+[07:03:45] 2: exit 0 (want 0)
+drip_hot_test.go:119: hook "", promoted 1, retried false, restored 1; log 0xfff (one push 0xfff); word1 hot true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+drip_hot_test.go:119: hook "installing", promoted 2, retried true, restored 0; log 0xfff (one push 0xfff); word1 hot false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+drip_hot_test.go:119: hook "", promoted 1, retried false, restored 1; log 0xfff (one push 0xfff); word1 hot true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+drip_hot_test.go:119: hook "copied", promoted 2, retried true, restored 0; log 0xfff (one push 0xfff); word1 hot false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+--- PASS: TestDripHotRestorePushOnce (0.00s)
+--- PASS: TestDripHotRestorePushOnce/control,_free_slot (0.00s)
+--- PASS: TestDripHotRestorePushOnce/reclaim_at_install,_free_slot (0.00s)
+--- PASS: TestDripHotRestorePushOnce/control,_full_lines (0.00s)
+--- PASS: TestDripHotRestorePushOnce/reclaim_in_the_search,_full_lines (0.00s)
+[07:03:45] 1: default build unchanged
+[07:04:05] 1a exact: IDENTICAL
+[07:05:14] 1b digest: IDENTICAL
+[07:05:14] W4 readings finished (1)
+[07:05:14] 4: tfdrip tfbench -exact against W4d's reading's
+[07:05:31] 4: IDENTICAL
+[07:05:31] 5b: TestBackgroundConcurrentCounts, 200 runs with tfdrip, 20 under -race
+[07:18:50] 5b: 0 of 200 fail
+[07:22:31] 5b race: 0 of 20 fail
+[07:22:31] 5c: TestDripPushOnce, 5000 rounds, and 500 under -race
+[07:22:39] 5c:     drip_probe_test.go:132: 0 of 160000 keys' logs hold more events than their registers (rounds 5000)
+[07:22:56] 5c race:     drip_probe_test.go:132: 0 of 16000 keys' logs hold more events than their registers (rounds 500) ok  	github.com/scooter-sensei/clepsydra/go	16.300s
+[07:22:56] 5: suites with tfdrip
+[07:23:44] 5 unit plain: 4 failing: TestConformance TestMerge TestUnitOfMatchesDivision TestCountsLastTouchWhole 
+[07:24:13] 5 unit TF_CT=1: 3 failing: TestConformance TestUnitOfMatchesDivision TestCountsLastTouchWhole 
+[07:24:37] 5 unit TF_BG=1: 3 failing: TestConformance TestUnitOfMatchesDivision TestCountsLastTouchWhole 
+[07:25:24] 5 unit TF_NOCAS2=1: 4 failing: TestConformance TestMerge TestUnitOfMatchesDivision TestCountsLastTouchWhole 
+[07:25:24] 5 slotunit: ok  	github.com/scooter-sensei/clepsydra/go	0.005s
+[07:25:26] 5 slotunit race: ok  	github.com/scooter-sensei/clepsydra/go	1.030s
+[07:30:27] 5 soak race: ok  	github.com/scooter-sensei/clepsydra/go	301.048s
+[07:35:32] 5 cfuzz race: ok  	github.com/scooter-sensei/clepsydra/go	303.688s
+[07:35:32] W4 readings finished (5)
+  unit-plain: --- FAIL: TestMerge (1.05s)
+  unit-plain:     merge_test.go:83: checkpoints 47, comparisons 470000; Upper < exact flagged Saturated 12
+  unit-plain:     merge_test.go:94: window  1s  MAE merged 0.2245  single 0.0740
+  unit-plain:     merge_test.go:96: window 1s: merged count error 50202 over 1.5x the single filter's 16537
+  unit-plain:     merge_test.go:94: window  5s  MAE merged 0.0014  single 0.0014
+  unit-TF_NOCAS2=1: --- FAIL: TestMerge (1.03s)
+  unit-TF_NOCAS2=1:     merge_test.go:83: checkpoints 47, comparisons 470000; Upper < exact flagged Saturated 12
+  unit-TF_NOCAS2=1:     merge_test.go:94: window  1s  MAE merged 0.2245  single 0.0740
+  unit-TF_NOCAS2=1:     merge_test.go:96: window 1s: merged count error 50202 over 1.5x the single filter's 16537
+  unit-TF_NOCAS2=1:     merge_test.go:94: window  5s  MAE merged 0.0014  single 0.0014
+[07:35:32] W4e readings finished

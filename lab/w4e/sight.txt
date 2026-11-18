@@ -1,0 +1,23 @@
+=== RUN   TestDripHotRestorePushOnce
+=== RUN   TestDripHotRestorePushOnce/control,_free_slot
+    drip_hot_test.go:119: hook "", promoted 1, retried false, restored 1; log 0xfff (one push 0xfff); word1 hot true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+=== RUN   TestDripHotRestorePushOnce/reclaim_at_install,_free_slot
+    drip_hot_test.go:119: hook "installing", promoted 2, retried true, restored 0; log 0xffe (one push 0xfff); word1 hot false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [2 2 1] (truth 1)
+    drip_hot_test.go:131: K reads Count 2 at window 1 of 3 100 ms after its touch, want 1
+    drip_hot_test.go:131: K reads Count 2 at window 2 of 3 100 ms after its touch, want 1
+    drip_hot_test.go:141: K's log 0xffe, want one push of the touch's event (0xfff)
+=== RUN   TestDripHotRestorePushOnce/control,_full_lines
+    drip_hot_test.go:119: hook "", promoted 1, retried false, restored 1; log 0xfff (one push 0xfff); word1 hot true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+=== RUN   TestDripHotRestorePushOnce/reclaim_in_the_search,_full_lines
+    drip_hot_test.go:119: hook "copied", promoted 2, retried true, restored 0; log 0xffe (one push 0xfff); word1 hot false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [2 2 1] (truth 1)
+    drip_hot_test.go:131: K reads Count 2 at window 1 of 3 100 ms after its touch, want 1
+    drip_hot_test.go:131: K reads Count 2 at window 2 of 3 100 ms after its touch, want 1
+    drip_hot_test.go:141: K's log 0xffe, want one push of the touch's event (0xfff)
+--- FAIL: TestDripHotRestorePushOnce (0.00s)
+    --- PASS: TestDripHotRestorePushOnce/control,_free_slot (0.00s)
+    --- FAIL: TestDripHotRestorePushOnce/reclaim_at_install,_free_slot (0.00s)
+    --- PASS: TestDripHotRestorePushOnce/control,_full_lines (0.00s)
+    --- FAIL: TestDripHotRestorePushOnce/reclaim_in_the_search,_full_lines (0.00s)
+FAIL
+FAIL	github.com/scooter-sensei/clepsydra/go	0.004s
+FAIL

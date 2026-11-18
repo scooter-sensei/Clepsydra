@@ -1,0 +1,5 @@
+=== RUN   TestDripPushOnce
+    drip_probe_test.go:132: 0 of 16000 keys' logs hold more events than their registers (rounds 500)
+--- PASS: TestDripPushOnce (15.28s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	16.300s

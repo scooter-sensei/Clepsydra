@@ -1771,3 +1771,40 @@ clause 3 or 4 fails, the mend moved answers off the path; diagnosed before
 anything else. Not covered, as in W9: a restore whose claim evicts;
 ConstantTime, Background and the wait room's leg; a reclaim by a concurrent
 caller.
+
+### W4e's reading (ae28817's tree; `lab/w4e.sh`, outputs in `lab/w4e/`)
+
+1. **Holds.** On the parent (23f03b6, W4d's library), the test fails both
+   reclaim legs and passes both controls. In each reclaim leg the reclaim
+   happened inside K's claim (`testHookInstalling`; `testHookCopied`) and
+   K's touch looked again through `bump`'s hot add on K's slot; K's log
+   holds two pushes (0xffe against one push's 0xfff), and 100 ms after the
+   touch K reads Count 2 at 250 ms and 1 s against a truth of 1 (1 at
+   10 s), as the hand trace predicted. W9's double push moves Count: one
+   high at windows that start inside the touch's bucket.
+2. **Holds.** On W4e's tree the test passes: both reclaim legs take the
+   same path (the hook, Promoted 2, the look again through `bump`), and K's
+   log holds one push (0xfff), its slot a register, its last touch tK;
+   Count 1 at all three windows.
+3. **Holds.** Default build: `tfbench -exact` and the answer digest equal
+   `verify/expected/`'s.
+4. **Holds.** With `tfdrip`, `tfbench -exact` is W4d's reading's byte for
+   byte.
+5. **Holds.** `TestDripPushOnce` 0 of 160,000 keys in 5,000 rounds, 0 of
+   16,000 in 500 under `-race`; `TestBackgroundConcurrentCounts` 0 of 200
+   runs, 0 of 20 under `-race`; the suites fail what W4d's failed and no
+   more: TestConformance, TestUnitOfMatchesDivision and
+   TestCountsLastTouchWhole in every mode, TestMerge plain and with
+   `TF_NOCAS2` on its 1 s bar alone (merged count error 50,202 over 1.5
+   times the single filter's 16,537, W4d's numbers); `TestDripHotRestorePushOnce`
+   is not among the failures plain or with `TF_NOCAS2`, where it runs (the
+   suites' output lists failures only); `TestSlotUnitRaces` plain and under
+   `-race`, and the soak and the concurrent fuzzer under `-race` (5 minutes
+   each), pass.
+
+**Verdict: W4e passes its rule.** A hot restore whose entry is reclaimed
+after `hotGone` pushes its touch's event once, and K's Count read after it
+is the truth where W4d's read one high; nothing else W4d's reading measured
+moved, single-threaded answers in both builds included. What W4e leaves, as
+W9 does: a restore whose claim evicts; ConstantTime, Background and the wait
+room's leg; a reclaim by a concurrent caller.

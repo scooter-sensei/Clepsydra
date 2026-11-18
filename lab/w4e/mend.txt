@@ -1,0 +1,16 @@
+=== RUN   TestDripHotRestorePushOnce
+=== RUN   TestDripHotRestorePushOnce/control,_free_slot
+    drip_hot_test.go:119: hook "", promoted 1, retried false, restored 1; log 0xfff (one push 0xfff); word1 hot true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+=== RUN   TestDripHotRestorePushOnce/reclaim_at_install,_free_slot
+    drip_hot_test.go:119: hook "installing", promoted 2, retried true, restored 0; log 0xfff (one push 0xfff); word1 hot false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+=== RUN   TestDripHotRestorePushOnce/control,_full_lines
+    drip_hot_test.go:119: hook "", promoted 1, retried false, restored 1; log 0xfff (one push 0xfff); word1 hot true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+=== RUN   TestDripHotRestorePushOnce/reclaim_in_the_search,_full_lines
+    drip_hot_test.go:119: hook "copied", promoted 2, retried true, restored 0; log 0xfff (one push 0xfff); word1 hot false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+--- PASS: TestDripHotRestorePushOnce (0.00s)
+    --- PASS: TestDripHotRestorePushOnce/control,_free_slot (0.00s)
+    --- PASS: TestDripHotRestorePushOnce/reclaim_at_install,_free_slot (0.00s)
+    --- PASS: TestDripHotRestorePushOnce/control,_full_lines (0.00s)
+    --- PASS: TestDripHotRestorePushOnce/reclaim_in_the_search,_full_lines (0.00s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	0.004s

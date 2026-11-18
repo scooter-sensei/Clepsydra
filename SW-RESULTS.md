@@ -1506,3 +1506,56 @@ touchers of two touches; hot entries and `miss`'s two failures, among them the
 hot restore's double push found in the audit, read from the code and neither
 reached nor mended; the log's bound, quanta and valid bit; and moves or
 evictions of a restored copy.
+
+## W8b: clause 3's Termination, re-read with a longer cap
+
+**Written after W8's reading**, which cut its four Termination runs with two
+touchers and eviction (`lab/w8/two` runs 9, 11, 17 and 19) at 30 minutes,
+at 18,989,969 to 19,791,411 states of the 43,415,628 and 43,908,288 the same
+configurations' invariant runs found. Their logs show TLC finding about
+0.8 M distinct states a minute while it keeps the behavior graph for the
+liveness check (3.7 M a minute in the invariant runs), and stopping for
+periodic liveness checks on the partial graph, which grew to 3 minutes at
+15.8 M states. No Termination outcome of these four configurations has been
+seen; nothing else of W8 is re-read.
+
+**What changes** (`lab/w8.sh b`, outputs in `lab/w8b/`). The model
+(`DripPush.tla` as 4461e7a has it, unchanged), the four configurations
+(`"w4d"`, two touchers of one touch each, eviction, spread and burst, both
+scan orders), the property (`PROPERTY Termination`) and the classification
+are W8's. TLC runs them one after another with:
+
+- a cap of 3 hours a run (W8's: 30 minutes);
+- the liveness check made once, on the complete state space (`-lncheck
+  final`), in place of the periodic checks on the partial one: a violation
+  is found either way, at the end rather than as it arises;
+- 8 workers and a 4 GB heap (W8's: 4 workers and the JVM's 1.7 GB);
+- TLC's log written into the outputs as it runs (W8's was copied out at the
+  end), so a run a VM shutdown stops keeps its log.
+
+The runner's other phases are unchanged. The options were checked, not
+read: on the self-test's scratch spec (under `-lncheck final` a livelock is
+a violation and a spec that ends passes; a run cut by the cap keeps its
+log), and on one configuration W8 read (one toucher of two touches,
+eviction, spread, copy first: Termination holds, 389,919 states, one check
+on the complete space, 23 s against W8's 29 s).
+
+**Sizing, before the rule** (not a reading of W8b): at W8's rate without its
+periodic checks, about 55 minutes to find 43.9 M states, then the final
+check (about 12 s a million states in W8's periodic checks: some 9
+minutes); about an hour a run.
+
+**Rule (before the reading).** W8b holds if Termination holds in each of
+the four runs. A run cut at 3 hours is reported with its states and not
+judged. A run that ends in an error (an `OutOfMemoryError` included) is not
+a pass, and its cause is read before anything is rerun. A counterexample is
+read as W8's rule reads one: a loop the code can follow is a livelock of
+W4d's protocol, and one it cannot is the model's.
+
+If W8b holds, W8's clause 3 is judged on all 16 of its runs and holds. If a
+run finds a counterexample, W8's clause 3 fails in that configuration and
+W8's verdict is revised to say so. If a run is cut or ends in an error,
+clause 3 stays judged on fewer runs, and W8b says how many.
+
+Reported, not judged: each run's distinct states and time, and its
+liveness check's time.

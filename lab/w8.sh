@@ -6,8 +6,12 @@
 #                                     two-touch run); two: two touchers, one touch each (clause 1's
 #                                     two-toucher sight, clause 3, NotRepushed's two-toucher run);
 #                                     all (default): the three, in that order
-# Outputs in lab/w8/small, lab/w8/large and lab/w8/two, each cleared when its phase starts: results.txt,
-# and every run's tlc.log and cfg (runN.log, runN.cfg), numbered from 1 within the phase.
+#   lab/w8.sh b                       W8b (SW-RESULTS.md): clause 3's four Termination runs with eviction,
+#                                     capped at 3 hours, the liveness check once on the complete state space
+#                                     (-lncheck final), 8 workers, a 4 GB heap; never part of all
+# Outputs in lab/w8/small, lab/w8/large, lab/w8/two and lab/w8b, each cleared when its phase starts:
+# results.txt, and every run's tlc.log and cfg (runN.log, runN.cfg), numbered from 1 within the phase;
+# TLC writes its log there as it runs.
 # A run is "ok" only if TLC exits 0 and prints its completion line with no error; "violation" only if
 # TLC reports the invariant or property the run names; "timeout" (TLC_TIMEOUT, default 1800 s: Relocate.tla
 # at 2 touches and 0 reads, the base, takes 15 s) is reported with its states and not judged; anything else
@@ -15,7 +19,7 @@
 # disk (TMPDIR_DISK, default ~/tlc-tmp). Exits 1 if a judged outcome is not as wanted, 2 if it cannot start.
 set -uo pipefail
 what=${1:-all}
-case $what in small | large | two | all) ;; *) echo "usage: lab/w8.sh [small|large|two|all]"; exit 2 ;; esac
+case $what in small | large | two | all | b) ;; *) echo "usage: lab/w8.sh [small|large|two|all|b]"; exit 2 ;; esac
 L=$HOME/lab-sw M=go/verify/tla/experiments/DripPush.tla
 J=${TLA2TOOLS:-$HOME/tools/tla/tla2tools.jar}
 [ -f "$J" ] || { echo "tla2tools.jar not found (set TLA2TOOLS)"; exit 2; }
@@ -26,10 +30,11 @@ mkdir -p "$TMPDIR"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 bad=0 pbad=0 timeouts=0 O="" runs=0 got="" why=""
+cap=1800 workers=4 jopts=() topts=() # TLC's cap (s), workers, JVM and TLC options; W8b's phase sets its own
 
-# phase <name>: outputs to lab/w8/<name>, cleared, runs numbered from 1
+# phase <name> [dir]: outputs to lab/<dir> (lab/w8/<name> if none), cleared, runs numbered from 1
 phase() {
-	O=$L/lab/w8/$1
+	O=$L/lab/${2:-w8/$1}
 	rm -rf "$O" && mkdir -p "$O"
 	runs=0 pbad=0 timeouts=0
 	{ git -C $L log --oneline -1; echo "lab/w8.sh $1"; } >"$O/results.txt"
@@ -84,12 +89,11 @@ run() {
 			for c in "$@"; do echo "  $c"; done
 			echo "$checks"
 		} >"$d/$m.cfg"
-		(cd "$d" && timeout "${TLC_TIMEOUT:-1800}" java -XX:+UseParallelGC -cp "$J" tlc2.TLC -workers "${TLC_WORKERS:-4}" -cleanup "$m" >tlc.log 2>&1)
-		rc=$?
-		classify "$d/tlc.log" "$rc" "${checks#* }"
-		states=$(grep -o '[0-9,]* distinct states found' "$d/tlc.log" | tail -1)
-		cp "$d/tlc.log" "$O/run$runs.log"
 		cp "$d/$m.cfg" "$O/run$runs.cfg"
+		(cd "$d" && timeout "${TLC_TIMEOUT:-$cap}" java "${jopts[@]}" -XX:+UseParallelGC -cp "$J" tlc2.TLC -workers "${TLC_WORKERS:-$workers}" "${topts[@]}" -cleanup "$m" >"$O/run$runs.log" 2>&1)
+		rc=$?
+		classify "$O/run$runs.log" "$rc" "${checks#* }"
+		states=$(grep -o '[0-9,]* distinct states found' "$O/run$runs.log" | tail -1)
 	else
 		why="translation failed"
 		cp "$d/pcal.log" "$O/run$runs.pcal.log"
@@ -184,6 +188,17 @@ if [ "$what" = two ] || [ "$what" = all ]; then
 	echo "== reported" | tee -a "$O/results.txt"
 	run report "w4d, 2 touchers x 1 touch, evict, reachable: NotRepushed" "INVARIANTS NotRepushed" "${two[@]}" 'Burst = FALSE' 'Evict = TRUE' 'CopyFirst = TRUE' 'Variant = "w4d"'
 	configs 3 2 1
+	phase_end
+fi
+if [ "$what" = b ]; then # W8b: W8's two-phase runs 9, 11, 17 and 19 again, in that order
+	phase b w8b
+	cap=10800 workers=8 jopts=(-Xmx4g) topts=(-lncheck final)
+	echo "== W8b: clause 3's Termination with eviction; cap ${TLC_TIMEOUT:-$cap} s, ${TLC_WORKERS:-$workers} workers, ${jopts[*]}, ${topts[*]}" | tee -a "$O/results.txt"
+	for bu in FALSE TRUE; do
+		for cf in TRUE FALSE; do
+			run ok "w4d, 2 toucher(s) x 1 touch(es), burst $bu, evict TRUE, copy first $cf: Termination" "PROPERTY Termination" 'Touchers = 2' 'Touches = 1' "Burst = $bu" "$r0" 'Evict = TRUE' "CopyFirst = $cf" 'Variant = "w4d"'
+		done
+	done
 	phase_end
 fi
 exit $bad

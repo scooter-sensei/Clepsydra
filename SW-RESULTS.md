@@ -1559,3 +1559,25 @@ clause 3 stays judged on fewer runs, and W8b says how many.
 
 Reported, not judged: each run's distinct states and time, and its
 liveness check's time.
+
+### W8b's reading (21f215b's tree; `lab/w8.sh b`, outputs in `lab/w8b/`)
+
+**Holds.** Termination holds in all four runs, each checked once on the
+complete state space, with as many states as the same configuration's
+invariant run found in W8: spread, copy first, 43,415,628 states (53
+minutes, its liveness check 13); spread, not, 43,908,288 (59 minutes, 18);
+burst, copy first, 43,415,628 (2 hours 23 minutes, 1 hour 43); burst, not,
+43,908,288 (58 minutes, 18). The phase's line reads "every judged outcome as
+wanted". The third run's liveness check took eight times the first's on as
+many states, and the run ended 37 minutes inside the cap; its log does not
+say why. The sizing's hour a run held for the other three: the states took
+40 minutes to find, not 55, and the check 13 to 18 minutes, not 9.
+
+**Verdict: W8b passes its rule.** W8's clause 3 is judged on all 16 of its
+runs and holds: with two touchers of one touch each, `"w4d"` violates no
+invariant and every fair behavior ends, with and without eviction, spread
+and burst, in both scan orders. Of what W8 leaves, this closes the first
+item: the model has no livelock with two touchers and eviction under which
+LogComplete and Conserved would go unread. The rest of that list stands,
+the half of W4d's rule that pushes again and the hot restore's double push
+among it.

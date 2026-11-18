@@ -1,0 +1,8 @@
+21f215b lab/sw W8b: clause 3's four Termination runs with eviction again (lab/w8.sh b: a 3-hour cap, the liveness check once on the complete state space, 8 workers, a 4 GB heap; TLC's log written into the outputs as it runs); W8b's rule, written after W8's reading, before its own
+lab/w8.sh b
+== W8b: clause 3's Termination with eviction; cap 10800 s, 8 workers, -Xmx4g, -lncheck final
+1   w4d, 2 toucher(s) x 1 touch(es), burst FALSE, evict TRUE, copy first TRUE: Termination ok        (want ok) 43415628 distinct states found
+2   w4d, 2 toucher(s) x 1 touch(es), burst FALSE, evict TRUE, copy first FALSE: Termination ok        (want ok) 43908288 distinct states found
+3   w4d, 2 toucher(s) x 1 touch(es), burst TRUE, evict TRUE, copy first TRUE: Termination ok        (want ok) 43415628 distinct states found
+4   w4d, 2 toucher(s) x 1 touch(es), burst TRUE, evict TRUE, copy first FALSE: Termination ok        (want ok) 43908288 distinct states found
+W8 readings (w8b) finished: every judged outcome as wanted

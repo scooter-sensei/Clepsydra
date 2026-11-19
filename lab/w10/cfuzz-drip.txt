@@ -1,0 +1,7 @@
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:82: case 865: goroutine 2 op 21632 Count: Upper 2 (the overflow table's 0) > 1 events back to 353300366 (result {Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:true}); key 12c35f6dacf206b5 window 6576 now 353311113 newest 353311113; events [353296800 353300418]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+    fuzzconc_test.go:86: 1119 cases from seed 1 in 5m0s (2.5 M ops/s): 745524147 ops, 193271247 answers checked (27924498 Saturated, 43171 low behind a live floor, 2509946 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 203, Background 224, no stash 150, no overflow 144, small overflow 289, no hot entries 138, few hot entries 276; evictions 36654102, folded 29177886, promoted 2254604, waited 9100119; W10: 183887251 answers' Upper checked against the events in their reach (39658068 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 4663638 keys' drip logs checked (3917231 saying nothing or absent)
+--- FAIL: TestFuzzConcurrent (300.03s)
+FAIL
+FAIL	github.com/scooter-sensei/clepsydra/go	300.033s
+FAIL

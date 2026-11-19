@@ -1,0 +1,6 @@
+=== RUN   TestStressSoak
+    soak_test.go:188: 24 workers, 5m0s: 1237170693 ops, 371142658 counts checked (134094165 Saturated, 0 low behind a live bucket floor); evictions 126343137, restored 6526656, lost 0, promoted 1506099, hot refused 23670466
+    soak_test.go:218: W10: 371142658 answers' Upper checked against the events in their reach (78496017 with the overflow table's part taken out; 0 over for a key whose identity another of its worker's shares), 0 over; at rest, 0 live keys' drip logs checked (16560 saying nothing or absent; 0 keys past the horizon left out), 0 over
+--- PASS: TestStressSoak (300.00s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	300.016s

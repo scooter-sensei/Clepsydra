@@ -1896,3 +1896,138 @@ A failure is read against the code before anything else: a defect of the
 filter, or of the check, said as such. An answer over by one whose trace is
 claims A29's residual (a same-tag hand-over just after a count) is that
 documented case.
+
+### W10's reading (223ce81's tree; `lab/w10.sh`, outputs in `lab/w10/`)
+
+`lab/w10.sh` ran end to end (15:30 to 16:11, Go 1.24.7) and exited 1, on
+`cfuzz-drip`. Every run printed its summary; no run reported a data race.
+
+1. **Holds.** On 23f03b6 (W4d's library) the reclaim leg's reclaim
+   happened inside K's install (Promoted 2), K's log read 0xffe, and both
+   checks flagged it: the log ("2 events logged at quantum 767 or later,
+   the key had 1") and `high` at 250 ms and at 1 s (Upper 2 against 1
+   event in the reach). On the head the same leg (Promoted 2) left 0xfff,
+   its log was checked, and neither check flagged it. On both trees the
+   control was checked and passed, and the push made by hand was flagged
+   by both checks at both windows (`sight-23f03b6.txt`,
+   `sight-223ce81.txt`).
+2. **Fails as written: one answer over**, in the fuzzer with `tfdrip`
+   (`cfuzz-drip.txt`): case 865 of 1,119, goroutine 2, a Count at a window
+   of 6,576 ticks answered {Seen, Count 1, Upper 2, Degraded} for a key
+   whose events are at 353,296,800 and 353,300,418, at now 353,311,113: 1
+   event back to the reach's edge (353,300,366), and the overflow table's
+   part read 0 before the call and after it. Read against the code below:
+   a defect of the check, not of the filter. Otherwise clause 2 holds. No
+   other answer was over and no log was over in any run. Every existing
+   check passed; case 865's reported failure is `high`, its first (a case
+   reports its first failure only).
+
+   | run | ops | answers `high` checked | over | live keys' logs checked | log over |
+   |---|---|---|---|---|---|
+   | soak, `tfdrip` | 1,007,557,997 | 302,248,722 | 0 | 4,272 | 0 |
+   | soak, `tfdrip`, `-race` | 51,232,745 | 15,372,055 | 0 | 4,271 | 0 |
+   | soak, default | 1,237,170,693 | 371,142,658 | 0 | 0 (no log) | 0 |
+   | fuzzer, `tfdrip` (1,119 cases) | 745,524,147 | 183,887,251 | **1** | 4,663,638 | 0 |
+   | fuzzer, `tfdrip`, `-race` (107) | 75,636,140 | 18,675,764 | 0 | 280,587 | 0 |
+   | fuzzer, `tfdrip`, straggler (1,099) | 731,712,615 | 166,542,958 | 0 | 4,034,960 | 0 |
+   | fuzzer, default (1,206) | 792,496,700 | 195,483,141 | 0 | 0 (no log) | 0 |
+
+3. **Holds.** `high`: the soak checks every count it makes; the fuzzer
+   checks 95.1% to 95.2% of the answers it checks (`tfdrip`, `-race`,
+   default) and 87.8% with the straggler. The rest are shared keys and the
+   straggler's. Logs: the soak's 4,272 of 4,272 live keys (`tfdrip`) and
+   4,271 of 4,271 (`-race`), none past the horizon. These fit the pool at
+   1x capacity plus the heavy keys (at most 4,288) when the run ended; the
+   default build's 16,560 fit the pool at 4x (at most 16,576). The pool's
+   size cycles with wall time (`soak_test.go`). The fuzzer's 54.3%
+   (4,663,638 of 8,580,869), 50.7% (280,587 of 553,731) and 53.4%
+   (4,034,960 of 7,553,295), the rest saying nothing or absent. None is
+   under half, so none is thin, but the fuzzer's are near half. Not
+   reported by the summaries: a log over on a key whose identity another
+   key of its worker shares is passed over uncounted, and the fuzzer does
+   not count its keys past the horizon. The answers whose overflow part
+   was taken out (a part the check cannot vouch for, below) are 22.3%,
+   1.0% and 21.1% of the soak's checked answers and 21.6%, 23.9%, 21.1%
+   and 21.0% of the fuzzer's.
+
+**Reported** (`w4c-cfuzz.txt`). The head's soak and fuzzer files built and
+vetted on 0837f9f (W4c's tree). In 5 minutes the fuzzer ran 1,082 cases,
+717,684,556 ops, 177,009,453 answers `high`-checked and 4,590,381 logs
+(3,857,316 saying nothing or absent), with no failing case. Neither check
+saw W4c's double push through `miss` under the fuzzer's concurrency.
+Neither has been shown to see a known double push under concurrency: the
+only sight is clause 1's single-threaded probe.
+
+**The failure, read against the code.** Count's answer from the key's slot
+needs the key's last touch within a horizon of now (`count`, touch.go). The
+key's last event is 10,695 ticks back, past the 10,000-tick horizon. So
+that part is 0 (unless another goroutine's key shares its identity:
+`sharesIdentity` looks only at the worker's own keys). Upper 2 and Count 1
+came whole from `addSketch`, the overflow table, and Degraded (set there
+only when the table's Count is above 0) says the table held an entry with
+the key's fingerprint. That part is what the check sets aside: the table
+counts a whole history while its newest event's slice (Horizon/2) is in the
+window, and a floor adds to the Upper of a third of a bucket's keys
+(ghost.go; `Result.Degraded`).
+
+Case 865 was then replayed by hand (`TF_CFUZZ_CASE=865 TF_CFUZZ_RUNS=1`,
+one run per process, in archives of 223ce81 outside the tree; scripts as
+run from a scratch directory, the hook files, the patch and the outputs in
+`lab/w10-diag/`, the test binaries left out). The scripts' `$SP` was that
+scratch directory. `parts-hook.go` and `parts-hook_test.go` are the
+`w10hook.go` and `w10parts_test.go` that `parts.sh` copies; `epochs-hook.go`
+and `epochs-hook_test.go` are `epochs.sh`'s `w10hook3.go` and
+`w10parts3_test.go`.
+
+- **Unmodified** (`plain.sh`): 5 of 40 runs fail with `tfdrip`, 1 of 40 in
+  the default build. The failures are a Count of Upper 1 against no event
+  in the reach, and a fresh key's Touch of Upper 2 against its one event.
+- **The part each call adds** (`parts.sh`, a hook in `addSketch`): 51 of 60
+  runs fail with `tfdrip`, 48 of 60 in the default build. These are not
+  rates: the hook takes a lock and formats a string on every call. In all
+  99 failing answers, Upper less the part the call itself added is within
+  the key's events in the reach. The excess is the overflow table's part,
+  which the reads around the call saw lower (0 in most).
+- **Why the reads around the call miss it** (`epochs.sh`, the table's
+  epoch, `until` and both buckets' words at every read, and the shared
+  clock; `tfdrip`, 29 of 40 runs fail; `classify.txt`):
+  - In 28, the epoch moved on between the call's read and the read after
+    it. When the failure was reported, the shared clock stood 5,040 to
+    53,553 ticks past the call's now: the fuzzer moves it on by up to
+    three horizons at random. Goroutines at the later clock had swept
+    (`advance`) the entries or floors the call counted. At the read before
+    the call the clock was 0 to 12,283 ticks past now, and that read held
+    less of the part (none in 25 of the 29).
+  - In the other one (`r-32`), the call's read and the read after it share
+    an epoch but not the words: an add replaced an entry with the key's
+    fingerprint (a key with no events) between them.
+  - In none did the same words read differently. The failing parts of
+    Count 0 and no Degraded are floors.
+
+The sweep and the replace are recorded in these replays only. For the
+original answer the mechanism is inferred: its part came from the table,
+and the reads around it saw none. The table's part at a fixed now is not
+stable while other goroutines run at later clocks. The larger of a read before the call and one after it
+misses a part raised and swept within the call: the check's bracket, not
+the filter's answer. Case 865 is a two-unit overflow table (full at once,
+its floors rising all the time), Background, 17 goroutines. No other case
+in any run failed, and case 865 (run once per run) passed in the W4c, the
+straggler and the default-build runs.
+
+Two consequences. First, the bracket errs the other way too: a part raised
+after the call and read after it is taken out though the call did not
+count it, which can hide a real over. So "no answer over" is loose on the
+answers with an overflow part taken out (clause 3's shares). Second, in
+case 865's run a log over at rest would not have been reported: a case
+reports its first failure only.
+
+**Verdict: W10 fails its rule as written, on clause 2:** one answer over,
+case 865 of the fuzzer with `tfdrip`. Read against the code and three
+replays, the over is the overflow table's part: the check means to set it
+aside, and its reads before and after the call missed it. That is a defect
+of the check, not of the filter. Clauses 1 and 3 hold: both checks see W9's
+double push and a hand-made one single-threaded, and neither flags the
+head. Under concurrency, no log over in any run, and no other answer over.
+What W10 leaves: a `high` that takes the overflow part from the call itself
+(a hook in `addSketch`, as `parts.sh` does), under its own rule; and sight
+of a known double push under concurrency (W4c's, not seen in 5 minutes).

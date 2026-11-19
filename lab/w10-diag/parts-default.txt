@@ -1,0 +1,300 @@
+==== default-1.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (218 Saturated, 52 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 38251, folded 29278, promoted 4857, waited 49617; W10: 137471 answers' Upper checked against the events in their reach (66567 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 0 keys' drip logs checked (23 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.47s)
+PASS
+==== default-2.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (301 Saturated, 52 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 36740, folded 27994, promoted 4885, waited 47348; W10: 137471 answers' Upper checked against the events in their reach (62707 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 0 keys' drip logs checked (35 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.46s)
+PASS
+==== default-3.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 3 op 11621 Count: Upper 1 (the overflow table's 0) > 0 events back to 351316311 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key 7276c42733c17f9b window 4300 now 351324782 newest 351324782; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.42s)
+FAIL
+==== default-4.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 1 op 17800 Touch: Upper 2 (the overflow table's 0) > 1 events back to 352122648 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key e3a0d978951b0978 window 2839 now 352129658 newest 352129658; events [352114801 352129658]; slot line0/0 dispfalse last 352129658 hot false ok true epoch 844435 counts [1 0 0 0 0 0 0]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.44s)
+FAIL
+==== default-5.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 5 op 2178 Count: Upper 1 (the overflow table's 0) > 0 events back to 347658668 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key 9874364e7d2fa338 window 493 now 347663332 newest 347663332; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.44s)
+FAIL
+==== default-6.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 12 op 6139 Touch: Upper 2 (the overflow table's 0) > 1 events back to 348606273 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key 6dee6f1db35cafd4 window 3120 now 348613564 newest 348613564; events [348613564]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.41s)
+FAIL
+==== default-7.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 12 op 12459 Touch: Upper 2 (the overflow table's 0) > 1 events back to 350244218 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key c5675fbd762bdb0a window 2663 now 350251052 newest 350251052; events [350251052]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.46s)
+FAIL
+==== default-8.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 11 op 10729 Touch: Upper 2 (the overflow table's 0) > 1 events back to 349829249 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key 3a623da38cad65ab window 10650 now 349843420 newest 349843420; events [349843420]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.42s)
+FAIL
+==== default-9.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (276 Saturated, 63 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 38445, folded 29434, promoted 4833, waited 49198; W10: 137471 answers' Upper checked against the events in their reach (66051 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 0 keys' drip logs checked (23 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.48s)
+PASS
+==== default-10.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 6 op 3604 Count: Upper 1 (the overflow table's 0) > 0 events back to 348217600 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key b08c57b06f9ef0d5 window 6178 now 348227949 newest 348227949; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.44s)
+FAIL
+==== default-11.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 8 op 1743 Touch: Upper 2 (the overflow table's 0) > 1 events back to 347460156 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key ba388ed9570f69da window 5832 now 347470159 newest 347470159; events [347470159]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.45s)
+FAIL
+==== default-12.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 14 op 8414 Count: Upper 1 (the overflow table's 0) > 0 events back to 349667241 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key d3a9a6e4be494c4 window 1391 now 349672803 newest 349672803; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.44s)
+FAIL
+==== default-13.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 3 op 16660 Touch: Upper 2 (the overflow table's 0) > 1 events back to 352558927 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key 7d63544ae55f3c31 window 713 now 352563811 newest 352563811; events [352563811]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.48s)
+FAIL
+==== default-14.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 12 op 1 Count: Upper 1 (the overflow table's 0) > 0 events back to 347133818 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key 6ba144ef6c28b329 window 618 now 347138607 newest 347138956; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.44s)
+FAIL
+==== default-15.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 11 op 1794 Count: Upper 2 (the overflow table's 1) > 0 events back to 347687082 (result {Seen:false Count:0 Upper:2 Saturated:false Restored:false Degraded:false}); key 80f4e5a7eebe1b6a window 1359 now 347692612 newest 347692612; events []; ghost {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 2 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.41s)
+FAIL
+==== default-16.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 12 op 3731 Touch: Upper 2 (the overflow table's 0) > 1 events back to 348877500 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key 89be7a5621d689f2 window 9569 now 348891240 newest 348891240; events [348891240]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.41s)
+FAIL
+==== default-17.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (262 Saturated, 64 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 39805, folded 30484, promoted 4855, waited 49000; W10: 137471 answers' Upper checked against the events in their reach (68110 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 0 keys' drip logs checked (43 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.48s)
+PASS
+==== default-18.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 3 op 3262 Count: Upper 3 (the overflow table's 0) > 0 events back to 347950311 (result {Seen:true Count:2 Upper:3 Saturated:false Restored:false Degraded:true}); key cec11b40322a4291 window 197 now 347954679 newest 347954679; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 3 Count 2 Seen true}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.39s)
+FAIL
+==== default-19.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 9 op 11365 Count: Upper 1 (the overflow table's 0) > 0 events back to 349912239 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key 60313bfd4e235609 window 9485 now 349925895 newest 349925895; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.44s)
+FAIL
+==== default-20.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 5 op 18918 Count: Upper 1 (the overflow table's 0) > 0 events back to 353233181 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key d1c9673e6bf26200 window 1092 now 353238444 newest 353238464; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.45s)
+FAIL
+==== default-21.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 16 op 11302 Count: Upper 1 (the overflow table's 0) > 0 events back to 350421708 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key 70202b16dc1446cf window 3064 now 350428943 newest 350428943; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.46s)
+FAIL
+==== default-22.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 15 op 8943 Count: Upper 1 (the overflow table's 0) > 0 events back to 349283159 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key 25513b5fa9882eb2 window 160 now 349287490 newest 349287490; events [349279661]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.46s)
+FAIL
+==== default-23.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 13 op 1481 Count: Upper 1 (the overflow table's 0) > 0 events back to 347509301 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key 111c6c5fdd639294 window 3795 now 347517267 newest 347517267; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.43s)
+FAIL
+==== default-24.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 5 op 899 Count: Upper 1 (the overflow table's 0) > 0 events back to 347404303 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key d66b6086211fabe5 window 4853 now 347413327 newest 347413498; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.43s)
+FAIL
+==== default-25.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (378 Saturated, 74 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 35289, folded 26925, promoted 4832, waited 48757; W10: 137471 answers' Upper checked against the events in their reach (59328 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 0 keys' drip logs checked (59 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.45s)
+PASS
+==== default-26.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 14 op 8031 Touch: Upper 2 (the overflow table's 0) > 1 events back to 349493696 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key bd82b6c793af146b window 3602 now 349501469 newest 349501469; events [349482327 349486042 349488075 349501469]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.43s)
+FAIL
+==== default-27.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 7 op 1947 Count: Upper 1 (the overflow table's 0) > 0 events back to 347568405 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key 7d8ad1ac38ab0418 window 2969 now 347575545 newest 347575545; events [347561445 347561445 347561445 347561445 347561445 347561445 347561445 347561445 347561445 347562659 347562659 347562659]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.41s)
+FAIL
+==== default-28.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 12 op 242 Touch: Upper 2 (the overflow table's 0) > 1 events back to 347186658 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key 5f52ec0e2c7343d6 window 4788 now 347195617 newest 347195617; events [347195617]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.45s)
+FAIL
+==== default-29.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 0 op 3716 Touch: Upper 2 (the overflow table's 0) > 1 events back to 348078957 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key 1e535eede31428f0 window 6228 now 348089356 newest 348089356; events [348074345 348089356]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.44s)
+FAIL
+==== default-30.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 5 op 1381 Touch: Upper 2 (the overflow table's 0) > 1 events back to 347469438 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key 96812c768efed7c8 window 722 now 347474331 newest 347474331; events [347474331]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.45s)
+FAIL
+==== default-31.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (229 Saturated, 101 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 39468, folded 30405, promoted 4884, waited 49134; W10: 137471 answers' Upper checked against the events in their reach (67565 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 0 keys' drip logs checked (33 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.48s)
+PASS
+==== default-32.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (335 Saturated, 67 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 38207, folded 29168, promoted 4830, waited 51274; W10: 137471 answers' Upper checked against the events in their reach (65382 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 0 keys' drip logs checked (63 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.48s)
+PASS
+==== default-33.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 2 op 13335 Count: Upper 1 (the overflow table's 0) > 0 events back to 350381266 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key 5b7ee17e4e5cdc30 window 9473 now 350394910 newest 350394910; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.43s)
+FAIL
+==== default-34.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 12 op 6219 Touch: Upper 2 (the overflow table's 0) > 1 events back to 348742421 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key faf67203e8e05b6a window 6319 now 348752911 newest 348752911; events [348752911]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.45s)
+FAIL
+==== default-35.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (265 Saturated, 59 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 36361, folded 27762, promoted 4832, waited 49796; W10: 137471 answers' Upper checked against the events in their reach (62327 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 0 keys' drip logs checked (56 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.47s)
+PASS
+==== default-36.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 13 op 8000 Count: Upper 1 (the overflow table's 0) > 0 events back to 348626957 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key b7d799378462f2ac window 11464 now 348641128 newest 348641128; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.43s)
+FAIL
+==== default-37.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 6 op 954 Touch: Upper 2 (the overflow table's 0) > 1 events back to 347466634 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key ca285c5763c312fd window 2170 now 347472975 newest 347472975; events [347425819 347472975]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.46s)
+FAIL
+==== default-38.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (331 Saturated, 78 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 39552, folded 30442, promoted 4813, waited 48857; W10: 137471 answers' Upper checked against the events in their reach (67524 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 0 keys' drip logs checked (49 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.47s)
+PASS
+==== default-39.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 1 op 4815 Count: Upper 1 (the overflow table's 0) > 0 events back to 348222832 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key 5d703c01d4624764 window 2490 now 348229493 newest 348229493; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.41s)
+FAIL
+==== default-40.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (219 Saturated, 43 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 36346, folded 27784, promoted 4852, waited 48768; W10: 137471 answers' Upper checked against the events in their reach (61280 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 0 keys' drip logs checked (33 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.47s)
+PASS
+==== default-41.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 10 op 2397 Count: Upper 1 (the overflow table's 0) > 0 events back to 347946686 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key b0efcb8e4451d445 window 10445 now 347960857 newest 347960857; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.43s)
+FAIL
+==== default-42.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 6 op 4960 Count: Upper 1 (the overflow table's 0) > 0 events back to 348381805 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key d4a032aeb3b6237f window 972 now 348386948 newest 348386948; events [348378015]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.45s)
+FAIL
+==== default-43.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 7 op 666 Count: Upper 1 (the overflow table's 0) > 0 events back to 347244281 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key 55d7a66bf0cf0ece window 11410 now 347258452 newest 347258572; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.45s)
+FAIL
+==== default-44.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 3 op 3713 Count: Upper 1 (the overflow table's 0) > 0 events back to 347917718 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key 90802c5f44425d74 window 835 now 347922724 newest 347922724; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.39s)
+FAIL
+==== default-45.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 13 op 486 Count: Upper 1 (the overflow table's 0) > 0 events back to 347384245 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key 8c71ff3e1ad507d5 window 1386 now 347389802 newest 347390043; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.39s)
+FAIL
+==== default-46.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 5 op 23388 Count: Upper 1 (the overflow table's 0) > 0 events back to 354351776 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key 46386c3a43b687a3 window 2748 now 354358695 newest 354358695; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.46s)
+FAIL
+==== default-47.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 11 op 1402 Touch: Upper 2 (the overflow table's 0) > 1 events back to 347471206 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key b1e7bb1b146e43a6 window 1193 now 347476570 newest 347476570; events [347461747 347461747 347476570]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.41s)
+FAIL
+==== default-48.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 1 op 3233 Touch: Upper 2 (the overflow table's 0) > 1 events back to 348285392 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key 1e5818bc17f57a2b window 6669 now 348296232 newest 348296232; events [348296232]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.42s)
+FAIL
+==== default-49.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 14 op 10046 Touch: Upper 2 (the overflow table's 0) > 1 events back to 349801230 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key 952b6c3d47f6b8c6 window 4806 now 349810207 newest 349810207; events [349790112 349791248 349810207]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.45s)
+FAIL
+==== default-50.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (212 Saturated, 48 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 36942, folded 28148, promoted 4845, waited 48728; W10: 137471 answers' Upper checked against the events in their reach (62968 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 0 keys' drip logs checked (41 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.46s)
+PASS
+==== default-51.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 12 op 26419 Count: Upper 1 (the overflow table's 0) > 0 events back to 355503452 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key 12b91b898203858f window 997 now 355508620 newest 355508620; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.48s)
+FAIL
+==== default-52.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 2 op 5132 Touch: Upper 3 (the overflow table's 0) > 1 events back to 348210980 (result {Seen:false Count:1 Upper:3 Saturated:false Restored:false Degraded:false}); key 2f20ace021cd5af0 window 2240 now 348217391 newest 348217650; events [348198898 348198898 348198898 348198898 348198898 348198898 348198898 348198898 348198898 348198898 348198898 348217391]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 2 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.44s)
+FAIL
+==== default-53.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 5 op 13542 Touch: Upper 2 (the overflow table's 0) > 1 events back to 351505113 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key 8e0fc0eb1531196c window 4577 now 351513861 newest 351513861; events [351513861]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.47s)
+FAIL
+==== default-54.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 7 op 3516 Touch: Upper 2 (the overflow table's 0) > 1 events back to 347806033 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key 83e1aa88af7fb690 window 4026 now 347814230 newest 347814230; events [347814230]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.37s)
+FAIL
+==== default-55.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 2 op 10497 Count: Upper 1 (the overflow table's 0) > 0 events back to 350392489 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key 73885174430c2d47 window 8104 now 350404764 newest 350404764; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.45s)
+FAIL
+==== default-56.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 2 op 4599 Count: Upper 1 (the overflow table's 0) > 0 events back to 348543313 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key 11ebc49c49077bb7 window 5389 now 348552873 newest 348552873; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.45s)
+FAIL
+==== default-57.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 12 op 4133 Count: Upper 1 (the overflow table's 0) > 0 events back to 348178562 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key 804ffc42f7a19d8e window 10445 now 348192733 newest 348192733; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.44s)
+FAIL
+==== default-58.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (318 Saturated, 54 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 37922, folded 28984, promoted 4839, waited 50945; W10: 137471 answers' Upper checked against the events in their reach (64268 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 0 keys' drip logs checked (31 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.48s)
+PASS
+==== default-59.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 6 op 15305 Touch: Upper 4 (the overflow table's 1) > 2 events back to 350954479 (result {Seen:true Count:3 Upper:4 Saturated:false Restored:false Degraded:true}); key 28d0f7f423a74667 window 3643 now 350962293 newest 350962293; events [350953294 350961330 350962293]; ghost {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 3 Count 2 Seen true}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.47s)
+FAIL
+==== default-60.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 14 op 1088 Touch: Upper 2 (the overflow table's 0) > 1 events back to 347469307 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key 255a70d89ac66b25 window 270 now 347473748 newest 347473748; events [347473748]; slot line0/3 dispfalse last 347473748 hot false ok true epoch 833270 counts [1 0 0 0 0 0 0]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; OVERFLOW PARTS ADDED [{ok true Upper 1 Count 0 Seen false}]; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.39s)
+FAIL

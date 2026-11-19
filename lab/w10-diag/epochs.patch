@@ -1,0 +1,107 @@
+--- a/go/touch.go
++++ b/go/touch.go
+@@ -176,6 +176,9 @@
+ 	} else {
+ 		s, ok = f.sk.Load().estimate(f.stashID(h, fingerprint(h), tag(h)), min(window, f.horizon), now, f.ct)
+ 	}
++	if testHookW10Sketch != nil {
++		testHookW10Sketch(h, s, ok)
++	}
+ 	if !ok {
+ 		return
+ 	}
+--- a/go/ghost.go
++++ b/go/ghost.go
+@@ -353,6 +353,9 @@
+ 	bases, nb, fp := g.slot(id)
+ 	var line [2][ghWords]uint64
+ 	var ep uint64
++	if testHookW10Est != nil {
++		defer func() { testHookW10Est(id, now, ep, g.until.Load(), line, nb, r) }()
++	}
+ 	for {
+ 		ep = g.epoch.Load()
+ 		if ep == 0 || now > g.until.Load() {
+--- a/go/fuzzconc_test.go
++++ b/go/fuzzconc_test.go
+@@ -223,7 +223,10 @@
+ 	out := make([]bool, 16)
+ 	cnt := make([]int, 16)
+ 	// ghost is the overflow table's part of an answer for h before the call
++	cb := uint64(0)
+ 	ghost := func(h, window, now uint64) int {
++		f.w10Arm(h)
++		cb = clock.Load()
+ 		if !cc {
+ 			return 0
+ 		}
+@@ -241,6 +244,7 @@
+ 				if !f.sharesIdentity(h, tr.ev) {
+ 					res.fail = fmt.Sprintf("goroutine %d op %d %s: %s (result %+v); key %x window %d now %d newest %d; events %v; %s",
+ 						g, res.ops, op, m, r, h, window, now, tr.newest, tail(tr.ev[h], 12), f.whereIs(h, now))
++					res.fail += fmt.Sprintf("; CLOCK before %d (now %+d), after %d (now %+d); ", cb, int64(cb-now), clock.Load(), int64(clock.Load()-now)) + f.w10Report(h)
+ 					return false
+ 				}
+ 				res.highShared++
+--- /dev/null
++++ b/go/w10hook.go
+@@ -0,0 +1,7 @@
++package temporalfilter
++
++// Scratch diagnostic (W10, case 865): addSketch reports the overflow
++// table's part it adds; ghost.estimate reports the epoch, until and bucket
++// words it decoded and its answer. Never in the tree.
++var testHookW10Sketch func(h uint64, s Result, ok bool)
++var testHookW10Est func(id, now, ep, until uint64, line [2][ghWords]uint64, nb int, r Result)
+--- /dev/null
++++ b/go/w10parts_test.go
+@@ -0,0 +1,49 @@
++package temporalfilter
++
++import (
++	"fmt"
++	"strings"
++	"sync"
++)
++
++var (
++	w10Mu    sync.Mutex
++	w10Parts = map[uint64][]string{} // h -> the overflow parts addSketch added in its last checked call
++	w10Est   = map[uint64][]string{} // id -> the overflow table's reads of it since its last checked call began
++)
++
++func init() {
++	testHookW10Sketch = func(h uint64, s Result, ok bool) {
++		w10Mu.Lock()
++		defer w10Mu.Unlock()
++		if l, armed := w10Parts[h]; armed {
++			w10Parts[h] = append(l, fmt.Sprintf("{ok %v Upper %d Count %d}", ok, s.Upper, s.Count))
++		}
++	}
++	testHookW10Est = func(id, now, ep, until uint64, line [2][ghWords]uint64, nb int, r Result) {
++		w10Mu.Lock()
++		defer w10Mu.Unlock()
++		l, armed := w10Est[id]
++		if !armed {
++			return
++		}
++		var ws []string
++		for bi := range nb {
++			ws = append(ws, fmt.Sprintf("%x", line[bi]))
++		}
++		w10Est[id] = append(l, fmt.Sprintf("{now %d epoch %d until %d -> Upper %d Count %d; words %s}", now, ep, until, r.Upper, r.Count, strings.Join(ws, " | ")))
++	}
++}
++
++func (f *Filter) w10Arm(h uint64) {
++	w10Mu.Lock()
++	defer w10Mu.Unlock()
++	w10Parts[h] = []string{}
++	w10Est[f.stashID(h, fingerprint(h), tag(h))] = []string{}
++}
++
++func (f *Filter) w10Report(h uint64) string {
++	w10Mu.Lock()
++	defer w10Mu.Unlock()
++	return fmt.Sprintf("OVERFLOW PARTS ADDED %v; READS %s", w10Parts[h], strings.Join(w10Est[f.stashID(h, fingerprint(h), tag(h))], " ;; "))
++}

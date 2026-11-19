@@ -1,0 +1,58 @@
+[15:30:54] W10: head 223ce81; go1.24.7
+[15:30:54] 1: sight, lab/w10_test.go on 23f03b6 (W4d's library) and on the head
+[15:30:58] 1 23f03b6: go test exit 0
+w10_test.go:85: W10 sight, reclaim at install: reclaim true, promoted 2; log 0xffe: log check true "log 0xffe: 2 events logged at quantum 767 or later, the key had 1 (last touch 119999)"; high at 250 ms, 1 s: ["Upper 2 (the overflow table's 0) > 1 events back to 97348" "Upper 2 (the overflow table's 0) > 1 events back to 96598"]
+w10_test.go:85: W10 sight, control: reclaim false, promoted 1; log 0xfff: log check true ""; high at 250 ms, 1 s: ["" ""]
+w10_test.go:85: W10 sight, control, pushed again by hand: reclaim false, promoted 1; log 0xffe: log check true "log 0xffe: 2 events logged at quantum 767 or later, the key had 1 (last touch 119999)"; high at 250 ms, 1 s: ["Upper 2 (the overflow table's 0) > 1 events back to 97348" "Upper 2 (the overflow table's 0) > 1 events back to 96598"]
+--- PASS: TestW10Sight (0.00s)
+--- PASS: TestW10Sight/reclaim_at_install (0.00s)
+--- PASS: TestW10Sight/control (0.00s)
+--- PASS: TestW10Sight/control,_pushed_again_by_hand (0.00s)
+[15:31:01] 1 223ce81: go test exit 0
+w10_test.go:85: W10 sight, reclaim at install: reclaim true, promoted 2; log 0xfff: log check true ""; high at 250 ms, 1 s: ["" ""]
+w10_test.go:85: W10 sight, control: reclaim false, promoted 1; log 0xfff: log check true ""; high at 250 ms, 1 s: ["" ""]
+w10_test.go:85: W10 sight, control, pushed again by hand: reclaim false, promoted 1; log 0xffe: log check true "log 0xffe: 2 events logged at quantum 767 or later, the key had 1 (last touch 119999)"; high at 250 ms, 1 s: ["Upper 2 (the overflow table's 0) > 1 events back to 97348" "Upper 2 (the overflow table's 0) > 1 events back to 96598"]
+--- PASS: TestW10Sight (0.00s)
+--- PASS: TestW10Sight/reclaim_at_install (0.00s)
+--- PASS: TestW10Sight/control (0.00s)
+--- PASS: TestW10Sight/control,_pushed_again_by_hand (0.00s)
+[15:31:01] 2: reported, the head's soak and fuzzer tests on 0837f9f (W4c's tree), tfdrip, the fuzzer for 5m
+[15:36:04] 2: exit 0; failing cases 0
+fuzzconc_test.go:86: 1082 cases from seed 1 in 5m0s (2.4 M ops/s): 717684556 ops, 186042145 answers checked (26941359 Saturated, 41268 low behind a live floor, 2433272 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 196, Background 214, no stash 147, no overflow 138, small overflow 283, no hot entries 132, few hot entries 269; evictions 35320623, folded 28078131, promoted 2137614, waited 8847523; W10: 177009453 answers' Upper checked against the events in their reach (38135411 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 4590381 keys' drip logs checked (3857316 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (300.09s)
+ok  	github.com/scooter-sensei/clepsydra/go	300.092s
+[15:36:04] 3: the head's soak and fuzzer, 5m each
+soak_test.go:188: 24 workers, 5m0s: 1007557997 ops, 302248722 counts checked (67571452 Saturated, 0 low behind a live bucket floor); evictions 108425031, restored 5551329, lost 0, promoted 2552340, hot refused 3899014
+soak_test.go:218: W10: 302248722 answers' Upper checked against the events in their reach (67502906 with the overflow table's part taken out; 0 over for a key whose identity another of its worker's shares), 0 over; at rest, 4272 live keys' drip logs checked (0 saying nothing or absent; 0 keys past the horizon left out), 0 over
+--- PASS: TestStressSoak (300.01s)
+ok  	github.com/scooter-sensei/clepsydra/go	300.024s
+[15:41:06] 3 soak-drip: exit 0
+soak_test.go:188: 24 workers, 5m0s: 51232745 ops, 15372055 counts checked (0 Saturated, 0 low behind a live bucket floor); evictions 1466180, restored 114144, lost 0, promoted 113754, hot refused 0
+soak_test.go:218: W10: 15372055 answers' Upper checked against the events in their reach (150066 with the overflow table's part taken out; 0 over for a key whose identity another of its worker's shares), 0 over; at rest, 4271 live keys' drip logs checked (0 saying nothing or absent; 0 keys past the horizon left out), 0 over
+--- PASS: TestStressSoak (300.03s)
+ok  	github.com/scooter-sensei/clepsydra/go	301.056s
+[15:46:11] 3 soak-drip-race: exit 0
+soak_test.go:188: 24 workers, 5m0s: 1237170693 ops, 371142658 counts checked (134094165 Saturated, 0 low behind a live bucket floor); evictions 126343137, restored 6526656, lost 0, promoted 1506099, hot refused 23670466
+soak_test.go:218: W10: 371142658 answers' Upper checked against the events in their reach (78496017 with the overflow table's part taken out; 0 over for a key whose identity another of its worker's shares), 0 over; at rest, 0 live keys' drip logs checked (16560 saying nothing or absent; 0 keys past the horizon left out), 0 over
+--- PASS: TestStressSoak (300.00s)
+ok  	github.com/scooter-sensei/clepsydra/go	300.016s
+[15:51:13] 3 soak-default: exit 0
+fuzzconc_test.go:86: 1119 cases from seed 1 in 5m0s (2.5 M ops/s): 745524147 ops, 193271247 answers checked (27924498 Saturated, 43171 low behind a live floor, 2509946 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 203, Background 224, no stash 150, no overflow 144, small overflow 289, no hot entries 138, few hot entries 276; evictions 36654102, folded 29177886, promoted 2254604, waited 9100119; W10: 183887251 answers' Upper checked against the events in their reach (39658068 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 4663638 keys' drip logs checked (3917231 saying nothing or absent)
+--- FAIL: TestFuzzConcurrent (300.03s)
+FAIL
+FAIL	github.com/scooter-sensei/clepsydra/go	300.033s
+FAIL
+[15:56:14] 3 cfuzz-drip: exit 1
+fuzzconc_test.go:86: 107 cases from seed 1 in 5m15s (0.2 M ops/s): 75636140 ops, 19627476 answers checked (3156024 Saturated, 4875 low behind a live floor, 16017 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 23, Background 17, no stash 14, no overflow 8, small overflow 29, no hot entries 9, few hot entries 24; evictions 3601509, folded 3224584, promoted 257680, waited 628214; W10: 18675764 answers' Upper checked against the events in their reach (4461321 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 280587 keys' drip logs checked (273144 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (314.90s)
+ok  	github.com/scooter-sensei/clepsydra/go	315.931s
+[16:01:30] 3 cfuzz-drip-race: exit 0
+fuzzconc_test.go:86: 1099 cases from seed 1 in 5m1s (2.4 M ops/s): 731712615 ops, 189685144 answers checked (27340948 Saturated, 36865 low behind a live floor, 2345372 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 200, Background 219, no stash 150, no overflow 140, small overflow 286, no hot entries 134, few hot entries 271; evictions 35214727, folded 27987690, promoted 2204224, waited 9276478; W10: 166542958 answers' Upper checked against the events in their reach (35145455 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 4034960 keys' drip logs checked (3518335 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (300.56s)
+ok  	github.com/scooter-sensei/clepsydra/go	300.568s
+[16:06:31] 3 cfuzz-drip-straggle: exit 0
+fuzzconc_test.go:86: 1206 cases from seed 1 in 5m0s (2.6 M ops/s): 792496700 ops, 205458077 answers checked (29419146 Saturated, 44487 low behind a live floor, 2743338 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 219, Background 246, no stash 159, no overflow 151, small overflow 311, no hot entries 150, few hot entries 296; evictions 38488735, folded 30541593, promoted 2418057, waited 10006791; W10: 195483141 answers' Upper checked against the events in their reach (41085012 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 0 keys' drip logs checked (9221437 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (300.05s)
+ok  	github.com/scooter-sensei/clepsydra/go	300.057s
+[16:11:32] 3 cfuzz-default: exit 0
+[16:11:32] W10 readings finished (exit 1)

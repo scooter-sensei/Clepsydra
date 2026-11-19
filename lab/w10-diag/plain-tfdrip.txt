@@ -1,0 +1,200 @@
+==== tfdrip-1.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (118 Saturated, 44 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 39061, folded 29880, promoted 4945, waited 35302; W10: 137471 answers' Upper checked against the events in their reach (63858 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 32 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-2.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (93 Saturated, 41 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 38275, folded 29324, promoted 4985, waited 33906; W10: 137471 answers' Upper checked against the events in their reach (63675 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 49 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.21s)
+PASS
+==== tfdrip-3.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 9 op 6232 Count: Upper 1 (the overflow table's 0) > 0 events back to 348915088 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key 109d9a06e39cc63e window 10523 now 348929259 newest 348929419; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.20s)
+FAIL
+==== tfdrip-4.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (130 Saturated, 59 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 38035, folded 28955, promoted 4967, waited 35867; W10: 137471 answers' Upper checked against the events in their reach (63395 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 53 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.21s)
+PASS
+==== tfdrip-5.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (174 Saturated, 34 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 37314, folded 28542, promoted 4957, waited 36022; W10: 137471 answers' Upper checked against the events in their reach (61839 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 33 keys' drip logs checked (0 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-6.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (94 Saturated, 29 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 39165, folded 29937, promoted 4933, waited 37189; W10: 137471 answers' Upper checked against the events in their reach (66198 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 42 keys' drip logs checked (0 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-7.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (91 Saturated, 27 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 39053, folded 29835, promoted 4973, waited 36545; W10: 137471 answers' Upper checked against the events in their reach (64453 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 51 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-8.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (200 Saturated, 35 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 36103, folded 27409, promoted 4953, waited 35322; W10: 137471 answers' Upper checked against the events in their reach (59934 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 30 keys' drip logs checked (0 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.21s)
+PASS
+==== tfdrip-9.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (211 Saturated, 38 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 37150, folded 28186, promoted 4965, waited 36089; W10: 137471 answers' Upper checked against the events in their reach (60388 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 49 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-10.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (145 Saturated, 46 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 37303, folded 28491, promoted 4952, waited 37364; W10: 137471 answers' Upper checked against the events in their reach (61691 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 30 keys' drip logs checked (0 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-11.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (227 Saturated, 46 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 36365, folded 27631, promoted 4927, waited 37751; W10: 137471 answers' Upper checked against the events in their reach (59522 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 54 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-12.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (153 Saturated, 44 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 36186, folded 27520, promoted 4963, waited 35068; W10: 137471 answers' Upper checked against the events in their reach (59156 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 30 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.21s)
+PASS
+==== tfdrip-13.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 13 op 32037 Count: Upper 1 (the overflow table's 0) > 0 events back to 354681734 (result {Seen:false Count:0 Upper:1 Saturated:false Restored:false Degraded:false}); key 6e8f46e95cc2c974 window 7323 now 354693228 newest 354693344; events []; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.22s)
+FAIL
+==== tfdrip-14.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (161 Saturated, 51 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 39170, folded 29989, promoted 4942, waited 35470; W10: 137471 answers' Upper checked against the events in their reach (65113 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 32 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-15.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (126 Saturated, 52 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 37353, folded 28356, promoted 4975, waited 38010; W10: 137471 answers' Upper checked against the events in their reach (62056 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 30 keys' drip logs checked (0 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-16.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (243 Saturated, 28 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 36861, folded 28195, promoted 4922, waited 36342; W10: 137471 answers' Upper checked against the events in their reach (61885 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 25 keys' drip logs checked (0 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-17.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (186 Saturated, 49 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 36957, folded 28180, promoted 4940, waited 36827; W10: 137471 answers' Upper checked against the events in their reach (60531 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 30 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-18.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (143 Saturated, 69 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 38468, folded 29463, promoted 4963, waited 35983; W10: 137471 answers' Upper checked against the events in their reach (63884 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 30 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-19.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (158 Saturated, 42 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 38212, folded 29285, promoted 4939, waited 36274; W10: 137471 answers' Upper checked against the events in their reach (62099 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 22 keys' drip logs checked (0 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.21s)
+PASS
+==== tfdrip-20.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 16 op 7892 Touch: Upper 2 (the overflow table's 0) > 1 events back to 349502395 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key 50f4a779c57e4a67 window 622 now 349507188 newest 349507188; events [349507188]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.20s)
+FAIL
+==== tfdrip-21.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (88 Saturated, 50 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 39179, folded 30025, promoted 4962, waited 34068; W10: 137471 answers' Upper checked against the events in their reach (64939 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 30 keys' drip logs checked (0 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-22.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (178 Saturated, 51 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 37867, folded 28936, promoted 4944, waited 36284; W10: 137471 answers' Upper checked against the events in their reach (62923 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 30 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-23.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (281 Saturated, 40 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 37500, folded 28537, promoted 4940, waited 39121; W10: 137471 answers' Upper checked against the events in their reach (61736 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 30 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.23s)
+PASS
+==== tfdrip-24.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (153 Saturated, 45 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 39636, folded 30415, promoted 4973, waited 35349; W10: 137471 answers' Upper checked against the events in their reach (66798 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 49 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.21s)
+PASS
+==== tfdrip-25.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (137 Saturated, 31 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 34759, folded 26244, promoted 4952, waited 35550; W10: 137471 answers' Upper checked against the events in their reach (56819 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 30 keys' drip logs checked (0 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-26.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (87 Saturated, 42 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 37986, folded 28982, promoted 4937, waited 36314; W10: 137471 answers' Upper checked against the events in their reach (62314 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 25 keys' drip logs checked (0 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.21s)
+PASS
+==== tfdrip-27.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (120 Saturated, 33 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 37378, folded 28486, promoted 4950, waited 36366; W10: 137471 answers' Upper checked against the events in their reach (60599 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 22 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.21s)
+PASS
+==== tfdrip-28.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (155 Saturated, 32 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 33793, folded 25105, promoted 4911, waited 37388; W10: 137471 answers' Upper checked against the events in their reach (53417 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 22 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.25s)
+PASS
+==== tfdrip-29.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (102 Saturated, 30 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 32515, folded 24306, promoted 4936, waited 38163; W10: 137471 answers' Upper checked against the events in their reach (52334 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 54 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.25s)
+PASS
+==== tfdrip-30.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 12 op 4608 Touch: Upper 2 (the overflow table's 0) > 1 events back to 348688011 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key 640a36c96d44ad31 window 3907 now 348696089 newest 348696089; events [348696089]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.21s)
+FAIL
+==== tfdrip-31.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (134 Saturated, 69 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 35892, folded 26981, promoted 4951, waited 36894; W10: 137471 answers' Upper checked against the events in their reach (57238 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 70 keys' drip logs checked (0 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.23s)
+PASS
+==== tfdrip-32.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 11 op 12389 Touch: Upper 2 (the overflow table's 0) > 1 events back to 350122154 (result {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}); key 3443fb942b0f4644 window 2488 now 350128813 newest 350128813; events [350128813]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.21s)
+FAIL
+==== tfdrip-33.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (62 Saturated, 40 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 37036, folded 28135, promoted 4963, waited 37113; W10: 137471 answers' Upper checked against the events in their reach (61324 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 42 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-34.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (201 Saturated, 46 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 37501, folded 28562, promoted 4961, waited 37643; W10: 137471 answers' Upper checked against the events in their reach (61601 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 69 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-35.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (129 Saturated, 42 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 38394, folded 29372, promoted 4957, waited 37590; W10: 137471 answers' Upper checked against the events in their reach (63275 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 41 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-36.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (85 Saturated, 53 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 38489, folded 29444, promoted 4992, waited 35350; W10: 137471 answers' Upper checked against the events in their reach (62613 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 46 keys' drip logs checked (0 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-37.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (113 Saturated, 31 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 37775, folded 28809, promoted 4954, waited 36084; W10: 137471 answers' Upper checked against the events in their reach (62056 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 30 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-38.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (140 Saturated, 32 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 37692, folded 28625, promoted 4944, waited 36476; W10: 137471 answers' Upper checked against the events in their reach (61675 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 33 keys' drip logs checked (0 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-39.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (197 Saturated, 28 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 36258, folded 27573, promoted 4943, waited 37798; W10: 137471 answers' Upper checked against the events in their reach (60453 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 30 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS
+==== tfdrip-40.txt
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:62: case 865: 557222 ops, 144391 answers checked (146 Saturated, 47 low behind a live floor, 0 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 0, Background 1, no stash 0, no overflow 0, small overflow 1, no hot entries 0, few hot entries 0; evictions 37099, folded 28401, promoted 4964, waited 35417; W10: 137471 answers' Upper checked against the events in their reach (62207 with the overflow table's part taken out; 0 over for a key whose identity another shares); at rest, 62 keys' drip logs checked (1 saying nothing or absent)
+--- PASS: TestFuzzConcurrent (0.22s)
+PASS

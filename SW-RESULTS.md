@@ -2031,3 +2031,157 @@ head. Under concurrency, no log over in any run, and no other answer over.
 What W10 leaves: a `high` that takes the overflow part from the call itself
 (a hook in `addSketch`, as `parts.sh` does), under its own rule; and sight
 of a known double push under concurrency (W4c's, not seen in 5 minutes).
+
+## W10b: the overflow table's part taken from the call
+
+**Written after W10's reading**, which failed on one answer over in the
+fuzzer (case 865), its excess the overflow table's part: the check took the
+larger of two reads around the call, and goroutines at a jumped clock swept
+or replaced the table's entries between them. That bracket can also err
+the other way and hide a real over. W10 also left the checks without sight
+of a known double push under concurrency, and a fuzzer case that stopped at
+its first failure, so a log over behind an earlier failure went unreported.
+
+**The library** (`go/touch.go`, both builds). `addSketch` calls
+`testHookSketchPart(h, s.Upper)` when the hook is set, after the table's
+estimate and before adding it to the answer: nil in the library, set only
+by the tests below. Nothing else of the library changes. W10b's library
+differs from 01e49a6's (W4e's) by these added lines alone: 10, one of them
+blank. `lab/w10b.sh` checks that before it runs.
+
+**The checks** (`go/countcheck_test.go`, and the soak's, the fuzzer's and
+`TestDripConcurrentCounts`'s changes; both builds):
+
+- **The part the call added.** Before a checked call, the check arms its
+  key's cell in `partCells`, a table of 2^18 atomic words: the key's 48 high
+  bits beside a 16-bit part, in the cell its 18 low bits pick. The hook
+  writes the part into the cell by compare-and-swap only while the cell is
+  armed for that key. After the call, `high` takes out the part read from
+  the cell, in place of the larger of two reads around the call. The record
+  takes no lock and allocates nothing. A cell another key armed meanwhile
+  reads as taken over, and that answer is set apart and counted (`taken`),
+  not checked.
+- **A part over Upper is a failure.** A recorded part above the answer's
+  Upper cannot be the call's part and would hide an over. It is counted as
+  its own failure in the soak, the fuzzer and `TestDripConcurrentCounts`.
+- **Every failure, every kind.** A fuzzer case goes on past a failure. It
+  counts every failing answer and log by kind (`high`, `part over Upper`,
+  `low`, `shared low`, `log`, and `occupancy` or `New` for the case) and
+  keeps the first of each kind, formatted only then. A log over on a key
+  whose identity another key of its goroutine shares is counted in the
+  soak and the fuzzer, not passed over.
+- **At rest under W7's scenario.** `TestDripConcurrentCounts` also reads
+  each key at rest against its own events: its drip log (`logHigh`), and
+  the Upper of every answer it already reads, at nine windows (`countHigh`,
+  with the part as the call added it). A key whose fingerprint and tag
+  another key of the round shares is counted, not failed. Its summary line
+  is "W10b at rest".
+
+The summaries read "W10b: " (the soak, the fuzzer) and "W10b at rest"
+(`TestDripConcurrentCounts`). The soak and the fuzzer draw nothing new
+from their random streams, so a seed runs the same case.
+
+**Sight.**
+
+- **The cells alone.** `TestPartCells`, with no filter, checks that a cell:
+  - reads its key's record, or 0 when armed and not recorded;
+  - ignores another key's record and saturates;
+  - reads as taken over once another key with the same 18 low bits arms it.
+  It also checks that, from 16 goroutines recording their own keys, every
+  read is the goroutine's own.
+- **The probe** (`lab/w10b_test.go`, copied into worktrees by
+  `lab/w10b.sh`, never in the tree):
+  - `TestW10bSight` is W10's probe (W9's reclaim at install, a control, the
+    control pushed again by hand) with the part taken from the call.
+  - `TestW10bSightOverflow` gives the check a key with a real overflow
+    part, which W9's legs have none of. K's 3 events at t0 = 60,000 are
+    spilled to the overflow table and K's slot freed, and K is touched
+    afresh at tK = 88,900. At now = 89,000 the table's entry counts K's 3
+    events whole in the 250 ms and 1 s windows, while those events are past
+    the windows' reach (22,501 ticks). With the part taken out, Upper is
+    K's one event at tK. The probe asserts that the record equals the part
+    read from the table alone (above 0) and that neither check flags K.
+    With K's touch at tK made twice and the truth holding it once, both
+    checks must flag K at both windows: a real over is not hidden by the
+    part.
+- **Case 865.** `TF_CFUZZ_CASE=865 TF_CFUZZ_RUNS=1`, one process a run, 200
+  runs per build, on the head and on 01e49a6 (W10's check, the control).
+  W10's replays of the unmodified head failed 5 of 40 runs with `tfdrip`
+  and 1 of 40 in the default build (`lab/w10-diag/`).
+- **Under concurrency.** `TestDripConcurrentCounts`, Background, spread,
+  20,000 rounds, `tfdrip`, on 0837f9f (W4c's tree, with the hook and the
+  head's test files) and on the head. In this scenario W7b's reading
+  counted 46 Count-high answers on 0837f9f (its clause 2), from W4c's
+  double push through `miss`, and its outputs (`lab/w7b/progress.txt`)
+  show those keys' logs differing from the shadow's (0xdde against
+  0xeef). A round there spans about 16,000 ticks, inside the reach
+  (22,501), so at rest `high` can flag only an Upper above the key's total
+  events: its pass there says no more than that.
+
+The record is sound only if a checked `TouchAt` or `CountAt` reaches
+`addSketch` at most once and returns the answer it added to. Read from the
+code: `count` adds the table's part last and returns; `touch` does so on
+each of its three returns (the two misses and the hit), after its retries;
+`touchCT` is `touch` padded.
+
+**Before the rule** (not a reading). The code compiles in both builds on
+the head, on 23f03b6 and 0837f9f (with the hook applied as a patch and the
+head's test files) and on 01e49a6. `TestPartCells` was run on a scratch
+clone, plain and under `-race`, and passes: it reads no filter. `lab/w10b.sh`
+was tried on a scratch clone with `TestPartCells` in every test's place and
+short durations. It exited 2 on a change not committed. On the stand-in run
+it checked the library against 01e49a6's ("[go/touch.go]", 0 lines removed,
+9 added, as the runner counts lines that are not blank), applied the hook to 23f03b6 and 0837f9f and found each tree's
+change the hook's, logged "NO SUMMARY" for every judged run, and exited 1.
+None of `TestW10bSight`, `TestW10bSightOverflow`, case 865,
+`TestDripConcurrentCounts` or the soak and the fuzzer has run on W10b's
+code. Outputs in `lab/w10b/`; about 55 minutes.
+
+**Rule (before the reading).** W10b holds if:
+
+1. sight, single-threaded: `TestPartCells` passes on the head. On 23f03b6
+   (W4d's library, with the hook), `TestW10bSight`'s reclaim leg is flagged
+   by both checks (the log, and `high` at 250 ms and at 1 s). On the head
+   it is flagged by neither, its log checked. On both, the control passes
+   and the push made by hand is flagged by both checks at both windows.
+   `TestW10bSightOverflow` passes on both, as the probe asserts. The
+   reclaim leg's flags are read from the probe's lines, which the probe
+   does not assert;
+2. case 865: on the head it fails in none of 200 runs in each build, every
+   run passing with its "W10b: " line. On 01e49a6 (the control) it fails in
+   at least one of 200 runs with `tfdrip`. If the control fails in none,
+   the case no longer reaches what W10 read, and clause 2 is not judged;
+3. sight under concurrency: on 0837f9f the log check at rest flags at least
+   one key in 20,000 rounds. On the head, no log over, no Upper over and no
+   part over Upper. Each run prints its "W10b at rest" line. The control: if
+   W7b's own line on 0837f9f counts no Count-high answer, W4c's double push
+   did not occur in the run, and the 0837f9f half is not judged. The log
+   overs are reported beside that count;
+4. the library: the default build's `tfbench -exact` and answer digest
+   equal `verify/expected/`'s, and `tfdrip`'s `tfbench -exact` equals
+   `lab/w4e/exact-drip.txt` byte for byte;
+5. W10's runs on the head, 5 minutes each: the soak and the fuzzer with
+   `tfdrip` plain and under `-race` and in the default build, and the
+   fuzzer with a straggler (`tfdrip`). No answer over, no part over Upper,
+   no log over. The existing checks (`low`, `shared low`, occupancy) pass as
+   before. No data race, and every run prints its "W10b: " line;
+6. thinness, reported without failing: as W10's clause 3, and the answers
+   set apart because their record was taken over, against those checked.
+   If the logs checked are under half the live keys in a `tfdrip` run, or
+   the answers set apart over 0.1% of those checked, the check is thin
+   there, and W10b says so.
+
+Reported, not judged:
+- the fuzzer on 23f03b6 (W4d's library, with the hook), `tfdrip`, 5
+  minutes: whether either check sees W9's double push under the fuzzer's
+  concurrency, where a reclaim comes from a concurrent caller (W4e's open
+  leg);
+- W7b's own lines on the head (W7b was read on W4d's library);
+- each run's failures by kind.
+
+A failure is read against the code before anything else: a defect of the
+filter, or of the check, said as such. An answer over by one whose trace is
+claims A29's residual (a same-tag hand-over just after a count) is that
+documented case. If clause 1 fails, the checks as W10b has them are blind
+or the probe is at fault, and W10b says nothing of clauses 2 to 6 until
+that is read.

@@ -68,10 +68,18 @@ func dripInOverflow(f *Filter, h, now uint64) bool {
 // entries (W7b; in W7 the shadow had its own capacity's). Answers given
 // while touches race are not judged: only the state the concurrent writes
 // left.
+//
+// W10b: at rest the filter is also read against each key's own events, as
+// the soak and the concurrent fuzzer read theirs (countcheck_test.go):
+// every key's drip log (logHigh), and the Upper of every answer above
+// (countHigh, the overflow table's part as the call added it taken out). A
+// key whose fingerprint and tag another key of the round shares is counted,
+// not failed.
 func TestDripConcurrentCounts(t *testing.T) {
 	if os.Getenv("TF_EXP") == "" {
 		t.Skip("set TF_EXP=1")
 	}
+	recordParts(t)
 	rounds := 200
 	if n, err := strconv.Atoi(os.Getenv("TF_DRIP_ROUNDS")); err == nil {
 		rounds = n
@@ -108,6 +116,10 @@ func TestDripConcurrentCounts(t *testing.T) {
 			var waited, evictions, restored, relocations, folded, lost uint64
 			byWin := make([]int, len(wins))
 			var firsts []string
+			// W10b at rest
+			var restLogs, restLogVacuous, restLogShared, restLogOver int
+			var restHigh, restHighGhost, restHighShared, restHighTaken, restHighOver, restPartOver int
+			var restFirsts []string
 			for round := range rounds {
 				var clock atomic.Uint64
 				clock.Store(1)
@@ -178,9 +190,49 @@ func TestDripConcurrentCounts(t *testing.T) {
 				}
 				for k, h := range keys {
 					inOver := dripInOverflow(f, h, now)
+					sharesKey := shares(h)
+					if m, ok := f.logHigh(h, now, 0, events[k]); !ok { // W10b: the key's drip log at rest
+						restLogVacuous++
+					} else {
+						restLogs++
+						switch {
+						case m == "":
+						case sharesKey:
+							restLogShared++
+						default:
+							if restLogOver++; len(restFirsts) < 5 {
+								restFirsts = append(restFirsts, fmt.Sprintf("log over: round %d key %d (%d events): %s; events %v", round, k, len(events[k]), m, tail(events[k], 12)))
+							}
+						}
+					}
 					for wi, w := range wins {
 						wt := f.Ticks(w)
-						a, b := f.CountAt(h, wt, now), g.CountAt(h, wt, now)
+						armPart(h)
+						a := f.CountAt(h, wt, now)
+						if gh, mine := partOf(h); !mine { // W10b: Upper at rest against the key's events
+							restHighTaken++
+						} else {
+							restHigh++
+							if gh > 0 {
+								restHighGhost++
+							}
+							if gh > a.Upper { // the record can't be the call's part: it would hide an over
+								if restPartOver++; len(restFirsts) < 5 {
+									restFirsts = append(restFirsts, fmt.Sprintf("part over Upper: round %d key %d window %v: part %d, result %+v", round, k, w, gh, a))
+								}
+							}
+							if m := f.countHigh(a, gh, events[k], wt, now, 0); m != "" {
+								switch {
+								case sharesKey:
+									restHighShared++
+								default:
+									if restHighOver++; len(restFirsts) < 5 {
+										restFirsts = append(restFirsts, fmt.Sprintf("Upper over: round %d key %d (%d events) window %v: %s (result %+v)", round, k, len(events[k]), w, m, a))
+									}
+								}
+							}
+						}
+						b := g.CountAt(h, wt, now)
 						answers++
 						if a.Degraded {
 							degraded++
@@ -248,8 +300,16 @@ func TestDripConcurrentCounts(t *testing.T) {
 			for _, d := range firsts {
 				t.Logf("  %s", d)
 			}
+			t.Logf("%s build, mode %s, shape %s: W10b at rest: %d keys' drip logs checked (%d saying nothing or absent; %d over for a key whose fingerprint and tag another key of the round shares), %d over; %d answers' Upper checked against the key's events in their reach (%d with an overflow table's part, as the call added it, taken out; %d over for a key whose fingerprint and tag another shares; %d set apart, their record taken over), %d over, %d with a part over Upper",
+				build, mode, shape, restLogs, restLogVacuous, restLogShared, restLogOver, restHigh, restHighGhost, restHighShared, restHighTaken, restHighOver, restPartOver)
+			for _, d := range restFirsts {
+				t.Logf("  %s", d)
+			}
 			if high+low+other+logLost > 0 {
 				t.Errorf("%s build, mode %s, shape %s: %d answers wrong, %d with the log lost", build, mode, shape, high+low+other, logLost)
+			}
+			if restLogOver+restHighOver+restPartOver > 0 {
+				t.Errorf("%s build, mode %s, shape %s: W10b at rest: %d drip logs over, %d answers' Upper over, %d parts over Upper", build, mode, shape, restLogOver, restHighOver, restPartOver)
 			}
 		}
 	}

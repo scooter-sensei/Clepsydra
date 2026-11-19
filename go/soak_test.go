@@ -30,11 +30,13 @@ import (
 // every live key's drip log (with tfdrip) holds no more events from any
 // quantum on than the key had. Both are off with TF_STRESS_TAGS, where a
 // same-tag hand-over is made common, which reads one high (claims A29).
+// The overflow table's part is the one the call added (W10b: recordParts).
 func TestStressSoak(t *testing.T) {
 	d, err := time.ParseDuration(os.Getenv("TF_STRESS"))
 	if err != nil || d <= 0 {
 		t.Skip("set TF_STRESS=<duration> to run")
 	}
+	recordParts(t)
 	const capacity = 4096
 	workers := max(4, 2*runtime.GOMAXPROCS(0))
 	var clock atomic.Uint64
@@ -73,8 +75,8 @@ func TestStressSoak(t *testing.T) {
 	amp := newTagAmp("TF_STRESS_TAGS")
 	var firstLow atomic.Value
 	reach := f.countReach(0) // one writer per key, its clock never behind its last touch
-	var highChecks, highGhost, highShared, highOver atomic.Int64
-	var firstHigh atomic.Value
+	var highChecks, highGhost, highShared, highOver, highTaken, partOver atomic.Int64
+	var firstHigh, firstPartOver atomic.Value
 	keys := make([]map[uint64][]uint64, workers) // each worker's events, for the logs' check at rest
 	for g := range workers {
 		wg.Add(1)
@@ -114,16 +116,19 @@ func TestStressSoak(t *testing.T) {
 					logs[h] = append(logs[h], now)
 				case op < 9:
 					w := 1 + rng.Uint64N(horizon)
-					gb := 0
 					if amp == nil {
-						gb = f.ghostUpper(h, w, now)
+						armPart(h)
 					}
 					r := f.CountAt(h, w, now)
-					if amp == nil { // W10: the overflow table's part, read before and after the call
-						gh := max(gb, f.ghostUpper(h, w, now))
+					if gh, mine := partOf(h); amp == nil && !mine { // W10b: the cell another key's call took over
+						highTaken.Add(1)
+					} else if amp == nil { // W10b: the overflow table's part, as the call added it
 						highChecks.Add(1)
 						if gh > 0 {
 							highGhost.Add(1)
+						}
+						if gh > r.Upper && partOver.Add(1) == 1 { // the record can't be the call's part: it would hide an over
+							firstPartOver.Store(fmt.Sprintf("the overflow table's part %d > Upper (result %+v); key %x", gh, r, h))
 						}
 						if m := f.countHigh(r, gh, logs[h], w, now, 0); m != "" {
 							if f.sharesIdentity(h, logs) {
@@ -191,10 +196,10 @@ func TestStressSoak(t *testing.T) {
 		t.Errorf("%d unflagged answers with Upper below the true count; first: %v", n, firstLow.Load())
 	}
 	if amp != nil {
-		t.Logf("W10: checks off (TF_STRESS_TAGS)")
+		t.Logf("W10b: checks off (TF_STRESS_TAGS)")
 	} else {
 		now := clock.Load()
-		var logChecks, logVacuous, logOver, expired int
+		var logChecks, logVacuous, logOver, logShared, expired int
 		var firstLog string
 		for _, logs := range keys {
 			for h, l := range logs {
@@ -208,15 +213,22 @@ func TestStressSoak(t *testing.T) {
 					continue
 				}
 				logChecks++
-				if m != "" && !f.sharesIdentity(h, logs) {
+				switch {
+				case m == "":
+				case f.sharesIdentity(h, logs):
+					logShared++
+				default:
 					if logOver++; logOver == 1 {
 						firstLog = fmt.Sprintf("key %x: %s; events %v; %s", h, m, tail(l, 12), f.whereIs(h, now))
 					}
 				}
 			}
 		}
-		t.Logf("W10: %d answers' Upper checked against the events in their reach (%d with the overflow table's part taken out; %d over for a key whose identity another of its worker's shares), %d over; at rest, %d live keys' drip logs checked (%d saying nothing or absent; %d keys past the horizon left out), %d over",
-			highChecks.Load(), highGhost.Load(), highShared.Load(), highOver.Load(), logChecks, logVacuous, expired, logOver)
+		t.Logf("W10b: %d answers' Upper checked against the events in their reach (%d with an overflow table's part, as the call added it, taken out; %d over for a key whose identity another of its worker's shares; %d set apart, their record taken over by another key's call), %d over, %d with a part over Upper; at rest, %d live keys' drip logs checked (%d saying nothing or absent; %d keys past the horizon left out; %d over for a key whose identity another of its worker's shares), %d over",
+			highChecks.Load(), highGhost.Load(), highShared.Load(), highTaken.Load(), highOver.Load(), partOver.Load(), logChecks, logVacuous, expired, logShared, logOver)
+		if n := partOver.Load(); n > 0 {
+			t.Errorf("%d answers whose recorded overflow part is above their Upper; first: %v", n, firstPartOver.Load())
+		}
 		if n := highOver.Load(); n > 0 {
 			t.Errorf("%d answers with Upper above the key's events in the window's reach; first: %v", n, firstHigh.Load())
 		}

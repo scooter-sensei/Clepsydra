@@ -94,7 +94,11 @@ type fuzzResult struct {
 	ct, bg, noStash, noOverflow, smallOverflow, noHot, smallHot uint64 // cases by configuration
 	evictions, folded, promoted, waited                         uint64
 	high, highGhost, highShared, logs, logVacuous               uint64 // the concurrent fuzzer's W10 checks (countcheck_test.go)
+	taken, logShared                                            uint64 // W10b: answers set apart (their part's record taken over), log overs for a shared identity
 	fail                                                        string
+	fails                                                       map[string]uint64 // W10b: the concurrent fuzzer's failures by kind, every one counted
+	firsts                                                      map[string]string // and the first of each kind
+	desc                                                        string            // the concurrent case's configuration
 }
 
 func (r *fuzzResult) add(o fuzzResult) {
@@ -120,12 +124,23 @@ func (r *fuzzResult) add(o fuzzResult) {
 	r.highShared += o.highShared
 	r.logs += o.logs
 	r.logVacuous += o.logVacuous
-}
-
-// w10 summarizes the concurrent fuzzer's W10 checks.
-func (r *fuzzResult) w10() string {
-	return fmt.Sprintf("W10: %d answers' Upper checked against the events in their reach (%d with the overflow table's part taken out; %d over for a key whose identity another shares); at rest, %d keys' drip logs checked (%d saying nothing or absent)",
-		r.high, r.highGhost, r.highShared, r.logs, r.logVacuous)
+	r.taken += o.taken
+	r.logShared += o.logShared
+	for k, n := range o.fails {
+		if r.fails[k] == 0 {
+			if r.firsts == nil {
+				r.firsts = map[string]string{}
+			}
+			r.firsts[k] = o.firsts[k]
+			if o.desc != "" {
+				r.firsts[k] += "; " + o.desc
+			}
+		}
+		if r.fails == nil {
+			r.fails = map[string]uint64{}
+		}
+		r.fails[k] += n
+	}
 }
 
 func (r *fuzzResult) summary() string {

@@ -162,6 +162,13 @@ func (f *Filter) sketchLive(now uint64) bool {
 	return sk != nil && (f.ct || now <= sk.until.Load())
 }
 
+// testHookSketchPart, if set, is given the overflow table's part of an
+// answer for h (its Upper) each time addSketch adds one: the tests' check of
+// Upper against a key's events takes out the part the call itself added
+// (lab/sw W10b), which reads around the call can miss while other callers
+// sweep the table.
+var testHookSketchPart func(h uint64, upper int)
+
 // addSketch adds h's events in the overflow table to r, the answer from
 // the table or stash. The overflow holds only histories the stash dropped,
 // and a key that comes back starts a fresh slot, so the two never count the
@@ -178,6 +185,9 @@ func (f *Filter) addSketch(r *Result, h, window, now uint64) {
 	}
 	if !ok {
 		return
+	}
+	if fn := testHookSketchPart; fn != nil {
+		fn(h, s.Upper)
 	}
 	r.Count += s.Count
 	r.Upper += s.Upper

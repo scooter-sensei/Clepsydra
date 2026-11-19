@@ -2,10 +2,13 @@ package temporalfilter
 
 import (
 	"fmt"
+	"maps"
 	"math/rand/v2"
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -41,6 +44,10 @@ import (
 // drip log (with tfdrip) holds no more events from any quantum on than the
 // key had. Both are off with TF_CFUZZ_TAGS, where a same-tag hand-over is
 // made common, which reads one high (claims A29).
+//
+// W10b: the overflow table's part is the one the call added (recordParts),
+// and a case goes on past a failure: every failing answer and log is
+// counted by kind, the first of each kind reported.
 func TestFuzzConcurrent(t *testing.T) {
 	if s := os.Getenv("TF_CFUZZ_CASE"); s != "" {
 		seed, err := strconv.ParseUint(s, 10, 64)
@@ -51,21 +58,23 @@ func TestFuzzConcurrent(t *testing.T) {
 		if runs <= 0 {
 			runs = 20
 		}
+		recordParts(t)
 		var sum fuzzResult
 		for range runs {
 			r := cfuzzCase(seed)
 			sum.add(r)
-			if r.fail != "" {
-				t.Fatalf("case %d: %s", seed, r.fail)
+			if len(r.fails) > 0 {
+				t.Fatalf("case %d: %s", seed, r.failures())
 			}
 		}
-		t.Logf("case %d: %s; %s", seed, sum.summary(), sum.w10())
+		t.Logf("case %d: %s; %s", seed, sum.summary(), sum.w10b())
 		return
 	}
 	d, err := time.ParseDuration(os.Getenv("TF_CFUZZ"))
 	if err != nil || d <= 0 {
 		t.Skip("set TF_CFUZZ=<duration> to run")
 	}
+	recordParts(t)
 	seed := uint64(1)
 	if s := os.Getenv("TF_CFUZZ_SEED"); s != "" {
 		if seed, err = strconv.ParseUint(s, 10, 64); err != nil {
@@ -78,13 +87,45 @@ func TestFuzzConcurrent(t *testing.T) {
 	for ; time.Since(t0) < d; seed++ {
 		r := cfuzzCase(seed)
 		sum.add(r)
-		if r.fail != "" {
-			t.Errorf("case %d: %s", seed, r.fail)
+		if len(r.fails) > 0 {
+			t.Errorf("case %d: %s", seed, r.failures())
 		}
 	}
 	el := time.Since(t0)
 	t.Logf("%d cases from seed %d in %v (%.1f M ops/s): %s; %s", seed-first, first, el.Round(time.Second),
-		float64(sum.ops)/el.Seconds()/1e6, sum.summary(), sum.w10())
+		float64(sum.ops)/el.Seconds()/1e6, sum.summary(), sum.w10b())
+}
+
+// failed counts a failure of kind in a concurrent case and keeps the first
+// of each kind, formatted only then (W10b: a case goes on past a failure).
+func (r *fuzzResult) failed(kind string, msg func() string) {
+	if r.fails == nil {
+		r.fails, r.firsts = map[string]uint64{}, map[string]string{}
+	}
+	if r.fails[kind]++; r.fails[kind] == 1 {
+		r.firsts[kind] = msg()
+	}
+}
+
+// failures lists a case's failures: how many of each kind, and the first.
+func (r *fuzzResult) failures() string {
+	kinds := slices.Sorted(maps.Keys(r.fails))
+	var s []string
+	for _, k := range kinds {
+		s = append(s, fmt.Sprintf("%d %s (first: %s)", r.fails[k], k, r.firsts[k]))
+	}
+	out := strings.Join(s, "; ")
+	if r.desc != "" {
+		out += "; " + r.desc
+	}
+	return out
+}
+
+// w10b summarizes the concurrent fuzzer's W10b checks.
+func (r *fuzzResult) w10b() string {
+	return fmt.Sprintf("W10b: %d answers' Upper checked against the events in their reach (%d with an overflow table's part, as the call added it, taken out; %d over for a key whose identity another shares; %d set apart, their record taken over by another key's call), %d over; at rest, %d keys' drip logs checked (%d saying nothing or absent; %d over for a key whose identity another shares), %d over; failing answers and logs by kind: high %d, part over Upper %d, low %d, shared low %d, log %d, other %d",
+		r.high, r.highGhost, r.highShared, r.taken, r.fails["high"], r.logs, r.logVacuous, r.logShared, r.fails["log"],
+		r.fails["high"], r.fails["part over Upper"], r.fails["low"], r.fails["shared low"], r.fails["log"], r.fails["New"]+r.fails["occupancy"])
 }
 
 // cfuzzCase runs one concurrent case.
@@ -106,7 +147,9 @@ func cfuzzCase(seed uint64) (res fuzzResult) {
 	}
 	f, err := New(cfg)
 	if err != nil {
-		res.fail = fmt.Sprintf("New(%+v): %v", cfg, err)
+		res.failed("New", func() string {
+			return fmt.Sprintf("New(%+v): %v", cfg, err)
+		})
 		return res
 	}
 	defer f.Close()
@@ -126,6 +169,7 @@ func cfuzzCase(seed uint64) (res fuzzResult) {
 	if straggle {
 		desc += " straggler"
 	}
+	res.desc = desc
 	for i := range sh.keys {
 		sh.keys[i] = amp.h(mix64(1<<62|uint64(i)), nil)
 	}
@@ -142,13 +186,10 @@ func cfuzzCase(seed uint64) (res fuzzResult) {
 			mu.Lock()
 			defer mu.Unlock()
 			res.add(r)
-			if r.fail != "" && res.fail == "" {
-				res.fail = r.fail + "; " + desc
-			}
 		}()
 	}
 	wg.Wait()
-	if amp == nil { // W10: every live key's drip log, at rest
+	if amp == nil { // W10: every live key's drip log, at rest (W10b: every over counted, whatever failed before)
 		now := newest.Load()
 		for g, tr := range trs {
 			if straggle && g == 0 {
@@ -164,15 +205,23 @@ func cfuzzCase(seed uint64) (res fuzzResult) {
 					continue
 				}
 				res.logs++
-				if m != "" && res.fail == "" && !f.sharesIdentity(h, tr.ev) {
-					res.fail = fmt.Sprintf("at rest, goroutine %d's key %x: %s; events %v; %s; %s", g, h, m, tail(l, 12), f.whereIs(h, now), desc)
+				switch {
+				case m == "":
+				case f.sharesIdentity(h, tr.ev):
+					res.logShared++
+				default:
+					res.failed("log", func() string {
+						return fmt.Sprintf("at rest, goroutine %d's key %x: %s; events %v; %s", g, h, m, tail(l, 12), f.whereIs(h, now))
+					})
 				}
 			}
 		}
 	}
 	res.evictions, res.folded, res.promoted, res.waited = f.Evictions(), f.Folded(), f.Promoted(), f.Waited()
-	if occ := f.Occupancy(newest.Load()); occ > f.Slots() && res.fail == "" {
-		res.fail = fmt.Sprintf("occupancy %d > %d slots; %s", occ, f.Slots(), desc)
+	if occ := f.Occupancy(newest.Load()); occ > f.Slots() {
+		res.failed("occupancy", func() string {
+			return fmt.Sprintf("occupancy %d > %d slots", occ, f.Slots())
+		})
 	}
 	return res
 }
@@ -222,38 +271,48 @@ func cfuzzWorker(f *Filter, g, seed uint64, ops, share int, H, maxLag uint64, pe
 	hs := make([]uint64, 16)
 	out := make([]bool, 16)
 	cnt := make([]int, 16)
-	// ghost is the overflow table's part of an answer for h before the call
-	ghost := func(h, window, now uint64) int {
-		if !cc {
-			return 0
+	// arm readies h's record of the overflow table's part before a checked
+	// call (W10b; countcheck_test.go)
+	arm := func(h uint64) {
+		if cc {
+			armPart(h)
 		}
-		return f.ghostUpper(h, window, now)
 	}
-	check := func(op string, h, window, now uint64, r Result, gb int) bool {
+	// check checks a call's answer r for h; a failure is counted and the
+	// goroutine goes on (W10b)
+	check := func(op string, h, window, now uint64, r Result) {
 		res.checks++
-		if cc { // W10: Upper, the overflow table's part (before or after the call) aside, within the events of the window's reach
-			gh := max(gb, f.ghostUpper(h, window, now))
+		if gh, mine := partOf(h); cc && !mine { // W10b: the record another key's call took over
+			res.taken++
+		} else if cc { // W10b: Upper, the overflow table's part as the call added it aside, within the events of the window's reach
 			res.high++
 			if gh > 0 {
 				res.highGhost++
 			}
+			if gh > r.Upper { // the record can't be the call's part: it would hide an over
+				res.failed("part over Upper", func() string {
+					return fmt.Sprintf("goroutine %d op %d %s: the overflow table's part %d > Upper (result %+v); key %x", g, res.ops, op, gh, r, h)
+				})
+			}
 			if m := f.countHigh(r, gh, tr.ev[h], window, now, maxLag); m != "" {
-				if !f.sharesIdentity(h, tr.ev) {
-					res.fail = fmt.Sprintf("goroutine %d op %d %s: %s (result %+v); key %x window %d now %d newest %d; events %v; %s",
-						g, res.ops, op, m, r, h, window, now, tr.newest, tail(tr.ev[h], 12), f.whereIs(h, now))
-					return false
+				if f.sharesIdentity(h, tr.ev) {
+					res.highShared++
+				} else {
+					res.failed("high", func() string {
+						return fmt.Sprintf("goroutine %d op %d %s: %s (result %+v); key %x window %d now %d newest %d; events %v; %s",
+							g, res.ops, op, m, r, h, window, now, tr.newest, tail(tr.ev[h], 12), f.whereIs(h, now))
+					})
 				}
-				res.highShared++
 			}
 		}
 		if r.Saturated {
 			res.sat++
-			return true
+			return
 		}
 		tr.newest = max(tr.newest, newest.Load()) // a call at this clock may have expired older events
 		exact := tr.count(h, window, now)
 		if r.Upper >= exact {
-			return true
+			return
 		}
 		switch {
 		case f.floorLive(h, window, now):
@@ -261,11 +320,11 @@ func cfuzzWorker(f *Filter, g, seed uint64, ops, share int, H, maxLag uint64, pe
 		case f.skW == 0 && f.lostRecently(now):
 			res.lostLow++
 		default:
-			res.fail = fmt.Sprintf("goroutine %d op %d %s: Upper %d < true %d (result %+v); key %x window %d now %d newest %d; events %v; %s",
-				g, res.ops, op, r.Upper, exact, r, h, window, now, tr.newest, tail(tr.ev[h], 12), f.whereIs(h, now))
-			return false
+			res.failed("low", func() string {
+				return fmt.Sprintf("goroutine %d op %d %s: Upper %d < true %d (result %+v); key %x window %d now %d newest %d; events %v; %s",
+					g, res.ops, op, r.Upper, exact, r, h, window, now, tr.newest, tail(tr.ev[h], 12), f.whereIs(h, now))
+			})
 		}
-		return true
 	}
 	for ; res.ops < uint64(ops); res.ops++ {
 		if phaseLeft == 0 {
@@ -312,10 +371,10 @@ func cfuzzWorker(f *Filter, g, seed uint64, ops, share int, H, maxLag uint64, pe
 				}
 				before.newest = max(tr.newest, newest.Load())
 				if exact := before.count(h, window, now); r.Upper < exact && !f.floorLive(h, window, now) && !(f.skW == 0 && f.lostRecently(now)) {
-					res.checks++
-					res.fail = fmt.Sprintf("goroutine %d op %d shared Count: Upper %d < true %d (result %+v); key %x window %d now %d newest %d; events %v; %s",
-						g, res.ops, r.Upper, exact, r, h, window, now, before.newest, tail(before.ev[h], 12), f.whereIs(h, now))
-					return res, tr
+					res.failed("shared low", func() string {
+						return fmt.Sprintf("goroutine %d op %d shared Count: Upper %d < true %d (result %+v); key %x window %d now %d newest %d; events %v; %s",
+							g, res.ops, r.Upper, exact, r, h, window, now, before.newest, tail(before.ev[h], 12), f.whereIs(h, now))
+					})
 				}
 				res.checks++
 			}
@@ -339,10 +398,9 @@ func cfuzzWorker(f *Filter, g, seed uint64, ops, share int, H, maxLag uint64, pe
 		switch op := rng.IntN(100); {
 		case op < 40:
 			tr.add(h, now)
-			gb := ghost(h, window, now)
-			if !check("Touch", h, window, now, f.TouchAt(h, window, now), gb) {
-				return res, tr
-			}
+			arm(h)
+			r := f.TouchAt(h, window, now)
+			check("Touch", h, window, now, r)
 		case op < 45:
 			n := 1 + rng.IntN(64)
 			for range n {
@@ -357,10 +415,9 @@ func cfuzzWorker(f *Filter, g, seed uint64, ops, share int, H, maxLag uint64, pe
 			f.TouchAndCountAt(h, window, now)
 			tr.add(h, now)
 		case op < 85:
-			gb := ghost(h, window, now)
-			if !check("Count", h, window, now, f.CountAt(h, window, now), gb) {
-				return res, tr
-			}
+			arm(h)
+			r := f.CountAt(h, window, now)
+			check("Count", h, window, now, r)
 		case op < 90:
 			f.ContainsAt(h, window, now)
 			f.VelocityCountAt(h, window, now)

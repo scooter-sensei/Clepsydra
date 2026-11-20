@@ -1,0 +1,5 @@
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:95: 103 cases from seed 1 in 5m2s (0.2 M ops/s): 72104851 ops, 18712298 answers checked (3114276 Saturated, 4874 low behind a live floor, 16384 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 22, Background 16, no stash 13, no overflow 8, small overflow 27, no hot entries 9, few hot entries 24; evictions 3484848, folded 3136203, promoted 244706, waited 578707; W10b: 17804887 answers' Upper checked against the events in their reach (4376151 with an overflow table's part, as the call added it, taken out; 0 over for a key whose identity another shares; 276 set apart, their record taken over by another key's call), 0 over; at rest, 277690 keys' drip logs checked (272116 saying nothing or absent; 0 over for a key whose identity another shares), 0 over; failing answers and logs by kind: high 0, part over Upper 0, low 0, shared low 0, log 0, other 0
+--- PASS: TestFuzzConcurrent (301.89s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	302.924s

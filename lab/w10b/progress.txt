@@ -1,0 +1,101 @@
+[03:16:05] W10b: head a66af40; go1.24.7
+[03:16:05] 0: library files that differ from 01e49a6's: [go/touch.go ]; lines removed from go/touch.go: 0, added: 9
+[03:16:05] 1: sight
+[03:16:06] 1 TestPartCells on the head: exit 0; 1 PASS lines
+[03:16:07] s-w4d (23f03b6): library files changed [go/touch.go ], the changes the hook's: yes
+[03:16:09] 1 s-w4d: go test exit 0
+w10b_test.go:94: W10b sight, reclaim at install: reclaim true, promoted 2; log 0xffe: log check true "log 0xffe: 2 events logged at quantum 767 or later, the key had 1 (last touch 119999)"; high at 250 ms, 1 s: ["Upper 2 (the overflow table's 0) > 1 events back to 97348" "Upper 2 (the overflow table's 0) > 1 events back to 96598"]
+w10b_test.go:94: W10b sight, control: reclaim false, promoted 1; log 0xfff: log check true ""; high at 250 ms, 1 s: ["" ""]
+w10b_test.go:94: W10b sight, control, pushed again by hand: reclaim false, promoted 1; log 0xffe: log check true "log 0xffe: 2 events logged at quantum 767 or later, the key had 1 (last touch 119999)"; high at 250 ms, 1 s: ["Upper 2 (the overflow table's 0) > 1 events back to 97348" "Upper 2 (the overflow table's 0) > 1 events back to 96598"]
+--- PASS: TestW10bSight (0.00s)
+--- PASS: TestW10bSight/reclaim_at_install (0.00s)
+--- PASS: TestW10bSight/control (0.00s)
+--- PASS: TestW10bSight/control,_pushed_again_by_hand (0.00s)
+w10b_test.go:168: W10b sight, overflow part: folded 1; log 0xfff: log check true ""; parts at 250 ms, 1 s: [3 3]; high: ["" ""]
+w10b_test.go:168: W10b sight, overflow part, the touch counted twice: folded 1; log 0xffe: log check true "log 0xffe: 2 events logged at quantum 568 or later, the key had 1 (last touch 88900)"; parts at 250 ms, 1 s: [3 3]; high: ["Upper 5 (the overflow table's 3) > 1 events back to 66249" "Upper 5 (the overflow table's 3) > 1 events back to 65499"]
+--- PASS: TestW10bSightOverflow (0.00s)
+--- PASS: TestW10bSightOverflow/overflow_part (0.00s)
+--- PASS: TestW10bSightOverflow/overflow_part,_the_touch_counted_twice (0.00s)
+[03:16:11] 1 s-head: go test exit 0
+w10b_test.go:94: W10b sight, reclaim at install: reclaim true, promoted 2; log 0xfff: log check true ""; high at 250 ms, 1 s: ["" ""]
+w10b_test.go:94: W10b sight, control: reclaim false, promoted 1; log 0xfff: log check true ""; high at 250 ms, 1 s: ["" ""]
+w10b_test.go:94: W10b sight, control, pushed again by hand: reclaim false, promoted 1; log 0xffe: log check true "log 0xffe: 2 events logged at quantum 767 or later, the key had 1 (last touch 119999)"; high at 250 ms, 1 s: ["Upper 2 (the overflow table's 0) > 1 events back to 97348" "Upper 2 (the overflow table's 0) > 1 events back to 96598"]
+--- PASS: TestW10bSight (0.00s)
+--- PASS: TestW10bSight/reclaim_at_install (0.00s)
+--- PASS: TestW10bSight/control (0.00s)
+--- PASS: TestW10bSight/control,_pushed_again_by_hand (0.00s)
+w10b_test.go:168: W10b sight, overflow part: folded 1; log 0xfff: log check true ""; parts at 250 ms, 1 s: [3 3]; high: ["" ""]
+w10b_test.go:168: W10b sight, overflow part, the touch counted twice: folded 1; log 0xffe: log check true "log 0xffe: 2 events logged at quantum 568 or later, the key had 1 (last touch 88900)"; parts at 250 ms, 1 s: [3 3]; high: ["Upper 5 (the overflow table's 3) > 1 events back to 66249" "Upper 5 (the overflow table's 3) > 1 events back to 65499"]
+--- PASS: TestW10bSightOverflow (0.00s)
+--- PASS: TestW10bSightOverflow/overflow_part (0.00s)
+--- PASS: TestW10bSightOverflow/overflow_part,_the_touch_counted_twice (0.00s)
+[03:16:11] 2: case 865, 200 single runs each
+[03:17:04] 2 control-drip: 200 single runs of case 865: 11 fail, 189 pass with their summary, 0 neither
+  2 control-drip:      2 Count: Upper 1 (the overflow table's 0) > 0 events
+  2 control-drip:      1 Count: Upper 2 (the overflow table's 0) > 1 events
+  2 control-drip:      8 Touch: Upper 2 (the overflow table's 0) > 1 events
+[03:17:49] 2 head-drip: 200 single runs of case 865: 0 fail, 200 pass with their summary, 0 neither
+[03:18:30] 2 control-default: 200 single runs of case 865: 11 fail, 189 pass with their summary, 0 neither
+  2 control-default:      4 Count: Upper 1 (the overflow table's 0) > 0 events
+  2 control-default:      6 Touch: Upper 2 (the overflow table's 0) > 1 events
+  2 control-default:      1 Touch: Upper 6 (the overflow table's 0) > 5 events
+[03:19:11] 2 head-default: 200 single runs of case 865: 0 fail, 200 pass with their summary, 0 neither
+[03:19:11] 3: sight under concurrency, TestDripConcurrentCounts, bg, spread, 20000 rounds
+[03:19:11] w4c (0837f9f): library files changed [go/touch.go ], the changes the hook's: yes
+[03:19:58] 3 conc-w4c: go test exit 1
+dripcount_test.go:293: tfdrip build, mode bg, shape spread: 20000 rounds, 5760000 answers, 5759127 judged (100.0%); wrong: Count high 3, Count low 0, another field 0; log lost 0; set apart: flagged Saturated or Degraded 873, a key in the overflow table 0, collisions 0, in 0 rounds that lost a history 0; the filter's Degraded 873; waited 27067326, evictions 15739657, restored 10222088, relocations 190630, folded 567, lost 0
+dripcount_test.go:301:   Count high: round 3463 key 8 (20 events) window 2s: {Seen:true Count:6 Upper:9 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:5 Upper:9 Saturated:false Restored:false Degraded:false}; log 0x9f5, shadow's 0xdf5
+dripcount_test.go:301:   Count high: round 11922 key 22 (20 events) window 2s: {Seen:true Count:2 Upper:4 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:1 Upper:4 Saturated:false Restored:false Degraded:false}; log 0xe7f, shadow's 0xf7f
+dripcount_test.go:301:   Count high: round 17051 key 6 (20 events) window 2s: {Seen:true Count:5 Upper:6 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:4 Upper:6 Saturated:false Restored:false Degraded:false}; log 0xcef, shadow's 0xeef
+dripcount_test.go:303: tfdrip build, mode bg, shape spread: W10b at rest: 639915 keys' drip logs checked (85 saying nothing or absent; 0 over for a key whose fingerprint and tag another key of the round shares), 4 over; 5760000 answers' Upper checked against the key's events in their reach (873 with an overflow table's part, as the call added it, taken out; 0 over for a key whose fingerprint and tag another shares; 0 set apart, their record taken over), 0 over, 0 with a part over Upper
+dripcount_test.go:306:   log over: round 3463 key 8 (20 events): log 0x9f5: 5 events logged at quantum 93 or later, the key had 4 (last touch 15701); events [10976 11651 12276 12976 13301 13851 14276 14376 14576 15351 15551 15701]
+dripcount_test.go:306:   log over: round 11922 key 22 (20 events): log 0xe7f: 3 events logged at quantum 89 or later, the key had 2 (last touch 15076); events [9251 9951 10301 10601 10926 11551 11951 12426 12901 13401 13976 15076]
+dripcount_test.go:306:   log over: round 17051 key 6 (20 events): log 0xcef: 4 events logged at quantum 93 or later, the key had 3 (last touch 15651); events [8101 8826 9626 10276 10876 12201 13051 13601 14076 14626 15101 15651]
+dripcount_test.go:306:   log over: round 19123 key 1 (20 events): log 0xf3f: 3 events logged at quantum 85 or later, the key had 2 (last touch 14276); events [4176 7601 8401 9226 9926 10626 11376 11976 12376 12901 13426 14276]
+dripcount_test.go:312: tfdrip build, mode bg, shape spread: W10b at rest: 4 drip logs over, 0 answers' Upper over, 0 parts over Upper
+[03:20:43] 3 conc-head: go test exit 0
+dripcount_test.go:293: tfdrip build, mode bg, shape spread: 20000 rounds, 5760000 answers, 5759181 judged (100.0%); wrong: Count high 0, Count low 0, another field 0; log lost 0; set apart: flagged Saturated or Degraded 819, a key in the overflow table 0, collisions 0, in 0 rounds that lost a history 0; the filter's Degraded 819; waited 26965066, evictions 15491156, restored 9974128, relocations 190299, folded 475, lost 0
+dripcount_test.go:303: tfdrip build, mode bg, shape spread: W10b at rest: 639921 keys' drip logs checked (79 saying nothing or absent; 0 over for a key whose fingerprint and tag another key of the round shares), 0 over; 5760000 answers' Upper checked against the key's events in their reach (819 with an overflow table's part, as the call added it, taken out; 0 over for a key whose fingerprint and tag another shares; 0 set apart, their record taken over), 0 over, 0 with a part over Upper
+[03:20:43] 4: the library
+[03:21:02] 4a default exact: IDENTICAL
+[03:22:10] 4b default digest: IDENTICAL
+[03:22:27] 4c tfdrip exact: IDENTICAL to W4e's
+[03:22:27] 5: the head's soak and fuzzer, 5m each
+soak_test.go:193: 24 workers, 5m0s: 1009351308 ops, 302788271 counts checked (61815456 Saturated, 0 low behind a live bucket floor); evictions 111655385, restored 5743165, lost 0, promoted 2591895, hot refused 3214006
+soak_test.go:227: W10b: 302786102 answers' Upper checked against the events in their reach (69938979 with an overflow table's part, as the call added it, taken out; 0 over for a key whose identity another of its worker's shares; 2169 set apart, their record taken over by another key's call), 0 over, 0 with a part over Upper; at rest, 5122 live keys' drip logs checked (3254 saying nothing or absent; 0 keys past the horizon left out; 0 over for a key whose identity another of its worker's shares), 0 over
+--- PASS: TestStressSoak (300.00s)
+ok  	github.com/scooter-sensei/clepsydra/go	300.017s
+[03:27:27] 5 soak-drip: exit 0
+soak_test.go:193: 24 workers, 5m0s: 49891187 ops, 14970021 counts checked (0 Saturated, 0 low behind a live bucket floor); evictions 1361439, restored 107064, lost 0, promoted 112462, hot refused 0
+soak_test.go:227: W10b: 14969920 answers' Upper checked against the events in their reach (127342 with an overflow table's part, as the call added it, taken out; 0 over for a key whose identity another of its worker's shares; 101 set apart, their record taken over by another key's call), 0 over, 0 with a part over Upper; at rest, 4919 live keys' drip logs checked (50 saying nothing or absent; 5527 keys past the horizon left out; 0 over for a key whose identity another of its worker's shares), 0 over
+--- PASS: TestStressSoak (300.03s)
+ok  	github.com/scooter-sensei/clepsydra/go	301.056s
+[03:32:32] 5 soak-drip-race: exit 0
+soak_test.go:193: 24 workers, 5m0s: 1274215920 ops, 382258449 counts checked (144116451 Saturated, 0 low behind a live bucket floor); evictions 130664839, restored 6749225, lost 0, promoted 1402897, hot refused 25183277
+soak_test.go:227: W10b: 382255936 answers' Upper checked against the events in their reach (84069234 with an overflow table's part, as the call added it, taken out; 0 over for a key whose identity another of its worker's shares; 2513 set apart, their record taken over by another key's call), 0 over, 0 with a part over Upper; at rest, 0 live keys' drip logs checked (8376 saying nothing or absent; 0 keys past the horizon left out; 0 over for a key whose identity another of its worker's shares), 0 over
+--- PASS: TestStressSoak (300.00s)
+ok  	github.com/scooter-sensei/clepsydra/go	300.019s
+[03:37:33] 5 soak-default: exit 0
+fuzzconc_test.go:95: 1147 cases from seed 1 in 5m0s (2.5 M ops/s): 760399970 ops, 197127932 answers checked (28087600 Saturated, 44266 low behind a live floor, 2583366 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 205, Background 231, no stash 154, no overflow 146, small overflow 298, no hot entries 143, few hot entries 283; evictions 37511720, folded 29761028, promoted 2300950, waited 9284178; W10b: 187555842 answers' Upper checked against the events in their reach (40012757 with an overflow table's part, as the call added it, taken out; 0 over for a key whose identity another shares; 1311 set apart, their record taken over by another key's call), 0 over; at rest, 4764718 keys' drip logs checked (4013055 saying nothing or absent; 0 over for a key whose identity another shares), 0 over; failing answers and logs by kind: high 0, part over Upper 0, low 0, shared low 0, log 0, other 0
+--- PASS: TestFuzzConcurrent (300.14s)
+ok  	github.com/scooter-sensei/clepsydra/go	300.148s
+[03:42:33] 5 cfuzz-drip: exit 0
+fuzzconc_test.go:95: 103 cases from seed 1 in 5m2s (0.2 M ops/s): 72104851 ops, 18712298 answers checked (3114276 Saturated, 4874 low behind a live floor, 16384 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 22, Background 16, no stash 13, no overflow 8, small overflow 27, no hot entries 9, few hot entries 24; evictions 3484848, folded 3136203, promoted 244706, waited 578707; W10b: 17804887 answers' Upper checked against the events in their reach (4376151 with an overflow table's part, as the call added it, taken out; 0 over for a key whose identity another shares; 276 set apart, their record taken over by another key's call), 0 over; at rest, 277690 keys' drip logs checked (272116 saying nothing or absent; 0 over for a key whose identity another shares), 0 over; failing answers and logs by kind: high 0, part over Upper 0, low 0, shared low 0, log 0, other 0
+--- PASS: TestFuzzConcurrent (301.89s)
+ok  	github.com/scooter-sensei/clepsydra/go	302.924s
+[03:47:37] 5 cfuzz-drip-race: exit 0
+fuzzconc_test.go:95: 1068 cases from seed 1 in 5m0s (2.4 M ops/s): 714094997 ops, 185109546 answers checked (26697467 Saturated, 35627 low behind a live floor, 2279956 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 193, Background 210, no stash 146, no overflow 136, small overflow 281, no hot entries 132, few hot entries 262; evictions 33949422, folded 26954368, promoted 2147682, waited 9026880; W10b: 162535475 answers' Upper checked against the events in their reach (34013815 with an overflow table's part, as the call added it, taken out; 0 over for a key whose identity another shares; 628 set apart, their record taken over by another key's call), 0 over; at rest, 3984134 keys' drip logs checked (3493803 saying nothing or absent; 0 over for a key whose identity another shares), 0 over; failing answers and logs by kind: high 0, part over Upper 0, low 0, shared low 0, log 0, other 0
+--- PASS: TestFuzzConcurrent (300.16s)
+ok  	github.com/scooter-sensei/clepsydra/go	300.167s
+[03:52:37] 5 cfuzz-drip-straggle: exit 0
+fuzzconc_test.go:95: 1239 cases from seed 1 in 5m0s (2.7 M ops/s): 813309702 ops, 210855479 answers checked (30050189 Saturated, 45846 low behind a live floor, 2766585 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 226, Background 255, no stash 160, no overflow 155, small overflow 324, no hot entries 153, few hot entries 303; evictions 39592723, folded 31497895, promoted 2481311, waited 10164148; W10b: 200617229 answers' Upper checked against the events in their reach (42018750 with an overflow table's part, as the call added it, taken out; 0 over for a key whose identity another shares; 1402 set apart, their record taken over by another key's call), 0 over; at rest, 0 keys' drip logs checked (9446762 saying nothing or absent; 0 over for a key whose identity another shares), 0 over; failing answers and logs by kind: high 0, part over Upper 0, low 0, shared low 0, log 0, other 0
+--- PASS: TestFuzzConcurrent (300.13s)
+ok  	github.com/scooter-sensei/clepsydra/go	300.139s
+[03:57:38] 5 cfuzz-default: exit 0
+[03:57:38] 6: reported, the fuzzer on 23f03b6 (W4d's library, with the hook), tfdrip, 5m
+[03:57:38] w4d (23f03b6): library files changed [go/touch.go ], the changes the hook's: yes
+[04:02:41] 6: exit 0; failing cases 0
+fuzzconc_test.go:95: 1143 cases from seed 1 in 5m1s (2.5 M ops/s): 757515691 ops, 196378005 answers checked (28291816 Saturated, 43603 low behind a live floor, 2581971 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 205, Background 230, no stash 154, no overflow 146, small overflow 296, no hot entries 143, few hot entries 281; evictions 37305177, folded 29602305, promoted 2286257, waited 9277813; W10b: 186842342 answers' Upper checked against the events in their reach (39968032 with an overflow table's part, as the call added it, taken out; 0 over for a key whose identity another shares; 1291 set apart, their record taken over by another key's call), 0 over; at rest, 4794401 keys' drip logs checked (3974415 saying nothing or absent; 0 over for a key whose identity another shares), 0 over; failing answers and logs by kind: high 0, part over Upper 0, low 0, shared low 0, log 0, other 0
+--- PASS: TestFuzzConcurrent (300.95s)
+ok  	github.com/scooter-sensei/clepsydra/go	300.951s
+[04:02:41] W10b readings finished (exit 0)

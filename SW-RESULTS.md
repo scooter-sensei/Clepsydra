@@ -2185,3 +2185,132 @@ claims A29's residual (a same-tag hand-over just after a count) is that
 documented case. If clause 1 fails, the checks as W10b has them are blind
 or the probe is at fault, and W10b says nothing of clauses 2 to 6 until
 that is read.
+
+### W10b's reading (a66af40's tree; `lab/w10b.sh`, outputs in `lab/w10b/`)
+
+`lab/w10b.sh` ran end to end (03:16 to 04:02, Go 1.24.7) and exited 0.
+Its first check found the head's library different from 01e49a6's in
+`go/touch.go` alone, by added lines only, and the hook applied to 23f03b6
+and 0837f9f changed each tree by the hook's lines alone. Every judged run
+printed its summary, and no run reported a data race.
+
+1. **Holds.** `TestPartCells` passes on the head.
+   - **On 23f03b6** (W4d's library, with the hook): the reclaim leg's
+     reclaim happened inside K's install (Promoted 2), and both checks
+     flagged it. The log read 0xffe ("2 events logged at quantum 767 or
+     later, the key had 1"), and `high` read Upper 2 against 1 event at
+     250 ms and at 1 s.
+   - **On the head:** the same leg left 0xfff, its log was checked, and
+     neither check flagged it.
+   - **On both trees:** the control passed, and the push made by hand was
+     flagged by both checks at both windows. `TestW10bSightOverflow`
+     passed. With K's 3 events in the overflow table, the part the call
+     added read 3 at both windows, as the table read alone does, and
+     neither check flagged K. With K's touch counted twice, the log read
+     0xffe and `high` read Upper 5, a part of 3, against 1 event: both
+     flagged K at both windows (`sight-s-w4d.txt`, `sight-s-head.txt`).
+2. **Holds.** Case 865, 200 single runs each (counts in `progress.txt`; the
+   control's failing runs in `control-drip/` and `control-default/`; the
+   runner keeps no passing run). On the head it failed in none, with
+   `tfdrip` and in the default build, and every run passed with its
+   "W10b: " line. On 01e49a6 (W10's check, the
+   control) it failed in 11 of 200 with `tfdrip` (Touch Upper 2 against 1
+   event 8 times; Count Upper 1 against none twice; Count Upper 2 against 1
+   once) and in 11 of 200 in the default build (Touch Upper 2 against 1 six
+   times, Upper 6 against 5 once; Count Upper 1 against none four times),
+   W10's bracket reading the overflow table's part as 0 in every one. The
+   control was met.
+3. **Holds.** `TestDripConcurrentCounts`, Background, spread, 20,000 rounds
+   (`conc-w4c.txt`, `conc-head.txt`).
+   - **On 0837f9f:** W7b's own line counts 3 Count-high answers, so the
+     control was met. The log check at rest flagged 4 of 639,915 keys' logs
+     (85 saying nothing). Three of them are the keys W7b's comparison found
+     Count high (round 3463 key 8, round 11922 key 22 and round 17051 key
+     6, each at 2 s; logs 0x9f5, 0xe7f and 0xcef against the shadow's
+     0xdf5, 0xf7f and 0xeef). The fourth (round 19123 key 1, log 0xf3f, 3
+     events logged at quantum 85 or later against 2) is one the comparison
+     did not count; whether its log differs from the shadow's is not in the
+     outputs. No Upper over, and no part over Upper.
+   - **On the head:** 639,921 logs checked (79 saying nothing), and no log
+     over, no Upper over and no part over Upper in 5,760,000 answers.
+     W7b's own line on the head counts no answer different from the
+     shadow's (reported).
+   - **Beside the earlier readings:** in this scenario on 0837f9f, W7
+     counted 29 Count-high answers and W7b 46; this run counts 3, all at
+     2 s (its differences by window, `conc-w4c.txt`). Why it counts fewer
+     was not read. At rest, `high` checked 5,760,000 answers on each tree (873
+     and 819 with a part taken out). In W7's scenario its pass says only
+     that no Upper is above the key's total (the rule's note).
+4. **Holds.** The default build's `tfbench -exact` and answer digest equal
+   `verify/expected/`'s, and `tfdrip`'s `tfbench -exact` equals
+   `lab/w4e/exact-drip.txt` byte for byte.
+5. **Holds.** No answer over, no part over Upper and no log over in any of
+   the seven runs. In every run the existing checks failed nothing
+   (`low`, `shared low`, occupancy: 0 by kind in the fuzzer's), and every
+   run printed its "W10b: " line.
+
+   | run | ops | answers `high` checked | part taken out | over | logs checked | log over |
+   |---|---|---|---|---|---|---|
+   | soak, `tfdrip` | 1,009,351,308 | 302,786,102 | 69,938,979 | 0 | 5,122 | 0 |
+   | soak, `tfdrip`, `-race` | 49,891,187 | 14,969,920 | 127,342 | 0 | 4,919 | 0 |
+   | soak, default | 1,274,215,920 | 382,255,936 | 84,069,234 | 0 | 0 (no log) | 0 |
+   | fuzzer, `tfdrip` (1,147 cases) | 760,399,970 | 187,555,842 | 40,012,757 | 0 | 4,764,718 | 0 |
+   | fuzzer, `tfdrip`, `-race` (103) | 72,104,851 | 17,804,887 | 4,376,151 | 0 | 277,690 | 0 |
+   | fuzzer, `tfdrip`, straggler (1,068) | 714,094,997 | 162,535,475 | 34,013,815 | 0 | 3,984,134 | 0 |
+   | fuzzer, default (1,239) | 813,309,702 | 200,617,229 | 42,018,750 | 0 | 0 (no log) | 0 |
+
+6. **Not thin.**
+   - **Logs:** the logs checked are 61.2% of the soak's live keys
+     (`tfdrip`; 3,254 saying nothing) and 99.0% under `-race`. The
+     `-race` run also left out 5,527 keys past the horizon, where W10's
+     left none. The 8,376 live keys of the `tfdrip` soak (and of the
+     default one) fit the pool at 2x capacity plus the heavy keys (at most
+     8,384) when the run ended; W10's runs ended at 1x. The filter holds at
+     most 5,124 keys with a log (4,820 slots and a stash of 304), and the
+     5,122 checked fit every key it held: the 3,254 others had left the
+     table and the stash. The fuzzer's are 54.3%, 50.5% and 53.3%: over half, though
+     near it in the fuzzer.
+   - **Answers set apart:** the answers set apart because their record was
+     taken over are 0.0004% to 0.0016% of those checked (101 to 2,513 a
+     run), far under the rule's 0.1%.
+   - **`high`'s share:** in the fuzzer `high` checks 95.1% to 95.2% of the
+     answers it checks (`tfdrip`, `-race`, default) and 87.8% with the
+     straggler. An overflow part was taken out of 0.9% to 24.6% of the
+     answers `high` checked.
+
+**Reported** (`w4d-cfuzz.txt`). The fuzzer on 23f03b6 (W4d's library, with
+the hook), `tfdrip`, 5 minutes: 1,143 cases, 757,515,691 ops, 186,842,342
+answers `high`-checked and 4,794,401 logs (54.7%), with no failing case.
+Neither check saw W9's double push under the fuzzer's concurrency. The
+fuzzer counts no restore whose entry a concurrent caller reclaimed, so
+whether the path was taken is not known.
+
+**Verdict: W10b passes its rule.** With the overflow table's part taken
+from the call itself, case 865 no longer fails: none of 400 runs on the
+head fail, against 22 of 400 on W10's check in the same reading.
+
+What bears on a record that takes out too much:
+- Read: the probe's overflow legs show the record equal to the table's
+  part, single-threaded, in one configuration.
+- Read: no part was above its answer's Upper in any run. That bounds a
+  wrong record; it does not show a right one.
+- Argued from the code, not read: under concurrency the hook is given the
+  same `s.Upper` that `addSketch` adds, once per call, for a key only its
+  owner calls.
+
+Under concurrency, the log check at rest sees W4c's double push in W7's
+Background scenario. That is the first sight of a known double push under
+concurrency by these checks. It is in that scenario at rest, not in the
+soak or the fuzzer.
+
+With the hook, the default build's single-threaded `tfbench -exact` and
+answer digest, and `tfdrip`'s `tfbench -exact`, are unchanged.
+
+What W10b leaves:
+- `high` under W7's scenario cannot reach past a key's total, so its
+  concurrent sight is the soak's and the fuzzer's alone. Those have not
+  seen a known double push: W4c's in W10's 5 minutes, and W9's in this 5
+  minutes on 23f03b6.
+- W4e's open legs, as before: a restore whose claim evicts; ConstantTime
+  and Background reclaims; a reclaim by a concurrent caller; the wait
+  room's drop.

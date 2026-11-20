@@ -1,0 +1,17 @@
+=== RUN   TestDripConcurrentCounts
+    dripcount_test.go:293: tfdrip build, mode bg, shape spread: 20000 rounds, 5760000 answers, 5759127 judged (100.0%); wrong: Count high 3, Count low 0, another field 0; log lost 0; set apart: flagged Saturated or Degraded 873, a key in the overflow table 0, collisions 0, in 0 rounds that lost a history 0; the filter's Degraded 873; waited 27067326, evictions 15739657, restored 10222088, relocations 190630, folded 567, lost 0
+    dripcount_test.go:299: tfdrip build, mode bg, shape spread: differences by window: 250ms:0 500ms:0 1s:0 2s:3 4s:0 8s:0 15s:0 30s:0 1m0s:0
+    dripcount_test.go:301:   Count high: round 3463 key 8 (20 events) window 2s: {Seen:true Count:6 Upper:9 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:5 Upper:9 Saturated:false Restored:false Degraded:false}; log 0x9f5, shadow's 0xdf5
+    dripcount_test.go:301:   Count high: round 11922 key 22 (20 events) window 2s: {Seen:true Count:2 Upper:4 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:1 Upper:4 Saturated:false Restored:false Degraded:false}; log 0xe7f, shadow's 0xf7f
+    dripcount_test.go:301:   Count high: round 17051 key 6 (20 events) window 2s: {Seen:true Count:5 Upper:6 Saturated:false Restored:false Degraded:false}, shadow {Seen:true Count:4 Upper:6 Saturated:false Restored:false Degraded:false}; log 0xcef, shadow's 0xeef
+    dripcount_test.go:303: tfdrip build, mode bg, shape spread: W10b at rest: 639915 keys' drip logs checked (85 saying nothing or absent; 0 over for a key whose fingerprint and tag another key of the round shares), 4 over; 5760000 answers' Upper checked against the key's events in their reach (873 with an overflow table's part, as the call added it, taken out; 0 over for a key whose fingerprint and tag another shares; 0 set apart, their record taken over), 0 over, 0 with a part over Upper
+    dripcount_test.go:306:   log over: round 3463 key 8 (20 events): log 0x9f5: 5 events logged at quantum 93 or later, the key had 4 (last touch 15701); events [10976 11651 12276 12976 13301 13851 14276 14376 14576 15351 15551 15701]
+    dripcount_test.go:306:   log over: round 11922 key 22 (20 events): log 0xe7f: 3 events logged at quantum 89 or later, the key had 2 (last touch 15076); events [9251 9951 10301 10601 10926 11551 11951 12426 12901 13401 13976 15076]
+    dripcount_test.go:306:   log over: round 17051 key 6 (20 events): log 0xcef: 4 events logged at quantum 93 or later, the key had 3 (last touch 15651); events [8101 8826 9626 10276 10876 12201 13051 13601 14076 14626 15101 15651]
+    dripcount_test.go:306:   log over: round 19123 key 1 (20 events): log 0xf3f: 3 events logged at quantum 85 or later, the key had 2 (last touch 14276); events [4176 7601 8401 9226 9926 10626 11376 11976 12376 12901 13426 14276]
+    dripcount_test.go:309: tfdrip build, mode bg, shape spread: 3 answers wrong, 0 with the log lost
+    dripcount_test.go:312: tfdrip build, mode bg, shape spread: W10b at rest: 4 drip logs over, 0 answers' Upper over, 0 parts over Upper
+--- FAIL: TestDripConcurrentCounts (44.36s)
+FAIL
+FAIL	github.com/scooter-sensei/clepsydra/go	44.369s
+FAIL

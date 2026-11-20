@@ -1,0 +1,4 @@
+=== RUN   TestPartCells
+--- PASS: TestPartCells (0.00s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	0.007s

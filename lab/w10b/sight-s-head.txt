@@ -1,0 +1,21 @@
+=== RUN   TestW10bSight
+=== RUN   TestW10bSight/reclaim_at_install
+    w10b_test.go:94: W10b sight, reclaim at install: reclaim true, promoted 2; log 0xfff: log check true ""; high at 250 ms, 1 s: ["" ""]
+=== RUN   TestW10bSight/control
+    w10b_test.go:94: W10b sight, control: reclaim false, promoted 1; log 0xfff: log check true ""; high at 250 ms, 1 s: ["" ""]
+=== RUN   TestW10bSight/control,_pushed_again_by_hand
+    w10b_test.go:94: W10b sight, control, pushed again by hand: reclaim false, promoted 1; log 0xffe: log check true "log 0xffe: 2 events logged at quantum 767 or later, the key had 1 (last touch 119999)"; high at 250 ms, 1 s: ["Upper 2 (the overflow table's 0) > 1 events back to 97348" "Upper 2 (the overflow table's 0) > 1 events back to 96598"]
+--- PASS: TestW10bSight (0.00s)
+    --- PASS: TestW10bSight/reclaim_at_install (0.00s)
+    --- PASS: TestW10bSight/control (0.00s)
+    --- PASS: TestW10bSight/control,_pushed_again_by_hand (0.00s)
+=== RUN   TestW10bSightOverflow
+=== RUN   TestW10bSightOverflow/overflow_part
+    w10b_test.go:168: W10b sight, overflow part: folded 1; log 0xfff: log check true ""; parts at 250 ms, 1 s: [3 3]; high: ["" ""]
+=== RUN   TestW10bSightOverflow/overflow_part,_the_touch_counted_twice
+    w10b_test.go:168: W10b sight, overflow part, the touch counted twice: folded 1; log 0xffe: log check true "log 0xffe: 2 events logged at quantum 568 or later, the key had 1 (last touch 88900)"; parts at 250 ms, 1 s: [3 3]; high: ["Upper 5 (the overflow table's 3) > 1 events back to 66249" "Upper 5 (the overflow table's 3) > 1 events back to 65499"]
+--- PASS: TestW10bSightOverflow (0.00s)
+    --- PASS: TestW10bSightOverflow/overflow_part (0.00s)
+    --- PASS: TestW10bSightOverflow/overflow_part,_the_touch_counted_twice (0.00s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	0.005s

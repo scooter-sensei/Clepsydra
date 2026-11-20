@@ -1,0 +1,4 @@
+=== RUN   TestFuzzConcurrent
+    fuzzconc_test.go:59: case 865: goroutine 5 op 28264 Touch: Upper 6 (the overflow table's 0) > 5 events back to 355636391 (result {Seen:true Count:5 Upper:6 Saturated:false Restored:false Degraded:false}); key 553f2bead8c4cac3 window 7992 now 355648554 newest 355648554; events [355634360 355634360 355634360 355634360 355634360 355634360 355641215 355641215 355641215 355642987 355648554]; slot line1/3 disptrue last 355648554 hot false ok true epoch 852874 counts [1 0 0 0 0 4 0]; ghost {Seen:false Count:0 Upper:0 Saturated:false Restored:false Degraded:false}; config {Capacity:69 Horizon:10s Resolution:1ms Load:0 Clock:0x485140 CoarseClock:0s Key:<nil> Stash:0 Overflow:2 SpillMin:1 Hot:0 ConstantTime:0s Background:true} ct false bg true goroutines 17 horizon 10000 ticks unit 417 lag <= 417 ops/horizon 276
+--- FAIL: TestFuzzConcurrent (0.19s)
+FAIL

@@ -1,0 +1,7 @@
+=== RUN   TestDripConcurrentCounts
+    dripcount_test.go:293: tfdrip build, mode bg, shape spread: 20000 rounds, 5760000 answers, 5759181 judged (100.0%); wrong: Count high 0, Count low 0, another field 0; log lost 0; set apart: flagged Saturated or Degraded 819, a key in the overflow table 0, collisions 0, in 0 rounds that lost a history 0; the filter's Degraded 819; waited 26965066, evictions 15491156, restored 9974128, relocations 190299, folded 475, lost 0
+    dripcount_test.go:299: tfdrip build, mode bg, shape spread: differences by window: 250ms:0 500ms:0 1s:0 2s:0 4s:0 8s:0 15s:0 30s:0 1m0s:0
+    dripcount_test.go:303: tfdrip build, mode bg, shape spread: W10b at rest: 639921 keys' drip logs checked (79 saying nothing or absent; 0 over for a key whose fingerprint and tag another key of the round shares), 0 over; 5760000 answers' Upper checked against the key's events in their reach (819 with an overflow table's part, as the call added it, taken out; 0 over for a key whose fingerprint and tag another shares; 0 set apart, their record taken over), 0 over, 0 with a part over Upper
+--- PASS: TestDripConcurrentCounts (44.45s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	44.457s

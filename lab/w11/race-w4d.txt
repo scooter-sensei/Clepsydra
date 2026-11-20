@@ -1,0 +1,9 @@
+=== RUN   TestDripHotRestoreRace
+    drip_hotlegs_test.go:364: W11 race: 2533 of 200000 rounds: log once, L promoted false, K looked again false
+    drip_hotlegs_test.go:364: W11 race: 197326 of 200000 rounds: log once, L promoted true, K looked again false
+    drip_hotlegs_test.go:364: W11 race: 141 of 200000 rounds: log twice, L promoted true, K looked again true
+    drip_hotlegs_test.go:367: 141 of 200000 rounds pushed K's event twice; first: round 248: log twice, L promoted true, K looked again true (spins 453, 1653)
+--- FAIL: TestDripHotRestoreRace (12.46s)
+FAIL
+FAIL	github.com/scooter-sensei/clepsydra/go	12.468s
+FAIL

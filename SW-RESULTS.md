@@ -2461,3 +2461,151 @@ Not covered:
 - the hook's cost on `hotAdd`'s path, not measured here.
 
 `TestDripHotRestoreLegs` runs in every `tfdrip` suite from W11 on.
+
+### W11's reading (d38270e's tree; `lab/w11.sh`, outputs in `lab/w11/`)
+
+`lab/w11.sh` ran end to end (05:36 to 05:38, Go 1.24.7) and exited 0:
+every run printed its W11 lines. Its first check found the head's library
+different from 8a15270's in `go/hot.go` alone, by 7 added lines and none
+removed, and the hook applied to 23f03b6 changed that tree by the hook's
+lines alone. The tests' own exits: the legs' test failed on 23f03b6 (where
+W4d's library pushes twice, by design, and in legs 3 and 6, below) and on
+the head plain and under `-race` (legs 3 and 6); the race failed on
+23f03b6 and passed on the head plain and under `-race`. No run reported a
+data race. W4e's `TestDripHotRestorePushOnce` ran on the head only: its
+file is W4e's, not 23f03b6's.
+
+1. **Holds.** Every leg took its path, on both trees and on the head under
+   `-race`: no leg stopped on a path check, and each line's fields show it.
+   - Leg 1: the hook at `testHookVictim`, Promoted 2, one eviction, the
+     look again through `bump`'s hot add on K's slot.
+   - Legs 2 and 4: `testHookInstalling`, Promoted 2, the look again
+     through `bump`.
+   - Leg 3: `testHookRestoreAdd`, Promoted 2, waited 2 (the restore's wait
+     in the stash, and the look again's).
+   - Leg 5: `testHookRestoreAdd`, Promoted 2, K placed by the placer (one
+     relocation), waited 1, the look again through `bump`.
+   - Leg 6: `testHookRestoreAdd`, Promoted 2, waited 2, K taken out of the
+     wait room once.
+   - The controls: none reclaimed (Promoted 1); leg 1's evicted once, leg
+     3's and leg 6's waited, leg 5's waited and was placed.
+2. **Fails as written, on legs 3 and 6** (`legs-w4d.txt`). On 23f03b6
+   (W4d's library, with the hook):
+   - legs 1, 2, 4 and 5 read twice: K's log 0xffe against one push's
+     0xfff, its slot a register, its last touch tK, and 100 ms after the
+     touch Count 2 at 250 ms and 1 s (1 at 10 s) against a truth of 1;
+   - legs 3 and 6 read once (0xfff), where the rule says fresh;
+   - every control reads once with K's entry (word1 a hot pointer to K's
+     entry, Restored 1).
+
+   Leg 5's twice is a double push on W4d's library through the wait room
+   and the placer: K's history waited with the touch's push, the placer
+   placed it, the reclaim came after, and the look again found K in the
+   table and pushed again. b187156's wording of the wait's leg (the look
+   again recalls the waiting history and starts K afresh) did not cover a
+   history the placer places before the look again.
+3. **Fails as written, on legs 3 and 6** (`legs-head.txt`,
+   `legs-head-race.txt`). On the head, plain and under `-race`, legs 1, 2,
+   4 and 5 and the six controls pass their assertions: each reclaim leg
+   reads once (0xfff), its slot no longer a hot pointer, and Count 1 at the
+   three windows. Legs 3 and 6 fail theirs: K's log reads 0xfff, classed
+   once, where they assert fresh. The two runs' lines are the same, times
+   aside, and neither reported a data race. `TestDripHotRestorePushOnce`
+   passes beside it, plain and under `-race`, its four legs as W4e's
+   reading read them.
+4. **Holds** (`race-w4d.txt`, `race-head.txt`, `race-head-race.txt`). On
+   the head no round reads twice in 200,000 (134 looked again) nor in
+   20,000 under `-race` (27 looked again), with no data race; both are over
+   the 10 the rule asks. On 23f03b6, 141 of 200,000 rounds read twice:
+   every round that looked again, and no other.
+
+   | run | rounds | once, L refused | once, L promoted, no look again | looked again, once | looked again, twice |
+   |---|---|---|---|---|---|
+   | 23f03b6 | 200,000 | 2,533 | 197,326 | 0 | 141 |
+   | head | 200,000 | 2,382 | 197,484 | 134 | 0 |
+   | head, `-race` | 20,000 | 9,661 | 10,312 | 27 | 0 |
+
+5. **Holds.** The default build's `tfbench -exact` and answer digest equal
+   `verify/expected/`'s, and `tfdrip`'s `tfbench -exact` equals
+   `lab/w4e/exact-drip.txt` byte for byte.
+
+**Legs 3 and 6, read against the code: a defect of the probe.**
+`dripClass` names K's log once if it equals W4e's history with the touch
+pushed once at tK, and tries fresh only after. At tK = t0 + horizon - 1 the
+gap from the history's last touch (t0) is far past the log's 11 quanta,
+and `next0` then sets the log all ones and valid, 0xfff ("no event within
+the field's reach", W4c): `dripFresh`'s log. At tK, once and fresh are one
+log, so no library could read fresh in this probe. A second push at tK is
+still another log: `next0` at the last touch shifts a zero code in, 0xffe,
+onto either. Legs 3 and 6's 0xfff on both trees says that K's log holds the
+touch's event once, not whether the history was kept or dropped. Legs 1,
+2, 4 and 5 and clause 4 judge twice against not twice, which this does not
+touch. Neither tree was predicted to push twice in legs 3 and 6, so they
+have no sight of a double push either.
+
+From the code, not a reading: K's other fields in legs 3 and 6 fit the
+fresh start b187156 worded. The look again's `miss` finds the entry gone
+(`hotGone`), takes a fresh register (word1 no longer hot) with
+`dripFresh(tK)`, finds no free slot and waits again (waited 2), and counts
+no restore (Restored 0; a waiting history counts none either). The 60 s
+read below gives K's 32 events at t0 to no reclaim leg, but on the head
+legs 1, 2, 4 and 5 lose them too: `bump` starts a fresh register on the
+dead pointer (`unpoint`) and keeps the log.
+
+**Reported.**
+- The read at tK at 60 s: Count 33, Upper 33 in every control on both
+  trees (K's 32 events at t0 and the touch); Count 1, Upper 1 in every
+  reclaim leg on both trees.
+- Where K is after its touch: in the table in legs 1, 2, 4 and 5 and their
+  controls; in the stash or the wait room in legs 3 and 6 and their
+  controls.
+- Evictions, relocations, waits: leg 1 and its control evicted once; leg 5
+  relocated once (the placer's placement), its control not; legs 3 and 6
+  waited twice, leg 5 and the full-lines controls once; nothing else
+  evicted, relocated or waited.
+- The race's classes: the order the rule names "L's reclaim first" is
+  "once, L promoted, no look again", where the probe predicted fresh; its
+  log, as above, is once's as well. Under `-race`, K first (L refused) took
+  48% of the rounds, against 1.2% and 1.3% plain. A race run of 200,000
+  rounds took 12.5 s (23f03b6) and 12.8 s (head), and 20,000 under `-race`
+  6.0 s, far inside the 30-minute caps; the whole run took 2 minutes 22
+  seconds.
+
+**Verdict: W11 fails its rule as written, on clauses 2 and 3, in legs 3
+and 6 alone:** they read once where the rule says fresh, on both trees.
+Read against the code, that is a defect of the probe: at tK, the touch
+afresh and the history with the touch pushed once leave one log, 0xfff.
+Clauses 1, 4 and 5 hold, and legs 1, 2, 4 and 5 hold clauses 2 and 3.
+
+What W11 reads of W4e's library:
+- Read: a hot restore whose entry is reclaimed after `hotGone` pushes its
+  touch's event once where W4d's library pushes it twice: in a restore
+  whose claim evicts (plain), in ConstantTime's and Background's install
+  into a free slot, and in Background's wait room when the placer places K
+  before the look again. K reads Count 1 there, where W4d's read 2 at
+  250 ms and 1 s.
+- Read: with K's history waiting (ConstantTime's stash; Background's wait
+  room with no placer), K's log holds the touch's event once on both
+  libraries.
+- Read: a reclaim by a concurrent caller. W4d's library pushed twice in 141
+  of 200,000 rounds, every one that looked again; W4e's in none of 200,000
+  (134 looked again), nor of 20,000 under `-race` (27).
+- Read, on W4d's library: a double push through the wait room and the
+  placer (leg 5), which b187156's wording did not cover.
+- Read: with the hook, the default build's `tfbench -exact` and answer
+  digest, and `tfdrip`'s `tfbench -exact`, are unchanged.
+
+What W11 leaves:
+- Whether a waiting history whose entry goes is dropped (b187156's
+  wording). Legs 3 and 6 cannot tell. Nor can W9's, W4e's or W11's "once"
+  at a tK a horizon past the history's last touch, which is a fresh
+  start's log as well: those probes separate one push from two, not a kept
+  history from a fresh start. A probe that tells them apart needs a
+  history whose log at tK differs from a fresh one's, and its own rule.
+- `TestDripHotRestoreLegs` as committed fails on legs 3 and 6 in every
+  `tfdrip` suite that runs it on the head (it skips under `TF_CT` and
+  `TF_BG`).
+- Not covered, as the rule named: the default build; a look again that
+  meets the placer mid-placement; ConstantTime's pads placing K between the
+  wait and the look again; relocation under ConstantTime and Background;
+  the hook's cost on `hotAdd`'s path.

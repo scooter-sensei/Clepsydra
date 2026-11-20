@@ -1,0 +1,153 @@
+[05:36:08] W11: head d38270e; go1.24.7
+[05:36:08] 0: library files that differ from 8a15270's: [go/hot.go ]; lines removed from go/hot.go: 0, added: 7
+[05:36:08] 1: sight, the head's go/drip_hotlegs_test.go on 23f03b6 (W4d's library) with the hook
+[05:36:08] 1: 23f03b6's library files changed [go/hot.go ], the changes the hook's: yes
+[05:36:11] 1 legs on 23f03b6: go test exit 1
+drip_hotlegs_test.go:235: W11 plain, full table, control: hook "", promoted 1, placed false, retried false, taken from the room 0; restored 1, evictions 1, relocations 0, waited 0; K in the table, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 plain, full table, reclaim at the eviction: hook "victim", promoted 2, placed false, retried true, taken from the room 0; restored 0, evictions 1, relocations 0, waited 0; K in the table, last touch 119999, log 0xffe: twice; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [2 2 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:272: K's log twice, want its history with the touch pushed once (once)
+drip_hotlegs_test.go:281: K reads Count 2 at window 1 of 3 100 ms after its touch, want 1
+drip_hotlegs_test.go:281: K reads Count 2 at window 2 of 3 100 ms after its touch, want 1
+drip_hotlegs_test.go:235: W11 ConstantTime, free slot, control: hook "", promoted 1, placed false, retried false, taken from the room 0; restored 1, evictions 0, relocations 0, waited 0; K in the table, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 ConstantTime, free slot, reclaim at install: hook "installing", promoted 2, placed false, retried true, taken from the room 0; restored 0, evictions 0, relocations 0, waited 0; K in the table, last touch 119999, log 0xffe: twice; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [2 2 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:272: K's log twice, want its history with the touch pushed once (once)
+drip_hotlegs_test.go:281: K reads Count 2 at window 1 of 3 100 ms after its touch, want 1
+drip_hotlegs_test.go:281: K reads Count 2 at window 2 of 3 100 ms after its touch, want 1
+drip_hotlegs_test.go:235: W11 ConstantTime, full lines, control: hook "", promoted 1, placed false, retried false, taken from the room 0; restored 1, evictions 0, relocations 0, waited 1; K in the stash or the wait room, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 ConstantTime, full lines, reclaim after the wait: hook "restore add", promoted 2, placed false, retried false, taken from the room 0; restored 0, evictions 0, relocations 0, waited 2; K in the stash or the wait room, last touch 119999, log 0xfff: once; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:268: K's log once after its waiting history's entry went, want the touch afresh (fresh)
+drip_hotlegs_test.go:235: W11 Background, free slot, control: hook "", promoted 1, placed false, retried false, taken from the room 0; restored 1, evictions 0, relocations 0, waited 0; K in the table, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 Background, free slot, reclaim at install: hook "installing", promoted 2, placed false, retried true, taken from the room 0; restored 0, evictions 0, relocations 0, waited 0; K in the table, last touch 119999, log 0xffe: twice; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [2 2 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:272: K's log twice, want its history with the touch pushed once (once)
+drip_hotlegs_test.go:281: K reads Count 2 at window 1 of 3 100 ms after its touch, want 1
+drip_hotlegs_test.go:281: K reads Count 2 at window 2 of 3 100 ms after its touch, want 1
+drip_hotlegs_test.go:235: W11 Background, full lines, placer, control: hook "", promoted 1, placed true, retried false, taken from the room 0; restored 1, evictions 0, relocations 0, waited 1; K in the table, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 Background, full lines, placer, placed then reclaimed: hook "restore add", promoted 2, placed true, retried true, taken from the room 0; restored 0, evictions 0, relocations 1, waited 1; K in the table, last touch 119999, log 0xffe: twice; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [2 2 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:272: K's log twice, want its history with the touch pushed once (once)
+drip_hotlegs_test.go:281: K reads Count 2 at window 1 of 3 100 ms after its touch, want 1
+drip_hotlegs_test.go:281: K reads Count 2 at window 2 of 3 100 ms after its touch, want 1
+drip_hotlegs_test.go:235: W11 Background, full lines, no placer, control: hook "", promoted 1, placed false, retried false, taken from the room 0; restored 1, evictions 0, relocations 0, waited 1; K in the stash or the wait room, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 Background, full lines, no placer, reclaim after the wait: hook "restore add", promoted 2, placed false, retried false, taken from the room 1; restored 0, evictions 0, relocations 0, waited 2; K in the stash or the wait room, last touch 119999, log 0xfff: once; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:268: K's log once after its waiting history's entry went, want the touch afresh (fresh)
+--- FAIL: TestDripHotRestoreLegs (0.01s)
+--- PASS: TestDripHotRestoreLegs/plain,_full_table,_control (0.00s)
+--- FAIL: TestDripHotRestoreLegs/plain,_full_table,_reclaim_at_the_eviction (0.00s)
+--- PASS: TestDripHotRestoreLegs/ConstantTime,_free_slot,_control (0.00s)
+--- FAIL: TestDripHotRestoreLegs/ConstantTime,_free_slot,_reclaim_at_install (0.00s)
+--- PASS: TestDripHotRestoreLegs/ConstantTime,_full_lines,_control (0.00s)
+--- FAIL: TestDripHotRestoreLegs/ConstantTime,_full_lines,_reclaim_after_the_wait (0.00s)
+--- PASS: TestDripHotRestoreLegs/Background,_free_slot,_control (0.00s)
+--- FAIL: TestDripHotRestoreLegs/Background,_free_slot,_reclaim_at_install (0.00s)
+--- PASS: TestDripHotRestoreLegs/Background,_full_lines,_placer,_control (0.00s)
+--- FAIL: TestDripHotRestoreLegs/Background,_full_lines,_placer,_placed_then_reclaimed (0.00s)
+--- PASS: TestDripHotRestoreLegs/Background,_full_lines,_no_placer,_control (0.00s)
+--- FAIL: TestDripHotRestoreLegs/Background,_full_lines,_no_placer,_reclaim_after_the_wait (0.00s)
+FAIL
+FAIL	github.com/scooter-sensei/clepsydra/go	0.009s
+FAIL
+[05:36:24] 1 race on 23f03b6, 200000 rounds: go test exit 1
+drip_hotlegs_test.go:364: W11 race: 2533 of 200000 rounds: log once, L promoted false, K looked again false
+drip_hotlegs_test.go:364: W11 race: 197326 of 200000 rounds: log once, L promoted true, K looked again false
+drip_hotlegs_test.go:364: W11 race: 141 of 200000 rounds: log twice, L promoted true, K looked again true
+--- FAIL: TestDripHotRestoreRace (12.46s)
+FAIL
+FAIL	github.com/scooter-sensei/clepsydra/go	12.468s
+FAIL
+[05:36:24] 2: the head
+[05:36:24] 2 legs: go test exit 1
+drip_hot_test.go:119: hook "", promoted 1, retried false, restored 1; log 0xfff (one push 0xfff); word1 hot true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+drip_hot_test.go:119: hook "installing", promoted 2, retried true, restored 0; log 0xfff (one push 0xfff); word1 hot false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+drip_hot_test.go:119: hook "", promoted 1, retried false, restored 1; log 0xfff (one push 0xfff); word1 hot true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+drip_hot_test.go:119: hook "copied", promoted 2, retried true, restored 0; log 0xfff (one push 0xfff); word1 hot false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+--- PASS: TestDripHotRestorePushOnce (0.00s)
+--- PASS: TestDripHotRestorePushOnce/control,_free_slot (0.00s)
+--- PASS: TestDripHotRestorePushOnce/reclaim_at_install,_free_slot (0.00s)
+--- PASS: TestDripHotRestorePushOnce/control,_full_lines (0.00s)
+--- PASS: TestDripHotRestorePushOnce/reclaim_in_the_search,_full_lines (0.00s)
+drip_hotlegs_test.go:235: W11 plain, full table, control: hook "", promoted 1, placed false, retried false, taken from the room 0; restored 1, evictions 1, relocations 0, waited 0; K in the table, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 plain, full table, reclaim at the eviction: hook "victim", promoted 2, placed false, retried true, taken from the room 0; restored 0, evictions 1, relocations 0, waited 0; K in the table, last touch 119999, log 0xfff: once; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 ConstantTime, free slot, control: hook "", promoted 1, placed false, retried false, taken from the room 0; restored 1, evictions 0, relocations 0, waited 0; K in the table, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 ConstantTime, free slot, reclaim at install: hook "installing", promoted 2, placed false, retried true, taken from the room 0; restored 0, evictions 0, relocations 0, waited 0; K in the table, last touch 119999, log 0xfff: once; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 ConstantTime, full lines, control: hook "", promoted 1, placed false, retried false, taken from the room 0; restored 1, evictions 0, relocations 0, waited 1; K in the stash or the wait room, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 ConstantTime, full lines, reclaim after the wait: hook "restore add", promoted 2, placed false, retried false, taken from the room 0; restored 0, evictions 0, relocations 0, waited 2; K in the stash or the wait room, last touch 119999, log 0xfff: once; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:268: K's log once after its waiting history's entry went, want the touch afresh (fresh)
+drip_hotlegs_test.go:235: W11 Background, free slot, control: hook "", promoted 1, placed false, retried false, taken from the room 0; restored 1, evictions 0, relocations 0, waited 0; K in the table, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 Background, free slot, reclaim at install: hook "installing", promoted 2, placed false, retried true, taken from the room 0; restored 0, evictions 0, relocations 0, waited 0; K in the table, last touch 119999, log 0xfff: once; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 Background, full lines, placer, control: hook "", promoted 1, placed true, retried false, taken from the room 0; restored 1, evictions 0, relocations 0, waited 1; K in the table, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 Background, full lines, placer, placed then reclaimed: hook "restore add", promoted 2, placed true, retried true, taken from the room 0; restored 0, evictions 0, relocations 1, waited 1; K in the table, last touch 119999, log 0xfff: once; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 Background, full lines, no placer, control: hook "", promoted 1, placed false, retried false, taken from the room 0; restored 1, evictions 0, relocations 0, waited 1; K in the stash or the wait room, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 Background, full lines, no placer, reclaim after the wait: hook "restore add", promoted 2, placed false, retried false, taken from the room 1; restored 0, evictions 0, relocations 0, waited 2; K in the stash or the wait room, last touch 119999, log 0xfff: once; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:268: K's log once after its waiting history's entry went, want the touch afresh (fresh)
+--- FAIL: TestDripHotRestoreLegs (0.00s)
+--- PASS: TestDripHotRestoreLegs/plain,_full_table,_control (0.00s)
+--- PASS: TestDripHotRestoreLegs/plain,_full_table,_reclaim_at_the_eviction (0.00s)
+--- PASS: TestDripHotRestoreLegs/ConstantTime,_free_slot,_control (0.00s)
+--- PASS: TestDripHotRestoreLegs/ConstantTime,_free_slot,_reclaim_at_install (0.00s)
+--- PASS: TestDripHotRestoreLegs/ConstantTime,_full_lines,_control (0.00s)
+--- FAIL: TestDripHotRestoreLegs/ConstantTime,_full_lines,_reclaim_after_the_wait (0.00s)
+--- PASS: TestDripHotRestoreLegs/Background,_free_slot,_control (0.00s)
+--- PASS: TestDripHotRestoreLegs/Background,_free_slot,_reclaim_at_install (0.00s)
+--- PASS: TestDripHotRestoreLegs/Background,_full_lines,_placer,_control (0.00s)
+--- PASS: TestDripHotRestoreLegs/Background,_full_lines,_placer,_placed_then_reclaimed (0.00s)
+--- PASS: TestDripHotRestoreLegs/Background,_full_lines,_no_placer,_control (0.00s)
+--- FAIL: TestDripHotRestoreLegs/Background,_full_lines,_no_placer,_reclaim_after_the_wait (0.00s)
+FAIL
+FAIL	github.com/scooter-sensei/clepsydra/go	0.008s
+FAIL
+[05:36:25] 2 legs under -race: go test exit 1
+drip_hot_test.go:119: hook "", promoted 1, retried false, restored 1; log 0xfff (one push 0xfff); word1 hot true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+drip_hot_test.go:119: hook "installing", promoted 2, retried true, restored 0; log 0xfff (one push 0xfff); word1 hot false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+drip_hot_test.go:119: hook "", promoted 1, retried false, restored 1; log 0xfff (one push 0xfff); word1 hot true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+drip_hot_test.go:119: hook "copied", promoted 2, retried true, restored 0; log 0xfff (one push 0xfff); word1 hot false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+--- PASS: TestDripHotRestorePushOnce (0.00s)
+--- PASS: TestDripHotRestorePushOnce/control,_free_slot (0.00s)
+--- PASS: TestDripHotRestorePushOnce/reclaim_at_install,_free_slot (0.00s)
+--- PASS: TestDripHotRestorePushOnce/control,_full_lines (0.00s)
+--- PASS: TestDripHotRestorePushOnce/reclaim_in_the_search,_full_lines (0.00s)
+drip_hotlegs_test.go:235: W11 plain, full table, control: hook "", promoted 1, placed false, retried false, taken from the room 0; restored 1, evictions 1, relocations 0, waited 0; K in the table, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 plain, full table, reclaim at the eviction: hook "victim", promoted 2, placed false, retried true, taken from the room 0; restored 0, evictions 1, relocations 0, waited 0; K in the table, last touch 119999, log 0xfff: once; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 ConstantTime, free slot, control: hook "", promoted 1, placed false, retried false, taken from the room 0; restored 1, evictions 0, relocations 0, waited 0; K in the table, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 ConstantTime, free slot, reclaim at install: hook "installing", promoted 2, placed false, retried true, taken from the room 0; restored 0, evictions 0, relocations 0, waited 0; K in the table, last touch 119999, log 0xfff: once; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 ConstantTime, full lines, control: hook "", promoted 1, placed false, retried false, taken from the room 0; restored 1, evictions 0, relocations 0, waited 1; K in the stash or the wait room, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 ConstantTime, full lines, reclaim after the wait: hook "restore add", promoted 2, placed false, retried false, taken from the room 0; restored 0, evictions 0, relocations 0, waited 2; K in the stash or the wait room, last touch 119999, log 0xfff: once; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:268: K's log once after its waiting history's entry went, want the touch afresh (fresh)
+drip_hotlegs_test.go:235: W11 Background, free slot, control: hook "", promoted 1, placed false, retried false, taken from the room 0; restored 1, evictions 0, relocations 0, waited 0; K in the table, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 Background, free slot, reclaim at install: hook "installing", promoted 2, placed false, retried true, taken from the room 0; restored 0, evictions 0, relocations 0, waited 0; K in the table, last touch 119999, log 0xfff: once; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 Background, full lines, placer, control: hook "", promoted 1, placed true, retried false, taken from the room 0; restored 1, evictions 0, relocations 0, waited 1; K in the table, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 Background, full lines, placer, placed then reclaimed: hook "restore add", promoted 2, placed true, retried true, taken from the room 0; restored 0, evictions 0, relocations 1, waited 1; K in the table, last touch 119999, log 0xfff: once; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 Background, full lines, no placer, control: hook "", promoted 1, placed false, retried false, taken from the room 0; restored 1, evictions 0, relocations 0, waited 1; K in the stash or the wait room, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 Background, full lines, no placer, reclaim after the wait: hook "restore add", promoted 2, placed false, retried false, taken from the room 1; restored 0, evictions 0, relocations 0, waited 2; K in the stash or the wait room, last touch 119999, log 0xfff: once; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:268: K's log once after its waiting history's entry went, want the touch afresh (fresh)
+--- FAIL: TestDripHotRestoreLegs (0.03s)
+--- PASS: TestDripHotRestoreLegs/plain,_full_table,_control (0.01s)
+--- PASS: TestDripHotRestoreLegs/plain,_full_table,_reclaim_at_the_eviction (0.01s)
+--- PASS: TestDripHotRestoreLegs/ConstantTime,_free_slot,_control (0.00s)
+--- PASS: TestDripHotRestoreLegs/ConstantTime,_free_slot,_reclaim_at_install (0.00s)
+--- PASS: TestDripHotRestoreLegs/ConstantTime,_full_lines,_control (0.00s)
+--- FAIL: TestDripHotRestoreLegs/ConstantTime,_full_lines,_reclaim_after_the_wait (0.00s)
+--- PASS: TestDripHotRestoreLegs/Background,_free_slot,_control (0.00s)
+--- PASS: TestDripHotRestoreLegs/Background,_free_slot,_reclaim_at_install (0.00s)
+--- PASS: TestDripHotRestoreLegs/Background,_full_lines,_placer,_control (0.00s)
+--- PASS: TestDripHotRestoreLegs/Background,_full_lines,_placer,_placed_then_reclaimed (0.00s)
+--- PASS: TestDripHotRestoreLegs/Background,_full_lines,_no_placer,_control (0.00s)
+--- FAIL: TestDripHotRestoreLegs/Background,_full_lines,_no_placer,_reclaim_after_the_wait (0.00s)
+FAIL
+FAIL	github.com/scooter-sensei/clepsydra/go	0.050s
+FAIL
+[05:36:39] 2 race, 200000 rounds: go test exit 0
+drip_hotlegs_test.go:364: W11 race: 2382 of 200000 rounds: log once, L promoted false, K looked again false
+drip_hotlegs_test.go:364: W11 race: 197484 of 200000 rounds: log once, L promoted true, K looked again false
+drip_hotlegs_test.go:364: W11 race: 134 of 200000 rounds: log once, L promoted true, K looked again true
+--- PASS: TestDripHotRestoreRace (12.76s)
+ok  	github.com/scooter-sensei/clepsydra/go	12.770s
+[05:36:46] 2 race under -race, 20000 rounds: go test exit 0
+drip_hotlegs_test.go:364: W11 race: 9661 of 20000 rounds: log once, L promoted false, K looked again false
+drip_hotlegs_test.go:364: W11 race: 10312 of 20000 rounds: log once, L promoted true, K looked again false
+drip_hotlegs_test.go:364: W11 race: 27 of 20000 rounds: log once, L promoted true, K looked again true
+--- PASS: TestDripHotRestoreRace (6.02s)
+ok  	github.com/scooter-sensei/clepsydra/go	7.043s
+[05:36:46] 3: the library
+[05:37:04] 3a default exact: IDENTICAL
+[05:38:13] 3b default digest: IDENTICAL
+[05:38:30] 3c tfdrip exact: IDENTICAL to W4e's
+[05:38:30] W11 readings finished (exit 0)

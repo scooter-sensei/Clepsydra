@@ -1,0 +1,7 @@
+=== RUN   TestDripHotRestoreRace
+    drip_hotlegs_test.go:364: W11 race: 2382 of 200000 rounds: log once, L promoted false, K looked again false
+    drip_hotlegs_test.go:364: W11 race: 197484 of 200000 rounds: log once, L promoted true, K looked again false
+    drip_hotlegs_test.go:364: W11 race: 134 of 200000 rounds: log once, L promoted true, K looked again true
+--- PASS: TestDripHotRestoreRace (12.76s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	12.770s

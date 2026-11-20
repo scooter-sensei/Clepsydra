@@ -1,0 +1,23 @@
+diff --git a/go/hot.go b/go/hot.go
+index 489dbf8..87eb94a 100644
+--- a/go/hot.go
++++ b/go/hot.go
+@@ -501,10 +501,18 @@ func (f *Filter) slotDrop(id, w1 uint64) {
+ 	}
+ }
+ 
++// testHookRestoreAdd, if set, runs in hotAdd when it counts a hot restore's
++// touch (slot nil: miss's add, after the history went in or waits with the
++// touch's push), before the add (lab/sw W11).
++var testHookRestoreAdd func()
++
+ // hotAdd counts one event at now into the entry word1 points to. slot, if
+ // not nil, is the word1 (holding w1) the touch found the key by: the entry
+ // may then be handed back to it as a register (demote).
+ func (f *Filter) hotAdd(w1, id, now uint64, slot *uint64) bool {
++	if slot == nil && testHookRestoreAdd != nil {
++		testHookRestoreAdd()
++	}
+ 	t := f.hot.Load()
+ 	return t != nil && t.add(f, hotIdx(w1), id, 1, f.unitOf(now), now, slot, w1)
+ }

@@ -2609,3 +2609,173 @@ What W11 leaves:
   meets the placer mid-placement; ConstantTime's pads placing K between the
   wait and the look again; relocation under ConstantTime and Background;
   the hook's cost on `hotAdd`'s path.
+
+## The record audited again (W4 to W11)
+
+Every arm from W4 to W11 was read again against the library and the tests
+as e6d31a1 has them, after W11's reading. Nothing was run and nothing was
+mended: each item is from the code and the outputs already in `lab/`, not
+a reading. In order of weight:
+
+**1. Target 7's gain is read only where none of the mended paths run.**
+tfbench's velocity workload (`velocityMAE`, `cmd/tfbench/accuracy.go:83-151`)
+is one goroutine in plain mode, ticks in order, Horizon 60 s at 1 ms, 2,000
+keys in a filter of Capacity 200,000: no eviction, stash, wait, relocation
+pressure or reclaim, and promotion only in its rates' tails. Every path W4b
+to W11 mended is off it, and no velocity reading (W4 to W6, W3's other
+workloads, the periodic and sustained ones) had a second goroutine, a
+lagging clock, ConstantTime or Background. Where those run, the log can go
+dead and stay so. W4b's reading 8 found that "says nothing" erases the gain
+under sustained traffic, since only a gap of 11 quanta (1.7 s here) revives
+it. W4c took bursts out of its triggers; two remain, and both need a second
+toucher or a lagging clock:
+
+- a touch whose tick is in an earlier unit than the key's last touch
+  (`next0`, `drip.go:50-51`);
+- a count that lands in a later unit than its event's (`dripForget`,
+  `touch.go:357-358`): a touch of the key into the next unit between this
+  touch's push and its count.
+
+Callers lag in ordinary use: two goroutines touching one key across a unit
+boundary, a caller descheduled between its clock read and its call, a
+caller passing its own timestamps, a batch (one `now` for every key,
+`batch.go:12-34`). How
+often a busy key meets one, and what that does to the metric, is not
+measured; at tfbench's rates on the built-in clock it may be rare. W6's
+fresh seeds re-draw the same generator: they read the metric's spread, not
+other traffic. The workload and the metric are the user's (paper §8.4);
+this says only where the readings reach.
+
+**2. Upper reads the drip log.** `estimate` returns `Upper: max(n,
+int(upper))` (`register.go:513`), and with the log `n` is `dripCount`'s,
+which counts each logged event whole whatever the register holds
+(`drip.go:113`). The record says the opposite: `drip.go:16` ("Upper never
+reads it") and W4's design ("`Upper`, `Seen`, saturation, eviction and
+every other answer read what they read today"). The `max` is main's
+(8b3ba44's `register.go:508`), where `n` never exceeds `upper`. W4's clause
+3 (only Count moves) was read on the single-threaded digest, where the log
+never holds more than the register. The readings already show it: W10's
+and W10b's sights read Upper 2 for W9's register of one event. Where the
+log holds more than the register, Upper rises with Count:
+
+- after a double push: a log defect then reaches `TouchIfUnder`'s refusals,
+  which read Upper (`buzz.go:276-286`), as a false denial at the limit;
+- after `unpoint`'s reset (`register.go:263`), which starts a fresh
+  register and keeps the log: Upper counts the log's older events, where
+  the default build reads the register alone.
+
+Upper stays at or above the register's either way, so the contract (not
+`Saturated` ⇒ `Upper` ≥ exact) is not touched. The sentence goes into the
+claims and paper §8 on adoption, and needs a decision: reworded, or the
+code changed.
+
+**3. The concurrent checks have no shown power over a double push on a busy
+key, and none at all on some keys.** W10's and W10b's checks are sound
+bounds:
+
+- `high` (`countHigh`, `go/countcheck_test.go:82`) allows events up to 9
+  units and the lag behind the window (`countReach`, `:68`), so on a key
+  with steady traffic one extra event never shows;
+- `logHigh` (`:96`) sees an extra event on a dense key only while it is
+  among the newest 11 codes at the case's end and the lag is 0: later
+  pushes shift it out before the check at rest, and a `maxLag` of 1 or 2
+  units (half the fuzzer's cases, `fuzzconc_test.go:161`) lets events 16 to
+  32 quanta older stand for it.
+
+Keys with neither check: the fuzzer's shared keys (`shared low` only,
+`fuzzconc_test.go:354-379`), so no key with two touchers; the straggler's
+keys (`cc` off, `:265`; skipped at rest, `:195`), and the straggler is the
+caller that drives A25's path on purpose; every key under tag
+amplification. W7's scenario has one owner per key at increasing ticks,
+about 16 s a round (`dripcount_test.go:42-55`): no reclaim, no lag, no
+second toucher. So W10b's report (W9's double push not seen in 5 minutes of
+the fuzzer on 23f03b6) says little of that path. Under concurrency only
+W4b's and W4c's double pushes have been seen, both in W7's scenario (W7's
+shadow, W10b's log check at rest). No guard of the log has a mutation
+reading: W4c's rule in the table's path, W4d's in `miss`, `missPlaced`,
+`dripForget`, the cross-unit `d = 0`.
+
+**4. Every hot-restore probe sits a horizon less a tick after the history.**
+W9, W4e's test, W10's and W10b's sights and W11 restore K at tK = t0 +
+horizon - 1, where `next0` sets the log all ones (`drip.go:45-46`), and K's
+history is 32 touches at one tick. So:
+
+- once and fresh are one log (W11's legs 3 and 6);
+- no probe has seen a restored history's own logged events across a
+  restore;
+- the state W8's audit named, `unpoint`'s fresh register beside a log that
+  keeps older events (where item 2 raises Upper), has not been made. It
+  needs spread events in the history, tK within 11 quanta of them, and a
+  reclaimer more than a horizon ahead.
+
+W9's rule checked that its classes differ (clause 1: one push and two leave
+different logs); W11 added fresh without that check, which would have shown
+legs 3 and 6 before the rule.
+
+**5. The copy paths the model leaves out are where the late defects were.**
+W8's model has relocation's hand-off, eviction, and a `miss` that always
+succeeds. Not modelled, and probed at one point each at most: `putBack`
+(`cuckoo.go:94`); the wait in the stash and the wait room; the placer's
+commit (`placeRoomKey`, `stash.go:136-173`); the pads' `placeSet`, which
+stashes a waiting copy again when the table already holds the key
+(`ct.go:177-178`); ConstantTime's put-back of a stale stash copy
+(`touch.go:266-268`); hot entries and `missPlaced`. Both double pushes
+found after W8 are there: W9's, and leg 5's on W4d's library. One more
+reach of leg 5's path: in ConstantTime `touch` releases K's stripe between
+attempts (`touch.go:243-246`), so under concurrency another call's pad can
+place K between `missPlaced` and the look again. W11 names the pads as not
+covered; a single-threaded probe cannot reach them, a concurrent one can.
+From the code, the head's skip covers it as it covers leg 5.
+
+**6. A known failure hides new ones in it.** The regression clauses compare
+failing tests by name. Under `tfdrip`, `TestConformance` prints five
+differing ops and then a count ("11 ops differ in all", "162 ops differ in
+all": `lab/w4e/unit-plain.txt`); whether any differs in more than Count is
+not in the outputs. `TestDripHotRestoreLegs` now fails legs 3 and 6 in
+every `tfdrip` suite on the head, and a later failure of its other ten
+subtests would read as the same failing test.
+
+**7. Smaller.**
+
+- Speed was read single-threaded only. A contended hot key loses word0's
+  same-tick skip until its field is all zero codes: probably small, not
+  measured.
+- ConstantTime's timing (S41) was not read with the log; `dripCount`'s loop
+  follows the key's codes.
+- A25 says the reclaiming clock "can run more than a horizon ahead" of the
+  next caller's; W11 reclaims at 3 units and 1 tick ahead, past the fuzzed
+  two units (`reclaim`'s `dead`, `hot.go:332`).
+- `TestDripHotRestoreLegs` writes hook globals that other tests' Background
+  placers read; `Close` doesn't stop a placer (`filter.go:359-363`), which
+  naps about 1 ms after its room drains. No test runs in parallel.
+
+Checked and not a gap: W11's read at 60 s (Upper 1 against 33 events) is
+within the fuzzer's contract, which drops events past a horizon of the
+newest clock (`fuzzconc_test.go:312`), and within A25; buzz's `next0`
+(`buzz.go:359`) is a prediction its trust check compares bit for bit, and a
+wrong one drops the entry; the batches, `TouchIfUnder` and ConstantTime all
+count through `touch`; `markSat` keeps the log; `Resizable` is serialized,
+has hot entries off and carries the log; `hotAdd` without a slot is called
+only by `miss`, so W11's hook fires only at a restore's add;
+`TestCountsLastTouchWhole`'s failure is the one W4's reading explains (the
+event on the window's edge placed in its quantum).
+
+Open, each to have its rule before its reading (none written):
+
+- the metric under concurrency and lag: tfbench's workload from several
+  goroutines with clocks of their own, keys owned and shared, in the three
+  modes, reading the metric, and the logs that say nothing apart from the
+  keys absent;
+- W11b: a classifier that tells fresh from once (a spread history, tK
+  within 11 quanta of it, the reclaimer more than a horizon ahead), which
+  also makes item 4's `unpoint` state and reads Upper there;
+- a count of each touch's pushes for the fuzzer, behind a build tag: a
+  touch that pushes its event twice, outside a dropped history's fresh
+  start, fails, on any key, busy or not; whether W4d's push-again half is
+  ever taken in Go is read on the way;
+- a mutation reading of the log's guards against the soak, the fuzzer and
+  W7;
+- `DripPush.tla` with a hot entry, its reclaim, `missPlaced`, and a wait
+  room with its placer, sized first (W8's two-toucher runs reached 43
+  million states);
+- Upper's sentence: reworded, or the code changed.

@@ -2946,3 +2946,118 @@ Not covered:
   once, never two ticks';
 - delays over 1 s (all of W12's are inside the fuzzed two units, 5 s);
 - other Horizons and Resolutions, ConstantTime's pads, and other traffic.
+
+### W12's reading (073d7da's tree; `lab/w12.sh`, outputs in `lab/w12/`)
+
+`lab/w12.sh` ran end to end (07:15 to 07:57, Go 1.24.7) and exited 0. Its
+first check found no library file different from 828524f's. Every run
+printed its line, every test its "W12 done:" line: leg A 45 runs in each
+build (the five seeds, nine delays each), leg B 117 in each ((9, 9)), the
+`-race` run 3. Leg A took 23 s and 25 s a build, leg B 1,183 s and 1,179 s,
+the `-race` run 69 s: under the sizing's hour, since leg A's runs took
+about half a second each, not the 11 s the zero-delay control averaged
+with leg B's in it. No raw file holds a panic or a data race.
+
+1. **Holds.** `TestShortWindowLagClassify` passes in both builds with its
+   seven "W12 classify" lines: with `tfdrip`, valid, says nothing, says
+   nothing, valid, none, valid, none, the states as made (the log 0x000
+   after the touch an earlier unit behind and after the gap of 9 quanta,
+   0xfff after the gap of 11); in the default build no log for every live
+   key.
+2. **Holds.** With no delay, on all five seeds, leg A equals `swRecord`
+   query for query in both builds, and no `tfdrip` query's log says
+   nothing; on (9, 9) each window's error and exact sums equal the exact
+   files' (10 runs).
+3. **Holds.** Leg B's owned keys equal leg A query for query in all 54 of
+   their runs (three modes, nine delays, two builds); leg B's own leg A
+   lines equal leg A's run's; the `-race` run reports no data race. The
+   order dependence the rule named (a sweep at a later event's tick) did
+   not show in any owned run.
+4. The shared keys are judged at `jitter:100` (`ovlu` 96), `jitter:1000`
+   (403) and `stall:1000` (11); not at `none` (0), `jitter:1` (1),
+   `jitter:10` (9), `stall:1` (0), `stall:10` (0) or `stall:100` (2). None
+   of the delays clause 5 judges is among them.
+5. **Holds, on leg A alone** (clause 4 judges no delay up to 10 ms on the
+   shared keys). At `jitter:1`, `jitter:10`, `stall:1` and `stall:10` the
+   gain is 0.9994 to 1.006 of its gain with no delay on every seed (20
+   comparisons; the least at `stall:10` on (9, 9), 0.02213 against 0.02214;
+   the most at `jitter:10` on (2026, 43)).
+
+Leg A, the five seeds' range (`tables.txt` has each seed):
+
+| delay | default | `tfdrip` | gain against none | dead logs, by queries | by exact count | lagged |
+|---|---|---|---|---|---|---|
+| none | 0.0668-0.0671 | 0.0447-0.0452 | 1 | 0 | 0 | 0 |
+| jitter:1 | 0.0668-0.0671 | 0.0447-0.0452 | 1.00 | 0 | 0 | 0-1 |
+| jitter:10 | 0.0669-0.0672 | 0.0448-0.0452 | 1.00-1.01 | 0.11-0.27% | 0.15-0.71% | 30-33 |
+| jitter:100 | 0.0679-0.0682 | 0.0481-0.0494 | 0.86-0.91 | 7.85-9.17% | 20.94-24.16% | 1,587-1,791 |
+| jitter:1000 | 0.1026-0.1048 | 0.0979-0.1012 | 0.17-0.21 | 34.78-35.72% | 67.34-68.88% | 59,796-60,393 |
+| stall:1 | 0.0668-0.0671 | 0.0447-0.0452 | 1.00 | 0 | 0 | 0 |
+| stall:10 | 0.0668-0.0671 | 0.0447-0.0452 | 1.00 | 0-0.03% | 0-0.08% | 0-3 |
+| stall:100 | 0.0668-0.0671 | 0.0449-0.0453 | 0.99-1.00 | 0.33-0.58% | 1.01-1.63% | 45-60 |
+| stall:1000 | 0.0671-0.0673 | 0.0502-0.0512 | 0.74-0.77 | 11.20-12.42% | 30.27-33.19% | 1,386-1,411 |
+
+**Reported.**
+
+- Beside 0.050: `tfdrip`'s mean stays under it at every delay up to 100 ms
+  in both models (at most 0.0494, `jitter:100`), and is above it at
+  `stall:1000` on all five seeds (0.0502 to 0.0512) and at `jitter:1000`
+  (0.0979 to 0.1012). Target 7's status is the user's.
+- The 1 s window carries it. On (9, 9), `tfdrip` 0.0592 with no delay,
+  0.0783 at `jitter:100`, 0.0853 at `stall:1000`, 0.3197 at `jitter:1000`;
+  the default build 0.1671, 0.1724, 0.1682, 0.3417. A delay of a second on
+  every event doubles the default build's 1 s error and multiplies
+  `tfdrip`'s by more than five, to within 0.022 of the default's.
+- Dead logs sit on busy keys: their share by exact count is 1.4 to 3.2
+  times their share by queries (about 1.9 at `jitter:1000`). At 100 ms and 1 s their error per event
+  (0.017 to 0.024) reads below the valid logs' (0.039 to 0.064) for that
+  reason, so the two are not compared.
+- From the code, not a reading: in leg A a log goes dead only by a touch
+  an earlier unit behind (one goroutine: no merge, and `dripForget`'s
+  condition comes with it), so `lagged` counts the triggers. At
+  `jitter:100`, 1,587 to 1,791 of them leave 8 to 9% of the queries on a
+  dead log: the sticky state W4b's reading 8 found under bursts, which the
+  second audit's first item named.
+- Leg B's shared keys: their means are within 0.00006 of leg A's on
+  (9, 9) at every delay, mode and build; they differ from leg A in at most
+  123 of 240,000 answers a run (`jitter:1000`), and in none at `none`,
+  `stall:1` or `stall:10`. At the judged
+  delays their gain against none is leg A's (0.87 to 0.88, 0.21, 0.77).
+  Plain, Background and ConstantTime read alike. On this workload the
+  shared dealing adds no measurable loss to the lag's.
+- The `-race` run's shared keys differ from leg A in 91 answers.
+
+**Verdict: W12 passes its rule**, clause 5 on leg A alone: on tfbench's
+workload the drip log keeps its gain over the default build when events
+reach it up to 10 ms late, in both delay models, on all five seeds. The
+pass reads that the trigger is rare there (`lagged` 0 to 33 a run, dead
+logs at most 0.27% of the queries), not that the log withstands it.
+
+What W12 reads beyond the rule: the gain wears with larger lags. At 100 ms
+of jitter on every event it keeps 0.86 to 0.91 of itself and the mean
+stays under 0.050. A stall of up to a second on 1% of events costs a
+quarter of it and puts the mean just over 0.050 on every seed. A second of
+jitter on every event leaves a fifth, with both builds near 0.10. The dead
+logs' share rises with the loss, but how much of the loss is theirs was
+not separated (not a reading). The valid logs' error per event rises too
+(0.034 to 0.035 with no delay, 0.039 to 0.040 at `jitter:100`, 0.062 to
+0.064 at `jitter:1000`), and from the code a touch behind its key's last touch in
+the same unit is pushed as a gap of 0 at the last touch's quantum, so a
+valid log can hold late events at the wrong quantum. In `stall`, where 1%
+of events are late, the dead logs are the stronger candidate; in `jitter`,
+where every event is late, the two can't be told apart from these outputs.
+Concurrency in leg B's form (one tick's events at once, one key's at two
+workers) changed nothing measurable.
+
+What W12 leaves:
+- load (evictions, the stash, waits), a later arm;
+- a busy key touched by many goroutines at once, which leg B's gates and
+  tfbench's rates do not make (its shared keys reached 10 cross-unit
+  overlaps only at delays of 100 ms or more);
+- delays over 1 s; other Horizons and Resolutions; ConstantTime's pads;
+  other traffic;
+- how much of the larger lags' loss is the dead logs' and how much the
+  valid logs' mistimed events: both builds' errors on the same queries,
+  split by `tfdrip`'s class, a new output under its own rule;
+- whether a log could leave "says nothing" sooner than a gap of 11 quanta:
+  a design question, not read here.

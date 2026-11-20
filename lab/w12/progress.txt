@@ -1,0 +1,52 @@
+[07:15:56] W12: head 073d7da; go1.24.7
+[07:15:56] 0: library files that differ from 828524f's: []
+[07:15:56] 1: TestShortWindowLagClassify
+[07:15:58] 1 default: go test exit 0
+swlag_test.go:117: W12 classify a, touched once at 100000: nolog (word0 0x92b0000000186a0)
+swlag_test.go:124: W12 classify b, touched an earlier unit behind at 100000: nolog (word0 0x94a60000000186a0)
+swlag_test.go:126: W12 classify b, 9 quanta on at 101500: nolog (word0 0x94a6000000018c7c)
+swlag_test.go:128: W12 classify b, 11 quanta further at 103219: nolog (word0 0x94a6000000019333)
+swlag_test.go:129: W12 classify c, never touched at 100000: none (word0 0x0)
+swlag_test.go:131: W12 classify d, a horizon on at 160000: nolog (word0 0xf7e40000000186a0)
+swlag_test.go:132: W12 classify d, a horizon and a tick on at 160001: none (word0 0xf7e40000000186a0)
+--- PASS: TestShortWindowLagClassify (0.00s)
+ok  	github.com/scooter-sensei/clepsydra/go	0.004s
+[07:16:00] 1 drip: go test exit 0
+swlag_test.go:117: W12 classify a, touched once at 100000: valid (word0 0x92b3ffc000186a0)
+swlag_test.go:124: W12 classify b, touched an earlier unit behind at 100000: dead (word0 0x94a60000000186a0)
+swlag_test.go:126: W12 classify b, 9 quanta on at 101500: dead (word0 0x94a6000000018c7c)
+swlag_test.go:128: W12 classify b, 11 quanta further at 103219: valid (word0 0x94a63ffc00019333)
+swlag_test.go:129: W12 classify c, never touched at 100000: none (word0 0x0)
+swlag_test.go:131: W12 classify d, a horizon on at 160000: valid (word0 0xf7e43ffc000186a0)
+swlag_test.go:132: W12 classify d, a horizon and a tick on at 160001: none (word0 0xf7e43ffc000186a0)
+--- PASS: TestShortWindowLagClassify (0.00s)
+ok  	github.com/scooter-sensei/clepsydra/go	0.006s
+[07:16:00] 2: leg A
+[07:16:24] 2 default: go test exit 0; 45 runs
+swlag_test.go:514: W12 done: build=default leg=a runs=45
+--- PASS: TestShortWindowLag (23.20s)
+ok  	github.com/scooter-sensei/clepsydra/go	23.220s
+[07:16:49] 2 drip: go test exit 0; 45 runs
+swlag_test.go:514: W12 done: build=tfdrip leg=a runs=45
+--- PASS: TestShortWindowLag (24.90s)
+ok  	github.com/scooter-sensei/clepsydra/go	24.911s
+[07:16:49] 3: leg B
+[07:36:32] 3 default: go test exit 0; 117 runs
+swlag_test.go:514: W12 done: build=default leg=b runs=117
+--- PASS: TestShortWindowLag (1182.60s)
+ok  	github.com/scooter-sensei/clepsydra/go	1182.620s
+[07:56:12] 3 drip: go test exit 0; 117 runs
+swlag_test.go:514: W12 done: build=tfdrip leg=b runs=117
+--- PASS: TestShortWindowLag (1178.90s)
+ok  	github.com/scooter-sensei/clepsydra/go	1178.916s
+[07:57:26] 3 under -race: go test exit 0; 3 runs; data races reported: 0
+swlag_test.go:514: W12 done: build=tfdrip leg=b runs=3
+--- PASS: TestShortWindowLag (68.77s)
+ok  	github.com/scooter-sensei/clepsydra/go	69.822s
+[07:57:26] 4: lab/w12.py
+[07:57:26] 4: exit 0
+W12 clause 2 (no delay: leg A equals swRecord query for query, both builds, every seed; no dead log; (9,9)'s sums equal the exact files'; 10 runs): holds
+W12 clause 3 (leg B, owned keys: answers equal leg A's query for query, every mode, delay and build; leg B's own leg A lines equal leg A's; 54 owned runs): holds
+W12 clause 4 (the shared keys judged at a delay where at least 10 ticks put one key's events at two workers in two units): judged at [jitter:100, jitter:1000, stall:1000]; not at [none, jitter:1, jitter:10, stall:1, stall:10, stall:100]
+W12 clause 5 (the gain at delays up to 10 ms at least half its gain with none; 20 comparisons): holds
+[07:57:26] W12 readings finished (exit 0)

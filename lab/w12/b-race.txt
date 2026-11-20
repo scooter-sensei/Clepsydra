@@ -1,0 +1,8 @@
+=== RUN   TestShortWindowLag
+    swlag_test.go:415: W12 run: build=tfdrip leg=A seed=9,9 delay=jitter:1000 mode=plain keys=- rep=0 w1=0.3197426393 es1=18288 xs1=57196 w5=0.0603898571 es5=30996 xs5=513265 w15=0.0508083097 es15=81061 xs15=1595428 w30=0.0444045777 es30=142743 xs30=3214601 w60=0.0242230956 es60=150607 xs60=6217496 mean=0.0999136959 q_none=2501 x_none=0 e_none=0 q_nolog=0 x_nolog=0 e_nolog=0 q_dead=83474 x_dead=7809642 e_dead=187347 q_valid=154025 x_valid=3788344 e_valid=236348 lagged=60380 ovl=0 ovlu=0 mism=-1
+    swlag_test.go:415: W12 run: build=tfdrip leg=B seed=9,9 delay=jitter:1000 mode=plain keys=owned rep=0 w1=0.3197426393 es1=18288 xs1=57196 w5=0.0603898571 es5=30996 xs5=513265 w15=0.0508083097 es15=81061 xs15=1595428 w30=0.0444045777 es30=142743 xs30=3214601 w60=0.0242230956 es60=150607 xs60=6217496 mean=0.0999136959 q_none=2501 x_none=0 e_none=0 q_nolog=0 x_nolog=0 e_nolog=0 q_dead=83474 x_dead=7809642 e_dead=187347 q_valid=154025 x_valid=3788344 e_valid=236348 lagged=60380 ovl=0 ovlu=0 mism=0
+    swlag_test.go:415: W12 run: build=tfdrip leg=B seed=9,9 delay=jitter:1000 mode=plain keys=shared rep=0 w1=0.3195678019 es1=18278 xs1=57196 w5=0.0603664774 es5=30984 xs5=513265 w15=0.0508070562 es15=81059 xs15=1595428 w30=0.0444055110 es30=142746 xs30=3214601 w60=0.0242242215 es60=150614 xs60=6217496 mean=0.0998742136 q_none=2501 x_none=0 e_none=0 q_nolog=0 x_nolog=0 e_nolog=0 q_dead=83447 x_dead=7808686 e_dead=187297 q_valid=154052 x_valid=3789300 e_valid=236384 lagged=60380 ovl=4021 ovlu=403 mism=91
+    swlag_test.go:514: W12 done: build=tfdrip leg=b runs=3
+--- PASS: TestShortWindowLag (68.77s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	69.822s

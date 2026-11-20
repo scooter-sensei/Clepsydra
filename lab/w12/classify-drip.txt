@@ -1,0 +1,11 @@
+=== RUN   TestShortWindowLagClassify
+    swlag_test.go:117: W12 classify a, touched once at 100000: valid (word0 0x92b3ffc000186a0)
+    swlag_test.go:124: W12 classify b, touched an earlier unit behind at 100000: dead (word0 0x94a60000000186a0)
+    swlag_test.go:126: W12 classify b, 9 quanta on at 101500: dead (word0 0x94a6000000018c7c)
+    swlag_test.go:128: W12 classify b, 11 quanta further at 103219: valid (word0 0x94a63ffc00019333)
+    swlag_test.go:129: W12 classify c, never touched at 100000: none (word0 0x0)
+    swlag_test.go:131: W12 classify d, a horizon on at 160000: valid (word0 0xf7e43ffc000186a0)
+    swlag_test.go:132: W12 classify d, a horizon and a tick on at 160001: none (word0 0xf7e43ffc000186a0)
+--- PASS: TestShortWindowLagClassify (0.00s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	0.006s

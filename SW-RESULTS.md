@@ -2779,3 +2779,170 @@ Open, each to have its rule before its reading (none written):
   room with its placer, sized first (W8's two-toucher runs reached 43
   million states);
 - Upper's sentence: reworded, or the code changed.
+
+## Phase 12: the drip log's gain under lag and concurrency (W12)
+
+**Written after the second audit**, whose first item found target 7's
+metric read only on tfbench's workload as tfbench runs it: one goroutine,
+ticks in order. Two of the log's triggers of "says nothing" need a caller
+behind the key's last touch (`next0`: a tick an earlier unit behind;
+`dripForget`: a count landing a unit later than its event), and the state
+lasts until a gap of 11 quanta (1.7 s at Horizon 60 s). W4b's reading 8
+showed what such a state does to the gain under sustained traffic. No
+velocity reading has had a late event or a second goroutine. W12 reads the
+metric with both. The delay model, its sizes, the order of equal arrivals,
+judging the gain, and leaving load to a later arm are the user's choices.
+
+**The probe** (`go/swlag_test.go`, `TF_EXP=1`, both builds; the library
+unchanged, `lab/w12.sh` checks it against 828524f's).
+
+- **The workload.** tfbench's velocity workload (`swWorkload`), recorded
+  once per seed: its events in the generator's order, and its query of
+  each tick from the first horizon on (key and window). The filter is
+  tfbench's (Capacity 200,000, Horizon 60 s, Resolution 1 ms), touched by
+  `CheckAndTouchAt` and read by `VelocityCountAt`, as tfbench and
+  `swRecord` do.
+- **Arrival.** Each event gets an arrival tick: its own tick plus a delay
+  drawn from a stream of the seed and the delay alone, not the
+  generator's, so the queries are tfbench's at every delay. The filter is
+  given the events in order of arrival, each touched at its own tick.
+  Equal arrivals go in an order drawn from the same stream, as arrival
+  times finer than a tick would order them, so that a delay of 1 can put
+  an event behind the one a tick after it (in tick order, two events swap
+  only if they are less than J ticks apart, and J = 1 would swap none);
+  with no delay they go in the generator's order. An event arriving at or
+  after the workload's end is not given. The query of tick now comes
+  after every event that arrived by now, and its exact count is over the
+  events given by then: the metric reads the filter's error on what it was
+  given, not the lateness itself.
+- **Delays.** `jitter:J`: every event delayed uniformly in [0, J] ticks;
+  `stall:J`: 1% of events so delayed, the rest on time; J = 1, 10, 100 and
+  1,000 (ms); and `none`, the control.
+- **Leg A**: one goroutine, plain mode. **Leg B**: 8 workers; each arrival
+  tick's events go to the workers behind a gate, and the tick's query
+  follows the gate. `owned`: key k's events always to worker k % 8, in
+  arrival order, so leg B must answer as leg A does, query for query.
+  `shared`: the tick's events dealt to the workers in turn, so one key's
+  events of one tick can run at once in two workers. Leg B runs in plain
+  mode, Background, and ConstantTime (functional, no pad, as `TF_CT=1` runs
+  it), the shared keys three times (they are not replayable).
+- **Overlaps** (leg B, shared): per tick and key, an event at another worker
+  than the one that took the key's first event of the tick (`ovl`), and one
+  of those also in another unit than that first event (`ovlu`). They depend
+  on the arrivals and the dealing alone.
+- **Classes.** Before each query's count the key's slot is read as Count
+  reads it and classed (`swLagClass`): none (no history, or its last touch
+  past the horizon), no log (the default build), says nothing (the log's
+  valid bit clear) or valid. Queries, exact counts and errors are summed by
+  class. `lagged` counts events given an earlier unit behind their key's
+  newest given tick.
+- **Seeds.** Leg A: tfbench's (9, 9) and (2026, 41) to (2026, 44), which no
+  arm has read. Leg B: (9, 9).
+
+`TestShortWindowLagClassify` reads hand-made states: a key touched once
+(valid); one touched again an earlier unit behind its last touch (says
+nothing), still so after a gap of 9 quanta, valid again after one of 11; a
+key never touched, and one a horizon and a tick past its touch (none); one
+exactly a horizon past it (live). In the default build every live key is
+no log.
+
+`lab/w12.sh` runs the classify test in both builds; leg A in both builds
+(45 runs each: five seeds, nine delays); leg B in both builds (117 runs
+each: nine delays, its own leg A and, in three modes, the owned keys once
+and the shared keys three times); and leg B under `-race`, `tfdrip`, (9, 9),
+`jitter:1000`, plain, the shared keys once (3 runs). `lab/w12.py` reads both
+builds' lines and prints the tables and clauses 2 to 5. Caps: 2 minutes for
+the classify test, 60 for leg A, 90 for leg B, 60 for the `-race` run.
+Outputs in `lab/w12/`.
+
+**Before the rule** (not a reading).
+
+- The test compiles and vets in both builds, and compiles under `-race`;
+  it has not run under `-race`.
+- `lab/w12.py` was tried on fabricated lines, read from no filter. A set
+  meant to hold read as holding. A set with two planted failures (an owned
+  run differing from leg A; a seed losing its gain at `jitter:10`) failed
+  clauses 3 and 5 on those alone. An empty set first read clauses 2 and 3 as
+  holding; the script now reads an empty clause as "NOTHING READ" and exits
+  1.
+- `lab/w12.sh` was tried on a scratch clone with `TestPartCells` in each
+  test's place. It exited 2 on files not committed. On the stand-in run it
+  found no library file changed, logged "NO W12 LINES" for every run, and
+  exited 1.
+- At the user's word, two of the probe's checks ran on that clone before
+  this rule, first with equal arrivals in tick order and again on the test
+  as committed (after the user chose the drawn order, which leaves `none`
+  as it was); both times, line for line the same:
+  - `TestShortWindowLagClassify` read every state as made, in both builds.
+  - The zero-delay control, leg B's run at `none` on (9, 9) in both builds
+    (13 runs each, 144 to 149 s): leg A equals `swRecord` query for query;
+    its window sums equal the exact files' (default 19,185 of 114,779 at
+    1 s, `tfdrip` 6,798; the other windows likewise); no log says nothing;
+    leg B, owned and shared, in the three modes, equals leg A query for
+    query; the shared dealing put one key's events of a tick at two workers
+    7,728 times, never in two units (one tick is one unit).
+  - No delay has been run. The reading reruns both checks.
+- Sizing from that run: about 11 s a run; the whole reading about an hour
+  without the `-race` run, which was not timed.
+
+**Rule (before the reading).** W12 holds if:
+
+1. sight: `TestShortWindowLagClassify` passes in both builds, each with its
+   "W12 classify" lines;
+2. no delay: on every seed, leg A equals `swRecord` query for query in both
+   builds, and no `tfdrip` query's log says nothing; on (9, 9) each window's
+   error and exact sums equal `lab/w4e/exact-drip.txt`'s (`tfdrip`) and
+   `verify/expected/exact.txt`'s (default);
+3. the harness: leg B's owned keys equal leg A query for query in every
+   mode, delay and build, and leg B's own leg A lines equal leg A's run's;
+   the `-race` run reports no data race; every run prints its line (45, 117
+   and 3), and every test its "W12 done:" line;
+4. the shared keys are judged at a delay where `ovlu` is at least 10 (the
+   dealing put one key's events of one tick at two workers in two units ten
+   times);
+5. the gain holds at the delays up to 10 ms (`jitter:1`, `jitter:10`,
+   `stall:1`, `stall:10`): the gain, the default build's mean of the five
+   windows less `tfdrip`'s, is at least half the gain with no delay:
+   - on leg A, on every seed, each build's run on the same seed and delay;
+   - on leg B's shared keys, in every mode, at each delay clause 4 judges,
+     each build's mean over its three repeats, against the same mode's
+     shared keys with no delay. If clause 4 judges none of these delays,
+     clause 5 rests on leg A alone, and W12 says so.
+
+The run counts and the seeds present are read from `progress.txt` and the
+runs' files (`lab/w12.py` checks neither). A run cut by its cap, or one
+that hangs, is the probe's fault, not a reading.
+
+If clause 1 fails, the classes are not read (the dead logs' shares and
+errors); the metric is. If clause 2 or 3 fails, W12 says nothing of clause
+5 until the difference is read against the code: the probe's, or the
+library's dependence on the order of calls at one instant (at a delay a
+tick's gate holds several ticks, and a touch's `decayStep` sweeps at its
+caller's tick, so in leg B a sweep at a later event's tick can clear a slot
+before a lagging touch that finds it live in leg A's order; a slot past
+the horizon of the later clock, which the contract lets go). If clause 5
+fails at any judged point, the drip log loses more than half its
+gain at a lag of 10 ms or less, and the record names where (leg, seed or
+mode, model, delay). If clause 5 holds, the gain survives those lags on
+this workload and says nothing of the rest (below). Target 7's status is
+the user's either way.
+
+Reported, not judged: the five windows and the mean at every delay in both
+builds, beside 0.050 and the default build's; the gain at 100 ms and 1 s;
+`tfdrip`'s dead logs, by queries and by exact count; the error per event of
+valid and dead logs; `lagged`; leg B's shared spread over its repeats, its
+answers differing from leg A's, `ovl` and `ovlu`; the time of each test.
+
+A failure is read against the code before anything else: a defect of the
+library, or of the probe, said as such.
+
+Not covered:
+
+- load: evictions, the stash, waits and the wait room (at Capacity 200,000
+  nothing waits, so Background and ConstantTime take only their call paths;
+  a later arm);
+- a busy key touched by many goroutines at once: tfbench's keys stay under
+  about 100 events a second, and leg B's gates run one tick's events at
+  once, never two ticks';
+- delays over 1 s (all of W12's are inside the fuzzed two units, 5 s);
+- other Horizons and Resolutions, ConstantTime's pads, and other traffic.

@@ -2314,3 +2314,150 @@ What W10b leaves:
 - W4e's open legs, as before: a restore whose claim evicts; ConstantTime
   and Background reclaims; a reclaim by a concurrent caller; the wait
   room's drop.
+
+## Phase 11: the hot restore's open legs (W11)
+
+**Written after W10b's reading.** W4e mended the hot restore's double push
+on the legs W9 probed: in plain mode, a reclaim at the install into a free
+slot and in a claim that relocates. Not probed, as W4e's reading left them:
+
+- a restore whose claim evicts;
+- ConstantTime and Background, whose claims install on the call path only
+  into a free slot and otherwise let the history wait (in the stash; in
+  the wait room, where the placer places it);
+- the wait's leg, which W4e's wording (b187156) read from the code: the
+  look again recalls the waiting history, `hotGone` finds its entry gone,
+  and the key starts afresh, dropping the history with no second push;
+- a reclaim by a concurrent caller rather than a hook.
+
+**The library** (`go/hot.go`, both builds). `hotAdd` calls
+`testHookRestoreAdd()` when the hook is set and it counts a hot restore's
+touch (`slot` nil: `miss`'s add, after the history went in or waits with the
+touch's push), before the add. Nil in the library. No hook in the tree runs
+between the wait and that add. W11's library differs from 8a15270's by these
+added lines alone. `go/hot.go` is the same on 23f03b6 (W4d's library), and
+the hook applies to it as a patch; `lab/w11.sh` checks both before it runs.
+
+**The probe** (`go/drip_hotlegs_test.go`, `tfdrip`, in the tree).
+`TestDripHotRestoreLegs` builds W4e's test's filter (one hot entry, Horizon
+1 minute at 1 ms): K promoted at t0, its words in the stash, its slot freed.
+L, on other lines than K's and another claim stripe, is promoted at tL,
+more than a horizon past K's newest event, which reclaims K's entry. K's
+restoring touch is at tK. The fill keys are on other stripes than K's,
+since a hook that touches L inside K's claim must not take K's stripe. The
+legs, each with a control that reclaims nothing:
+
+1. plain, every line full of keys live at tK: the claim cannot relocate and
+   evicts; L's promotion runs from `testHookVictim`;
+2. ConstantTime, K's slot free: L's from `testHookInstalling`;
+3. ConstantTime, K's lines full: the history waits in the stash; L's from
+   `testHookRestoreAdd`. K holds its stripe, so the pads cannot place it,
+   and the look again recalls it;
+4. Background, K's slot free: L's from `testHookInstalling`;
+5. Background, K's lines full, the placer running: from
+   `testHookRestoreAdd` the test waits (up to 2 s) for the placer to place
+   K, then runs L's promotion; the look again finds K in the table;
+6. Background, K's lines full, no placer (`bgManual`): the look again takes
+   K out of the wait room (`testHookTaken`).
+
+K's drip log after its touch is classed against W4e's history w0: "once"
+(the history with the touch's one push), "twice" (two pushes) or "fresh"
+(the touch afresh, the history dropped). K is also read 100 ms after its
+touch at 250 ms, 1 s and 10 s, where the truth is 1. The read at tK at 60
+s is logged in full and reported only: K's events in it are its 32 at t0
+and the touch, and the look again's fresh register reads about 1 in every
+reclaim leg.
+
+Each leg checks first that its path was taken, and fails with "path not
+taken" otherwise:
+- the hook fired and L was promoted;
+- with every line full, the restore evicted;
+- with K's lines full, the history waited;
+- with the placer, K was placed;
+- where the look again finds K in the table, it went through `bump`'s hot
+  add on K's slot (`testHookHotAdding`);
+- without the placer, K was taken out of the wait room.
+
+Its assertions are W4e's library's:
+- a control restores K with its entry and one push;
+- legs 1, 2, 4 and 5 read once, K's slot no longer a hot pointer;
+- legs 3 and 6 read fresh;
+- every reclaim leg reads Count 1 at the three windows.
+
+`TestDripHotRestoreRace` (`TF_DRIP_RACE_ROUNDS`) is the concurrent leg. Each
+round builds the filter with K's slot free (plain mode), touches L 31 times
+at tL and checks that L is not yet promoted and that K's entry is still
+K's. Then K's touch at tK and L's 32nd touch, its promotion, run from two
+goroutines, each after a random spin of up to 4,000 loop steps. A round is
+classed by K's log, whether L was promoted, and whether K's touch looked
+again through `bump`'s hot add, which in a round only K's look again
+makes. There are three orders:
+- L's reclaim first: K starts afresh;
+- K's add first: its entry then holds an event too new for L to reclaim,
+  and L is refused;
+- L's reclaim between K's `hotGone` and its add: K looks again.
+
+**Predictions, from the code before any run.** On 23f03b6 (W4d's library,
+with the hook):
+- legs 1, 2, 4 and 5 read twice: the look again finds K in the table with
+  `pushed` false and pushes again;
+- legs 3 and 6 read fresh: the recall finds the entry gone and starts K
+  afresh, on either library;
+- the race reads twice in every round where K looked again.
+
+If leg 5 reads twice there, that is a double push on W4d's library through
+the wait room and the placer, which W4e's wording of the wait's leg did not
+cover; it is recorded as such. On the head every leg reads as its
+assertions say, and no race round reads twice.
+
+**Before the rule** (not a reading). The hook, the probe and the runner were
+compiled in both builds on the head (and the `-race` build), and with the
+hook applied on 23f03b6 (`tfdrip`). `lab/w11.sh` was tried on a scratch
+clone with `TestPartCells` in every test's place. It exited 2 on a change
+not committed. On the stand-in run it found the library different from
+8a15270's in `go/hot.go` alone, by 7 lines that are not blank (none
+removed), applied the hook to 23f03b6 and found that tree's change the
+hook's, logged "NO W11 LINES" for every run, and exited 1. None of W11's
+tests has run. Outputs in `lab/w11/`. The test runs are bounded (2 minutes
+for the legs, 30 minutes for a race run). The race's rounds were not timed
+before the rule.
+
+**Rule (before the reading).** W11 holds if:
+
+1. paths: on both trees every leg takes its path (no "path not taken"). A
+   leg that does not is the probe's fault, and W11 says nothing of that
+   leg. A hang or a timeout is read the same way;
+2. sight, 23f03b6: legs 1, 2, 4 and 5 read twice, legs 3 and 6 read fresh,
+   and every control reads once with K's entry. A reclaim leg among 1, 2, 4
+   and 5 that reads once there has no sight: its head reading is reported,
+   not judged as mended;
+3. the head: every leg passes its assertions, plain and under `-race`, with
+   no data race. W4e's `TestDripHotRestorePushOnce` passes beside it;
+4. the race: on the head, no round reads twice in 200,000 rounds, nor in
+   20,000 under `-race` with no data race. The head's pass counts only if
+   at least 10 rounds looked again; with fewer, the window was not reached
+   often enough and the leg is not judged. On 23f03b6, at least one round
+   reads twice in 200,000. If none does, the race has no sight and the
+   head's pass is reported, not judged as mended;
+5. the library: the default build's `tfbench -exact` and answer digest
+   equal `verify/expected/`'s, and `tfdrip`'s `tfbench -exact` equals
+   `lab/w4e/exact-drip.txt` byte for byte.
+
+Reported, not judged: each leg's counts (restored, evictions, relocations,
+waited), where K is after its touch, the 60 s read; the race's classes and
+their counts.
+
+A failure is read against the code before anything else: a defect of the
+library, or of the probe, said as such.
+
+Not covered:
+- the default build (W9 read its path);
+- a look again that meets the placer mid-placement (the wait-room entry
+  busy);
+- ConstantTime's pads placing K between the wait and the look again (K's
+  stripe is held throughout);
+- relocation under ConstantTime and Background (their claims don't search
+  on the call path);
+- the hook's cost on `hotAdd`'s path, not measured here.
+
+`TestDripHotRestoreLegs` runs in every `tfdrip` suite from W11 on.

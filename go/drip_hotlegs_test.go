@@ -264,8 +264,12 @@ func dripHotLeg(t *testing.T, leg hotLeg) {
 			t.Errorf("the control did not restore K with its entry and one push (log %s, hot %v, K's %v)", class, isHot(x1), mine)
 		}
 	case leg.mode == "ct" && leg.fill == "lines" || leg.mode == "bg" && leg.fill == "lines" && !leg.placer:
-		if class != "fresh" {
-			t.Errorf("K's log %s after its waiting history's entry went, want the touch afresh (fresh)", class)
+		// At this tK the touch afresh and the history with the touch's one
+		// push leave one log, 0xfff, which dripClass names once: the leg
+		// reads only that the event is not pushed twice. lab/sw W11b's
+		// TestDripHotRestoreFresh tells the two apart.
+		if class != "once" && class != "fresh" {
+			t.Errorf("K's log %s after its waiting history's entry went, want the touch's event once (the touch afresh or the history with one push: one log at this tK)", class)
 		}
 	default:
 		if class != "once" {

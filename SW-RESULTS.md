@@ -3061,3 +3061,223 @@ What W12 leaves:
   split by `tfdrip`'s class, a new output under its own rule;
 - whether a log could leave "says nothing" sooner than a gap of 11 quanta:
   a design question, not read here.
+
+## W11b: the hot restore's fresh start told from its one push
+
+**Written after W12's reading**, from W11's legs 3 and 6 and the second
+audit's items 2 and 4. At W11's tK, a horizon less a tick after K's history,
+`next0` sets the log all ones, so the touch afresh and the history with the
+touch's one push were one log (0xfff). W11 could not tell whether a waiting
+history whose entry goes is dropped (b187156's wording), and no probe had
+made `unpoint`'s fresh register beside a log that keeps older events, where
+Upper reads the log (the audit's item 2). W11b touches K within 11 quanta of
+a spread history, with the reclaimer more than a horizon ahead. W11's legs 3
+and 6 reading "not twice", the race leg, and judging Upper are the user's
+choices.
+
+**The probe** (`go/drip_hotfresh_test.go`, no build tag: both builds; the
+library unchanged, `lab/w11b.sh` checks it against 2393104's).
+
+- **The history.** Unit 24 (ticks 60,000 to 62,499; quanta 384 to 399, of
+  156.25 ticks): 29 events at 60,320 (quantum 386), then one each at 60,640,
+  60,960 and 61,420 (quanta 388, 390 and 393). The 32nd promotes K. As in
+  W11, K's words go to the stash, here at 61,420, and its slot is freed; the
+  fill keys are touched at 61,420, so they are live at tK. From the code,
+  K's log is then 0x9b7.
+- **The touch and the reclaimer.** K's touch is at tK = 62,040 (quantum
+  397), 4 quanta after the history's last event, in unit 24. L is promoted at
+  tL = 127,500 (unit 51), which reclaims K's entry (its newest unit, 24, is
+  under 51 - 26): from a hook inside K's touch as in W11, or before K's touch
+  (below). L's clock is 65,460 ticks ahead of tK, more than a horizon: the
+  case A25 names (an entry is reclaimed at the reclaiming call's clock,
+  "which can run more than a horizon ahead of the key's next caller's"), and
+  forced here, since tL must be 27 units or more past the history's unit.
+  What the filter loses of K's history there is within the contract, which
+  drops events past a horizon of the newest clock (`fuzzconc_test.go:312`).
+- **The classes.** K's log after its touch is classed against its stashed
+  word0 w0: once (`next0(w0, tK)`), twice (`next0` of that at tK) or fresh
+  (`dripFresh(tK)`); from the code 0xeef, 0xdde and 0xfff. The test derives
+  them from w0 and logs them with its inputs ("W11b inputs"). It stops before
+  any leg if they are not three logs or if an input is off: the history, the
+  touch and the reads in one unit; the touch 1 to 10 quanta after the
+  history's last event; tL reclaiming K's entry and more than a horizon ahead
+  of tK; the windows' starts as below, none strictly inside a history event's
+  quantum.
+- **The legs.** W11's six and their controls, on this history, and three
+  more where L's promotion reclaims K's entry before K's touch, K's slot
+  free: 7 plain, 8 ConstantTime, 9 Background. Each of 7 to 9 checks before
+  the touch that K is in the stash at tK with its entry gone (`hotGone`), and
+  after it that the touch started K afresh in the table (word1 a register,
+  Restored 0, no `bump` hot add): a fresh start on the filter's own path, the
+  classifier's sight of fresh. Every leg checks its path as W11's do, and
+  stops with "path not taken" otherwise.
+- **The reads.** 100 ms after the touch (62,140), at 250 ms, 1 s, 2 s, 10 s
+  and 60 s: Count and Upper, beside the events given (the history's and the
+  touch's in the window), 1, 2, 33, 33 and 33. The windows start at 61,890
+  (after quantum 393), 61,140 (between 390 and 393), 60,140 (inside unit 24,
+  before 386), 52,140 and 2,140 (before unit 24). "Given" is the probe's
+  count, not a contract's bound: the reclaimer's clock is more than a horizon
+  past every one of K's events.
+- **Assertions**, W4e's library's as the code reads:
+  - a control restores K with its entry and one push;
+  - legs 1, 2, 4 and 5 read once, K's slot a register;
+  - legs 3 and 6 and 7 to 9 read fresh;
+  - no reclaim leg reads Upper over the events given;
+  - K's last touch is tK.
+
+  The default build asserts the paths, the last touch and Upper.
+- **The race** (`TestDripHotFreshRace`, `TF_DRIP_FRESH_ROUNDS`, `tfdrip`):
+  W11's race on this history, in plain mode, its rounds classed as W11's are.
+  K's add at tK leaves its entry's newest unit at 24, so L takes the entry
+  whichever comes first, and W11's "K first, L refused" does not occur. Three
+  orders remain:
+  - L first: K starts afresh (fresh);
+  - K first: its touch is counted in its entry, which L then takes (once);
+  - L between `hotGone` and the add: K looks again (once).
+- **W11's test.** `TestDripHotRestoreLegs`'s legs 3 and 6 now check that
+  K's log holds the touch's event once (once or fresh, which at W11's tK are
+  one log), not that it is fresh. W11's rule and reading are not edited.
+  `TestDripHotRestoreFresh` runs in every suite of both builds from W11b on.
+
+**Predictions, from the code before any run.**
+
+- The head, `tfdrip`:
+  - the controls read once with K's entry, Upper 33 at every window;
+  - legs 1, 2, 4 and 5 read once beside `unpoint`'s register of one event.
+    The log keeps the history's events at quanta 393 and 390 (and a cut
+    code), and Count and Upper read 1, 2, 3, 1 and 1. At 10 s and 60 s the
+    window starts before unit 24, and `estimate` answers the register of
+    bucket 0 whole, without the log (`register.go:444-447`). So Upper falls
+    as the window grows (3 at 2 s, 1 at 10 s), and stays between the
+    default build's (1 at every window) and the events given;
+  - legs 3 and 6 read fresh: the look again recalls the waiting history,
+    finds its entry gone and starts K afresh (`dripFresh`); Count and Upper
+    are 1 at every window;
+  - legs 7 to 9 read fresh, 1 at every window.
+- 23f03b6 (W4d's library, with W11's hook): legs 1, 2, 4 and 5 read twice
+  (0xdde), Count and Upper 2, 3, 4, 1 and 1, over the events given at 250 ms
+  and 1 s; legs 3, 6 and 7 to 9 read fresh, the controls once.
+- The race: on the head, the three orders above and no round twice; on
+  23f03b6, twice in every round that looks again.
+
+**Before the rule** (not a reading).
+
+- The probe was compiled and vetted on the head in both builds, and under
+  `-race`. With W11's hook it was compiled on 23f03b6 in both builds (a
+  scratch clone).
+- `lab/w11b.py` was tried on seven sets of fabricated lines, read from no
+  filter. A set meant to hold read as holding and exited 0; every other set
+  exited 1:
+  - four planted failures (a control without its entry on 23f03b6, leg 3
+    once on the head, leg 1's Upper over the events given, a race round
+    twice): clause 1 failed on its plant, and clauses 3 to 6 read NOT JUDGED
+    by clause 1's gate, clauses 4, 5 and 6 failing as read on their plants
+    alone;
+  - legs 1 to 6 stopped on their paths in both of the head's `tfdrip` runs:
+    clause 2 failed, clause 4 read NOTHING READ, clause 5 held only where
+    judged (legs 7 to 9);
+  - 23f03b6's legs file missing: clauses 1 and 2 read NOTHING READ in part,
+    clause 3 NOTHING READ, clauses 4 to 6 NOT JUDGED;
+  - the head's race file under `-race` missing: clause 6 read NOTHING READ in
+    part;
+  - a race round twice on the head, beside fewer than 10 looks again under
+    `-race`: clause 6 failed;
+  - an empty set read NOTHING READ on every clause.
+- `lab/w11b.sh` was tried on a scratch clone with `TestPartCells` in each
+  test's place. It exited 2 on files not committed. On the stand-in run it:
+  - found the library 2393104's, different from 8a15270's in `go/hot.go`
+    alone (7 lines added, none removed);
+  - applied the hook to 23f03b6, and found that tree's change the hook's;
+  - logged "NO W11b LINES" for every run ("NO W11 LINES" for W11's tests);
+  - exited 1. Its joiner read NOTHING READ on clauses 1 to 6, clause 7 as
+    failing (the stand-in's lines name neither test) and clause 8 as
+    holding.
+- At the user's word, clause 1 ran before this rule, on a scratch clone of
+  the head (`tfdrip`; `TestDripHotRestoreFresh` with the six controls and
+  legs 7 to 9 alone; its output is outside the lab, in
+  `~/lab-sw-out/self11b.txt`):
+  - the inputs as computed: K's log 0x9b7; once 0xeef, twice 0xdde, fresh
+    0xfff, three logs; the windows starting in units 24, 24, 24, 20 and 0,
+    none inside a history event's quantum; tL 27 units past the history's,
+    65,460 ticks ahead of tK;
+  - every control once with K's entry, Count 1, 2, 33, 33 and 33 (the
+    events given) and Upper 33 at every window;
+  - legs 7 to 9: before the touch, K in the stash at tK with its entry gone;
+    after it, fresh, Count and Upper 1 at every window.
+
+  Not run: 23f03b6, legs 1 to 6, the default build, `-race`, the race. The
+  reading reruns clause 1 whole.
+- Sizing, from W11's reading: its legs took seconds and a race run of
+  200,000 rounds 12.5 s, so the whole run should take a few minutes. Caps:
+  2 minutes for each legs run, 30 for each race run.
+
+**Rule (before the reading).** W11b holds if:
+
+1. the classifier: on the head and on 23f03b6 (`tfdrip`) the inputs hold
+   and once, twice and fresh are three logs, legs 7 to 9 read fresh, and
+   every control reads once with K's entry. If this fails, the classes have
+   no sight, and W11b says nothing of clauses 3 to 6 (`lab/w11b.py` reads
+   them NOT JUDGED, beside what they read);
+2. paths: every leg takes its path in the four runs (23f03b6; the head,
+   plain and under `-race`; the default build). A leg that does not is the
+   probe's fault, and W11b says nothing of that leg. A hang or a timeout is
+   read the same way;
+3. sight, 23f03b6: legs 1, 2, 4 and 5 read twice, and at least one of them
+   reads Upper over the events given. A leg among them that reads once there
+   has no sight: its head reading is reported, not judged. With no Upper over
+   the events given there, clause 5's second half is not judged;
+4. the head, `tfdrip`, plain and under `-race` alike, with no data race: legs
+   1, 2, 4 and 5 read once, K's slot a register; legs 3 and 6 read fresh;
+5. Upper: in every reclaim leg (1 to 9), at each window, `tfdrip`'s Upper is
+   at or above the default build's on the same leg and window, and at or
+   below the events given;
+6. the race: on the head no round reads twice in 200,000, nor in 20,000
+   under `-race`, with no data race. Judged only if at least 10 rounds looked
+   again in each run; on 23f03b6 at least one round of 200,000 reads twice,
+   else the head's pass is reported, not judged as mended;
+7. W11's `TestDripHotRestoreLegs` (legs 3 and 6 as changed) and W4e's
+   `TestDripHotRestorePushOnce` pass on the head;
+8. the library is 2393104's.
+
+`lab/w11b.py` prints the clauses from the outputs; the runs and their lines
+are also read from `progress.txt`.
+
+What the readings would say:
+
+- Legs 3 and 6:
+  - fresh: a waiting history whose entry goes is dropped, as A25 claims of a
+    history recalled after its entry was reclaimed and b187156 worded for
+    the wait, read with a log that tells it for the first time;
+  - once: the history kept, against both;
+  - twice: a double push.
+- Legs 7 to 9 are A25's reclaim before the restore. Fresh there reads its
+  claim with the log; it is also clause 1's sight of fresh.
+- Legs 1, 2, 4 and 5 once: a history placed and then reclaimed keeps its
+  logged events beside `unpoint`'s fresh register (its register starts
+  afresh, its log does not). That is the state the second audit's items 2
+  and 4 named, and Count and Upper read the logged events there.
+- Clause 5: whether Upper, reading the log in that state, stays between the
+  register's answer and the events given. It does not decide Upper's
+  sentence (`drip.go:16`, W4's design), which is the user's: reworded, or the
+  code changed.
+
+Reported, not judged:
+
+- every leg's reads in both builds, the controls' Count among them;
+- Upper's fall as the window grows;
+- the race's classes and their counts;
+- each test's time.
+
+A failure is read against the code before anything else: a defect of the
+library, or of the probe, said as such.
+
+Not covered:
+
+- a history over more than one unit (here the register's bucket 0 holds all
+  of it with the touch), and a touch behind the history's last event (W4d's
+  push-again half);
+- as in W11: a look again that meets the placer mid-placement; ConstantTime's
+  pads placing K; relocation under ConstantTime and Background;
+- `unpoint`'s hold path (`TF_NOCAS2`): the runs take its 16-byte CAS;
+- other Horizons and Resolutions, and concurrency beyond the race's two
+  goroutines.

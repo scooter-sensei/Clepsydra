@@ -1,0 +1,50 @@
+=== RUN   TestDripHotRestoreFresh
+    drip_hotfresh_test.go:187: W11b inputs: history in unit 24 (first 60320, last 61420 at quantum 393), tK 62040 (unit 24, quantum 397, gap 4); tL 127500 (unit 51, 27 units past the history's; 65460 ticks ahead of tK, horizon 60000); window starts [61890 61140 60140 52140 2140] in units [24 24 24 20 0], inside a history event's quantum []; logs: history 0x9b7, once 0xeef, twice 0xdde, fresh 0xfff, distinct true
+=== RUN   TestDripHotRestoreFresh/c1_plain,_full_table,_control
+    drip_hotfresh_test.go:356: W11b leg c1 | plain, full table, control | build tfdrip | hook  | before - | promoted 1 | placed false | retried false | taken 0 | restored 1 | evictions 1 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+=== RUN   TestDripHotRestoreFresh/1_plain,_full_table,_reclaim_at_the_eviction
+    drip_hotfresh_test.go:356: W11b leg 1 | plain, full table, reclaim at the eviction | build tfdrip | hook victim | before - | promoted 2 | placed false | retried true | taken 0 | restored 0 | evictions 1 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xeef | class once | hot false | mine false | reads 250:1/1/1 1000:2/2/2 2000:3/3/33 10000:1/1/33 60000:1/1/33
+=== RUN   TestDripHotRestoreFresh/c2_ConstantTime,_free_slot,_control
+    drip_hotfresh_test.go:356: W11b leg c2 | ConstantTime, free slot, control | build tfdrip | hook  | before - | promoted 1 | placed false | retried false | taken 0 | restored 1 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+=== RUN   TestDripHotRestoreFresh/2_ConstantTime,_free_slot,_reclaim_at_install
+    drip_hotfresh_test.go:356: W11b leg 2 | ConstantTime, free slot, reclaim at install | build tfdrip | hook installing | before - | promoted 2 | placed false | retried true | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xeef | class once | hot false | mine false | reads 250:1/1/1 1000:2/2/2 2000:3/3/33 10000:1/1/33 60000:1/1/33
+=== RUN   TestDripHotRestoreFresh/c3_ConstantTime,_full_lines,_control
+    drip_hotfresh_test.go:356: W11b leg c3 | ConstantTime, full lines, control | build tfdrip | hook  | before - | promoted 1 | placed false | retried false | taken 0 | restored 1 | evictions 0 | relocations 0 | waited 1 | K in the stash or the wait room | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+=== RUN   TestDripHotRestoreFresh/3_ConstantTime,_full_lines,_reclaim_after_the_wait
+    drip_hotfresh_test.go:356: W11b leg 3 | ConstantTime, full lines, reclaim after the wait | build tfdrip | hook restore add | before - | promoted 2 | placed false | retried false | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 2 | K in the stash or the wait room | last 62040 | log 0xfff | class fresh | hot false | mine false | reads 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+=== RUN   TestDripHotRestoreFresh/c4_Background,_free_slot,_control
+    drip_hotfresh_test.go:356: W11b leg c4 | Background, free slot, control | build tfdrip | hook  | before - | promoted 1 | placed false | retried false | taken 0 | restored 1 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+=== RUN   TestDripHotRestoreFresh/4_Background,_free_slot,_reclaim_at_install
+    drip_hotfresh_test.go:356: W11b leg 4 | Background, free slot, reclaim at install | build tfdrip | hook installing | before - | promoted 2 | placed false | retried true | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xeef | class once | hot false | mine false | reads 250:1/1/1 1000:2/2/2 2000:3/3/33 10000:1/1/33 60000:1/1/33
+=== RUN   TestDripHotRestoreFresh/c5_Background,_full_lines,_placer,_control
+    drip_hotfresh_test.go:356: W11b leg c5 | Background, full lines, placer, control | build tfdrip | hook  | before - | promoted 1 | placed true | retried false | taken 0 | restored 1 | evictions 0 | relocations 0 | waited 1 | K in the table | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+=== RUN   TestDripHotRestoreFresh/5_Background,_full_lines,_placer,_placed_then_reclaimed
+    drip_hotfresh_test.go:356: W11b leg 5 | Background, full lines, placer, placed then reclaimed | build tfdrip | hook restore add | before - | promoted 2 | placed true | retried true | taken 0 | restored 0 | evictions 0 | relocations 1 | waited 1 | K in the table | last 62040 | log 0xeef | class once | hot false | mine false | reads 250:1/1/1 1000:2/2/2 2000:3/3/33 10000:1/1/33 60000:1/1/33
+=== RUN   TestDripHotRestoreFresh/c6_Background,_full_lines,_no_placer,_control
+    drip_hotfresh_test.go:356: W11b leg c6 | Background, full lines, no placer, control | build tfdrip | hook  | before - | promoted 1 | placed false | retried false | taken 0 | restored 1 | evictions 0 | relocations 0 | waited 1 | K in the stash or the wait room | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+=== RUN   TestDripHotRestoreFresh/6_Background,_full_lines,_no_placer,_reclaim_after_the_wait
+    drip_hotfresh_test.go:356: W11b leg 6 | Background, full lines, no placer, reclaim after the wait | build tfdrip | hook restore add | before - | promoted 2 | placed false | retried false | taken 1 | restored 0 | evictions 0 | relocations 0 | waited 2 | K in the stash or the wait room | last 62040 | log 0xfff | class fresh | hot false | mine false | reads 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+=== RUN   TestDripHotRestoreFresh/7_plain,_free_slot,_reclaimed_before_K's_touch
+    drip_hotfresh_test.go:356: W11b leg 7 | plain, free slot, reclaimed before K's touch | build tfdrip | hook before | before src 2, last touch 61420, hot true, entry gone true | promoted 2 | placed false | retried false | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xfff | class fresh | hot false | mine false | reads 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+=== RUN   TestDripHotRestoreFresh/8_ConstantTime,_free_slot,_reclaimed_before_K's_touch
+    drip_hotfresh_test.go:356: W11b leg 8 | ConstantTime, free slot, reclaimed before K's touch | build tfdrip | hook before | before src 2, last touch 61420, hot true, entry gone true | promoted 2 | placed false | retried false | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xfff | class fresh | hot false | mine false | reads 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+=== RUN   TestDripHotRestoreFresh/9_Background,_free_slot,_reclaimed_before_K's_touch
+    drip_hotfresh_test.go:356: W11b leg 9 | Background, free slot, reclaimed before K's touch | build tfdrip | hook before | before src 2, last touch 61420, hot true, entry gone true | promoted 2 | placed false | retried false | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xfff | class fresh | hot false | mine false | reads 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+--- PASS: TestDripHotRestoreFresh (0.01s)
+    --- PASS: TestDripHotRestoreFresh/c1_plain,_full_table,_control (0.00s)
+    --- PASS: TestDripHotRestoreFresh/1_plain,_full_table,_reclaim_at_the_eviction (0.00s)
+    --- PASS: TestDripHotRestoreFresh/c2_ConstantTime,_free_slot,_control (0.00s)
+    --- PASS: TestDripHotRestoreFresh/2_ConstantTime,_free_slot,_reclaim_at_install (0.00s)
+    --- PASS: TestDripHotRestoreFresh/c3_ConstantTime,_full_lines,_control (0.00s)
+    --- PASS: TestDripHotRestoreFresh/3_ConstantTime,_full_lines,_reclaim_after_the_wait (0.00s)
+    --- PASS: TestDripHotRestoreFresh/c4_Background,_free_slot,_control (0.00s)
+    --- PASS: TestDripHotRestoreFresh/4_Background,_free_slot,_reclaim_at_install (0.00s)
+    --- PASS: TestDripHotRestoreFresh/c5_Background,_full_lines,_placer,_control (0.00s)
+    --- PASS: TestDripHotRestoreFresh/5_Background,_full_lines,_placer,_placed_then_reclaimed (0.00s)
+    --- PASS: TestDripHotRestoreFresh/c6_Background,_full_lines,_no_placer,_control (0.00s)
+    --- PASS: TestDripHotRestoreFresh/6_Background,_full_lines,_no_placer,_reclaim_after_the_wait (0.00s)
+    --- PASS: TestDripHotRestoreFresh/7_plain,_free_slot,_reclaimed_before_K's_touch (0.00s)
+    --- PASS: TestDripHotRestoreFresh/8_ConstantTime,_free_slot,_reclaimed_before_K's_touch (0.00s)
+    --- PASS: TestDripHotRestoreFresh/9_Background,_free_slot,_reclaimed_before_K's_touch (0.00s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	0.009s

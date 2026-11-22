@@ -1,0 +1,7 @@
+=== RUN   TestDripHotFreshRace
+    drip_hotfresh_test.go:492: W11b race: 10074 of 20000 rounds: log fresh, L promoted true, K looked again false
+    drip_hotfresh_test.go:492: W11b race: 9913 of 20000 rounds: log once, L promoted true, K looked again false
+    drip_hotfresh_test.go:492: W11b race: 13 of 20000 rounds: log once, L promoted true, K looked again true
+--- PASS: TestDripHotFreshRace (6.69s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	7.716s

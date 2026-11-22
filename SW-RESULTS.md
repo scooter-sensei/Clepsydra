@@ -3281,3 +3281,152 @@ Not covered:
 - `unpoint`'s hold path (`TF_NOCAS2`): the runs take its 16-byte CAS;
 - other Horizons and Resolutions, and concurrency beyond the race's two
   goroutines.
+
+### W11b's reading (f606d88's tree; `lab/w11b.sh`, outputs in `lab/w11b/`)
+
+`lab/w11b.sh` ran end to end (17:32:56 to 17:33:47, Go 1.24.7) and exited
+0, and its joiner exited 0. Its first checks found the library 2393104's,
+different from 8a15270's in `go/hot.go` alone (7 lines added, none
+removed), and the hook applied to 23f03b6 changed that tree by the hook's
+lines alone. Every run printed its lines: 15 leg lines in each of the four
+legs runs, the race's classes in each of the three race runs, W11's lines in
+its run. The tests' own exits:
+
+- on 23f03b6 the legs' test failed on legs 1, 2, 4 and 5 alone (each read
+  twice, with Upper over the events given at 250 ms and 1 s), and the race
+  failed on its rounds read twice;
+- on the head every test passed, plain and under `-race`, and in the default
+  build.
+
+No raw file holds a panic or a data race.
+
+1. **Holds.** On the head and on 23f03b6 the inputs held as computed: K's
+   log 0x9b7; once 0xeef, twice 0xdde, fresh 0xfff; the windows starting in
+   units 24, 24, 24, 20 and 0, none inside a history event's quantum; tL 27
+   units past the history's, 65,460 ticks ahead of tK. On both trees legs 7
+   to 9 read fresh: K was in the stash at tK with its entry gone before the
+   touch, and held a register after it, Restored 0. Every control read once
+   with K's entry (word1 a hot pointer to it, Restored 1). On the head these
+   ten lines (the inputs, the controls, legs 7 to 9) equal the self-check's
+   line for line.
+2. **Holds.** Every leg took its path in the four runs, with the same fields
+   in each: no leg stopped on a path check.
+   - Leg 1: the hook at `testHookVictim`, Promoted 2, one eviction, the look
+     again through `bump`'s hot add on K's slot.
+   - Legs 2 and 4: `testHookInstalling`, Promoted 2, the look again through
+     `bump`.
+   - Leg 3: `testHookRestoreAdd`, Promoted 2, waited 2.
+   - Leg 5: `testHookRestoreAdd`, Promoted 2, K placed by the placer (one
+     relocation), waited 1, the look again through `bump`.
+   - Leg 6: `testHookRestoreAdd`, Promoted 2, waited 2, K taken out of the
+     wait room once.
+   - Legs 7 to 9: L promoted before the touch (Promoted 2), K in the stash
+     at tK with its entry gone, no look again.
+   - The controls: none reclaimed (Promoted 1); leg 1's evicted once, leg
+     3's and leg 6's waited, leg 5's waited and was placed.
+3. **Holds.** On 23f03b6 legs 1, 2, 4 and 5 read twice (0xdde): Count and
+   Upper 2, 3, 4, 1 and 1 against 1, 2, 33, 33 and 33 given, so Upper is
+   over the events given at 250 ms and 1 s in all four. Legs 3, 6 and 7 to
+   9 read fresh, the controls once with K's entry.
+4. **Holds.** On the head, plain and under `-race`, the two runs' lines the
+   same and no data race: legs 1, 2, 4 and 5 read once (0xeef), K's slot a
+   register; legs 3 and 6 read fresh (0xfff), K waiting again with a fresh
+   register (waited 2, Restored 0).
+5. **Holds.** In the nine reclaim legs at the five windows (45 reads),
+   `tfdrip`'s Upper is at or above the default build's and at or below the
+   events given:
+
+   | legs | `tfdrip` Upper | default Upper | given |
+   |---|---|---|---|
+   | 1, 2, 4, 5 | 1, 2, 3, 1, 1 | 1, 1, 1, 1, 1 | 1, 2, 33, 33, 33 |
+   | 3, 6, 7, 8, 9 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 1, 2, 33, 33, 33 |
+
+   (at 250 ms, 1 s, 2 s, 10 s and 60 s, 100 ms after the touch). Count
+   equals Upper at every read of every reclaim leg in both builds.
+6. **Holds.** On the head no round read twice in 200,000 (130 looked again)
+   nor in 20,000 under `-race` (13 looked again), with no data race; both
+   are over the 10 the rule asks, the second narrowly. On 23f03b6, 124 of
+   200,000 rounds read twice: every round that looked again, and no other.
+
+   | run | rounds | fresh, no look again (L first) | once, no look again (K first) | once, looked again | twice, looked again |
+   |---|---|---|---|---|---|
+   | 23f03b6 | 200,000 | 197,630 | 2,246 | 0 | 124 |
+   | head | 200,000 | 197,581 | 2,289 | 130 | 0 |
+   | head, `-race` | 20,000 | 10,074 | 9,913 | 13 | 0 |
+
+   L was promoted in every round: W11's "K first, L refused" did not occur.
+7. **Holds.** W11's `TestDripHotRestoreLegs` and W4e's
+   `TestDripHotRestorePushOnce` pass on the head, in plain mode, in the
+   runner's one selection of the two. Legs 3 and 6 of the first read 0xfff,
+   classed once, as at W11's reading; the changed assertion ("not twice")
+   accepts it. No `tfdrip` suite has run since f606d88:
+   `TestDripHotRestoreFresh`, now in every suite of both builds, has not run
+   in one, nor under `TF_NOCAS2`.
+8. **Holds.** The library is 2393104's.
+
+**Reported.**
+
+- The controls: `tfdrip`'s Count reads 1, 2, 33, 33 and 33, the events given
+  at every window; the default build's reads 4, 18, 33, 33 and 33. From the
+  code, not a reading: there the newest bucket's 32 other events are spread
+  from its onset to the touch. Upper is 33 at every window in both.
+- In legs 1, 2, 4 and 5 `tfdrip`'s Count and Upper fall as the window grows
+  (3 at 2 s, 1 at 10 s), as the rule predicted from the code (not read
+  beyond the answers): at 10 s and 60 s the window starts before unit 24,
+  and `estimate` answers the register of bucket 0 whole, without the log.
+  The default build reads 1 at every window.
+- The race under `-race`: K first took half the rounds (9,913 of 20,000)
+  against 1.1% plain, as W11's did (48% against 1.2%).
+- Times: each legs run took hundredths of a second; a race run 13.95 s (the
+  head), 14.89 s (23f03b6), 6.69 s under `-race`; the whole run 51 s.
+
+**Verdict: W11b passes its rule.** All eight clauses hold; clause 1's gate
+held none back.
+
+What W11b reads of W4e's library:
+
+- Read: a waiting history whose entry goes is dropped. In legs 3 and 6
+  (ConstantTime's stash; Background's wait room with no placer) the look
+  again starts K afresh, and K's log holds the touch's event alone. That is
+  A25's claim and b187156's wording, read with a log that tells it for the
+  first time. A recalled history whose entry went before the touch (legs 7
+  to 9, A25's reclaim before the restore) starts afresh in all three modes,
+  and so does the race's L-first order (197,581 of 200,000 plain rounds).
+- Read: a history placed and then reclaimed (legs 1, 2, 4 and 5: an evicting
+  claim, ConstantTime's and Background's install, the placer's placement)
+  keeps its logged events beside `unpoint`'s fresh register. Its register
+  starts afresh and its log does not. Count and Upper read the logged
+  events there: 1, 2 and 3 at the three windows that start inside the
+  history's unit (250 ms, 1 s and 2 s), where the default build reads 1 at
+  each. Both builds read 1 at 10 s and 60 s, whose windows start before that
+  unit.
+- Read: in that state Upper stays between the default build's and the
+  events given at every read. A double push (W4d's library) puts it over
+  the events given (2 against 1 at 250 ms, 3 against 2 at 1 s).
+- Read: in that state `tfdrip`'s Upper is not monotone in the window (3 at
+  2 s, 1 at 10 s). The default build's is 1 throughout.
+- Read: the race on this history pushed no event twice on the head (0 of
+  220,000 rounds, 143 looked again), and 124 times in 200,000 on W4d's
+  library.
+- Read: W11's `TestDripHotRestoreLegs` passes on the head with legs 3 and 6
+  reading "not twice", in plain mode, in the runner's selection; no
+  `tfdrip` suite has run since.
+
+What W11b leaves:
+
+- Upper's sentence (`drip.go:16`, W4's design: "Upper never reads it"), and
+  the constraint at this notebook's head ("`Upper` never below the truth;
+  only `Count` may move"). W11b reads one state where, with no defect,
+  Upper reads the log: 2 and 3 where the default build reads 1, between the
+  register's answer and the events given. Rewording the sentence and the
+  constraint, or changing the code, is the user's decision.
+- Whether Upper's fall with the window in that state matters to a caller
+  that reads Upper at its own window (`TouchIfUnder`'s refusals): not read.
+- The second audit's item 4 for this history alone: W11b is the first
+  hot-restore probe whose touch is not a horizon after its history. Its
+  history sits in one unit with the touch.
+- As the rule named, not covered: a history over more than one unit, and a
+  touch behind its last event; a look again that meets the placer
+  mid-placement; ConstantTime's pads; relocation under ConstantTime and
+  Background; `unpoint`'s hold path (`TF_NOCAS2`); other Horizons and
+  Resolutions; concurrency beyond the race's two goroutines.

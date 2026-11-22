@@ -1,0 +1,115 @@
+W11b, the probe and its readings
+inputs (head): history in unit 24 (first 60320, last 61420 at quantum 393), tK 62040 (unit 24, quantum 397, gap 4); tL 127500 (unit 51, 27 units past the history's; 65460 ticks ahead of tK, horizon 60000); window starts [61890 61140 60140 52140 2140] in units [24 24 24 20 0], inside a history event's quantum []; logs: history 0x9b7, once 0xeef, twice 0xdde, fresh 0xfff, distinct true
+inputs (w4d): history in unit 24 (first 60320, last 61420 at quantum 393), tK 62040 (unit 24, quantum 397, gap 4); tL 127500 (unit 51, 27 units past the history's; 65460 ticks ahead of tK, horizon 60000); window starts [61890 61140 60140 52140 2140] in units [24 24 24 20 0], inside a history event's quantum []; logs: history 0x9b7, once 0xeef, twice 0xdde, fresh 0xfff, distinct true
+
+head: 15 leg lines; path not taken: none; data race: False
+   c1: once   hot true  mine true  K in the table; restored 1, evictions 1, relocations 0, waited 0; reads (Count/Upper/given) 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    1: once   hot false mine false K in the table; restored 0, evictions 1, relocations 0, waited 0; reads (Count/Upper/given) 250:1/1/1 1000:2/2/2 2000:3/3/33 10000:1/1/33 60000:1/1/33
+   c2: once   hot true  mine true  K in the table; restored 1, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    2: once   hot false mine false K in the table; restored 0, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/1/1 1000:2/2/2 2000:3/3/33 10000:1/1/33 60000:1/1/33
+   c3: once   hot true  mine true  K in the stash or the wait room; restored 1, evictions 0, relocations 0, waited 1; reads (Count/Upper/given) 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    3: fresh  hot false mine false K in the stash or the wait room; restored 0, evictions 0, relocations 0, waited 2; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+   c4: once   hot true  mine true  K in the table; restored 1, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    4: once   hot false mine false K in the table; restored 0, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/1/1 1000:2/2/2 2000:3/3/33 10000:1/1/33 60000:1/1/33
+   c5: once   hot true  mine true  K in the table; restored 1, evictions 0, relocations 0, waited 1; reads (Count/Upper/given) 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    5: once   hot false mine false K in the table; restored 0, evictions 0, relocations 1, waited 1; reads (Count/Upper/given) 250:1/1/1 1000:2/2/2 2000:3/3/33 10000:1/1/33 60000:1/1/33
+   c6: once   hot true  mine true  K in the stash or the wait room; restored 1, evictions 0, relocations 0, waited 1; reads (Count/Upper/given) 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    6: fresh  hot false mine false K in the stash or the wait room; restored 0, evictions 0, relocations 0, waited 2; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+    7: fresh  hot false mine false K in the table; restored 0, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+    8: fresh  hot false mine false K in the table; restored 0, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+    9: fresh  hot false mine false K in the table; restored 0, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+head-race: 15 leg lines; path not taken: none; data race: False
+   c1: once   hot true  mine true  K in the table; restored 1, evictions 1, relocations 0, waited 0; reads (Count/Upper/given) 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    1: once   hot false mine false K in the table; restored 0, evictions 1, relocations 0, waited 0; reads (Count/Upper/given) 250:1/1/1 1000:2/2/2 2000:3/3/33 10000:1/1/33 60000:1/1/33
+   c2: once   hot true  mine true  K in the table; restored 1, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    2: once   hot false mine false K in the table; restored 0, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/1/1 1000:2/2/2 2000:3/3/33 10000:1/1/33 60000:1/1/33
+   c3: once   hot true  mine true  K in the stash or the wait room; restored 1, evictions 0, relocations 0, waited 1; reads (Count/Upper/given) 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    3: fresh  hot false mine false K in the stash or the wait room; restored 0, evictions 0, relocations 0, waited 2; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+   c4: once   hot true  mine true  K in the table; restored 1, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    4: once   hot false mine false K in the table; restored 0, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/1/1 1000:2/2/2 2000:3/3/33 10000:1/1/33 60000:1/1/33
+   c5: once   hot true  mine true  K in the table; restored 1, evictions 0, relocations 0, waited 1; reads (Count/Upper/given) 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    5: once   hot false mine false K in the table; restored 0, evictions 0, relocations 1, waited 1; reads (Count/Upper/given) 250:1/1/1 1000:2/2/2 2000:3/3/33 10000:1/1/33 60000:1/1/33
+   c6: once   hot true  mine true  K in the stash or the wait room; restored 1, evictions 0, relocations 0, waited 1; reads (Count/Upper/given) 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    6: fresh  hot false mine false K in the stash or the wait room; restored 0, evictions 0, relocations 0, waited 2; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+    7: fresh  hot false mine false K in the table; restored 0, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+    8: fresh  hot false mine false K in the table; restored 0, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+    9: fresh  hot false mine false K in the table; restored 0, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+w4d: 15 leg lines; path not taken: none; data race: False
+   c1: once   hot true  mine true  K in the table; restored 1, evictions 1, relocations 0, waited 0; reads (Count/Upper/given) 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    1: twice  hot false mine false K in the table; restored 0, evictions 1, relocations 0, waited 0; reads (Count/Upper/given) 250:2/2/1 1000:3/3/2 2000:4/4/33 10000:1/1/33 60000:1/1/33
+   c2: once   hot true  mine true  K in the table; restored 1, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    2: twice  hot false mine false K in the table; restored 0, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:2/2/1 1000:3/3/2 2000:4/4/33 10000:1/1/33 60000:1/1/33
+   c3: once   hot true  mine true  K in the stash or the wait room; restored 1, evictions 0, relocations 0, waited 1; reads (Count/Upper/given) 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    3: fresh  hot false mine false K in the stash or the wait room; restored 0, evictions 0, relocations 0, waited 2; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+   c4: once   hot true  mine true  K in the table; restored 1, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    4: twice  hot false mine false K in the table; restored 0, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:2/2/1 1000:3/3/2 2000:4/4/33 10000:1/1/33 60000:1/1/33
+   c5: once   hot true  mine true  K in the table; restored 1, evictions 0, relocations 0, waited 1; reads (Count/Upper/given) 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    5: twice  hot false mine false K in the table; restored 0, evictions 0, relocations 1, waited 1; reads (Count/Upper/given) 250:2/2/1 1000:3/3/2 2000:4/4/33 10000:1/1/33 60000:1/1/33
+   c6: once   hot true  mine true  K in the stash or the wait room; restored 1, evictions 0, relocations 0, waited 1; reads (Count/Upper/given) 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    6: fresh  hot false mine false K in the stash or the wait room; restored 0, evictions 0, relocations 0, waited 2; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+    7: fresh  hot false mine false K in the table; restored 0, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+    8: fresh  hot false mine false K in the table; restored 0, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+    9: fresh  hot false mine false K in the table; restored 0, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+default: 15 leg lines; path not taken: none; data race: False
+   c1: no log hot true  mine true  K in the table; restored 1, evictions 1, relocations 0, waited 0; reads (Count/Upper/given) 250:4/33/1 1000:18/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    1: no log hot false mine false K in the table; restored 0, evictions 1, relocations 0, waited 0; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+   c2: no log hot true  mine true  K in the table; restored 1, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:4/33/1 1000:18/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    2: no log hot false mine false K in the table; restored 0, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+   c3: no log hot true  mine true  K in the stash or the wait room; restored 1, evictions 0, relocations 0, waited 1; reads (Count/Upper/given) 250:4/33/1 1000:18/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    3: no log hot false mine false K in the stash or the wait room; restored 0, evictions 0, relocations 0, waited 2; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+   c4: no log hot true  mine true  K in the table; restored 1, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:4/33/1 1000:18/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    4: no log hot false mine false K in the table; restored 0, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+   c5: no log hot true  mine true  K in the table; restored 1, evictions 0, relocations 0, waited 1; reads (Count/Upper/given) 250:4/33/1 1000:18/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    5: no log hot false mine false K in the table; restored 0, evictions 0, relocations 1, waited 1; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+   c6: no log hot true  mine true  K in the stash or the wait room; restored 1, evictions 0, relocations 0, waited 1; reads (Count/Upper/given) 250:4/33/1 1000:18/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+    6: no log hot false mine false K in the stash or the wait room; restored 0, evictions 0, relocations 0, waited 2; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+    7: no log hot false mine false K in the table; restored 0, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+    8: no log hot false mine false K in the table; restored 0, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+    9: no log hot false mine false K in the table; restored 0, evictions 0, relocations 0, waited 0; reads (Count/Upper/given) 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+
+Upper in the reclaim legs: tfdrip (head) / default / given, at 250 ms, 1000 ms, 2000 ms, 10000 ms, 60000 ms
+    1: 1/1/1  2/1/2  3/1/33  1/1/33  1/1/33
+    2: 1/1/1  2/1/2  3/1/33  1/1/33  1/1/33
+    3: 1/1/1  1/1/2  1/1/33  1/1/33  1/1/33
+    4: 1/1/1  2/1/2  3/1/33  1/1/33  1/1/33
+    5: 1/1/1  2/1/2  3/1/33  1/1/33  1/1/33
+    6: 1/1/1  1/1/2  1/1/33  1/1/33  1/1/33
+    7: 1/1/1  1/1/2  1/1/33  1/1/33  1/1/33
+    8: 1/1/1  1/1/2  1/1/33  1/1/33  1/1/33
+    9: 1/1/1  1/1/2  1/1/33  1/1/33  1/1/33
+
+race head: 200000 rounds classed; data race: False
+  197581 of 200000: log fresh, L promoted true, K looked again false
+  2289 of 200000: log once, L promoted true, K looked again false
+  130 of 200000: log once, L promoted true, K looked again true
+race head-race: 20000 rounds classed; data race: False
+  10074 of 20000: log fresh, L promoted true, K looked again false
+  9913 of 20000: log once, L promoted true, K looked again false
+  13 of 20000: log once, L promoted true, K looked again true
+race w4d: 200000 rounds classed; data race: False
+  197630 of 200000: log fresh, L promoted true, K looked again false
+  2246 of 200000: log once, L promoted true, K looked again false
+  124 of 200000: log twice, L promoted true, K looked again true
+
+1. the classifier: on the head and 23f03b6 three logs at the inputs, legs 7 to 9 fresh, the controls once with K's entry: HOLDS
+2. every leg takes its path in the four runs: HOLDS
+3. 23f03b6: legs 1, 2, 4 and 5 read twice, and one at least reads Upper over the events given: HOLDS
+   - leg 1: twice, Upper over the events given at [250, 1000]
+   - leg 2: twice, Upper over the events given at [250, 1000]
+   - leg 4: twice, Upper over the events given at [250, 1000]
+   - leg 5: twice, Upper over the events given at [250, 1000]
+   - leg 3 (reported): fresh
+   - leg 6 (reported): fresh
+   - leg 7 (reported): fresh
+   - leg 8 (reported): fresh
+   - leg 9 (reported): fresh
+4. the head: legs 1, 2, 4 and 5 once, beside a register; legs 3 and 6 fresh; plain and under -race alike, no data race: HOLDS
+5. Upper in the reclaim legs: tfdrip's at or above the default build's, and at or below the events given: HOLDS
+   - 45 reads compared
+6. the race: no round twice on the head, plain and under -race: HOLDS
+   - 23f03b6: 124 rounds read twice
+   - head: 0 rounds read twice, 130 looked again, data race False
+   - head-race: 0 rounds read twice, 13 looked again, data race False
+7. W11's TestDripHotRestoreLegs (legs 3 and 6 reading "not twice") and W4e's TestDripHotRestorePushOnce pass: HOLDS
+8. the library is 2393104's: HOLDS
+   - [17:32:56] 0: library files that differ from 2393104's: []

@@ -1,0 +1,9 @@
+=== RUN   TestDripHotFreshRace
+    drip_hotfresh_test.go:492: W11b race: 197630 of 200000 rounds: log fresh, L promoted true, K looked again false
+    drip_hotfresh_test.go:492: W11b race: 2246 of 200000 rounds: log once, L promoted true, K looked again false
+    drip_hotfresh_test.go:492: W11b race: 124 of 200000 rounds: log twice, L promoted true, K looked again true
+    drip_hotfresh_test.go:495: 124 of 200000 rounds pushed K's event twice; first: round 2274: log twice, L promoted true, K looked again true (spins 3596, 281)
+--- FAIL: TestDripHotFreshRace (14.89s)
+FAIL
+FAIL	github.com/scooter-sensei/clepsydra/go	14.894s
+FAIL

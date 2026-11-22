@@ -30,7 +30,7 @@ const missPlaced = -2
 // words went back as they were), missPlaced if the history was placed but
 // its hot entry was reclaimed since hotGone. The caller holds h's claim
 // stripe, so no other first touch of h runs meanwhile.
-func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint64, src int, pushed bool) Result {
+func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint64, src int, pushed bool, pt *pushTally) Result {
 	var r Result
 	// Taken out of the wait room (srcRoom): its move ends once it is placed.
 	room := src == srcRoom
@@ -96,6 +96,20 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 	if room { // in the table, or back in the room or the stash
 		f.moveOf(tg).done.Add(1)
 	}
+	if pushOn && ci != -1 { // lab/sw W13: low is stored, in a slot or waiting
+		site := pushClaim
+		if ci == claimWait {
+			site = pushWait
+		}
+		switch {
+		case !recalled:
+			pt.store(site, true, now, now, pushed)
+		case pushed && now <= last:
+			pt.skipMiss()
+		default:
+			pt.store(site, false, last, now, pushed)
+		}
+	}
 	if ci == -1 {
 		return Result{Count: -1}
 	}
@@ -105,6 +119,9 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
 		// that and counts this touch afresh (bump's reset, or hotGone). The
 		// history went in with this touch's push (low): before, the look
 		// pushed it again, and the log held the event twice (lab/sw W9).
+		if pushOn {
+			pt.placed()
+		}
 		return Result{Count: missPlaced}
 	}
 	if src == srcStash && r.Restored {

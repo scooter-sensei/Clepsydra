@@ -216,6 +216,7 @@ type Filter struct {
 	ownClock   bool                       // the built-in clock: ReadFrom re-anchors it (claims D27)
 	clockAdd   atomic.Uint64              // ticks the built-in clock is moved on by
 	roomMu     [stashStripes]paddedMutex
+	push       pushStats                 // lab/sw W13: the touches' stores of their pushes (tfpush; empty without)
 	buzz       atomic.Pointer[buzzTable] // conditional touches' exact logs (buzz.go), nil until the first uncertain refusal
 }
 

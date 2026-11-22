@@ -67,7 +67,7 @@ func TestFuzzConcurrent(t *testing.T) {
 				t.Fatalf("case %d: %s", seed, r.failures())
 			}
 		}
-		t.Logf("case %d: %s; %s", seed, sum.summary(), sum.w10b())
+		t.Logf("case %d: %s; %s; %s", seed, sum.summary(), sum.w10b(), sum.w13())
 		return
 	}
 	d, err := time.ParseDuration(os.Getenv("TF_CFUZZ"))
@@ -92,8 +92,8 @@ func TestFuzzConcurrent(t *testing.T) {
 		}
 	}
 	el := time.Since(t0)
-	t.Logf("%d cases from seed %d in %v (%.1f M ops/s): %s; %s", seed-first, first, el.Round(time.Second),
-		float64(sum.ops)/el.Seconds()/1e6, sum.summary(), sum.w10b())
+	t.Logf("%d cases from seed %d in %v (%.1f M ops/s): %s; %s; %s", seed-first, first, el.Round(time.Second),
+		float64(sum.ops)/el.Seconds()/1e6, sum.summary(), sum.w10b(), sum.w13())
 }
 
 // failed counts a failure of kind in a concurrent case and keeps the first
@@ -126,6 +126,15 @@ func (r *fuzzResult) w10b() string {
 	return fmt.Sprintf("W10b: %d answers' Upper checked against the events in their reach (%d with an overflow table's part, as the call added it, taken out; %d over for a key whose identity another shares; %d set apart, their record taken over by another key's call), %d over; at rest, %d keys' drip logs checked (%d saying nothing or absent; %d over for a key whose identity another shares), %d over; failing answers and logs by kind: high %d, part over Upper %d, low %d, shared low %d, log %d, other %d",
 		r.high, r.highGhost, r.highShared, r.taken, r.fails["high"], r.logs, r.logVacuous, r.logShared, r.fails["log"],
 		r.fails["high"], r.fails["part over Upper"], r.fails["low"], r.fails["shared low"], r.fails["log"], r.fails["New"]+r.fails["occupancy"])
+}
+
+// w13 summarizes the concurrent fuzzer's W13 push counts, by mode.
+func (r *fuzzResult) w13() string {
+	if !pushOn {
+		return "W13: no push count (built without tfpush and tfdrip)"
+	}
+	return fmt.Sprintf("W13: push counts: plain {%v}; ConstantTime {%v}; Background {%v}; cases with a touch twice %d",
+		r.push[0], r.push[1], r.push[2], r.fails["push twice"])
 }
 
 // cfuzzCase runs one concurrent case.
@@ -189,6 +198,15 @@ func cfuzzCase(seed uint64) (res fuzzResult) {
 		}()
 	}
 	wg.Wait()
+	if pushOn { // W13: every touch's stores of its push, by the case's mode
+		pc := f.pushCounts()
+		res.push[[]int{1, 2, 0, 0, 0}[mode]].add(pc)
+		if pc.N[pcTwice] > 0 {
+			res.failed("push twice", func() string {
+				return fmt.Sprintf("%d touches stored their push twice; first: %s", pc.N[pcTwice], pc.First)
+			})
+		}
+	}
 	if amp == nil { // W10: every live key's drip log, at rest (W10b: every over counted, whatever failed before)
 		now := newest.Load()
 		for g, tr := range trs {

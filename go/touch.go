@@ -239,6 +239,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 	fp, tg := fingerprint(h), tag(h)
 	var held *paddedMutex // ConstantTime: h's stripe, while held
 	pushed := false       // this touch's event is in its slot's drip log (W4c; or in the history miss placed: W4e)
+	var pt pushTally      // lab/sw W13: this touch's stores of its push (tfpush; empty without)
 	for first := true; ; first = false {
 		if held != nil { // released between attempts: a claim that fails on another stripe's TryLock must not hold its own while it retries
 			held.Unlock()
@@ -252,7 +253,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 			i, w0, _ = f.lookupStable(h, fp, tg, true)
 			s0, s1, src := f.recall(h, fp, tg, now, true)
 			if i < 0 {
-				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src, pushed)
+				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src, pushed, &pt)
 				if r.Count < 0 {
 					pushed = pushed || r.Count == missPlaced // the history went in with this touch's push (W4e)
 					continue
@@ -260,6 +261,9 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 				held.Unlock()
 				if f.sketchLive(now) {
 					f.addSketch(&r, h, window, now)
+				}
+				if pushOn {
+					pt.done(f, h, now)
 				}
 				return r
 			}
@@ -294,7 +298,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 					mu.Unlock()
 					continue
 				}
-				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src, pushed)
+				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src, pushed, &pt)
 				mu.Unlock()
 				if r.Count < 0 {
 					pushed = pushed || r.Count == missPlaced // the history went in with this touch's push (W4e)
@@ -302,6 +306,9 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 				}
 				if f.sketchLive(now) {
 					f.addSketch(&r, h, window, now)
+				}
+				if pushOn {
+					pt.done(f, h, now)
 				}
 				return r
 			}
@@ -333,6 +340,9 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 			} else {
 				w1, over, ok = f.realign(h, i, w0, old, tg, now, nu, lu)
 			}
+			if pushOn && ok { // lab/sw W13: realign stored the push
+				pt.store(pushRealign, false, last, now, pushed)
+			}
 			ref = now
 		} else {
 			if nu > lu { // a hot key into a new unit: word0 moves only while word1 still points to the entry
@@ -342,8 +352,13 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 				if !f.stamp(i, w0, old, tg, now) {
 					continue
 				}
+				if pushOn { // lab/sw W13
+					pt.store(pushStamp, false, last, now, pushed)
+				}
 			} else if n0 := f.next0(w0, now); !(pushed && now <= last) && n0 != w0 && !atomic.CompareAndSwapUint64(&f.words[i], w0, n0) {
 				continue // (a touch that pushed its event and starts over pushes it again only into a history from before it: W4c)
+			} else if pushOn { // lab/sw W13: the gate held, next0 changed nothing, or the CAS stored the push
+				pt.table(pushed && now <= last, n0 == w0, last, now, pushed)
 			}
 			pushed = true
 			if nu > lu && testHookStamped != nil {
@@ -380,6 +395,9 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
 		// reads the overflow table whatever it holds.
 		if f.sketchLive(now) && (wantCount || !r.Seen || f.ct) {
 			f.addSketch(&r, h, window, now)
+		}
+		if pushOn {
+			pt.done(f, h, now)
 		}
 		return r
 	}

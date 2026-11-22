@@ -99,6 +99,7 @@ type fuzzResult struct {
 	fails                                                       map[string]uint64 // W10b: the concurrent fuzzer's failures by kind, every one counted
 	firsts                                                      map[string]string // and the first of each kind
 	desc                                                        string            // the concurrent case's configuration
+	push                                                        [3]pushCount      // W13: push counts by mode (plain, ConstantTime, Background)
 }
 
 func (r *fuzzResult) add(o fuzzResult) {
@@ -126,6 +127,9 @@ func (r *fuzzResult) add(o fuzzResult) {
 	r.logVacuous += o.logVacuous
 	r.taken += o.taken
 	r.logShared += o.logShared
+	for m := range r.push {
+		r.push[m].add(o.push[m])
+	}
 	for k, n := range o.fails {
 		if r.fails[k] == 0 {
 			if r.firsts == nil {

@@ -1,0 +1,74 @@
+diff --git a/go/fuzz_test.go b/go/fuzz_test.go
+index c22bcde..51ae03d 100644
+--- a/go/fuzz_test.go
++++ b/go/fuzz_test.go
+@@ -94,6 +94,8 @@ type fuzzResult struct {
+ 	ct, bg, noStash, noOverflow, smallOverflow, noHot, smallHot uint64 // cases by configuration
+ 	evictions, folded, promoted, waited                         uint64
+ 	fail                                                        string
++	push                                                        [3]pushCount // W13 (lab/sw): push counts by mode (plain, ConstantTime, Background)
++	pushTwice                                                   uint64       // W13: cases with a touch that stored its push twice
+ }
+ 
+ func (r *fuzzResult) add(o fuzzResult) {
+@@ -114,6 +116,10 @@ func (r *fuzzResult) add(o fuzzResult) {
+ 	r.folded += o.folded
+ 	r.promoted += o.promoted
+ 	r.waited += o.waited
++	for m := range r.push {
++		r.push[m].add(o.push[m])
++	}
++	r.pushTwice += o.pushTwice
+ }
+ 
+ func (r *fuzzResult) summary() string {
+diff --git a/go/fuzzconc_test.go b/go/fuzzconc_test.go
+index fba41c1..deacd4f 100644
+--- a/go/fuzzconc_test.go
++++ b/go/fuzzconc_test.go
+@@ -50,7 +50,7 @@ func TestFuzzConcurrent(t *testing.T) {
+ 				t.Fatalf("case %d: %s", seed, r.fail)
+ 			}
+ 		}
+-		t.Logf("case %d: %s", seed, sum.summary())
++		t.Logf("case %d: %s; %s", seed, sum.summary(), sum.w13())
+ 		return
+ 	}
+ 	d, err := time.ParseDuration(os.Getenv("TF_CFUZZ"))
+@@ -74,8 +74,17 @@ func TestFuzzConcurrent(t *testing.T) {
+ 		}
+ 	}
+ 	el := time.Since(t0)
+-	t.Logf("%d cases from seed %d in %v (%.1f M ops/s): %s", seed-first, first, el.Round(time.Second),
+-		float64(sum.ops)/el.Seconds()/1e6, sum.summary())
++	t.Logf("%d cases from seed %d in %v (%.1f M ops/s): %s; %s", seed-first, first, el.Round(time.Second),
++		float64(sum.ops)/el.Seconds()/1e6, sum.summary(), sum.w13())
++}
++
++// w13 summarizes the push counts (lab/sw W13), by mode.
++func (r *fuzzResult) w13() string {
++	if !pushOn {
++		return "W13: no push count (built without tfpush and tfdrip)"
++	}
++	return fmt.Sprintf("W13: push counts: plain {%v}; ConstantTime {%v}; Background {%v}; cases with a touch twice %d",
++		r.push[0], r.push[1], r.push[2], r.pushTwice)
+ }
+ 
+ // cfuzzCase runs one concurrent case.
+@@ -137,6 +146,16 @@ func cfuzzCase(seed uint64) (res fuzzResult) {
+ 		}()
+ 	}
+ 	wg.Wait()
++	if pushOn { // W13 (lab/sw): every touch's stores of its push, by the case's mode
++		pc := f.pushCounts()
++		res.push[[]int{1, 2, 0, 0, 0}[mode]].add(pc)
++		if pc.N[pcTwice] > 0 {
++			res.pushTwice++
++			if res.fail == "" {
++				res.fail = fmt.Sprintf("%d touches stored their push twice; first: %s; %s", pc.N[pcTwice], pc.First, desc)
++			}
++		}
++	}
+ 	res.evictions, res.folded, res.promoted, res.waited = f.Evictions(), f.Folded(), f.Promoted(), f.Waited()
+ 	if occ := f.Occupancy(newest.Load()); occ > f.Slots() && res.fail == "" {
+ 		res.fail = fmt.Sprintf("occupancy %d > %d slots; %s", occ, f.Slots(), desc)

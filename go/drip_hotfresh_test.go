@@ -14,6 +14,7 @@ package temporalfilter
 
 import (
 	"fmt"
+	"maps"
 	"math/rand/v2"
 	"os"
 	"slices"
@@ -316,8 +317,17 @@ func hfRun(t *testing.T, leg hfLeg, w0In uint64) {
 		}
 		testHookVictim, testHookInstalling, testHookRestoreAdd, testHookHotAdding, testHookTaken = nil, nil, nil, nil, nil
 	}()
+	var kPush []string // W13: K's touch's push class and tally (tfpush)
+	if pushOn {
+		testHookPushDone = func(h, now uint64, class, tally string) {
+			if h == k && now == hfTK {
+				kPush = append(kPush, class+": "+tally)
+			}
+		}
+	}
 	res, ev, rel, wt := f.Restored(), f.Evictions(), f.Relocations(), f.Waited()
 	f.TouchAt(k, 0, hfTK)
+	testHookPushDone = nil
 	res, ev, rel, wt = f.Restored()-res, f.Evictions()-ev, f.Relocations()-rel, f.Waited()-wt
 	if leg.placer && leg.fill == "lines" && leg.reclaim == "" {
 		wasPlaced = placed()
@@ -355,6 +365,9 @@ func hfRun(t *testing.T, leg hfLeg, w0In uint64) {
 	}
 	t.Logf("W11b leg %s | %s | build %s | hook %s | before %s | promoted %d | placed %v | retried %v | taken %d | restored %d | evictions %d | relocations %d | waited %d | K in %s | last %d | log %#x | class %s | hot %v | mine %v | reads %s",
 		leg.id, leg.name, build, fired, before, f.Promoted(), wasPlaced, retried, taken.Load(), res, ev, rel, wt, where, x0&tsMask, dripOf(x0), class, isHot(x1), isHot(x1) && mine, strings.Join(reads, " "))
+	if pushOn {
+		t.Logf("W13 leg %s | %s | log %s | K's touches %d | K's touch: %s", leg.id, leg.name, class, len(kPush), strings.Join(kPush, " / "))
+	}
 
 	// The leg's path, else it says nothing.
 	waits := leg.reclaim == "restore add" && (leg.mode == "ct" || !leg.placer) // legs 3 and 6
@@ -443,6 +456,19 @@ func TestDripHotFreshRace(t *testing.T) {
 	classes := map[string]int{}
 	var twice int
 	var first string
+	var kPush []string              // W13: K's touch's push class in the round (tfpush)
+	pushClasses := map[string]int{} // W13: rounds by K's log and K's push class
+	if pushOn {
+		testHookPushDone = func(h, now uint64, class, tally string) {
+			if now == hfTK { // K's touch alone is at hfTK
+				if class == "once" && strings.Contains(tally, "afresh") {
+					class = "once afresh"
+				}
+				kPush = append(kPush, class)
+			}
+		}
+		defer func() { testHookPushDone = nil }()
+	}
 	for round := range rounds {
 		f, k, l, w0, w1, tL := hotFreshSetup(t, false, false, "free")
 		for range 31 {
@@ -476,6 +502,10 @@ func TestDripHotFreshRace(t *testing.T) {
 		class := hfClass(f, dripOf(x0), w0)
 		key := fmt.Sprintf("log %s, L promoted %v, K looked again %v", class, f.Promoted() == 2, looked.Load() > 0)
 		classes[key]++
+		if pushOn {
+			pushClasses[fmt.Sprintf("log %s, push %s", class, strings.Join(kPush, " / "))]++
+			kPush = kPush[:0]
+		}
 		if class == "twice" {
 			if twice++; first == "" {
 				first = fmt.Sprintf("round %d: %s (spins %d, %d)", round, key, sk, sl)
@@ -490,6 +520,9 @@ func TestDripHotFreshRace(t *testing.T) {
 	slices.Sort(keys)
 	for _, c := range keys {
 		t.Logf("W11b race: %d of %d rounds: %s", classes[c], rounds, c)
+	}
+	for _, c := range slices.Sorted(maps.Keys(pushClasses)) {
+		t.Logf("W13 race: %d of %d rounds: %s", pushClasses[c], rounds, c)
 	}
 	if twice > 0 {
 		t.Errorf("%d of %d rounds pushed K's event twice; first: %s", twice, rounds, first)

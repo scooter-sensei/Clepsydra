@@ -120,6 +120,7 @@ func TestDripConcurrentCounts(t *testing.T) {
 			var restLogs, restLogVacuous, restLogShared, restLogOver int
 			var restHigh, restHighGhost, restHighShared, restHighTaken, restHighOver, restPartOver int
 			var restFirsts []string
+			var pushSum pushCount // W13
 			for round := range rounds {
 				var clock atomic.Uint64
 				clock.Store(1)
@@ -286,6 +287,7 @@ func TestDripConcurrentCounts(t *testing.T) {
 				relocations += f.Relocations()
 				folded += f.Folded()
 				lost += f.Lost()
+				pushSum.add(f.pushCounts())
 				f.Close()
 				g.Close()
 			}
@@ -304,6 +306,12 @@ func TestDripConcurrentCounts(t *testing.T) {
 				build, mode, shape, restLogs, restLogVacuous, restLogShared, restLogOver, restHigh, restHighGhost, restHighShared, restHighTaken, restHighOver, restPartOver)
 			for _, d := range restFirsts {
 				t.Logf("  %s", d)
+			}
+			if pushOn { // W13
+				t.Logf("W13 %s build, mode %s, shape %s: push counts: %v", build, mode, shape, pushSum)
+				if pushSum.N[pcTwice] > 0 {
+					t.Errorf("W13 %s build, mode %s, shape %s: %d touches stored their push twice; first: %s", build, mode, shape, pushSum.N[pcTwice], pushSum.First)
+				}
 			}
 			if high+low+other+logLost > 0 {
 				t.Errorf("%s build, mode %s, shape %s: %d answers wrong, %d with the log lost", build, mode, shape, high+low+other, logLost)

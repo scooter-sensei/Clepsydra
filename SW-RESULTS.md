@@ -4037,3 +4037,262 @@ What W13 leaves:
   - W4c's double push in W7's scenario;
   - the default build's speed with the notes compiled out, and `tfpush`'s
     cost.
+
+## W14: the drip log's gain under load
+
+**Written after W13**, from W12's "not covered": every reading of target
+7's metric (W4 to W12) had tfbench's 2,000 velocity keys in a filter of
+Capacity 200,000 that held them all, so no velocity key was evicted,
+stashed, dropped, shed or kept waiting. W14 reads the metric while the
+table is full, in both builds, and asks whether the drip log keeps its
+gain there. The user chose:
+
+- both legs below: the scorecard's load, and a load that reaches the
+  velocity keys;
+- leg 2's form, the velocity keys as the load (proposed: a flood of light
+  keys would not reach them, since eviction takes the lightest key of the
+  8 slots in the new key's two lines), with the hot entries pinned to
+  tfbench's 1,838 rather than left at their default for the smaller table;
+- the judging: leg 1 keeps at least half the gain it has with no load
+  (W12's form); leg 2 does no harm. Judging 0.050 itself on leg 1, and
+  half the gain on both legs, were set aside;
+- a watcher in the test, the library unchanged, over counters in the
+  library behind a build tag.
+
+**What load does to a key's log** (from the code, not a reading):
+
+- The victim is the slot of the new key's two lines with the fewest events
+  in the horizon, then the oldest last touch (`cuckoo.go:209-225`,
+  `register.go:361`). Most of tfbench's churn keys hold one or two events;
+  every velocity key holds more but the sparse ones (about 3 a horizon).
+  tfbench's churn alone evicts no key at load 1.00 and 4,577 at 1.15
+  (`go/verify/expected/exact.txt`).
+- An evicted history goes to the stash whole, word0 and its log with it,
+  and the touch that restores it pushes its event into the log
+  (`cuckoo.go:61-68`).
+- A history the stash drops goes to the overflow table as a 21-bit entry
+  (fingerprint, count, time slice), its log lost; one with fewer than
+  SpillMin (4) events in the horizon is shed (`overflow.go:255-307`).
+  Count adds the key's own entry to the slot's answer, Degraded set
+  (`touch.go:29-31`, `:178-195`); a raised floor adds to Upper alone. A
+  key that comes back starts a fresh slot.
+- A first touch that finds both lines full waits: in the wait room under
+  Background, placed by its goroutine; in the stash under ConstantTime
+  (marked `deferMark`), placed by calls.
+
+**The probe** (`go/swload_test.go`, `TF_EXP=1`, both builds; the library
+unchanged, `lab/w14.sh` checks it against 495f1aa's).
+
+- **The workload.** tfbench's velocity workload (`swLagRecord`, W12's
+  record of `swWorkload`) on a seed, from one calling goroutine: at each
+  tick its events (`CheckAndTouchAt` at their ticks), then the churn's
+  operations of the tick, then from the first horizon on the tick's query
+  (`VelocityCountAt`), whose exact count is over the key's own events.
+- **Leg 1, the scorecard's load.** tfbench's filter (Capacity 200,000,
+  Horizon 60 s, Resolution 1 ms) beside tfbench's churn stream at load
+  1.00 (seed 2) and 1.15 (seed 4), and with no churn. The churn is
+  `workload.Churn`'s generator over the workload's five horizons instead
+  of four (`swLoadChurn`, a copy whose first four horizons are
+  `workload.Churn`'s op for op), with tfbench's windows.
+- **Leg 2, the velocity keys as the load.** The workload alone in filters
+  of Capacity 1,739, 1,000 and 500 (its 2,000 keys at 1.15, 2 and 4 times
+  Capacity), Horizon and Resolution as tfbench's, the stash and the
+  overflow table at their defaults, the hot entries pinned to 1,838.
+- **Modes.** Plain; Background (its placer makes runs vary: five repeats);
+  ConstantTime (functional, no pad, as `TF_CT=1` runs it: it places
+  waiting keys only in `place`'s forced step, more than one key per 16
+  stash entries waiting, which reads no clock, so its runs replay). At
+  Capacity 200,000 that step needs about 920 keys waiting
+  (`filter.go:287-291`, `ct.go:97`), so a key can wait far longer than
+  under a pad: ConstantTime's waits here are the functional mode's.
+- **Seeds.** (9, 9) and (2026, 41) to (2026, 44), as W12's leg A.
+- **The watcher** (`swLoadWhere`). Before each touch and each query of a
+  velocity key, the key is found as `read`'s locked branch finds it
+  (`touch.go`: under its claim stripe, the table read stably, then the
+  stash and the wait room, again until no move of its stripe overlapped a
+  miss), but the place is named: table (and its slot), stash (evicted),
+  waiting (a wait-room entry, or a stash entry marked `deferMark`), or
+  none (also a history past the horizon); with `tfdrip`, the log valid or
+  saying nothing; and what the overflow table holds of it, read over the
+  horizon: an entry of its own (Count above 0: part) or a raised floor's
+  alone (Upper above Count, 0: floor). It calls no Count, touch or take.
+  - Queries: errors and exact counts by class (place, part, log).
+  - Touches: the class before a touch names where it restores from: the
+    table (a hit), the stash, a wait, dropped (none, with a part: a fresh
+    slot, the log lost), floor (none, a floor's alone), shed (none, the
+    key's newest event within the horizon), or new (none, no event within
+    the horizon: a new life, no loss).
+  - Left: a key seen in the table, then elsewhere while its newest event
+    is within the horizon (a lower bound on its evictions). Moved: a key
+    seen in the table at two slots in turn (a copy of its log).
+  - The filter's counters: Evictions, Relocations, Shed, Lost, Floored,
+    Folded, Waited, Promoted, HotRefused.
+- **Sight** (`TestShortWindowLoadWhere`): states made by hand through the
+  filter's own paths in filters of Capacity 1,000, each read by the
+  watcher and then checked against a sign it does not read:
+  - a key in the table; one a horizon and a tick past its touch (none);
+    one never touched; with `tfdrip`, one touched an earlier unit behind
+    its last touch (log says nothing);
+  - the table filled with keys of 2 events, V of 1 evicted by a newcomer
+    on its line: stash (Evictions 1; V's next touch Restored);
+  - no stash, V of 4 events among keys of 5: dropped, a part (Evictions 1,
+    Folded 1, Count Degraded with its 4);
+  - no stash, V of 1 among keys of 2: shed (Evictions 1, Shed 1; V's next
+    touch sees no history);
+  - the table filled, a new key in Background with nothing placing: wait
+    room; in ConstantTime: waiting in the stash (Waiting 1 each).
+
+  `TestShortWindowLoadSource` reads the source of each class. The floor
+  class has no hand-made state.
+- **The check** (`TF_W14_LEG=check`, (9, 9)): the churn at both loads
+  against `workload.Churn` (the ops before four horizons equal op for op,
+  no churn key a velocity key, the last op at or past four horizons); at
+  leg 1's 1.15 and leg 2's Capacity 500, in plain mode and ConstantTime, a
+  run with the watcher against one without (`offmism`) and, in
+  ConstantTime, a second watched run (`replaymism`). It prints no metric.
+
+`lab/w14.sh` runs: the sight (`TestShortWindowLoadWhere`,
+`TestShortWindowLoadSource`) in both builds; the check in both builds; leg
+1 in both builds (105 runs each: five seeds, three loads, seven runs a
+seed and load: plain, ConstantTime, Background five times); leg 2 in both
+builds (105 each); under `-race`, `tfdrip`, (9, 9), leg 2 at Capacity 500
+in Background, once; and `lab/w14.py`, which reads both builds' lines and
+prints the clauses, the reach and the reported tables. Caps: 5 minutes for
+the sight, 30 for the check, 60 for each leg's run, 60 for the `-race`
+run. Outputs in `lab/w14/`.
+
+**Before the rule** (not a reading).
+
+- The probe compiles and vets in both builds, compiles under `-race`, and
+  is gofmt-clean. `TestShortWindowLoadChurn` and
+  `TestShortWindowLoadSource` (no filter) passed: the churn's first four
+  horizons are `workload.Churn`'s (969,657 ops at 1.00 and 1,115,315 at
+  1.15, none differing), and no churn key is a velocity key.
+- `lab/w14.py` was tried on fabricated lines, read from no filter: a set
+  meant to hold (with a Background excess over 1.01 times inside the
+  default build's spread, and leg 1 at 1.00 restoring no key from outside
+  the table) held, exit 0, clause 4 noting "judged on keys the table
+  kept"; a set with two planted failures (a leg 1 gain under half; a
+  Background excess beyond the spread) failed clauses 4 and 5 on those
+  alone; a set missing one seed's leg 2 runs read clause 3 FAILS and
+  clause 5 NOTHING READ (in part); an empty set read NOTHING READ for every
+  clause, exit 1.
+- A fresh reviewer read the probe, the runner and the joiner before any
+  run. Fixed from it: the overflow table's part read from `estimate`'s
+  ok, which a raised floor also sets (now an entry of the key's own, and a
+  floor class apart); clause 4's note on keys the table kept; the reported
+  tables; a missing point read FAILS (now NOTHING READ, in part); the
+  check's churn assertions; sight signs read from what the watcher reads;
+  `lab/w4e/exact-drip.txt` added to the runner's clean-tree check.
+- At the user's word, on a scratch clone (`~/lab-sw-out/dry14`, outputs
+  in `~/lab-sw-out/dry14-checks`), both builds:
+  - the sight read every state as made, every sign true;
+  - the no-load control, leg 1 with no churn in plain mode on (9, 9),
+    equals `swRecord` query for query (mism 0), and its window sums equal
+    `verify/expected/exact.txt`'s and `lab/w4e/exact-drip.txt`'s (1 s:
+    19,185 and 6,798 of 114,779);
+  - the check: the churn as above; with the watcher off, 0 answers differ
+    at both points in plain mode and ConstantTime; a second ConstantTime
+    run differs in 0;
+  - `lab/w14.sh` refused the clone uncommitted (exit 2); after a scratch
+    commit, with `TestPartCells` in each test's place, it found no library
+    file changed, logged "NO W14 LINES" at every step, read NOTHING READ
+    for every clause and exited 1. Its trial showed a NOTHING READ clause 4
+    or 5 printing its holding sentence; mended before this rule, and the
+    legs' cap lowered from 150 to 60 minutes (the only differences from
+    the scratch clone's runner and joiner; the probe is the one that ran).
+  - `lab/w14.py` on those outputs (the control's files as leg 1's, no
+    filter run): clause 1 holds, clause 2 reads NOTHING READ in part with
+    (9, 9)'s sums equal, clause 3 fails on its run counts alone, and the
+    reach and reported tables print from real lines.
+- At the user's word, a quiet Background check on the same clone
+  (`TF_W14_QUIET=1`: each run's identity, mismatch count and time alone;
+  outputs `bg-*.txt` there), (9, 9), one repeat: leg 1 at 1.15 and leg 2
+  at Capacity 500 in both builds, and the runner's `-race` point. Every
+  run ended with its "W14 done:" line and passed; the `-race` run
+  reported no data race.
+- Not read before the rule: no loaded run printed its metric or its
+  counters; Background ran once a point at leg 1's 1.15 and leg 2's 500
+  alone; leg 2 ran at Capacity 500 alone; the seeds other than (9, 9) ran
+  nowhere.
+- Sizing from the check: a loaded leg 1 run about 5 s, a leg 2 run at
+  Capacity 500 about 2 s, a run with no churn under half a second; the
+  watcher adds 2 to 9% at leg 1's 1.15 and 18 to 42% at leg 2's 500
+  (times to a tenth of a second). Background: 2.3 to 2.5 s at leg 1's
+  1.15, 1.6 s at leg 2's 500, 25.5 s under `-race`. The reading about half
+  an hour.
+
+**Predictions** (from the code and tfbench's exact output; none judged):
+
+- Leg 1 at 1.00: tfbench's churn alone evicts no key, so in plain mode no
+  velocity key restores from outside the table, and clause 4 notes it
+  judged on keys the table kept there. Background and ConstantTime park
+  first touches that find both lines full; a velocity key's new life (a
+  sparse key past a horizon without an event) can wait.
+- Leg 1 at 1.15: a few velocity keys evicted, nearly all sparse (the
+  lightest), most restored from the stash with their logs. The gain kept
+  on every seed and mode, near its no-load size.
+- Leg 2: both builds' errors rise as Capacity falls; every source reached
+  at 1,000 and 500 (waits only in Background and ConstantTime); floors
+  rare or none. `tfdrip` at or under the default build: a dead or fresh
+  log falls back to the register, and the overflow table's part is the
+  same in both builds. The gain shrinks with Capacity.
+
+**Rule (before the reading).** W14 holds if:
+
+1. sight: the sight's two tests pass in both builds, with every state's
+   "W14 where" line and its sign true;
+2. no load: leg 1's runs with no churn in plain mode equal `swRecord` query
+   for query on every seed in both builds, and on (9, 9) each window's
+   error and exact sums equal `lab/w4e/exact-drip.txt`'s (`tfdrip`) and
+   `verify/expected/exact.txt`'s (default);
+3. the harness: the library unchanged (the runner's step 0); the check's
+   churn as above at both loads, 0 answers differing with the watcher off
+   at both points in plain mode and ConstantTime, and 0 between
+   ConstantTime's two runs, in both builds; 105 runs a leg in each build,
+   each test with its "W14 done:" line; the `-race` run reports no data
+   race;
+4. the gain holds under the scorecard's load: at 1.00 and 1.15, on every
+   seed and in every mode, the gain (the default build's mean of the five
+   windows less `tfdrip`'s, each build's run on the same seed, load and
+   mode; in Background each build's mean over its five repeats) is at
+   least half the gain with no load on the same seed and mode;
+5. no harm where the velocity keys are the load: at every Capacity, on
+   every seed and in every mode, `tfdrip`'s mean and each of its five
+   windows are at most 1.01 times the default build's. In Background
+   (each build's mean over its five repeats) an excess is harm only if
+   `tfdrip`'s value also exceeds the default build's by more than the
+   default build's spread there (its highest repeat less its lowest): the
+   placer's noise alone moves the two builds apart where the log changes
+   nothing.
+
+A point not read (a seed, load, Capacity or mode without both builds'
+runs) makes its clause NOTHING READ in part, never a pass. A run cut by its
+cap, or one that hangs, is the probe's fault, not a reading: the lines its
+test printed before it stopped are reported, and its leg's points stand as
+not read until it is mended and run under a rule of its own. Reach is
+reported and bounds what clauses 4 and 5 read: per leg, point, mode and
+build, how often each source was taken; a source at 0 is NOTHING READ for
+that path there. Where leg 1 restores no velocity key from outside the
+table and none leaves it, clause 4 says so: its gain was judged on keys
+the table kept.
+
+If clause 1 fails, the classes and the reach are not read; the metric is.
+If clause 2 or 3 fails, W14 says nothing of clauses 4 and 5 until the
+difference is read against the code. If clause 4 fails at a point, the
+drip log loses more than half its gain under the scorecard's load there,
+and the record names where (seed, load, mode). If clause 5 fails, the log
+does harm where the velocity keys are the load, and the record names
+where (seed, Capacity, mode, window). Target 7's status is the user's
+either way. A failure is read against the code before anything else: a
+defect of the library, or of the probe, said as such.
+
+Reported, not judged: the five windows and the mean of every point in
+both builds beside 0.050, and the gain at each load and Capacity; the
+classes' shares and errors per event; the reach, left and moved; the
+filter's counters; Background's spread over its repeats; times.
+
+Not covered: concurrency beyond Background's placer (W12's leg B); lag
+with load; loads between those read; other Horizons and Resolutions;
+ConstantTime's pads; churn keys as heavy as the velocity keys; other
+traffic; the floor class's sight.

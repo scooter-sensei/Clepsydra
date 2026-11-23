@@ -1,0 +1,122 @@
+W13, the push count and its readings
+w4d: 15 leg lines, 4 path lines; failing: ['TestDripHotRestoreFresh', 'TestDripHotRestoreFresh/1_plain,_full_table,_reclaim_at_the_eviction', 'TestDripHotRestoreFresh/2_ConstantTime,_free_slot,_reclaim_at_install', 'TestDripHotRestoreFresh/4_Background,_free_slot,_reclaim_at_install', 'TestDripHotRestoreFresh/5_Background,_full_lines,_placer,_placed_then_reclaimed']; data race: False
+   c1: log once   push once        (1 touch): once: stores 1 [claim into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    1: log twice  push twice       (1 touch): twice: stores 2 [claim into last 61420, flag false; table into last 62040 (at or after the tick), flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind true
+   c2: log once   push once        (1 touch): once: stores 1 [claim into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    2: log twice  push twice       (1 touch): twice: stores 2 [claim into last 61420, flag false; table into last 62040 (at or after the tick), flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind true
+   c3: log once   push once        (1 touch): once: stores 1 [wait into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    3: log fresh  push fresh       (1 touch): fresh: stores 2 [wait into last 61420, flag false; wait afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind true
+   c4: log once   push once        (1 touch): once: stores 1 [claim into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    4: log twice  push twice       (1 touch): twice: stores 2 [claim into last 61420, flag false; table into last 62040 (at or after the tick), flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind true
+   c5: log once   push once        (1 touch): once: stores 1 [wait into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    5: log twice  push twice       (1 touch): twice: stores 2 [wait into last 61420, flag false; table into last 62040 (at or after the tick), flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind true
+   c6: log once   push once        (1 touch): once: stores 1 [wait into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    6: log fresh  push fresh       (1 touch): fresh: stores 2 [wait into last 61420, flag false; wait afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind true
+    7: log fresh  push once afresh (1 touch): once: stores 1 [claim afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    8: log fresh  push once afresh (1 touch): once: stores 1 [claim afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    9: log fresh  push once afresh (1 touch): once: stores 1 [claim afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+  path realign: once: stores 1 [realign into last 10000, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+  path stamp: once: stores 1 [stamp into last 10000, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+  path silent: none: stores 0 [], skips table 0 miss 0, silent 1, missPlaced 0, behind false
+  path counts: calls 48, none 21, once 27, fresh 0, again 0, twice 0, behind 0, first fresh 3, bare 0, stores table 22, stores stamp 1, stores realign 1, stores claim 3, stores wait 0, skips table 0, skips miss 0, silent 21, missPlaced 0
+head: 15 leg lines, 4 path lines; failing: none; data race: False
+   c1: log once   push once        (1 touch): once: stores 1 [claim into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    1: log once   push once        (1 touch): once: stores 1 [claim into last 61420, flag false], skips table 1 miss 0, silent 0, missPlaced 1, behind false
+   c2: log once   push once        (1 touch): once: stores 1 [claim into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    2: log once   push once        (1 touch): once: stores 1 [claim into last 61420, flag false], skips table 1 miss 0, silent 0, missPlaced 1, behind false
+   c3: log once   push once        (1 touch): once: stores 1 [wait into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    3: log fresh  push fresh       (1 touch): fresh: stores 2 [wait into last 61420, flag false; wait afresh, flag true], skips table 0 miss 0, silent 0, missPlaced 1, behind false
+   c4: log once   push once        (1 touch): once: stores 1 [claim into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    4: log once   push once        (1 touch): once: stores 1 [claim into last 61420, flag false], skips table 1 miss 0, silent 0, missPlaced 1, behind false
+   c5: log once   push once        (1 touch): once: stores 1 [wait into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    5: log once   push once        (1 touch): once: stores 1 [wait into last 61420, flag false], skips table 1 miss 0, silent 0, missPlaced 1, behind false
+   c6: log once   push once        (1 touch): once: stores 1 [wait into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    6: log fresh  push fresh       (1 touch): fresh: stores 2 [wait into last 61420, flag false; wait afresh, flag true], skips table 0 miss 0, silent 0, missPlaced 1, behind false
+    7: log fresh  push once afresh (1 touch): once: stores 1 [claim afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    8: log fresh  push once afresh (1 touch): once: stores 1 [claim afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    9: log fresh  push once afresh (1 touch): once: stores 1 [claim afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+  path realign: once: stores 1 [realign into last 10000, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+  path stamp: once: stores 1 [stamp into last 10000, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+  path silent: none: stores 0 [], skips table 0 miss 0, silent 1, missPlaced 0, behind false
+  path counts: calls 48, none 21, once 27, fresh 0, again 0, twice 0, behind 0, first fresh 3, bare 0, stores table 22, stores stamp 1, stores realign 1, stores claim 3, stores wait 0, skips table 0, skips miss 0, silent 21, missPlaced 0
+head-race: 15 leg lines, 4 path lines; failing: none; data race: False
+   c1: log once   push once        (1 touch): once: stores 1 [claim into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    1: log once   push once        (1 touch): once: stores 1 [claim into last 61420, flag false], skips table 1 miss 0, silent 0, missPlaced 1, behind false
+   c2: log once   push once        (1 touch): once: stores 1 [claim into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    2: log once   push once        (1 touch): once: stores 1 [claim into last 61420, flag false], skips table 1 miss 0, silent 0, missPlaced 1, behind false
+   c3: log once   push once        (1 touch): once: stores 1 [wait into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    3: log fresh  push fresh       (1 touch): fresh: stores 2 [wait into last 61420, flag false; wait afresh, flag true], skips table 0 miss 0, silent 0, missPlaced 1, behind false
+   c4: log once   push once        (1 touch): once: stores 1 [claim into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    4: log once   push once        (1 touch): once: stores 1 [claim into last 61420, flag false], skips table 1 miss 0, silent 0, missPlaced 1, behind false
+   c5: log once   push once        (1 touch): once: stores 1 [wait into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    5: log once   push once        (1 touch): once: stores 1 [wait into last 61420, flag false], skips table 1 miss 0, silent 0, missPlaced 1, behind false
+   c6: log once   push once        (1 touch): once: stores 1 [wait into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    6: log fresh  push fresh       (1 touch): fresh: stores 2 [wait into last 61420, flag false; wait afresh, flag true], skips table 0 miss 0, silent 0, missPlaced 1, behind false
+    7: log fresh  push once afresh (1 touch): once: stores 1 [claim afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    8: log fresh  push once afresh (1 touch): once: stores 1 [claim afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+    9: log fresh  push once afresh (1 touch): once: stores 1 [claim afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+  path realign: once: stores 1 [realign into last 10000, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+  path stamp: once: stores 1 [stamp into last 10000, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+  path silent: none: stores 0 [], skips table 0 miss 0, silent 1, missPlaced 0, behind false
+  path counts: calls 48, none 21, once 27, fresh 0, again 0, twice 0, behind 0, first fresh 3, bare 0, stores table 22, stores stamp 1, stores realign 1, stores claim 3, stores wait 0, skips table 0, skips miss 0, silent 21, missPlaced 0
+race w4d: 199067 log fresh, push once afresh; 837 log once, push once; 96 log twice, push twice (of 200000); looked again 96; data race: False
+race head: 199087 log fresh, push once afresh; 913 log once, push once (of 200000); looked again 99; data race: False
+race head-race: 10023 log fresh, push once afresh; 9977 log once, push once (of 20000); looked again 29; data race: False
+
+fuzzer as is: 11751 cases in 1h0m0s (2.2 M ops/s); cases with a touch twice 0; failing case lines 0; data race False; panic False
+  plain: calls 5618489147, none 2217227952, once 3401243708, fresh 17486, again 1, twice 0, behind 0, first fresh 609272120, bare 0, stores table 2140547700, stores stamp 16335785, stores realign 626860225, stores claim 617534972, stores wait 0, skips table 64415, skips miss 25977, silent 2217332762, missPlaced 4
+  ConstantTime: calls 1743174070, none 671364966, once 1071804304, fresh 4800, again 0, twice 0, behind 0, first fresh 200411465, bare 0, stores table 654632782, stores stamp 4677269, stores realign 192147601, stores claim 191348419, stores wait 29007833, skips table 8721, skips miss 0, silent 671398534, missPlaced 0
+  Background: calls 1814187282, none 699520149, once 1114661581, fresh 5552, again 0, twice 0, behind 0, first fresh 198957282, bare 0, stores table 662907167, stores stamp 5134873, stores realign 204125546, stores claim 174439036, stores wait 68066063, skips table 16972, skips miss 5517, silent 699561434, missPlaced 4
+fuzzer straggler: 11709 cases in 1h0m0s (2.1 M ops/s); cases with a touch twice 0; failing case lines 0; data race False; panic False
+  plain: calls 5591306276, none 2268590415, once 3322696883, fresh 18978, again 0, twice 0, behind 0, first fresh 609157168, bare 0, stores table 2078424306, stores stamp 16103690, stores realign 610922851, stores claim 617283992, stores wait 0, skips table 69079, skips miss 27319, silent 2268707443, missPlaced 7
+  ConstantTime: calls 1734408421, none 686200317, once 1048202685, fresh 5419, again 0, twice 0, behind 0, first fresh 200711783, bare 0, stores table 635498145, stores stamp 4586214, stores realign 186504784, stores claim 190713094, stores wait 30911286, skips table 10612, skips miss 0, silent 686236860, missPlaced 0
+  Background: calls 1812933837, none 717869413, once 1095058119, fresh 6305, again 0, twice 0, behind 0, first fresh 199672654, bare 0, stores table 646237620, stores stamp 5077816, stores realign 199932758, stores claim 175310706, stores wait 68511829, skips table 18861, skips miss 6033, silent 717914552, missPlaced 0
+fuzzer tags 8: 12188 cases in 1h0m1s (2.2 M ops/s); cases with a touch twice 0; failing case lines 0; data race False; panic False
+  plain: calls 5834880430, none 2227941394, once 3606918991, fresh 20044, again 1, twice 0, behind 0, first fresh 633169960, bare 0, stores table 2271951060, stores stamp 16285392, stores realign 676325823, stores claim 642396806, stores wait 0, skips table 71412, skips miss 23641, silent 2228065233, missPlaced 2
+  ConstantTime: calls 1816530429, none 679182663, once 1137342479, fresh 5287, again 0, twice 0, behind 0, first fresh 207354333, bare 0, stores table 695975364, stores stamp 4577081, stores realign 209315925, stores claim 198077774, stores wait 29406909, skips table 11645, skips miss 0, silent 679220549, missPlaced 0
+  Background: calls 1889663972, none 711291998, once 1178365057, fresh 6917, again 0, twice 0, behind 0, first fresh 209046016, bare 0, stores table 706467674, stores stamp 5023315, stores realign 220475263, stores claim 181738997, stores wait 64673642, skips table 21291, skips miss 4929, silent 711346252, missPlaced 0
+fuzzer power, 23f03b6 straggler: 12403 cases in 1h0m0s (2.3 M ops/s); cases with a touch twice 2; failing case lines 2; data race False; panic False
+  plain: calls 5957853753, none 2418224609, once 3539609886, fresh 19256, again 0, twice 2, behind 8, first fresh 647226864, bare 0, stores table 2215170569, stores stamp 17147033, stores realign 651412280, stores claim 655918520, stores wait 0, skips table 78212, skips miss 31112, silent 2418354202, missPlaced 0
+  ConstantTime: calls 1842475473, none 726781016, once 1115688768, fresh 5689, again 0, twice 0, behind 2, first fresh 213372647, bare 0, stores table 675909386, stores stamp 4852084, stores realign 199112285, stores claim 202532331, stores wait 33294060, skips table 12024, skips miss 0, silent 726820682, missPlaced 0
+  Background: calls 1924693997, none 762675748, once 1162012166, fresh 6083, again 0, twice 0, behind 2, first fresh 211485427, bare 0, stores table 686532174, stores stamp 5412145, stores realign 212030611, stores claim 185840757, stores wait 72208645, skips table 21803, skips miss 7112, silent 762726308, missPlaced 0
+  failing answers and logs by kind: push twice (23f03b6's format) 2
+W7 mode bg, shape spread: calls 172800000, none 74080138, once 98719862, fresh 0, again 0, twice 0, behind 0, first fresh 7040302, bare 0, stores table 58614712, stores stamp 0, stores realign 503340, stores claim 12490243, stores wait 27111567, skips table 136522, skips miss 492669, silent 74080147, missPlaced 0
+W7: dripcount_test.go:295: tfdrip build, mode bg, shape spread: 20000 rounds, 5760000 answers, 5759217 judged (100.0%); wrong: Count high 0, Count low 0, another field 0; log lost 0; set apart: flagged Saturated or Degraded 783, a key in the overflow table 0, collisions 0, in 0 rounds that lost a history 0; the filter's Degraded 783; waited 27286789, evictions 16093625, restored 10575334, relocations 
+
+1. sight: each leg's and round's push class as predicted and agreeing with its log, both trees; the paths as predicted: HOLDS
+   - race on 23f03b6: 96 rounds twice
+2. the library's answers unchanged: the notes alone; the exact outputs, digest and TestConformance's lines as before; go vet clean in the four tag sets: HOLDS
+   - 0: the notes' changed lines: head 42, the port 39; the head's alone 3, the port's alone 0
+   - TestConformance, both builds: conformance_test.go:318: ... 11 ops differ in all
+   - TestConformance, both builds: conformance_test.go:318: ... 162 ops differ in all
+3. the fuzzer on the head: no touch stores its push twice, in each mode of the three legs (each path read only where its reach line is not 0): HOLDS
+   - as is, plain: 5618489147 touches, twice 0
+   - as is, ConstantTime: 1743174070 touches, twice 0
+   - as is, Background: 1814187282 touches, twice 0
+   - straggler, plain: 5591306276 touches, twice 0
+   - straggler, ConstantTime: 1734408421 touches, twice 0
+   - straggler, Background: 1812933837 touches, twice 0
+   - tags 8, plain: 5834880430 touches, twice 0
+   - tags 8, ConstantTime: 1816530429 touches, twice 0
+   - tags 8, Background: 1889663972 touches, twice 0
+   - reach, missPlaced: plain 13, ConstantTime 0, Background 4 (not reached in ConstantTime: NOTHING READ for its path there)
+   - reach, skips miss: plain 76937, ConstantTime 0, Background 16479 (not reached in ConstantTime: NOTHING READ for its path there)
+   - reach, skips table: plain 204906, ConstantTime 30978, Background 57124
+   - reach, again: plain 2, ConstantTime 0, Background 0 (not reached in ConstantTime, Background: NOTHING READ for its path there)
+   - reach, fresh: plain 56508, ConstantTime 15506, Background 18774
+   - reach, stores stamp: plain 48724867, ConstantTime 13840564, Background 15236004
+   - reach, stores realign: plain 1914108899, ConstantTime 587968310, Background 624533567
+   - reach, stores wait: plain 0, ConstantTime 89326028, Background 201251534 (not reached in plain: NOTHING READ for its path there)
+   - reach, silent: plain 6714105438, ConstantTime 2036855943, Background 2128822238
+   - behind (reported; from the code, 0 on the head): plain 0, ConstantTime 0, Background 0
+4. W7's scenario (Background, spread) and W11b's race on the head: no touch stores its push twice: HOLDS
+   - W7 bg spread: 172800000 touches, twice 0, behind 0
+   - race head: 0 rounds twice, 99 looked again
+   - race head-race: 0 rounds twice, 29 looked again
+5. every touch noted: none returned with no store and no silent note, in every count read: HOLDS
+6. power: the fuzzer on 23f03b6 (straggler) reads a touch twice (qualifies the verdict): HOLDS
+   - 23f03b6 straggler (its own older fuzzer): 12403 cases, 2 touches twice in 2 cases; behind (a look again after a placed history, the reach W9's path has there): plain 8, ConstantTime 2, Background 2
+   - the head's missPlaced over its three legs, the same reach there: plain 13, ConstantTime 0, Background 4
+7. the head's tests pass under tfdrip,tfpush: W11b's legs and race, the paths, W11's and W4e's tests: HOLDS
+
+W13: clauses 1 to 5 and 7 all hold; clause 6 (power): HOLDS

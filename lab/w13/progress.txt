@@ -1,0 +1,307 @@
+[06:24:45] W13: head 75b7b07; go1.24.7
+[06:24:45] 0: library files that differ from c8eab03's: [go/cuckoo.go go/filter.go go/push.go go/push_off.go go/push_on.go go/touch.go ]
+[06:24:45] 0: the notes' changed lines: head 42, the port 39; the head's alone 3, the port's alone 0
+    < +			pt.placed()
+    < +		if pushOn {
+    < +		}
+[06:24:45] 1: the library's answers
+[06:25:03] 1a default exact: IDENTICAL
+[06:26:13] 1b default digest: IDENTICAL
+[06:26:29] 1c tfdrip exact: IDENTICAL to W4e's
+[06:26:46] 1d tfdrip,tfpush exact: IDENTICAL to W4e's
+[06:26:46] 1e TestConformance, tfdrip: go test exit 1
+[06:26:47] 1e TestConformance, tfdrip,tfpush: go test exit 1
+[06:26:47] 1f go vet, tags []: exit 0 (0 lines)
+[06:26:48] 1f go vet, tags [tfdrip]: exit 0 (0 lines)
+[06:26:48] 1f go vet, tags [tfpush]: exit 0 (0 lines)
+[06:26:49] 1f go vet, tags [tfdrip,tfpush]: exit 0 (0 lines)
+[06:26:49] 2: sight
+[06:26:49] 2: 23f03b6's port: [ M go/cuckoo.go  M go/filter.go  M go/fuzz_test.go  M go/fuzzconc_test.go  M go/hot.go  M go/touch.go ?? go/drip_hotfresh_test.go ?? go/push.go ?? go/push_off.go ?? go/push_on.go ?? go/push_test.go ]
+[06:26:51] 2 legs and paths on 23f03b6: go test exit 1
+=== RUN   TestDripHotRestoreFresh
+drip_hotfresh_test.go:188: W11b inputs: history in unit 24 (first 60320, last 61420 at quantum 393), tK 62040 (unit 24, quantum 397, gap 4); tL 127500 (unit 51, 27 units past the history's; 65460 ticks ahead of tK, horizon 60000); window starts [61890 61140 60140 52140 2140] in units [24 24 24 20 0], inside a history event's quantum []; logs: history 0x9b7, once 0xeef, twice 0xdde, fresh 0xfff, distinct true
+drip_hotfresh_test.go:366: W11b leg c1 | plain, full table, control | build tfdrip | hook  | before - | promoted 1 | placed false | retried false | taken 0 | restored 1 | evictions 1 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+drip_hotfresh_test.go:369: W13 leg c1 | plain, full table, control | log once | K's touches 1 | K's touch: once: stores 1 [claim into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 1 | plain, full table, reclaim at the eviction | build tfdrip | hook victim | before - | promoted 2 | placed false | retried true | taken 0 | restored 0 | evictions 1 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xdde | class twice | hot false | mine false | reads 250:2/2/1 1000:3/3/2 2000:4/4/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 1 | plain, full table, reclaim at the eviction | log twice | K's touches 1 | K's touch: twice: stores 2 [claim into last 61420, flag false; table into last 62040 (at or after the tick), flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind true
+drip_hotfresh_test.go:399: K reads Upper 2 over 1 given at 250 ms
+drip_hotfresh_test.go:399: K reads Upper 3 over 2 given at 1000 ms
+drip_hotfresh_test.go:415: K's log twice, want its history with the touch pushed once (once)
+drip_hotfresh_test.go:366: W11b leg c2 | ConstantTime, free slot, control | build tfdrip | hook  | before - | promoted 1 | placed false | retried false | taken 0 | restored 1 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+drip_hotfresh_test.go:369: W13 leg c2 | ConstantTime, free slot, control | log once | K's touches 1 | K's touch: once: stores 1 [claim into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 2 | ConstantTime, free slot, reclaim at install | build tfdrip | hook installing | before - | promoted 2 | placed false | retried true | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xdde | class twice | hot false | mine false | reads 250:2/2/1 1000:3/3/2 2000:4/4/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 2 | ConstantTime, free slot, reclaim at install | log twice | K's touches 1 | K's touch: twice: stores 2 [claim into last 61420, flag false; table into last 62040 (at or after the tick), flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind true
+drip_hotfresh_test.go:399: K reads Upper 2 over 1 given at 250 ms
+drip_hotfresh_test.go:399: K reads Upper 3 over 2 given at 1000 ms
+drip_hotfresh_test.go:415: K's log twice, want its history with the touch pushed once (once)
+drip_hotfresh_test.go:366: W11b leg c3 | ConstantTime, full lines, control | build tfdrip | hook  | before - | promoted 1 | placed false | retried false | taken 0 | restored 1 | evictions 0 | relocations 0 | waited 1 | K in the stash or the wait room | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+drip_hotfresh_test.go:369: W13 leg c3 | ConstantTime, full lines, control | log once | K's touches 1 | K's touch: once: stores 1 [wait into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 3 | ConstantTime, full lines, reclaim after the wait | build tfdrip | hook restore add | before - | promoted 2 | placed false | retried false | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 2 | K in the stash or the wait room | last 62040 | log 0xfff | class fresh | hot false | mine false | reads 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 3 | ConstantTime, full lines, reclaim after the wait | log fresh | K's touches 1 | K's touch: fresh: stores 2 [wait into last 61420, flag false; wait afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind true
+drip_hotfresh_test.go:366: W11b leg c4 | Background, free slot, control | build tfdrip | hook  | before - | promoted 1 | placed false | retried false | taken 0 | restored 1 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+drip_hotfresh_test.go:369: W13 leg c4 | Background, free slot, control | log once | K's touches 1 | K's touch: once: stores 1 [claim into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 4 | Background, free slot, reclaim at install | build tfdrip | hook installing | before - | promoted 2 | placed false | retried true | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xdde | class twice | hot false | mine false | reads 250:2/2/1 1000:3/3/2 2000:4/4/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 4 | Background, free slot, reclaim at install | log twice | K's touches 1 | K's touch: twice: stores 2 [claim into last 61420, flag false; table into last 62040 (at or after the tick), flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind true
+drip_hotfresh_test.go:399: K reads Upper 2 over 1 given at 250 ms
+drip_hotfresh_test.go:399: K reads Upper 3 over 2 given at 1000 ms
+drip_hotfresh_test.go:415: K's log twice, want its history with the touch pushed once (once)
+drip_hotfresh_test.go:366: W11b leg c5 | Background, full lines, placer, control | build tfdrip | hook  | before - | promoted 1 | placed true | retried false | taken 0 | restored 1 | evictions 0 | relocations 0 | waited 1 | K in the table | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+drip_hotfresh_test.go:369: W13 leg c5 | Background, full lines, placer, control | log once | K's touches 1 | K's touch: once: stores 1 [wait into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 5 | Background, full lines, placer, placed then reclaimed | build tfdrip | hook restore add | before - | promoted 2 | placed true | retried true | taken 0 | restored 0 | evictions 0 | relocations 1 | waited 1 | K in the table | last 62040 | log 0xdde | class twice | hot false | mine false | reads 250:2/2/1 1000:3/3/2 2000:4/4/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 5 | Background, full lines, placer, placed then reclaimed | log twice | K's touches 1 | K's touch: twice: stores 2 [wait into last 61420, flag false; table into last 62040 (at or after the tick), flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind true
+drip_hotfresh_test.go:399: K reads Upper 2 over 1 given at 250 ms
+drip_hotfresh_test.go:399: K reads Upper 3 over 2 given at 1000 ms
+drip_hotfresh_test.go:415: K's log twice, want its history with the touch pushed once (once)
+drip_hotfresh_test.go:366: W11b leg c6 | Background, full lines, no placer, control | build tfdrip | hook  | before - | promoted 1 | placed false | retried false | taken 0 | restored 1 | evictions 0 | relocations 0 | waited 1 | K in the stash or the wait room | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+drip_hotfresh_test.go:369: W13 leg c6 | Background, full lines, no placer, control | log once | K's touches 1 | K's touch: once: stores 1 [wait into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 6 | Background, full lines, no placer, reclaim after the wait | build tfdrip | hook restore add | before - | promoted 2 | placed false | retried false | taken 1 | restored 0 | evictions 0 | relocations 0 | waited 2 | K in the stash or the wait room | last 62040 | log 0xfff | class fresh | hot false | mine false | reads 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 6 | Background, full lines, no placer, reclaim after the wait | log fresh | K's touches 1 | K's touch: fresh: stores 2 [wait into last 61420, flag false; wait afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind true
+drip_hotfresh_test.go:366: W11b leg 7 | plain, free slot, reclaimed before K's touch | build tfdrip | hook before | before src 2, last touch 61420, hot true, entry gone true | promoted 2 | placed false | retried false | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xfff | class fresh | hot false | mine false | reads 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 7 | plain, free slot, reclaimed before K's touch | log fresh | K's touches 1 | K's touch: once: stores 1 [claim afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 8 | ConstantTime, free slot, reclaimed before K's touch | build tfdrip | hook before | before src 2, last touch 61420, hot true, entry gone true | promoted 2 | placed false | retried false | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xfff | class fresh | hot false | mine false | reads 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 8 | ConstantTime, free slot, reclaimed before K's touch | log fresh | K's touches 1 | K's touch: once: stores 1 [claim afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 9 | Background, free slot, reclaimed before K's touch | build tfdrip | hook before | before src 2, last touch 61420, hot true, entry gone true | promoted 2 | placed false | retried false | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xfff | class fresh | hot false | mine false | reads 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 9 | Background, free slot, reclaimed before K's touch | log fresh | K's touches 1 | K's touch: once: stores 1 [claim afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+--- FAIL: TestDripHotRestoreFresh (0.01s)
+--- PASS: TestDripHotRestoreFresh/c1_plain,_full_table,_control (0.00s)
+--- FAIL: TestDripHotRestoreFresh/1_plain,_full_table,_reclaim_at_the_eviction (0.00s)
+--- PASS: TestDripHotRestoreFresh/c2_ConstantTime,_free_slot,_control (0.00s)
+--- FAIL: TestDripHotRestoreFresh/2_ConstantTime,_free_slot,_reclaim_at_install (0.00s)
+--- PASS: TestDripHotRestoreFresh/c3_ConstantTime,_full_lines,_control (0.00s)
+--- PASS: TestDripHotRestoreFresh/3_ConstantTime,_full_lines,_reclaim_after_the_wait (0.00s)
+--- PASS: TestDripHotRestoreFresh/c4_Background,_free_slot,_control (0.00s)
+--- FAIL: TestDripHotRestoreFresh/4_Background,_free_slot,_reclaim_at_install (0.00s)
+--- PASS: TestDripHotRestoreFresh/c5_Background,_full_lines,_placer,_control (0.00s)
+--- FAIL: TestDripHotRestoreFresh/5_Background,_full_lines,_placer,_placed_then_reclaimed (0.00s)
+--- PASS: TestDripHotRestoreFresh/c6_Background,_full_lines,_no_placer,_control (0.00s)
+--- PASS: TestDripHotRestoreFresh/6_Background,_full_lines,_no_placer,_reclaim_after_the_wait (0.00s)
+--- PASS: TestDripHotRestoreFresh/7_plain,_free_slot,_reclaimed_before_K's_touch (0.00s)
+--- PASS: TestDripHotRestoreFresh/8_ConstantTime,_free_slot,_reclaimed_before_K's_touch (0.00s)
+--- PASS: TestDripHotRestoreFresh/9_Background,_free_slot,_reclaimed_before_K's_touch (0.00s)
+=== RUN   TestPushNames
+--- PASS: TestPushNames (0.00s)
+=== RUN   TestPushPaths
+push_test.go:90: W13 path realign, a key into its next unit | once: stores 1 [realign into last 10000, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+push_test.go:90: W13 path stamp, a promoted key into its next unit | once: stores 1 [stamp into last 10000, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+push_test.go:90: W13 path silent, a 13th touch at one tick | none: stores 0 [], skips table 0 miss 0, silent 1, missPlaced 0, behind false
+push_test.go:105: W13 path counts | calls 48, none 21, once 27, fresh 0, again 0, twice 0, behind 0, first fresh 3, bare 0, stores table 22, stores stamp 1, stores realign 1, stores claim 3, stores wait 0, skips table 0, skips miss 0, silent 21, missPlaced 0
+--- PASS: TestPushPaths (0.00s)
+FAIL
+FAIL	github.com/scooter-sensei/clepsydra/go	0.010s
+FAIL
+[06:27:19] 2 race on 23f03b6, 200000 rounds: go test exit 1
+=== RUN   TestDripHotFreshRace
+drip_hotfresh_test.go:522: W11b race: 199067 of 200000 rounds: log fresh, L promoted true, K looked again false
+drip_hotfresh_test.go:522: W11b race: 837 of 200000 rounds: log once, L promoted true, K looked again false
+drip_hotfresh_test.go:522: W11b race: 96 of 200000 rounds: log twice, L promoted true, K looked again true
+drip_hotfresh_test.go:525: W13 race: 199067 of 200000 rounds: log fresh, push once afresh
+drip_hotfresh_test.go:525: W13 race: 837 of 200000 rounds: log once, push once
+drip_hotfresh_test.go:525: W13 race: 96 of 200000 rounds: log twice, push twice
+drip_hotfresh_test.go:528: 96 of 200000 rounds pushed K's event twice; first: round 237: log twice, L promoted true, K looked again true (spins 876, 863)
+--- FAIL: TestDripHotFreshRace (27.62s)
+FAIL
+FAIL	github.com/scooter-sensei/clepsydra/go	27.621s
+FAIL
+[06:27:20] 2 legs and paths: go test exit 0
+=== RUN   TestDripHotRestoreFresh
+drip_hotfresh_test.go:188: W11b inputs: history in unit 24 (first 60320, last 61420 at quantum 393), tK 62040 (unit 24, quantum 397, gap 4); tL 127500 (unit 51, 27 units past the history's; 65460 ticks ahead of tK, horizon 60000); window starts [61890 61140 60140 52140 2140] in units [24 24 24 20 0], inside a history event's quantum []; logs: history 0x9b7, once 0xeef, twice 0xdde, fresh 0xfff, distinct true
+drip_hotfresh_test.go:366: W11b leg c1 | plain, full table, control | build tfdrip | hook  | before - | promoted 1 | placed false | retried false | taken 0 | restored 1 | evictions 1 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+drip_hotfresh_test.go:369: W13 leg c1 | plain, full table, control | log once | K's touches 1 | K's touch: once: stores 1 [claim into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 1 | plain, full table, reclaim at the eviction | build tfdrip | hook victim | before - | promoted 2 | placed false | retried true | taken 0 | restored 0 | evictions 1 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xeef | class once | hot false | mine false | reads 250:1/1/1 1000:2/2/2 2000:3/3/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 1 | plain, full table, reclaim at the eviction | log once | K's touches 1 | K's touch: once: stores 1 [claim into last 61420, flag false], skips table 1 miss 0, silent 0, missPlaced 1, behind false
+drip_hotfresh_test.go:366: W11b leg c2 | ConstantTime, free slot, control | build tfdrip | hook  | before - | promoted 1 | placed false | retried false | taken 0 | restored 1 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+drip_hotfresh_test.go:369: W13 leg c2 | ConstantTime, free slot, control | log once | K's touches 1 | K's touch: once: stores 1 [claim into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 2 | ConstantTime, free slot, reclaim at install | build tfdrip | hook installing | before - | promoted 2 | placed false | retried true | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xeef | class once | hot false | mine false | reads 250:1/1/1 1000:2/2/2 2000:3/3/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 2 | ConstantTime, free slot, reclaim at install | log once | K's touches 1 | K's touch: once: stores 1 [claim into last 61420, flag false], skips table 1 miss 0, silent 0, missPlaced 1, behind false
+drip_hotfresh_test.go:366: W11b leg c3 | ConstantTime, full lines, control | build tfdrip | hook  | before - | promoted 1 | placed false | retried false | taken 0 | restored 1 | evictions 0 | relocations 0 | waited 1 | K in the stash or the wait room | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+drip_hotfresh_test.go:369: W13 leg c3 | ConstantTime, full lines, control | log once | K's touches 1 | K's touch: once: stores 1 [wait into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 3 | ConstantTime, full lines, reclaim after the wait | build tfdrip | hook restore add | before - | promoted 2 | placed false | retried false | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 2 | K in the stash or the wait room | last 62040 | log 0xfff | class fresh | hot false | mine false | reads 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 3 | ConstantTime, full lines, reclaim after the wait | log fresh | K's touches 1 | K's touch: fresh: stores 2 [wait into last 61420, flag false; wait afresh, flag true], skips table 0 miss 0, silent 0, missPlaced 1, behind false
+drip_hotfresh_test.go:366: W11b leg c4 | Background, free slot, control | build tfdrip | hook  | before - | promoted 1 | placed false | retried false | taken 0 | restored 1 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+drip_hotfresh_test.go:369: W13 leg c4 | Background, free slot, control | log once | K's touches 1 | K's touch: once: stores 1 [claim into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 4 | Background, free slot, reclaim at install | build tfdrip | hook installing | before - | promoted 2 | placed false | retried true | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xeef | class once | hot false | mine false | reads 250:1/1/1 1000:2/2/2 2000:3/3/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 4 | Background, free slot, reclaim at install | log once | K's touches 1 | K's touch: once: stores 1 [claim into last 61420, flag false], skips table 1 miss 0, silent 0, missPlaced 1, behind false
+drip_hotfresh_test.go:366: W11b leg c5 | Background, full lines, placer, control | build tfdrip | hook  | before - | promoted 1 | placed true | retried false | taken 0 | restored 1 | evictions 0 | relocations 0 | waited 1 | K in the table | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+drip_hotfresh_test.go:369: W13 leg c5 | Background, full lines, placer, control | log once | K's touches 1 | K's touch: once: stores 1 [wait into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 5 | Background, full lines, placer, placed then reclaimed | build tfdrip | hook restore add | before - | promoted 2 | placed true | retried true | taken 0 | restored 0 | evictions 0 | relocations 1 | waited 1 | K in the table | last 62040 | log 0xeef | class once | hot false | mine false | reads 250:1/1/1 1000:2/2/2 2000:3/3/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 5 | Background, full lines, placer, placed then reclaimed | log once | K's touches 1 | K's touch: once: stores 1 [wait into last 61420, flag false], skips table 1 miss 0, silent 0, missPlaced 1, behind false
+drip_hotfresh_test.go:366: W11b leg c6 | Background, full lines, no placer, control | build tfdrip | hook  | before - | promoted 1 | placed false | retried false | taken 0 | restored 1 | evictions 0 | relocations 0 | waited 1 | K in the stash or the wait room | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+drip_hotfresh_test.go:369: W13 leg c6 | Background, full lines, no placer, control | log once | K's touches 1 | K's touch: once: stores 1 [wait into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 6 | Background, full lines, no placer, reclaim after the wait | build tfdrip | hook restore add | before - | promoted 2 | placed false | retried false | taken 1 | restored 0 | evictions 0 | relocations 0 | waited 2 | K in the stash or the wait room | last 62040 | log 0xfff | class fresh | hot false | mine false | reads 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 6 | Background, full lines, no placer, reclaim after the wait | log fresh | K's touches 1 | K's touch: fresh: stores 2 [wait into last 61420, flag false; wait afresh, flag true], skips table 0 miss 0, silent 0, missPlaced 1, behind false
+drip_hotfresh_test.go:366: W11b leg 7 | plain, free slot, reclaimed before K's touch | build tfdrip | hook before | before src 2, last touch 61420, hot true, entry gone true | promoted 2 | placed false | retried false | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xfff | class fresh | hot false | mine false | reads 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 7 | plain, free slot, reclaimed before K's touch | log fresh | K's touches 1 | K's touch: once: stores 1 [claim afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 8 | ConstantTime, free slot, reclaimed before K's touch | build tfdrip | hook before | before src 2, last touch 61420, hot true, entry gone true | promoted 2 | placed false | retried false | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xfff | class fresh | hot false | mine false | reads 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 8 | ConstantTime, free slot, reclaimed before K's touch | log fresh | K's touches 1 | K's touch: once: stores 1 [claim afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 9 | Background, free slot, reclaimed before K's touch | build tfdrip | hook before | before src 2, last touch 61420, hot true, entry gone true | promoted 2 | placed false | retried false | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xfff | class fresh | hot false | mine false | reads 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 9 | Background, free slot, reclaimed before K's touch | log fresh | K's touches 1 | K's touch: once: stores 1 [claim afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+--- PASS: TestDripHotRestoreFresh (0.01s)
+--- PASS: TestDripHotRestoreFresh/c1_plain,_full_table,_control (0.00s)
+--- PASS: TestDripHotRestoreFresh/1_plain,_full_table,_reclaim_at_the_eviction (0.00s)
+--- PASS: TestDripHotRestoreFresh/c2_ConstantTime,_free_slot,_control (0.00s)
+--- PASS: TestDripHotRestoreFresh/2_ConstantTime,_free_slot,_reclaim_at_install (0.00s)
+--- PASS: TestDripHotRestoreFresh/c3_ConstantTime,_full_lines,_control (0.00s)
+--- PASS: TestDripHotRestoreFresh/3_ConstantTime,_full_lines,_reclaim_after_the_wait (0.00s)
+--- PASS: TestDripHotRestoreFresh/c4_Background,_free_slot,_control (0.00s)
+--- PASS: TestDripHotRestoreFresh/4_Background,_free_slot,_reclaim_at_install (0.00s)
+--- PASS: TestDripHotRestoreFresh/c5_Background,_full_lines,_placer,_control (0.00s)
+--- PASS: TestDripHotRestoreFresh/5_Background,_full_lines,_placer,_placed_then_reclaimed (0.00s)
+--- PASS: TestDripHotRestoreFresh/c6_Background,_full_lines,_no_placer,_control (0.00s)
+--- PASS: TestDripHotRestoreFresh/6_Background,_full_lines,_no_placer,_reclaim_after_the_wait (0.00s)
+--- PASS: TestDripHotRestoreFresh/7_plain,_free_slot,_reclaimed_before_K's_touch (0.00s)
+--- PASS: TestDripHotRestoreFresh/8_ConstantTime,_free_slot,_reclaimed_before_K's_touch (0.00s)
+--- PASS: TestDripHotRestoreFresh/9_Background,_free_slot,_reclaimed_before_K's_touch (0.00s)
+=== RUN   TestPushNames
+--- PASS: TestPushNames (0.00s)
+=== RUN   TestPushPaths
+push_test.go:90: W13 path realign, a key into its next unit | once: stores 1 [realign into last 10000, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+push_test.go:90: W13 path stamp, a promoted key into its next unit | once: stores 1 [stamp into last 10000, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+push_test.go:90: W13 path silent, a 13th touch at one tick | none: stores 0 [], skips table 0 miss 0, silent 1, missPlaced 0, behind false
+push_test.go:105: W13 path counts | calls 48, none 21, once 27, fresh 0, again 0, twice 0, behind 0, first fresh 3, bare 0, stores table 22, stores stamp 1, stores realign 1, stores claim 3, stores wait 0, skips table 0, skips miss 0, silent 21, missPlaced 0
+--- PASS: TestPushPaths (0.00s)
+ok  	github.com/scooter-sensei/clepsydra/go	0.010s
+[06:27:25] 2 legs and paths under -race: go test exit 0
+=== RUN   TestDripHotRestoreFresh
+drip_hotfresh_test.go:188: W11b inputs: history in unit 24 (first 60320, last 61420 at quantum 393), tK 62040 (unit 24, quantum 397, gap 4); tL 127500 (unit 51, 27 units past the history's; 65460 ticks ahead of tK, horizon 60000); window starts [61890 61140 60140 52140 2140] in units [24 24 24 20 0], inside a history event's quantum []; logs: history 0x9b7, once 0xeef, twice 0xdde, fresh 0xfff, distinct true
+drip_hotfresh_test.go:366: W11b leg c1 | plain, full table, control | build tfdrip | hook  | before - | promoted 1 | placed false | retried false | taken 0 | restored 1 | evictions 1 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+drip_hotfresh_test.go:369: W13 leg c1 | plain, full table, control | log once | K's touches 1 | K's touch: once: stores 1 [claim into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 1 | plain, full table, reclaim at the eviction | build tfdrip | hook victim | before - | promoted 2 | placed false | retried true | taken 0 | restored 0 | evictions 1 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xeef | class once | hot false | mine false | reads 250:1/1/1 1000:2/2/2 2000:3/3/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 1 | plain, full table, reclaim at the eviction | log once | K's touches 1 | K's touch: once: stores 1 [claim into last 61420, flag false], skips table 1 miss 0, silent 0, missPlaced 1, behind false
+drip_hotfresh_test.go:366: W11b leg c2 | ConstantTime, free slot, control | build tfdrip | hook  | before - | promoted 1 | placed false | retried false | taken 0 | restored 1 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+drip_hotfresh_test.go:369: W13 leg c2 | ConstantTime, free slot, control | log once | K's touches 1 | K's touch: once: stores 1 [claim into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 2 | ConstantTime, free slot, reclaim at install | build tfdrip | hook installing | before - | promoted 2 | placed false | retried true | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xeef | class once | hot false | mine false | reads 250:1/1/1 1000:2/2/2 2000:3/3/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 2 | ConstantTime, free slot, reclaim at install | log once | K's touches 1 | K's touch: once: stores 1 [claim into last 61420, flag false], skips table 1 miss 0, silent 0, missPlaced 1, behind false
+drip_hotfresh_test.go:366: W11b leg c3 | ConstantTime, full lines, control | build tfdrip | hook  | before - | promoted 1 | placed false | retried false | taken 0 | restored 1 | evictions 0 | relocations 0 | waited 1 | K in the stash or the wait room | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+drip_hotfresh_test.go:369: W13 leg c3 | ConstantTime, full lines, control | log once | K's touches 1 | K's touch: once: stores 1 [wait into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 3 | ConstantTime, full lines, reclaim after the wait | build tfdrip | hook restore add | before - | promoted 2 | placed false | retried false | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 2 | K in the stash or the wait room | last 62040 | log 0xfff | class fresh | hot false | mine false | reads 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 3 | ConstantTime, full lines, reclaim after the wait | log fresh | K's touches 1 | K's touch: fresh: stores 2 [wait into last 61420, flag false; wait afresh, flag true], skips table 0 miss 0, silent 0, missPlaced 1, behind false
+drip_hotfresh_test.go:366: W11b leg c4 | Background, free slot, control | build tfdrip | hook  | before - | promoted 1 | placed false | retried false | taken 0 | restored 1 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+drip_hotfresh_test.go:369: W13 leg c4 | Background, free slot, control | log once | K's touches 1 | K's touch: once: stores 1 [claim into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 4 | Background, free slot, reclaim at install | build tfdrip | hook installing | before - | promoted 2 | placed false | retried true | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xeef | class once | hot false | mine false | reads 250:1/1/1 1000:2/2/2 2000:3/3/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 4 | Background, free slot, reclaim at install | log once | K's touches 1 | K's touch: once: stores 1 [claim into last 61420, flag false], skips table 1 miss 0, silent 0, missPlaced 1, behind false
+drip_hotfresh_test.go:366: W11b leg c5 | Background, full lines, placer, control | build tfdrip | hook  | before - | promoted 1 | placed true | retried false | taken 0 | restored 1 | evictions 0 | relocations 0 | waited 1 | K in the table | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+drip_hotfresh_test.go:369: W13 leg c5 | Background, full lines, placer, control | log once | K's touches 1 | K's touch: once: stores 1 [wait into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 5 | Background, full lines, placer, placed then reclaimed | build tfdrip | hook restore add | before - | promoted 2 | placed true | retried true | taken 0 | restored 0 | evictions 0 | relocations 1 | waited 1 | K in the table | last 62040 | log 0xeef | class once | hot false | mine false | reads 250:1/1/1 1000:2/2/2 2000:3/3/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 5 | Background, full lines, placer, placed then reclaimed | log once | K's touches 1 | K's touch: once: stores 1 [wait into last 61420, flag false], skips table 1 miss 0, silent 0, missPlaced 1, behind false
+drip_hotfresh_test.go:366: W11b leg c6 | Background, full lines, no placer, control | build tfdrip | hook  | before - | promoted 1 | placed false | retried false | taken 0 | restored 1 | evictions 0 | relocations 0 | waited 1 | K in the stash or the wait room | last 62040 | log 0xeef | class once | hot true | mine true | reads 250:1/33/1 1000:2/33/2 2000:33/33/33 10000:33/33/33 60000:33/33/33
+drip_hotfresh_test.go:369: W13 leg c6 | Background, full lines, no placer, control | log once | K's touches 1 | K's touch: once: stores 1 [wait into last 61420, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 6 | Background, full lines, no placer, reclaim after the wait | build tfdrip | hook restore add | before - | promoted 2 | placed false | retried false | taken 1 | restored 0 | evictions 0 | relocations 0 | waited 2 | K in the stash or the wait room | last 62040 | log 0xfff | class fresh | hot false | mine false | reads 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 6 | Background, full lines, no placer, reclaim after the wait | log fresh | K's touches 1 | K's touch: fresh: stores 2 [wait into last 61420, flag false; wait afresh, flag true], skips table 0 miss 0, silent 0, missPlaced 1, behind false
+drip_hotfresh_test.go:366: W11b leg 7 | plain, free slot, reclaimed before K's touch | build tfdrip | hook before | before src 2, last touch 61420, hot true, entry gone true | promoted 2 | placed false | retried false | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xfff | class fresh | hot false | mine false | reads 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 7 | plain, free slot, reclaimed before K's touch | log fresh | K's touches 1 | K's touch: once: stores 1 [claim afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 8 | ConstantTime, free slot, reclaimed before K's touch | build tfdrip | hook before | before src 2, last touch 61420, hot true, entry gone true | promoted 2 | placed false | retried false | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xfff | class fresh | hot false | mine false | reads 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 8 | ConstantTime, free slot, reclaimed before K's touch | log fresh | K's touches 1 | K's touch: once: stores 1 [claim afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+drip_hotfresh_test.go:366: W11b leg 9 | Background, free slot, reclaimed before K's touch | build tfdrip | hook before | before src 2, last touch 61420, hot true, entry gone true | promoted 2 | placed false | retried false | taken 0 | restored 0 | evictions 0 | relocations 0 | waited 0 | K in the table | last 62040 | log 0xfff | class fresh | hot false | mine false | reads 250:1/1/1 1000:1/1/2 2000:1/1/33 10000:1/1/33 60000:1/1/33
+drip_hotfresh_test.go:369: W13 leg 9 | Background, free slot, reclaimed before K's touch | log fresh | K's touches 1 | K's touch: once: stores 1 [claim afresh, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+--- PASS: TestDripHotRestoreFresh (0.04s)
+--- PASS: TestDripHotRestoreFresh/c1_plain,_full_table,_control (0.01s)
+--- PASS: TestDripHotRestoreFresh/1_plain,_full_table,_reclaim_at_the_eviction (0.01s)
+--- PASS: TestDripHotRestoreFresh/c2_ConstantTime,_free_slot,_control (0.00s)
+--- PASS: TestDripHotRestoreFresh/2_ConstantTime,_free_slot,_reclaim_at_install (0.00s)
+--- PASS: TestDripHotRestoreFresh/c3_ConstantTime,_full_lines,_control (0.00s)
+--- PASS: TestDripHotRestoreFresh/3_ConstantTime,_full_lines,_reclaim_after_the_wait (0.00s)
+--- PASS: TestDripHotRestoreFresh/c4_Background,_free_slot,_control (0.00s)
+--- PASS: TestDripHotRestoreFresh/4_Background,_free_slot,_reclaim_at_install (0.00s)
+--- PASS: TestDripHotRestoreFresh/c5_Background,_full_lines,_placer,_control (0.00s)
+--- PASS: TestDripHotRestoreFresh/5_Background,_full_lines,_placer,_placed_then_reclaimed (0.00s)
+--- PASS: TestDripHotRestoreFresh/c6_Background,_full_lines,_no_placer,_control (0.00s)
+--- PASS: TestDripHotRestoreFresh/6_Background,_full_lines,_no_placer,_reclaim_after_the_wait (0.00s)
+--- PASS: TestDripHotRestoreFresh/7_plain,_free_slot,_reclaimed_before_K's_touch (0.00s)
+--- PASS: TestDripHotRestoreFresh/8_ConstantTime,_free_slot,_reclaimed_before_K's_touch (0.00s)
+--- PASS: TestDripHotRestoreFresh/9_Background,_free_slot,_reclaimed_before_K's_touch (0.00s)
+=== RUN   TestPushNames
+--- PASS: TestPushNames (0.00s)
+=== RUN   TestPushPaths
+push_test.go:90: W13 path realign, a key into its next unit | once: stores 1 [realign into last 10000, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+push_test.go:90: W13 path stamp, a promoted key into its next unit | once: stores 1 [stamp into last 10000, flag false], skips table 0 miss 0, silent 0, missPlaced 0, behind false
+push_test.go:90: W13 path silent, a 13th touch at one tick | none: stores 0 [], skips table 0 miss 0, silent 1, missPlaced 0, behind false
+push_test.go:105: W13 path counts | calls 48, none 21, once 27, fresh 0, again 0, twice 0, behind 0, first fresh 3, bare 0, stores table 22, stores stamp 1, stores realign 1, stores claim 3, stores wait 0, skips table 0, skips miss 0, silent 21, missPlaced 0
+--- PASS: TestPushPaths (0.00s)
+ok  	github.com/scooter-sensei/clepsydra/go	1.059s
+[06:27:54] 2 race, 200000 rounds: go test exit 0
+=== RUN   TestDripHotFreshRace
+drip_hotfresh_test.go:522: W11b race: 199087 of 200000 rounds: log fresh, L promoted true, K looked again false
+drip_hotfresh_test.go:522: W11b race: 814 of 200000 rounds: log once, L promoted true, K looked again false
+drip_hotfresh_test.go:522: W11b race: 99 of 200000 rounds: log once, L promoted true, K looked again true
+drip_hotfresh_test.go:525: W13 race: 199087 of 200000 rounds: log fresh, push once afresh
+drip_hotfresh_test.go:525: W13 race: 913 of 200000 rounds: log once, push once
+--- PASS: TestDripHotFreshRace (28.22s)
+ok  	github.com/scooter-sensei/clepsydra/go	28.223s
+[06:28:18] 2 race under -race, 20000 rounds: go test exit 0
+=== RUN   TestDripHotFreshRace
+drip_hotfresh_test.go:522: W11b race: 10023 of 20000 rounds: log fresh, L promoted true, K looked again false
+drip_hotfresh_test.go:522: W11b race: 9948 of 20000 rounds: log once, L promoted true, K looked again false
+drip_hotfresh_test.go:522: W11b race: 29 of 20000 rounds: log once, L promoted true, K looked again true
+drip_hotfresh_test.go:525: W13 race: 10023 of 20000 rounds: log fresh, push once afresh
+drip_hotfresh_test.go:525: W13 race: 9977 of 20000 rounds: log once, push once
+--- PASS: TestDripHotFreshRace (22.74s)
+ok  	github.com/scooter-sensei/clepsydra/go	23.765s
+[06:28:19] 2 W11's legs and W4e's test: go test exit 0
+=== RUN   TestDripHotRestorePushOnce
+drip_hot_test.go:119: hook "", promoted 1, retried false, restored 1; log 0xfff (one push 0xfff); word1 hot true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+drip_hot_test.go:119: hook "installing", promoted 2, retried true, restored 0; log 0xfff (one push 0xfff); word1 hot false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+drip_hot_test.go:119: hook "", promoted 1, retried false, restored 1; log 0xfff (one push 0xfff); word1 hot true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+drip_hot_test.go:119: hook "copied", promoted 2, retried true, restored 0; log 0xfff (one push 0xfff); word1 hot false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1)
+--- PASS: TestDripHotRestorePushOnce (0.00s)
+--- PASS: TestDripHotRestorePushOnce/control,_free_slot (0.00s)
+--- PASS: TestDripHotRestorePushOnce/reclaim_at_install,_free_slot (0.00s)
+--- PASS: TestDripHotRestorePushOnce/control,_full_lines (0.00s)
+--- PASS: TestDripHotRestorePushOnce/reclaim_in_the_search,_full_lines (0.00s)
+=== RUN   TestDripHotRestoreLegs
+drip_hotlegs_test.go:235: W11 plain, full table, control: hook "", promoted 1, placed false, retried false, taken from the room 0; restored 1, evictions 1, relocations 0, waited 0; K in the table, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 plain, full table, reclaim at the eviction: hook "victim", promoted 2, placed false, retried true, taken from the room 0; restored 0, evictions 1, relocations 0, waited 0; K in the table, last touch 119999, log 0xfff: once; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 ConstantTime, free slot, control: hook "", promoted 1, placed false, retried false, taken from the room 0; restored 1, evictions 0, relocations 0, waited 0; K in the table, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 ConstantTime, free slot, reclaim at install: hook "installing", promoted 2, placed false, retried true, taken from the room 0; restored 0, evictions 0, relocations 0, waited 0; K in the table, last touch 119999, log 0xfff: once; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 ConstantTime, full lines, control: hook "", promoted 1, placed false, retried false, taken from the room 0; restored 1, evictions 0, relocations 0, waited 1; K in the stash or the wait room, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 ConstantTime, full lines, reclaim after the wait: hook "restore add", promoted 2, placed false, retried false, taken from the room 0; restored 0, evictions 0, relocations 0, waited 2; K in the stash or the wait room, last touch 119999, log 0xfff: once; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 Background, free slot, control: hook "", promoted 1, placed false, retried false, taken from the room 0; restored 1, evictions 0, relocations 0, waited 0; K in the table, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 Background, free slot, reclaim at install: hook "installing", promoted 2, placed false, retried true, taken from the room 0; restored 0, evictions 0, relocations 0, waited 0; K in the table, last touch 119999, log 0xfff: once; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 Background, full lines, placer, control: hook "", promoted 1, placed true, retried false, taken from the room 0; restored 1, evictions 0, relocations 0, waited 1; K in the table, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 Background, full lines, placer, placed then reclaimed: hook "restore add", promoted 2, placed true, retried true, taken from the room 0; restored 0, evictions 0, relocations 1, waited 1; K in the table, last touch 119999, log 0xfff: once; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 Background, full lines, no placer, control: hook "", promoted 1, placed false, retried false, taken from the room 0; restored 1, evictions 0, relocations 0, waited 1; K in the stash or the wait room, last touch 119999, log 0xfff: once; word1 hot true, K's entry true; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:33 Upper:33 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+drip_hotlegs_test.go:235: W11 Background, full lines, no placer, reclaim after the wait: hook "restore add", promoted 2, placed false, retried false, taken from the room 1; restored 0, evictions 0, relocations 0, waited 2; K in the stash or the wait room, last touch 119999, log 0xfff: once; word1 hot false, K's entry false; Count at tK+100 ms, 250 ms, 1 s, 10 s: [1 1 1] (truth 1); at tK, 60 s: {Seen:true Count:1 Upper:1 Saturated:false Restored:false Degraded:false} (K's events in it: 32 at t0 and the touch)
+--- PASS: TestDripHotRestoreLegs (0.00s)
+--- PASS: TestDripHotRestoreLegs/plain,_full_table,_control (0.00s)
+--- PASS: TestDripHotRestoreLegs/plain,_full_table,_reclaim_at_the_eviction (0.00s)
+--- PASS: TestDripHotRestoreLegs/ConstantTime,_free_slot,_control (0.00s)
+--- PASS: TestDripHotRestoreLegs/ConstantTime,_free_slot,_reclaim_at_install (0.00s)
+--- PASS: TestDripHotRestoreLegs/ConstantTime,_full_lines,_control (0.00s)
+--- PASS: TestDripHotRestoreLegs/ConstantTime,_full_lines,_reclaim_after_the_wait (0.00s)
+--- PASS: TestDripHotRestoreLegs/Background,_free_slot,_control (0.00s)
+--- PASS: TestDripHotRestoreLegs/Background,_free_slot,_reclaim_at_install (0.00s)
+--- PASS: TestDripHotRestoreLegs/Background,_full_lines,_placer,_control (0.00s)
+--- PASS: TestDripHotRestoreLegs/Background,_full_lines,_placer,_placed_then_reclaimed (0.00s)
+--- PASS: TestDripHotRestoreLegs/Background,_full_lines,_no_placer,_control (0.00s)
+--- PASS: TestDripHotRestoreLegs/Background,_full_lines,_no_placer,_reclaim_after_the_wait (0.00s)
+ok  	github.com/scooter-sensei/clepsydra/go	0.008s
+[06:28:19] 3: W7's scenario, Background, spread, 20000 rounds
+[06:29:08] 3 W7: go test exit 0
+=== RUN   TestDripConcurrentCounts
+dripcount_test.go:295: tfdrip build, mode bg, shape spread: 20000 rounds, 5760000 answers, 5759217 judged (100.0%); wrong: Count high 0, Count low 0, another field 0; log lost 0; set apart: flagged Saturated or Degraded 783, a key in the overflow table 0, collisions 0, in 0 rounds that lost a history 0; the filter's Degraded 783; waited 27286789, evictions 16093625, restored 10575334, relocations 191205, folded 520, lost 0
+dripcount_test.go:301: tfdrip build, mode bg, shape spread: differences by window: 250ms:0 500ms:0 1s:0 2s:0 4s:0 8s:0 15s:0 30s:0 1m0s:0
+dripcount_test.go:305: tfdrip build, mode bg, shape spread: W10b at rest: 639931 keys' drip logs checked (69 saying nothing or absent; 0 over for a key whose fingerprint and tag another key of the round shares), 0 over; 5760000 answers' Upper checked against the key's events in their reach (783 with an overflow table's part, as the call added it, taken out; 0 over for a key whose fingerprint and tag another shares; 0 set apart, their record taken over), 0 over, 0 with a part over Upper
+dripcount_test.go:311: W13 tfdrip build, mode bg, shape spread: push counts: calls 172800000, none 74080138, once 98719862, fresh 0, again 0, twice 0, behind 0, first fresh 7040302, bare 0, stores table 58614712, stores stamp 0, stores realign 503340, stores claim 12490243, stores wait 27111567, skips table 136522, skips miss 492669, silent 74080147, missPlaced 0
+--- PASS: TestDripConcurrentCounts (48.27s)
+ok  	github.com/scooter-sensei/clepsydra/go	48.271s
+[06:29:08] 4: the fuzzer, 60m each
+[07:29:08] 4 cfuzz-head: go test exit 0
+fuzzconc_test.go:95: 11751 cases from seed 1 in 1h0m0s (2.2 M ops/s): 7768228255 ops, 2013862089 answers checked (290169124 Saturated, 500112 low behind a live floor, 22757021 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 2339, Backgr
+--- PASS: TestFuzzConcurrent (3600.46s)
+ok  	github.com/scooter-sensei/clepsydra/go	3600.473s
+[08:29:10] 4 cfuzz-head-straggle: go test exit 0
+fuzzconc_test.go:95: 11709 cases from seed 1 in 1h0m0s (2.1 M ops/s): 7736846538 ops, 2005642628 answers checked (287112697 Saturated, 437979 low behind a live floor, 21521091 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 2328, Backgr
+--- PASS: TestFuzzConcurrent (3600.27s)
+ok  	github.com/scooter-sensei/clepsydra/go	3600.276s
+[09:29:12] 4 cfuzz-head-tags: go test exit 0
+fuzzconc_test.go:95: 12188 cases from seed 1 in 1h0m1s (2.2 M ops/s): 8077408050 ops, 2093946813 answers checked (332771960 Saturated, 582577 low behind a live floor, 26221447 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 2426, Backgr
+--- PASS: TestFuzzConcurrent (3600.87s)
+ok  	github.com/scooter-sensei/clepsydra/go	3600.881s
+[10:29:12] 4 cfuzz-w4d-straggle: go test exit 1
+fuzzconc_test.go:77: 12403 cases from seed 1 in 1h0m0s (2.3 M ops/s): 8233180466 ops, 2134266309 answers checked (305773629 Saturated, 465704 low behind a live floor, 22891646 low after a loss with the overflow off, 0 off for a key whose identity another shares); cases with ConstantTime 2473, Backgr
+--- FAIL: TestFuzzConcurrent (3600.08s)
+FAIL
+FAIL	github.com/scooter-sensei/clepsydra/go	3600.084s
+FAIL
+[10:29:12] 5: lab/w13.py
+[10:29:12] 5: lab/w13.py exit 0 (clauses.txt)
+[10:29:12] W13 readings finished (exit 0)

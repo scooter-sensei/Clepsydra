@@ -3819,3 +3819,221 @@ Not covered:
   count;
 - the default build's speed with the notes compiled out, and `tfpush`'s
   cost beyond the fuzzer's rate.
+
+### W13's reading (75b7b07's tree; `lab/w13.sh`, outputs in `lab/w13/`)
+
+`lab/w13.sh` ran end to end (06:24:45 to 10:29:12, Go 1.24.7) and exited
+0, and its joiner exited 0. Its first check found the library different
+from c8eab03's in the notes' six files alone. The port's changed lines are
+the head's but for the three of the `missPlaced` note (the head's 42, the
+port's 39, none the port's alone). Every run printed its lines. The tests'
+own exits:
+
+- `TestConformance` failed in both builds on the same lines as before W13
+  ("11 ops differ in all", "162 ops differ in all"), times aside;
+- on 23f03b6:
+  - the legs' test failed on legs 1, 2, 4 and 5 alone;
+  - the race failed on its rounds read twice;
+  - its fuzzer failed on "push twice" alone, in 2 cases;
+- on the head every test passed: plain and under `-race`, in the fuzzer's
+  three legs and in W7's scenario.
+
+No raw file holds a panic or a data race.
+
+1. **Holds.** Sight, on both trees.
+   - On the head, plain and under `-race` (the two runs' lines the same):
+     - the controls read once;
+     - legs 1, 2, 4 and 5 read once, with `missPlaced` 1 and the table's
+       skip 1;
+     - legs 3 and 6 read fresh: the fresh start with the flag set,
+       `missPlaced` 1, not behind;
+     - legs 7 to 9 read once with a fresh start.
+
+     Each leg's push class tells its log class, and K's touch is noted
+     once in each.
+   - On 23f03b6:
+     - legs 1, 2, 4 and 5 read twice and behind: the claim's or the wait's
+       store into last 61,420, then the table's into last 62,040 with the
+       flag false;
+     - legs 3 and 6 read fresh and behind;
+     - the rest read as on the head.
+   - `TestPushPaths` read its three paths as predicted on both trees. The
+     filter's counts of its 48 touches were also as predicted: calls 48,
+     once 27, none 21, silent 21, first fresh 3; stores table 22, claim 3,
+     realign 1, stamp 1; the rest 0.
+   - In the races every round is classed, and its push class tells its log
+     class:
+
+     | run | rounds | log fresh, push once afresh | log once, push once, no look again | log once, push once, looked again | log twice, push twice |
+     |---|---|---|---|---|---|
+     | 23f03b6 | 200,000 | 199,067 | 837 | 0 | 96 |
+     | head | 200,000 | 199,087 | 814 | 99 | 0 |
+     | head, `-race` | 20,000 | 10,023 | 9,948 | 29 | 0 |
+
+     On 23f03b6 every round that looked again read twice, and no other
+     round did.
+2. **Holds.** The library's answers are unchanged:
+   - the default build's `tfbench -exact` and digest are identical to
+     `go/verify/expected/`'s;
+   - `tfdrip`'s and `tfdrip,tfpush`'s exact outputs are identical to W4e's;
+   - `TestConformance` prints the same lines in both builds;
+   - go vet is clean (0 lines) in the four tag sets.
+3. **Holds.** No touch on the head's fuzzer stored its push twice, in any
+   mode of the three legs, and no case had one:
+
+   | leg | cases | M ops/s | touches, plain | ConstantTime | Background | twice |
+   |---|---|---|---|---|---|---|
+   | as it is | 11,751 | 2.2 | 5,618,489,147 | 1,743,174,070 | 1,814,187,282 | 0 |
+   | straggler | 11,709 | 2.1 | 5,591,306,276 | 1,734,408,421 | 1,812,933,837 | 0 |
+   | tags 8 | 12,188 | 2.2 | 5,834,880,430 | 1,816,530,429 | 1,889,663,972 | 0 |
+
+   That is 27,855,573,864 touches in all. The reach lines give each gate's
+   count over the three legs, by mode; where a count is small, it is also
+   given by leg (as it is, straggler, tags 8):
+
+   | gate | plain | ConstantTime | Background |
+   |---|---|---|---|
+   | `missPlaced` (W9's path) | 13 (4, 7, 2) | 0 | 4 (4, 0, 0) |
+   | miss's skip (W4d's gate) | 76,937 | 0 | 16,479 |
+   | the table's skip (W4c's gate) | 204,906 | 30,978 | 57,124 |
+   | again | 2 (1, 0, 1) | 0 | 0 |
+   | fresh | 56,508 | 15,506 | 18,774 |
+   | stores, stamp | 48,724,867 | 13,840,564 | 15,236,004 |
+   | stores, realign | 1,914,108,899 | 587,968,310 | 624,533,567 |
+   | stores, wait | 0 | 89,326,028 | 201,251,534 |
+   | silent | 6,714,105,438 | 2,036,855,943 | 2,128,822,238 |
+   | behind (reported) | 0 | 0 | 0 |
+
+   A gate at 0 is not reached in that mode, and its path there is NOTHING
+   READ, not a pass. That applies to:
+   - `missPlaced` and miss's skip in ConstantTime;
+   - again in ConstantTime and Background;
+   - the wait's stores in plain.
+4. **Holds.** No touch stored its push twice in either reading:
+   - W7's scenario (Background, spread, 20,000 rounds): 172,800,000 touches,
+     twice 0, behind 0. W7's own gates:
+     - miss's skip 492,669, the table's skip 136,522, the wait's stores
+       27,111,567;
+     - `missPlaced`, fresh, again and the stamp's stores read 0, not
+       reached there.
+   - W11b's race on the head: no round read twice, plain (99 looked again)
+     or under `-race` (29). Both are over the 10 the clause asks.
+5. **Holds.** Bare reads 0 in every count read: the fuzzer's four legs and
+   W7's.
+6. **Holds** (it qualifies the verdict). 23f03b6's own fuzzer, with the
+   straggler, for an hour (12,403 cases, 2.3 M ops/s), read 2 touches twice,
+   in 2 cases, both plain. Both have W9's shape, as legs 1, 2, 4 and 5 have
+   on 23f03b6: the claim's store, then the table's into last at or after the
+   tick with the flag false, and behind.
+   - Case 3313: Capacity 96, Horizon 1 min, Stash 28, Overflow 85, Hot 5.
+   - Case 4456: Capacity 69, Horizon 96 ms, Stash 53, Overflow -1, Hot 6.
+     Its key 0x0 is goroutine 0's own key 0 (`mix64(0)` is 0), so it is the
+     straggler's.
+
+   Behind on 23f03b6 reads plain 8, ConstantTime 2, Background 2. Each is a
+   look again after a placed history. Two of those 12 read twice. From the
+   counts (again 0 there, and no touch stored more than twice), the other 10
+   are fresh starts.
+
+   The head's `missPlaced` is the same reach on its tree: plain 13,
+   ConstantTime 0 and Background 4 over the three legs, and 7, 0 and 0 in
+   the straggler's leg. How many of the head's 17 would have read twice on
+   W4d's library is not read.
+7. **Holds.** On the head under `tfdrip,tfpush`, these pass:
+   - W11b's legs (plain and under `-race`) and race;
+   - `TestPushPaths`;
+   - W11's `TestDripHotRestoreLegs`;
+   - W4e's `TestDripHotRestorePushOnce`.
+
+**Reported.**
+
+- The fuzzer's W10b checks:
+  - In the leg as it is and in the straggler's: 0 over, and no failing
+    answer or log of any kind. They checked 1,916,069,726 and 1,761,592,135
+    answers' Upper, and 48,795,764 and 42,888,579 keys' logs at rest.
+  - In the tags leg the checks are off by design (`go/fuzzconc_test.go:45`):
+    0 checked, nothing read there.
+  - 23f03b6's older fuzzer has no W10b part.
+- W7's other lines: no wrong answer, no log lost, and 0 over at rest (W10b,
+  639,931 logs), with 783 Degraded answers set apart.
+- The predictions, against the reading:
+  - twice, behind and bare read 0 on the head, as predicted;
+  - again was predicted rare if it happened at all, and reads 2;
+  - `missPlaced` was predicted rare or absent, and put with the straggler.
+    It reads 17, 8 of them in the leg as it is;
+  - fresh reads 90,788 on the head against `missPlaced`'s 17. At least
+    90,771 fresh starts came without the hot restore's look again, as the
+    prediction said they could;
+  - the power leg was predicted unknown, and reads 2.
+- Rates:
+  - 2.2, 2.1 and 2.2 M ops/s on the head with `tfdrip,tfpush`;
+  - 2.3 on 23f03b6 with its older fuzzer;
+  - W10b's were 2.5 with `tfdrip` and 2.4 with the straggler, 5 minutes
+    each on a66af40's tree.
+
+  The runs differ in length and tree, so this is not `tfpush`'s cost.
+- Checked after the reading, not in the rule: on every count line, calls
+  equal none + once + fresh + again + twice, and stores equal once + 2 ×
+  (fresh + again + twice). No touch stored more than twice.
+- Times:
+  - the library's checks, 2 min 4 s;
+  - the sight, 1 min 30 s; a race run took 27.6 s on 23f03b6, 28.2 s on the
+    head and 22.7 s under `-race`;
+  - W7, 48.3 s;
+  - each fuzzer leg, 3,600 s;
+  - the whole run, 4 h 4 min 27 s.
+
+**Verdict: W13 passes its rule.** Clauses 1 to 5 and 7 hold, and clause
+1's gate held none back. Clause 6 holds, so clause 3 is read with the
+count's power under 23f03b6's fuzzer shown: 2 touches twice in an hour
+there, both plain.
+
+What W13 reads of W4e's library:
+
+- Read: no touch on the head stored its push twice:
+  - 0 in the fuzzer's 27,855,573,864 touches over three hours;
+  - 0 in W7's 172,800,000;
+  - 0 in 220,000 race rounds, 128 of which looked again.
+
+  That holds on the paths the gates show taken, and says no more there than
+  their counts.
+- Read: the head's fuzzer reaches W9's path (the hot restore's look again,
+  `missPlaced`) 17 times in three hours, in plain and Background, never in
+  ConstantTime. None of those touches stored twice. The same reach (behind)
+  on W4d's library read 12 times in the straggler's hour, and 2 of those
+  read twice. The race reads the path more densely: 128 rounds looked again
+  on the head with none twice, against 96 of 96 twice on 23f03b6.
+- Read: behind is 0 on the head in every count, so the `pushed` flag missed
+  no store there.
+- Read: W4d's push-again half is taken in Go. Again reads 2, both plain:
+  one in the leg as it is and one in the tags leg. W8 found it never taken
+  in the model.
+- Read: every touch is noted (bare 0), and no touch stored more than twice.
+- Read: the notes compile out. The default build's answers, `tfdrip`'s and
+  `tfdrip,tfpush`'s are unchanged.
+
+What W13 leaves:
+
+- Again's two touches:
+  - The class has no sight, and the instrument keeps a detail only for
+    twice. So it is not read which copy replaced the push, or whether the
+    event ended in the log once.
+  - W8's model never takes that half, while Go does. Whether the model
+    lacks the copy that makes it is not read.
+  - What to do with it (a probe of the again path, a look at W8's model, or
+    nothing) is the user's decision.
+- In ConstantTime the fuzzer reached neither W9's path (`missPlaced`) nor
+  miss's skip in three hours, though W11b's legs 2 and 3 reach `missPlaced`
+  by hand in that mode. Clause 3 reads NOTHING READ for those paths there.
+- The power under the fuzzer rests on 2 touches, both plain. ConstantTime
+  and Background show none on W4d's library.
+- The tags leg's W10b checks are off by design. W13 read only its counts
+  there.
+- As the rule named, not covered:
+  - a lost push;
+  - miss's gate and the again class have no sight;
+  - `TF_NOCAS2`;
+  - the soak, the fuzzer under `-race`, other Horizons and Resolutions;
+  - W4c's double push in W7's scenario;
+  - the default build's speed with the notes compiled out, and `tfpush`'s
+    cost.

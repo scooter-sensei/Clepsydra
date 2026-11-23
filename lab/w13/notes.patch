@@ -1,0 +1,140 @@
+diff --git a/go/cuckoo.go b/go/cuckoo.go
+index 07e2a2c..752f384 100644
+--- a/go/cuckoo.go
++++ b/go/cuckoo.go
+@@ -30,7 +30,7 @@ const missPlaced = -2
+ // words went back as they were), missPlaced if the history was placed but
+ // its hot entry was reclaimed since hotGone. The caller holds h's claim
+ // stripe, so no other first touch of h runs meanwhile.
+-func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint64, src int, pushed bool) Result {
++func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint64, src int, pushed bool, pt *pushTally) Result {
+ 	var r Result
+ 	// Taken out of the wait room (srcRoom): its move ends once it is placed.
+ 	room := src == srcRoom
+@@ -96,6 +96,20 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
+ 	if room { // in the table, or back in the room or the stash
+ 		f.moveOf(tg).done.Add(1)
+ 	}
++	if pushOn && ci != -1 { // lab/sw W13: low is stored, in a slot or waiting
++		site := pushClaim
++		if ci == claimWait {
++			site = pushWait
++		}
++		switch {
++		case !recalled:
++			pt.store(site, true, now, now, pushed)
++		case pushed && now <= last:
++			pt.skipMiss()
++		default:
++			pt.store(site, false, last, now, pushed)
++		}
++	}
+ 	if ci == -1 {
+ 		return Result{Count: -1}
+ 	}
+@@ -105,6 +119,9 @@ func (f *Filter) miss(h, fp, tg, window, now uint64, wantCount bool, s0, s1 uint
+ 		// that and counts this touch afresh (bump's reset, or hotGone). The
+ 		// history went in with this touch's push (low): before, the look
+ 		// pushed it again, and the log held the event twice (lab/sw W9).
++		if pushOn {
++			pt.placed()
++		}
+ 		return Result{Count: missPlaced}
+ 	}
+ 	if src == srcStash && r.Restored {
+diff --git a/go/filter.go b/go/filter.go
+index 018a13a..cdb9b44 100644
+--- a/go/filter.go
++++ b/go/filter.go
+@@ -216,6 +216,7 @@ type Filter struct {
+ 	ownClock   bool                       // the built-in clock: ReadFrom re-anchors it (claims D27)
+ 	clockAdd   atomic.Uint64              // ticks the built-in clock is moved on by
+ 	roomMu     [stashStripes]paddedMutex
++	push       pushStats                 // lab/sw W13: the touches' stores of their pushes (tfpush; empty without)
+ 	buzz       atomic.Pointer[buzzTable] // conditional touches' exact logs (buzz.go), nil until the first uncertain refusal
+ }
+ 
+diff --git a/go/touch.go b/go/touch.go
+index 5dcc43c..6836a15 100644
+--- a/go/touch.go
++++ b/go/touch.go
+@@ -239,6 +239,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 	fp, tg := fingerprint(h), tag(h)
+ 	var held *paddedMutex // ConstantTime: h's stripe, while held
+ 	pushed := false       // this touch's event is in its slot's drip log (W4c; or in the history miss placed: W4e)
++	var pt pushTally      // lab/sw W13: this touch's stores of its push (tfpush; empty without)
+ 	for first := true; ; first = false {
+ 		if held != nil { // released between attempts: a claim that fails on another stripe's TryLock must not hold its own while it retries
+ 			held.Unlock()
+@@ -252,7 +253,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 			i, w0, _ = f.lookupStable(h, fp, tg, true)
+ 			s0, s1, src := f.recall(h, fp, tg, now, true)
+ 			if i < 0 {
+-				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src, pushed)
++				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src, pushed, &pt)
+ 				if r.Count < 0 {
+ 					pushed = pushed || r.Count == missPlaced // the history went in with this touch's push (W4e)
+ 					continue
+@@ -261,6 +262,9 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 				if f.sketchLive(now) {
+ 					f.addSketch(&r, h, window, now)
+ 				}
++				if pushOn {
++					pt.done(f, h, now)
++				}
+ 				return r
+ 			}
+ 			if src == srcStash { // a stale copy: the table's entry is newer
+@@ -294,7 +298,7 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 					mu.Unlock()
+ 					continue
+ 				}
+-				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src, pushed)
++				r := f.miss(h, fp, tg, window, now, wantCount, s0, s1, src, pushed, &pt)
+ 				mu.Unlock()
+ 				if r.Count < 0 {
+ 					pushed = pushed || r.Count == missPlaced // the history went in with this touch's push (W4e)
+@@ -303,6 +307,9 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 				if f.sketchLive(now) {
+ 					f.addSketch(&r, h, window, now)
+ 				}
++				if pushOn {
++					pt.done(f, h, now)
++				}
+ 				return r
+ 			}
+ 			mu.Unlock() // another first touch got there first: count as a hit
+@@ -333,6 +340,9 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 			} else {
+ 				w1, over, ok = f.realign(h, i, w0, old, tg, now, nu, lu)
+ 			}
++			if pushOn && ok { // lab/sw W13: realign stored the push
++				pt.store(pushRealign, false, last, now, pushed)
++			}
+ 			ref = now
+ 		} else {
+ 			if nu > lu { // a hot key into a new unit: word0 moves only while word1 still points to the entry
+@@ -342,8 +352,13 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 				if !f.stamp(i, w0, old, tg, now) {
+ 					continue
+ 				}
++				if pushOn { // lab/sw W13
++					pt.store(pushStamp, false, last, now, pushed)
++				}
+ 			} else if n0 := f.next0(w0, now); !(pushed && now <= last) && n0 != w0 && !atomic.CompareAndSwapUint64(&f.words[i], w0, n0) {
+ 				continue // (a touch that pushed its event and starts over pushes it again only into a history from before it: W4c)
++			} else if pushOn { // lab/sw W13: the gate held, next0 changed nothing, or the CAS stored the push
++				pt.table(pushed && now <= last, n0 == w0, last, now, pushed)
+ 			}
+ 			pushed = true
+ 			if nu > lu && testHookStamped != nil {
+@@ -381,6 +396,9 @@ func (f *Filter) touch(h, window, now uint64, wantCount bool, i0 int) Result {
+ 		if f.sketchLive(now) && (wantCount || !r.Seen || f.ct) {
+ 			f.addSketch(&r, h, window, now)
+ 		}
++		if pushOn {
++			pt.done(f, h, now)
++		}
+ 		return r
+ 	}
+ }

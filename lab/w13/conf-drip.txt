@@ -1,0 +1,25 @@
+=== RUN   TestConformance
+=== RUN   TestConformance/basic
+    conformance_test.go:313: op 60 {Op:touch Key:user:1 WindowMs:250 NowMs:12363 Want:{Seen:false Count:2 Upper:4 Saturated:false Restored:false Degraded:false}}: got {Seen:false Count:1 Upper:4 Saturated:false Restored:false Degraded:false}
+    conformance_test.go:313: op 76 {Op:touch Key:user:7 WindowMs:1000 NowMs:15526 Want:{Seen:true Count:1 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:2 Upper:2 Saturated:false Restored:false Degraded:false}
+    conformance_test.go:313: op 94 {Op:touch Key:user:0 WindowMs:1000 NowMs:19324 Want:{Seen:false Count:2 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+    conformance_test.go:313: op 141 {Op:touch Key:user:9 WindowMs:1000 NowMs:27851 Want:{Seen:false Count:2 Upper:3 Saturated:false Restored:false Degraded:false}}: got {Seen:false Count:1 Upper:3 Saturated:false Restored:false Degraded:false}
+    conformance_test.go:313: op 147 {Op:touch Key:user:9 WindowMs:1000 NowMs:28971 Want:{Seen:false Count:2 Upper:2 Saturated:false Restored:false Degraded:false}}: got {Seen:false Count:1 Upper:2 Saturated:false Restored:false Degraded:false}
+    conformance_test.go:318: ... 11 ops differ in all
+=== RUN   TestConformance/burst
+    conformance_test.go:313: op 217 {Op:count Key:hot WindowMs:100 NowMs:173 Want:{Seen:true Count:105 Upper:181 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:110 Upper:181 Saturated:false Restored:false Degraded:false}
+    conformance_test.go:313: op 241 {Op:count Key:hot WindowMs:100 NowMs:194 Want:{Seen:true Count:104 Upper:201 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:109 Upper:201 Saturated:false Restored:false Degraded:false}
+    conformance_test.go:313: op 265 {Op:count Key:hot WindowMs:100 NowMs:215 Want:{Seen:true Count:103 Upper:221 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:109 Upper:221 Saturated:false Restored:false Degraded:false}
+    conformance_test.go:313: op 289 {Op:count Key:hot WindowMs:100 NowMs:228 Want:{Seen:true Count:106 Upper:241 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:112 Upper:241 Saturated:false Restored:false Degraded:false}
+    conformance_test.go:313: op 313 {Op:count Key:hot WindowMs:100 NowMs:246 Want:{Seen:true Count:107 Upper:261 Saturated:false Restored:false Degraded:false}}: got {Seen:true Count:113 Upper:261 Saturated:false Restored:false Degraded:false}
+    conformance_test.go:318: ... 162 ops differ in all
+=== RUN   TestConformance/churn
+=== RUN   TestConformance/overflow
+--- FAIL: TestConformance (0.02s)
+    --- FAIL: TestConformance/basic (0.01s)
+    --- FAIL: TestConformance/burst (0.00s)
+    --- PASS: TestConformance/churn (0.01s)
+    --- PASS: TestConformance/overflow (0.01s)
+FAIL
+FAIL	github.com/scooter-sensei/clepsydra/go	0.028s
+FAIL

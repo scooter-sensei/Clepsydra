@@ -1,0 +1,15 @@
+=== RUN   TestShortWindowLoadWhere
+    swload_test.go:694: W14 where table: where=table slot=216 part=false log=valid sign="" signok=true
+    swload_test.go:695: W14 where past: where=none slot=-1 part=false log=nolog sign="" signok=true
+    swload_test.go:696: W14 where never: where=none slot=-1 part=false log=nolog sign="" signok=true
+    swload_test.go:704: W14 where dead: where=table slot=952 part=false log=dead sign="" signok=true
+    swload_test.go:717: W14 where stash: where=stash slot=-1 part=false log=valid sign="Evictions 1, then V's touch restores it" signok=true
+    swload_test.go:722: W14 where dropped: where=none slot=-1 part=true log=nolog sign="Evictions 1, Folded 1, Count Degraded with its 4" signok=true
+    swload_test.go:728: W14 where shed: where=none slot=-1 part=false log=nolog sign="Evictions 1, Shed 1, then V's touch finds no history" signok=true
+    swload_test.go:742: W14 where wait room: where=wait slot=-1 part=false log=valid sign="Waiting 1" signok=true
+    swload_test.go:742: W14 where CT wait: where=wait slot=-1 part=false log=valid sign="Waiting 1" signok=true
+--- PASS: TestShortWindowLoadWhere (0.00s)
+=== RUN   TestShortWindowLoadSource
+--- PASS: TestShortWindowLoadSource (0.00s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	0.007s

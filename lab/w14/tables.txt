@@ -1,0 +1,271 @@
+W14 clause 1: HOLDS: default: 9 states, missing none, tests pass; tfdrip: 9 states, missing none, tests pass
+W14 clause 2: HOLDS: default: 5 seeds, mism all 0, (9,9) sums equal; tfdrip: 5 seeds, mism all 0, (9,9) sums equal
+W14 clause 3: HOLDS: default: churn [('1.00', '0', True, '0'), ('1.15', '0', True, '0')], watcher off and replay [('1', 'plain', '0', '-1'), ('1', 'ct', '0', '0'), ('2', 'plain', '0', '-1'), ('2', 'ct', '0', '0')]; tfdrip: churn [('1.00', '0', True, '0'), ('1.15', '0', True, '0')], watcher off and replay [('1', 'plain', '0', '-1'), ('1', 'ct', '0', '0'), ('2', 'plain', '0', '-1'), ('2', 'ct', '0', '0')]; leg 1 default: 105 runs of 105; leg 1 tfdrip: 105 runs of 105; leg 2 default: 105 runs of 105; leg 2 tfdrip: 105 runs of 105; -race: 0 data races
+
+Leg 1 (mean of the five windows; Background over its repeats): seed load mode | default tfdrip gain | half of no load's
+  9,9      none  plain | 0.0671 0.0450 +0.0221
+  9,9      1.00  plain | 0.0671 0.0450 +0.0221 | 0.0111 kept
+  9,9      1.15  plain | 0.0671 0.0450 +0.0221 | 0.0111 kept
+  9,9      none  bg    | 0.0671 0.0450 +0.0221
+  9,9      1.00  bg    | 0.0671 0.0450 +0.0221 | 0.0111 kept
+  9,9      1.15  bg    | 0.0671 0.0450 +0.0221 | 0.0111 kept
+  9,9      none  ct    | 0.0671 0.0450 +0.0221
+  9,9      1.00  ct    | 0.0671 0.0450 +0.0221 | 0.0111 kept
+  9,9      1.15  ct    | 0.0671 0.0450 +0.0221 | 0.0111 kept
+  2026,41  none  plain | 0.0668 0.0452 +0.0216
+  2026,41  1.00  plain | 0.0668 0.0452 +0.0216 | 0.0108 kept
+  2026,41  1.15  plain | 0.0668 0.0452 +0.0216 | 0.0108 kept
+  2026,41  none  bg    | 0.0668 0.0452 +0.0216
+  2026,41  1.00  bg    | 0.0668 0.0452 +0.0216 | 0.0108 kept
+  2026,41  1.15  bg    | 0.0668 0.0452 +0.0216 | 0.0108 kept
+  2026,41  none  ct    | 0.0668 0.0452 +0.0216
+  2026,41  1.00  ct    | 0.0668 0.0452 +0.0216 | 0.0108 kept
+  2026,41  1.15  ct    | 0.0668 0.0452 +0.0216 | 0.0108 kept
+  2026,42  none  plain | 0.0669 0.0448 +0.0221
+  2026,42  1.00  plain | 0.0669 0.0448 +0.0221 | 0.0111 kept
+  2026,42  1.15  plain | 0.0669 0.0448 +0.0221 | 0.0111 kept
+  2026,42  none  bg    | 0.0669 0.0448 +0.0221
+  2026,42  1.00  bg    | 0.0669 0.0448 +0.0221 | 0.0111 kept
+  2026,42  1.15  bg    | 0.0669 0.0448 +0.0221 | 0.0111 kept
+  2026,42  none  ct    | 0.0669 0.0448 +0.0221
+  2026,42  1.00  ct    | 0.0669 0.0448 +0.0221 | 0.0111 kept
+  2026,42  1.15  ct    | 0.0669 0.0448 +0.0221 | 0.0111 kept
+  2026,43  none  plain | 0.0668 0.0450 +0.0219
+  2026,43  1.00  plain | 0.0668 0.0450 +0.0219 | 0.0109 kept
+  2026,43  1.15  plain | 0.0668 0.0450 +0.0219 | 0.0109 kept
+  2026,43  none  bg    | 0.0668 0.0450 +0.0219
+  2026,43  1.00  bg    | 0.0668 0.0450 +0.0219 | 0.0109 kept
+  2026,43  1.15  bg    | 0.0668 0.0450 +0.0219 | 0.0109 kept
+  2026,43  none  ct    | 0.0668 0.0450 +0.0219
+  2026,43  1.00  ct    | 0.0668 0.0450 +0.0219 | 0.0109 kept
+  2026,43  1.15  ct    | 0.0668 0.0450 +0.0219 | 0.0109 kept
+  2026,44  none  plain | 0.0669 0.0447 +0.0222
+  2026,44  1.00  plain | 0.0669 0.0447 +0.0222 | 0.0111 kept
+  2026,44  1.15  plain | 0.0669 0.0447 +0.0222 | 0.0111 kept
+  2026,44  none  bg    | 0.0669 0.0447 +0.0222
+  2026,44  1.00  bg    | 0.0669 0.0447 +0.0222 | 0.0111 kept
+  2026,44  1.15  bg    | 0.0669 0.0447 +0.0222 | 0.0111 kept
+  2026,44  none  ct    | 0.0669 0.0447 +0.0222
+  2026,44  1.00  ct    | 0.0669 0.0447 +0.0222 | 0.0111 kept
+  2026,44  1.15  ct    | 0.0669 0.0447 +0.0222 | 0.0111 kept
+W14 clause 4: HOLDS: every seed, load and mode read keeps at least half the gain; judged on keys the table kept: 1.00 in plain
+
+Leg 2: seed cap mode | default tfdrip (mean) | harm (tfdrip above 1.01 x default; in Background also by more than the default's spread)
+  9,9      1739  plain | 0.0671 0.0450 | none
+  9,9      1739  bg    | 0.0671 0.0450 | none
+  9,9      1739  ct    | 0.0671 0.0450 | none
+  9,9      1000  plain | 0.6166 0.5995 | none
+  9,9      1000  bg    | 0.6204 0.6028 | none
+  9,9      1000  ct    | 0.6141 0.5972 | none
+  9,9      500   plain | 1.0472 1.0392 | none
+  9,9      500   bg    | 1.0602 1.0525 | none
+  9,9      500   ct    | 1.0472 1.0393 | none
+  2026,41  1739  plain | 0.0668 0.0452 | none
+  2026,41  1739  bg    | 0.0668 0.0452 | none
+  2026,41  1739  ct    | 0.0668 0.0452 | none
+  2026,41  1000  plain | 0.6167 0.6001 | none
+  2026,41  1000  bg    | 0.6117 0.5939 | none
+  2026,41  1000  ct    | 0.6165 0.6000 | none
+  2026,41  500   plain | 1.0521 1.0443 | none
+  2026,41  500   bg    | 1.0689 1.0650 | none
+  2026,41  500   ct    | 1.0596 1.0520 | none
+  2026,42  1739  plain | 0.0669 0.0448 | none
+  2026,42  1739  bg    | 0.0669 0.0448 | none
+  2026,42  1739  ct    | 0.0669 0.0448 | none
+  2026,42  1000  plain | 0.6121 0.5951 | none
+  2026,42  1000  bg    | 0.6178 0.6002 | none
+  2026,42  1000  ct    | 0.6143 0.5972 | none
+  2026,42  500   plain | 1.0471 1.0392 | none
+  2026,42  500   bg    | 1.0641 1.0561 | none
+  2026,42  500   ct    | 1.0467 1.0388 | none
+  2026,43  1739  plain | 0.0668 0.0450 | none
+  2026,43  1739  bg    | 0.0668 0.0450 | none
+  2026,43  1739  ct    | 0.0668 0.0450 | none
+  2026,43  1000  plain | 0.6256 0.6087 | none
+  2026,43  1000  bg    | 0.6273 0.6102 | none
+  2026,43  1000  ct    | 0.6211 0.6043 | none
+  2026,43  500   plain | 1.0577 1.0503 | none
+  2026,43  500   bg    | 1.0671 1.0520 | none
+  2026,43  500   ct    | 1.0477 1.0402 | none
+  2026,44  1739  plain | 0.0669 0.0447 | none
+  2026,44  1739  bg    | 0.0669 0.0447 | none
+  2026,44  1739  ct    | 0.0669 0.0447 | none
+  2026,44  1000  plain | 0.6137 0.5969 | none
+  2026,44  1000  bg    | 0.6192 0.6056 | none
+  2026,44  1000  ct    | 0.6106 0.5935 | none
+  2026,44  500   plain | 1.0478 1.0402 | none
+  2026,44  500   bg    | 1.0552 1.0494 | none
+  2026,44  500   ct    | 1.0462 1.0383 | none
+W14 clause 5: HOLDS: tfdrip within 1% of the default build everywhere read
+
+Reach (touches by source over the seeds' runs; a source at 0 is NOTHING READ for that path there):
+  leg 1 none  plain default: {'hit': 6525039, 'stash': 0, 'wait': 0, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 11202} left 0 moved 0; NOTHING READ: ['stash', 'wait', 'dropped', 'floor', 'shed']
+  leg 1 none  plain tfdrip : {'hit': 6525039, 'stash': 0, 'wait': 0, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 11202} left 0 moved 0; NOTHING READ: ['stash', 'wait', 'dropped', 'floor', 'shed']
+  leg 1 none  bg    default: {'hit': 32625195, 'stash': 0, 'wait': 0, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 56010} left 0 moved 0; NOTHING READ: ['stash', 'wait', 'dropped', 'floor', 'shed']
+  leg 1 none  bg    tfdrip : {'hit': 32625195, 'stash': 0, 'wait': 0, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 56010} left 0 moved 0; NOTHING READ: ['stash', 'wait', 'dropped', 'floor', 'shed']
+  leg 1 none  ct    default: {'hit': 6525039, 'stash': 0, 'wait': 0, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 11202} left 0 moved 0; NOTHING READ: ['stash', 'wait', 'dropped', 'floor', 'shed']
+  leg 1 none  ct    tfdrip : {'hit': 6525039, 'stash': 0, 'wait': 0, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 11202} left 0 moved 0; NOTHING READ: ['stash', 'wait', 'dropped', 'floor', 'shed']
+  leg 1 1.00  plain default: {'hit': 6525039, 'stash': 0, 'wait': 0, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 11202} left 0 moved 13204; NOTHING READ: ['stash', 'wait', 'dropped', 'floor', 'shed']
+  leg 1 1.00  plain tfdrip : {'hit': 6525039, 'stash': 0, 'wait': 0, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 11202} left 0 moved 13204; NOTHING READ: ['stash', 'wait', 'dropped', 'floor', 'shed']
+  leg 1 1.00  bg    default: {'hit': 32624556, 'stash': 0, 'wait': 639, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 56010} left 0 moved 65804; NOTHING READ: ['stash', 'dropped', 'floor', 'shed']
+  leg 1 1.00  bg    tfdrip : {'hit': 32624520, 'stash': 0, 'wait': 675, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 56010} left 0 moved 65662; NOTHING READ: ['stash', 'dropped', 'floor', 'shed']
+  leg 1 1.00  ct    default: {'hit': 6524636, 'stash': 0, 'wait': 403, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 11202} left 0 moved 12116; NOTHING READ: ['stash', 'dropped', 'floor', 'shed']
+  leg 1 1.00  ct    tfdrip : {'hit': 6524636, 'stash': 0, 'wait': 403, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 11202} left 0 moved 12116; NOTHING READ: ['stash', 'dropped', 'floor', 'shed']
+  leg 1 1.15  plain default: {'hit': 6525024, 'stash': 15, 'wait': 0, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 11202} left 34 moved 59568; NOTHING READ: ['wait', 'dropped', 'floor', 'shed']
+  leg 1 1.15  plain tfdrip : {'hit': 6525024, 'stash': 15, 'wait': 0, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 11202} left 34 moved 59568; NOTHING READ: ['wait', 'dropped', 'floor', 'shed']
+  leg 1 1.15  bg    default: {'hit': 32623496, 'stash': 71, 'wait': 1628, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 56010} left 206 moved 294145; NOTHING READ: ['dropped', 'floor', 'shed']
+  leg 1 1.15  bg    tfdrip : {'hit': 32623402, 'stash': 68, 'wait': 1725, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 56010} left 205 moved 292704; NOTHING READ: ['dropped', 'floor', 'shed']
+  leg 1 1.15  ct    default: {'hit': 6523823, 'stash': 9, 'wait': 1207, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 11202} left 20 moved 58047; NOTHING READ: ['dropped', 'floor', 'shed']
+  leg 1 1.15  ct    tfdrip : {'hit': 6523823, 'stash': 9, 'wait': 1207, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 11202} left 20 moved 58047; NOTHING READ: ['dropped', 'floor', 'shed']
+  leg 2 1739  plain default: {'hit': 6525039, 'stash': 0, 'wait': 0, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 11202} left 0 moved 2206; NOTHING READ: ['stash', 'wait', 'dropped', 'floor', 'shed']
+  leg 2 1739  plain tfdrip : {'hit': 6525039, 'stash': 0, 'wait': 0, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 11202} left 0 moved 2206; NOTHING READ: ['stash', 'wait', 'dropped', 'floor', 'shed']
+  leg 2 1739  bg    default: {'hit': 32613823, 'stash': 0, 'wait': 11372, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 56010} left 0 moved 10765; NOTHING READ: ['stash', 'dropped', 'floor', 'shed']
+  leg 2 1739  bg    tfdrip : {'hit': 32613359, 'stash': 0, 'wait': 11836, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 56010} left 0 moved 10786; NOTHING READ: ['stash', 'dropped', 'floor', 'shed']
+  leg 2 1739  ct    default: {'hit': 6517765, 'stash': 0, 'wait': 7274, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 11202} left 0 moved 1951; NOTHING READ: ['stash', 'dropped', 'floor', 'shed']
+  leg 2 1739  ct    tfdrip : {'hit': 6517765, 'stash': 0, 'wait': 7274, 'dropped': 0, 'floor': 0, 'shed': 0, 'new': 11202} left 0 moved 1951; NOTHING READ: ['stash', 'dropped', 'floor', 'shed']
+  leg 2 1000  plain default: {'hit': 5722345, 'stash': 138839, 'wait': 0, 'dropped': 591493, 'floor': 0, 'shed': 72438, 'new': 11126} left 296993 moved 1000; NOTHING READ: ['wait', 'floor']
+  leg 2 1000  plain tfdrip : {'hit': 5722345, 'stash': 138839, 'wait': 0, 'dropped': 591493, 'floor': 0, 'shed': 72438, 'new': 11126} left 296993 moved 1000; NOTHING READ: ['wait', 'floor']
+  leg 2 1000  bg    default: {'hit': 28635840, 'stash': 673616, 'wait': 215602, 'dropped': 2750924, 'floor': 0, 'shed': 349606, 'new': 55617} left 1440541 moved 4996; NOTHING READ: ['floor']
+  leg 2 1000  bg    tfdrip : {'hit': 28627461, 'stash': 675102, 'wait': 221111, 'dropped': 2759374, 'floor': 0, 'shed': 342534, 'new': 55623} left 1445264 moved 4938; NOTHING READ: ['floor']
+  leg 2 1000  ct    default: {'hit': 5701693, 'stash': 119745, 'wait': 58360, 'dropped': 572381, 'floor': 0, 'shed': 72942, 'new': 11120} left 285631 moved 991; NOTHING READ: ['floor']
+  leg 2 1000  ct    tfdrip : {'hit': 5701693, 'stash': 119745, 'wait': 58360, 'dropped': 572381, 'floor': 0, 'shed': 72942, 'new': 11120} left 285631 moved 991; NOTHING READ: ['floor']
+  leg 2 500   plain default: {'hit': 3276772, 'stash': 93602, 'wait': 0, 'dropped': 2492180, 'floor': 0, 'shed': 662564, 'new': 11123} left 601549 moved 257; NOTHING READ: ['wait', 'floor']
+  leg 2 500   plain tfdrip : {'hit': 3276772, 'stash': 93602, 'wait': 0, 'dropped': 2492180, 'floor': 0, 'shed': 662564, 'new': 11123} left 601549 moved 257; NOTHING READ: ['wait', 'floor']
+  leg 2 500   bg    default: {'hit': 16290514, 'stash': 453869, 'wait': 220031, 'dropped': 12567498, 'floor': 0, 'shed': 3093677, 'new': 55616} left 2999791 moved 1295; NOTHING READ: ['floor']
+  leg 2 500   bg    tfdrip : {'hit': 16247829, 'stash': 453850, 'wait': 222774, 'dropped': 12584038, 'floor': 0, 'shed': 3117106, 'new': 55608} left 2997404 moved 1337; NOTHING READ: ['floor']
+  leg 2 500   ct    default: {'hit': 3226932, 'stash': 76987, 'wait': 38441, 'dropped': 2507278, 'floor': 0, 'shed': 675481, 'new': 11122} left 594092 moved 276; NOTHING READ: ['floor']
+  leg 2 500   ct    tfdrip : {'hit': 3226932, 'stash': 76987, 'wait': 38441, 'dropped': 2507278, 'floor': 0, 'shed': 675481, 'new': 11122} left 594092 moved 276; NOTHING READ: ['floor']
+
+Reported, leg 1 (the five windows 1 s to 60 s, the mean, the gain; over the seeds, Background over its repeats; 0.050 is target 7's bar):
+  none  plain default | 0.1667 0.0505 0.0500 0.0435 0.0238 | mean 0.0669 | secs 0.3
+  none  plain tfdrip  | 0.0594 0.0480 0.0499 0.0435 0.0238 | mean 0.0449 (<= 0.050) | secs 0.3
+  none  plain gain    | +0.1074 +0.0025 +0.0001 +0.0000 +0.0000 | mean +0.0220
+  none  bg    default | 0.1667 0.0505 0.0500 0.0435 0.0238 | mean 0.0669 | secs 0.3 spread(mean) 0.0000 0.0000 0.0000 0.0000 0.0000
+  none  bg    tfdrip  | 0.0594 0.0480 0.0499 0.0435 0.0238 | mean 0.0449 (<= 0.050) | secs 0.3 spread(mean) 0.0000 0.0000 0.0000 0.0000 0.0000
+  none  bg    gain    | +0.1074 +0.0025 +0.0001 +0.0000 +0.0000 | mean +0.0220
+  none  ct    default | 0.1667 0.0505 0.0500 0.0435 0.0238 | mean 0.0669 | secs 0.7
+  none  ct    tfdrip  | 0.0594 0.0480 0.0499 0.0435 0.0238 | mean 0.0449 (<= 0.050) | secs 0.8
+  none  ct    gain    | +0.1074 +0.0025 +0.0001 +0.0000 +0.0000 | mean +0.0220
+  1.00  plain default | 0.1667 0.0505 0.0500 0.0435 0.0238 | mean 0.0669 | secs 0.7
+  1.00  plain tfdrip  | 0.0594 0.0480 0.0499 0.0435 0.0238 | mean 0.0449 (<= 0.050) | secs 0.8
+  1.00  plain gain    | +0.1074 +0.0025 +0.0001 +0.0000 +0.0000 | mean +0.0220
+  1.00  bg    default | 0.1667 0.0505 0.0500 0.0435 0.0238 | mean 0.0669 | secs 0.7 spread(mean) 0.0000 0.0000 0.0000 0.0000 0.0000
+  1.00  bg    tfdrip  | 0.0594 0.0480 0.0499 0.0435 0.0238 | mean 0.0449 (<= 0.050) | secs 0.8 spread(mean) 0.0000 0.0000 0.0000 0.0000 0.0000
+  1.00  bg    gain    | +0.1074 +0.0025 +0.0001 +0.0000 +0.0000 | mean +0.0220
+  1.00  ct    default | 0.1667 0.0505 0.0500 0.0435 0.0238 | mean 0.0669 | secs 1.6
+  1.00  ct    tfdrip  | 0.0594 0.0480 0.0499 0.0435 0.0238 | mean 0.0449 (<= 0.050) | secs 1.8
+  1.00  ct    gain    | +0.1074 +0.0025 +0.0001 +0.0000 +0.0000 | mean +0.0220
+  1.15  plain default | 0.1667 0.0505 0.0500 0.0435 0.0238 | mean 0.0669 | secs 4.1
+  1.15  plain tfdrip  | 0.0594 0.0480 0.0499 0.0435 0.0238 | mean 0.0449 (<= 0.050) | secs 4.3
+  1.15  plain gain    | +0.1074 +0.0025 +0.0001 +0.0000 +0.0000 | mean +0.0220
+  1.15  bg    default | 0.1667 0.0505 0.0500 0.0435 0.0238 | mean 0.0669 | secs 2.2 spread(mean) 0.0000 0.0000 0.0000 0.0000 0.0000
+  1.15  bg    tfdrip  | 0.0594 0.0480 0.0499 0.0435 0.0238 | mean 0.0449 (<= 0.050) | secs 2.3 spread(mean) 0.0000 0.0000 0.0000 0.0000 0.0000
+  1.15  bg    gain    | +0.1074 +0.0025 +0.0001 +0.0000 +0.0000 | mean +0.0220
+  1.15  ct    default | 0.1667 0.0505 0.0500 0.0435 0.0238 | mean 0.0669 | secs 4.8
+  1.15  ct    tfdrip  | 0.0594 0.0480 0.0499 0.0435 0.0238 | mean 0.0449 (<= 0.050) | secs 5.0
+  1.15  ct    gain    | +0.1074 +0.0025 +0.0001 +0.0000 +0.0000 | mean +0.0220
+
+Reported, leg 2 (the five windows 1 s to 60 s, the mean, the gain; over the seeds, Background over its repeats; 0.050 is target 7's bar):
+  1739  plain default | 0.1667 0.0505 0.0500 0.0435 0.0238 | mean 0.0669 | secs 0.3
+  1739  plain tfdrip  | 0.0594 0.0480 0.0499 0.0435 0.0238 | mean 0.0449 (<= 0.050) | secs 0.4
+  1739  plain gain    | +0.1074 +0.0025 +0.0001 +0.0000 +0.0000 | mean +0.0220
+  1739  bg    default | 0.1667 0.0505 0.0500 0.0435 0.0238 | mean 0.0669 | secs 0.3 spread(mean) 0.0000 0.0000 0.0000 0.0000 0.0000
+  1739  bg    tfdrip  | 0.0594 0.0480 0.0499 0.0435 0.0238 | mean 0.0449 (<= 0.050) | secs 0.4 spread(mean) 0.0000 0.0000 0.0000 0.0000 0.0000
+  1739  bg    gain    | +0.1074 +0.0025 +0.0001 +0.0000 +0.0000 | mean +0.0220
+  1739  ct    default | 0.1667 0.0505 0.0500 0.0435 0.0238 | mean 0.0669 | secs 0.8
+  1739  ct    tfdrip  | 0.0594 0.0480 0.0499 0.0435 0.0238 | mean 0.0449 (<= 0.050) | secs 0.8
+  1739  ct    gain    | +0.1074 +0.0025 +0.0001 +0.0000 +0.0000 | mean +0.0220
+  1000  plain default | 2.0702 0.3822 0.2129 0.2026 0.2168 | mean 0.6169 | secs 0.8
+  1000  plain tfdrip  | 1.9879 0.3803 0.2129 0.2026 0.2168 | mean 0.6001 | secs 0.9
+  1000  plain gain    | +0.0822 +0.0019 +0.0000 +0.0000 +0.0000 | mean +0.0168
+  1000  bg    default | 2.0950 0.3822 0.2073 0.1989 0.2131 | mean 0.6193 | secs 0.8 spread(mean) 0.0105 0.0102 0.0055 0.0093 0.0096
+  1000  bg    tfdrip  | 2.0119 0.3810 0.2073 0.1995 0.2130 | mean 0.6025 | secs 0.9 spread(mean) 0.0144 0.0034 0.0146 0.0102 0.0062
+  1000  bg    gain    | +0.0831 +0.0012 -0.0001 -0.0006 +0.0001 | mean +0.0168
+  1000  ct    default | 2.0659 0.3849 0.2100 0.2011 0.2147 | mean 0.6153 | secs 1.3
+  1000  ct    tfdrip  | 1.9834 0.3830 0.2100 0.2011 0.2147 | mean 0.5984 | secs 1.3
+  1000  ct    gain    | +0.0825 +0.0019 +0.0000 +0.0000 +0.0000 | mean +0.0169
+  500   plain default | 2.8332 0.6644 0.5647 0.5787 0.6109 | mean 1.0504 | secs 1.5
+  500   plain tfdrip  | 2.7957 0.6632 0.5647 0.5787 0.6109 | mean 1.0426 | secs 1.5
+  500   plain gain    | +0.0375 +0.0012 +0.0000 +0.0000 +0.0000 | mean +0.0077
+  500   bg    default | 2.9130 0.6554 0.5596 0.5772 0.6103 | mean 1.0631 | secs 1.5 spread(mean) 0.0176 0.0145 0.0100 0.0162 0.0141
+  500   bg    tfdrip  | 2.8692 0.6548 0.5609 0.5787 0.6115 | mean 1.0550 | secs 1.6 spread(mean) 0.0073 0.0172 0.0119 0.0075 0.0092
+  500   bg    gain    | +0.0437 +0.0006 -0.0014 -0.0015 -0.0012 | mean +0.0081
+  500   ct    default | 2.8151 0.6651 0.5694 0.5837 0.6142 | mean 1.0495 | secs 1.9
+  500   ct    tfdrip  | 2.7774 0.6639 0.5694 0.5837 0.6142 | mean 1.0417 | secs 2.0
+  500   ct    gain    | +0.0376 +0.0012 +0.0000 +0.0000 +0.0000 | mean +0.0078
+
+Reported, classes (share of queries; error per exact event), by leg, point, mode, build:
+  leg 1 none  plain default: none_nopart_nolog 0.0105, table_nopart_nolog 0.9895 (0.036)
+  leg 1 none  plain tfdrip : none_nopart_nolog 0.0105, table_nopart_valid 0.9895 (0.034)
+  leg 1 none  bg    default: none_nopart_nolog 0.0105, table_nopart_nolog 0.9895 (0.036)
+  leg 1 none  bg    tfdrip : none_nopart_nolog 0.0105, table_nopart_valid 0.9895 (0.034)
+  leg 1 none  ct    default: none_nopart_nolog 0.0105, table_nopart_nolog 0.9895 (0.036)
+  leg 1 none  ct    tfdrip : none_nopart_nolog 0.0105, table_nopart_valid 0.9895 (0.034)
+  leg 1 1.00  plain default: none_nopart_nolog 0.0105, table_nopart_nolog 0.9895 (0.036)
+  leg 1 1.00  plain tfdrip : none_nopart_nolog 0.0105, table_nopart_valid 0.9895 (0.034)
+  leg 1 1.00  bg    default: none_nopart_nolog 0.0105, table_nopart_nolog 0.9894 (0.036), wait_nopart_nolog 0.0000 (0.000)
+  leg 1 1.00  bg    tfdrip : none_nopart_nolog 0.0105, table_nopart_valid 0.9894 (0.034), wait_nopart_valid 0.0000 (0.000)
+  leg 1 1.00  ct    default: none_nopart_nolog 0.0105, table_nopart_nolog 0.9893 (0.036), wait_nopart_nolog 0.0002 (0.000)
+  leg 1 1.00  ct    tfdrip : none_nopart_nolog 0.0105, table_nopart_valid 0.9893 (0.034), wait_nopart_valid 0.0002 (0.000)
+  leg 1 1.15  plain default: none_nopart_nolog 0.0105, stash_nopart_nolog 0.0001 (0.000), table_nopart_nolog 0.9894 (0.036)
+  leg 1 1.15  plain tfdrip : none_nopart_nolog 0.0105, stash_nopart_valid 0.0001 (0.000), table_nopart_valid 0.9894 (0.034)
+  leg 1 1.15  bg    default: none_nopart_nolog 0.0105, stash_nopart_nolog 0.0001 (0.000), table_nopart_nolog 0.9893 (0.036), wait_nopart_nolog 0.0000 (0.000)
+  leg 1 1.15  bg    tfdrip : none_nopart_nolog 0.0105, stash_nopart_valid 0.0001 (0.000), table_nopart_valid 0.9893 (0.034), wait_nopart_valid 0.0000 (0.000)
+  leg 1 1.15  ct    default: none_nopart_nolog 0.0105, stash_nopart_nolog 0.0000 (0.000), table_nopart_nolog 0.9893 (0.036), wait_nopart_nolog 0.0002 (0.000)
+  leg 1 1.15  ct    tfdrip : none_nopart_nolog 0.0105, stash_nopart_valid 0.0000 (0.000), table_nopart_valid 0.9893 (0.034), wait_nopart_valid 0.0002 (0.000)
+  leg 2 1739  plain default: none_nopart_nolog 0.0105, table_nopart_nolog 0.9895 (0.036)
+  leg 2 1739  plain tfdrip : none_nopart_nolog 0.0105, table_nopart_valid 0.9895 (0.034)
+  leg 2 1739  bg    default: none_nopart_nolog 0.0105, table_nopart_nolog 0.9894 (0.036), wait_nopart_nolog 0.0001 (0.002)
+  leg 2 1739  bg    tfdrip : none_nopart_nolog 0.0105, table_nopart_valid 0.9894 (0.034), wait_nopart_valid 0.0000 (0.000)
+  leg 2 1739  ct    default: none_nopart_nolog 0.0105, table_nopart_nolog 0.9858 (0.036), wait_nopart_nolog 0.0037 (0.064)
+  leg 2 1739  ct    tfdrip : none_nopart_nolog 0.0105, table_nopart_valid 0.9858 (0.034), wait_nopart_valid 0.0037 (0.062)
+  leg 2 1000  plain default: none_nopart_nolog 0.2073 (1.000), none_part_nolog 0.1661 (0.856), stash_nopart_nolog 0.0203 (0.077), stash_part_nolog 0.0160 (0.644), table_nopart_nolog 0.4854 (0.037), table_part_nolog 0.1049 (0.437)
+  leg 2 1000  plain tfdrip : none_nopart_nolog 0.2073 (1.000), none_part_nolog 0.1661 (0.856), stash_nopart_valid 0.0203 (0.075), stash_part_valid 0.0160 (0.644), table_nopart_valid 0.4854 (0.036), table_part_valid 0.1049 (0.436)
+  leg 2 1000  bg    default: none_nopart_nolog 0.2066 (1.000), none_part_nolog 0.1643 (0.854), stash_nopart_nolog 0.0203 (0.076), stash_part_nolog 0.0159 (0.641), table_nopart_nolog 0.4850 (0.037), table_part_nolog 0.1054 (0.428), wait_nopart_nolog 0.0003 (0.335), wait_part_nolog 0.0022 (0.795)
+  leg 2 1000  bg    tfdrip : none_nopart_nolog 0.2063 (1.000), none_part_nolog 0.1646 (0.854), stash_nopart_valid 0.0202 (0.075), stash_part_valid 0.0159 (0.644), table_nopart_valid 0.4852 (0.035), table_part_valid 0.1054 (0.429), wait_nopart_valid 0.0003 (0.331), wait_part_valid 0.0021 (0.793)
+  leg 2 1000  ct    default: none_nopart_nolog 0.2069 (1.000), none_part_nolog 0.1660 (0.856), stash_nopart_nolog 0.0200 (0.077), stash_part_nolog 0.0151 (0.639), table_nopart_nolog 0.4834 (0.037), table_part_nolog 0.1067 (0.431), wait_nopart_nolog 0.0004 (0.135), wait_part_nolog 0.0014 (0.742)
+  leg 2 1000  ct    tfdrip : none_nopart_nolog 0.2069 (1.000), none_part_nolog 0.1660 (0.856), stash_nopart_valid 0.0200 (0.076), stash_part_valid 0.0151 (0.639), table_nopart_valid 0.4834 (0.036), table_part_valid 0.1067 (0.431), wait_nopart_valid 0.0004 (0.133), wait_part_valid 0.0014 (0.742)
+  leg 2 500   plain default: none_nopart_nolog 0.3173 (1.000), none_part_nolog 0.3666 (0.869), stash_nopart_nolog 0.0104 (0.109), stash_part_nolog 0.0094 (0.620), table_nopart_nolog 0.2328 (0.069), table_part_nolog 0.0634 (0.681)
+  leg 2 500   plain tfdrip : none_nopart_nolog 0.3173 (1.000), none_part_nolog 0.3666 (0.869), stash_nopart_valid 0.0104 (0.108), stash_part_valid 0.0094 (0.620), table_nopart_valid 0.2328 (0.067), table_part_valid 0.0634 (0.681)
+  leg 2 500   bg    default: none_nopart_nolog 0.3115 (1.000), none_part_nolog 0.3700 (0.866), stash_nopart_nolog 0.0104 (0.103), stash_part_nolog 0.0094 (0.619), table_nopart_nolog 0.2326 (0.066), table_part_nolog 0.0637 (0.684), wait_nopart_nolog 0.0004 (0.941), wait_part_nolog 0.0020 (0.858)
+  leg 2 500   bg    tfdrip : none_nopart_nolog 0.3118 (1.000), none_part_nolog 0.3696 (0.866), stash_nopart_valid 0.0105 (0.103), stash_part_valid 0.0094 (0.619), table_nopart_valid 0.2329 (0.065), table_part_valid 0.0635 (0.686), wait_nopart_valid 0.0004 (0.947), wait_part_valid 0.0019 (0.854)
+  leg 2 500   ct    default: none_nopart_nolog 0.3187 (1.000), none_part_nolog 0.3651 (0.870), stash_nopart_nolog 0.0106 (0.104), stash_part_nolog 0.0086 (0.615), table_nopart_nolog 0.2345 (0.070), table_part_nolog 0.0617 (0.695), wait_nopart_nolog 0.0002 (0.254), wait_part_nolog 0.0006 (0.713)
+  leg 2 500   ct    tfdrip : none_nopart_nolog 0.3187 (1.000), none_part_nolog 0.3651 (0.870), stash_nopart_valid 0.0106 (0.103), stash_part_valid 0.0086 (0.615), table_nopart_valid 0.2345 (0.068), table_part_valid 0.0617 (0.695), wait_nopart_valid 0.0002 (0.253), wait_part_valid 0.0006 (0.713)
+
+Reported, counters (mean a run), by leg, point, mode, build:
+  leg 1 none  plain default: evictions 0.0 relocations 0.0 shed 0.0 lost 0.0 floored 0.0 folded 0.0 waited 0.0 promoted 521.0 hotrefused 0.0
+  leg 1 none  plain tfdrip : evictions 0.0 relocations 0.0 shed 0.0 lost 0.0 floored 0.0 folded 0.0 waited 0.0 promoted 521.0 hotrefused 0.0
+  leg 1 none  bg    default: evictions 0.0 relocations 0.0 shed 0.0 lost 0.0 floored 0.0 folded 0.0 waited 0.0 promoted 521.0 hotrefused 0.0
+  leg 1 none  bg    tfdrip : evictions 0.0 relocations 0.0 shed 0.0 lost 0.0 floored 0.0 folded 0.0 waited 0.0 promoted 521.0 hotrefused 0.0
+  leg 1 none  ct    default: evictions 0.0 relocations 0.0 shed 0.0 lost 0.0 floored 0.0 folded 0.0 waited 0.0 promoted 521.0 hotrefused 0.0
+  leg 1 none  ct    tfdrip : evictions 0.0 relocations 0.0 shed 0.0 lost 0.0 floored 0.0 folded 0.0 waited 0.0 promoted 521.0 hotrefused 0.0
+  leg 1 1.00  plain default: evictions 0.0 relocations 220263.4 shed 0.0 lost 0.0 floored 0.0 folded 0.0 waited 0.0 promoted 521.0 hotrefused 0.0
+  leg 1 1.00  plain tfdrip : evictions 0.0 relocations 220263.4 shed 0.0 lost 0.0 floored 0.0 folded 0.0 waited 0.0 promoted 521.0 hotrefused 0.0
+  leg 1 1.00  bg    default: evictions 0.0 relocations 219635.8 shed 0.0 lost 0.0 floored 0.0 folded 0.0 waited 97684.9 promoted 521.0 hotrefused 0.0
+  leg 1 1.00  bg    tfdrip : evictions 0.0 relocations 219591.8 shed 0.0 lost 0.0 floored 0.0 folded 0.0 waited 101077.8 promoted 521.0 hotrefused 0.0
+  leg 1 1.00  ct    default: evictions 0.0 relocations 194219.6 shed 0.0 lost 0.0 floored 0.0 folded 0.0 waited 206833.4 promoted 521.0 hotrefused 0.0
+  leg 1 1.00  ct    tfdrip : evictions 0.0 relocations 194219.6 shed 0.0 lost 0.0 floored 0.0 folded 0.0 waited 206833.4 promoted 521.0 hotrefused 0.0
+  leg 1 1.15  plain default: evictions 35709.8 relocations 1430280.6 shed 45.8 lost 0.0 floored 0.0 folded 0.0 waited 0.0 promoted 521.0 hotrefused 0.0
+  leg 1 1.15  plain tfdrip : evictions 35709.8 relocations 1430280.6 shed 45.8 lost 0.0 floored 0.0 folded 0.0 waited 0.0 promoted 521.0 hotrefused 0.0
+  leg 1 1.15  bg    default: evictions 36675.1 relocations 1398320.3 shed 50.6 lost 0.0 floored 0.0 folded 0.0 waited 339674.4 promoted 521.0 hotrefused 0.0
+  leg 1 1.15  bg    tfdrip : evictions 36630.7 relocations 1398883.6 shed 50.0 lost 0.0 floored 0.0 folded 0.0 waited 345365.4 promoted 521.0 hotrefused 0.0
+  leg 1 1.15  ct    default: evictions 19355.2 relocations 1384424.0 shed 45.0 lost 0.0 floored 0.0 folded 0.0 waited 592527.0 promoted 520.8 hotrefused 0.0
+  leg 1 1.15  ct    tfdrip : evictions 19355.2 relocations 1384424.0 shed 45.0 lost 0.0 floored 0.0 folded 0.0 waited 592527.0 promoted 520.8 hotrefused 0.0
+  leg 2 1739  plain default: evictions 0.0 relocations 461.2 shed 0.0 lost 0.0 floored 0.0 folded 0.0 waited 0.0 promoted 521.0 hotrefused 0.0
+  leg 2 1739  plain tfdrip : evictions 0.0 relocations 461.2 shed 0.0 lost 0.0 floored 0.0 folded 0.0 waited 0.0 promoted 521.0 hotrefused 0.0
+  leg 2 1739  bg    default: evictions 0.0 relocations 450.0 shed 0.0 lost 0.0 floored 0.0 folded 0.0 waited 620.5 promoted 520.2 hotrefused 0.0
+  leg 2 1739  bg    tfdrip : evictions 0.0 relocations 450.7 shed 0.0 lost 0.0 floored 0.0 folded 0.0 waited 642.5 promoted 519.8 hotrefused 0.0
+  leg 2 1739  ct    default: evictions 0.0 relocations 408.8 shed 0.0 lost 0.0 floored 0.0 folded 0.0 waited 1761.6 promoted 519.2 hotrefused 0.0
+  leg 2 1739  ct    tfdrip : evictions 0.0 relocations 408.8 shed 0.0 lost 0.0 floored 0.0 folded 0.0 waited 1761.6 promoted 519.2 hotrefused 0.0
+  leg 2 1000  plain default: evictions 161597.2 relocations 236.4 shed 119116.6 lost 0.0 floored 0.0 folded 14638.8 waited 0.0 promoted 445.8 hotrefused 0.0
+  leg 2 1000  plain tfdrip : evictions 161597.2 relocations 236.4 shed 119116.6 lost 0.0 floored 0.0 folded 14638.8 waited 0.0 promoted 445.8 hotrefused 0.0
+  leg 2 1000  bg    default: evictions 152005.0 relocations 236.0 shed 109528.7 lost 0.0 floored 0.0 folded 15457.6 waited 14452.5 promoted 448.4 hotrefused 0.0
+  leg 2 1000  bg    tfdrip : evictions 152119.4 relocations 233.1 shed 109490.4 lost 0.0 floored 0.0 folded 15550.8 waited 14749.0 promoted 447.9 hotrefused 0.0
+  leg 2 1000  ct    default: evictions 147117.4 relocations 228.6 shed 115178.2 lost 0.0 floored 0.0 folded 14881.2 waited 45574.2 promoted 437.8 hotrefused 0.0
+  leg 2 1000  ct    tfdrip : evictions 147117.4 relocations 228.6 shed 115178.2 lost 0.0 floored 0.0 folded 14881.2 waited 45574.2 promoted 437.8 hotrefused 0.0
+  leg 2 500   plain default: evictions 651301.0 relocations 122.2 shed 611857.8 lost 0.0 floored 0.0 folded 20682.4 waited 0.0 promoted 181.2 hotrefused 0.0
+  leg 2 500   plain tfdrip : evictions 651301.0 relocations 122.2 shed 611857.8 lost 0.0 floored 0.0 folded 20682.4 waited 0.0 promoted 181.2 hotrefused 0.0
+  leg 2 500   bg    default: evictions 646241.6 relocations 117.8 shed 606364.9 lost 0.0 floored 0.0 folded 21683.5 waited 59461.8 promoted 175.2 hotrefused 0.0
+  leg 2 500   bg    tfdrip : evictions 647837.1 relocations 118.6 shed 607994.9 lost 0.0 floored 0.0 folded 21649.2 waited 50100.4 promoted 174.3 hotrefused 0.0
+  leg 2 500   ct    default: evictions 646352.0 relocations 118.6 shed 617499.8 lost 0.0 floored 0.0 folded 20658.2 waited 30107.8 promoted 156.2 hotrefused 0.0
+  leg 2 500   ct    tfdrip : evictions 646352.0 relocations 118.6 shed 617499.8 lost 0.0 floored 0.0 folded 20658.2 waited 30107.8 promoted 156.2 hotrefused 0.0

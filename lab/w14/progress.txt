@@ -1,0 +1,81 @@
+[17:44:50] W14: head 1e18e7f; go1.24.7
+[17:44:50] 0: library files that differ from 495f1aa's: []
+[17:44:50] 1: sight
+[17:44:53] 1 default: go test exit 0
+swload_test.go:694: W14 where table: where=table slot=216 part=false log=nolog sign="" signok=true
+swload_test.go:695: W14 where past: where=none slot=-1 part=false log=nolog sign="" signok=true
+swload_test.go:696: W14 where never: where=none slot=-1 part=false log=nolog sign="" signok=true
+swload_test.go:704: W14 where dead: where=table slot=952 part=false log=nolog sign="" signok=true
+swload_test.go:717: W14 where stash: where=stash slot=-1 part=false log=nolog sign="Evictions 1, then V's touch restores it" signok=true
+swload_test.go:722: W14 where dropped: where=none slot=-1 part=true log=nolog sign="Evictions 1, Folded 1, Count Degraded with its 4" signok=true
+swload_test.go:728: W14 where shed: where=none slot=-1 part=false log=nolog sign="Evictions 1, Shed 1, then V's touch finds no history" signok=true
+swload_test.go:742: W14 where wait room: where=wait slot=-1 part=false log=nolog sign="Waiting 1" signok=true
+swload_test.go:742: W14 where CT wait: where=wait slot=-1 part=false log=nolog sign="Waiting 1" signok=true
+--- PASS: TestShortWindowLoadWhere (0.00s)
+--- PASS: TestShortWindowLoadSource (0.00s)
+ok  	github.com/scooter-sensei/clepsydra/go	0.007s
+[17:44:55] 1 drip: go test exit 0
+swload_test.go:694: W14 where table: where=table slot=216 part=false log=valid sign="" signok=true
+swload_test.go:695: W14 where past: where=none slot=-1 part=false log=nolog sign="" signok=true
+swload_test.go:696: W14 where never: where=none slot=-1 part=false log=nolog sign="" signok=true
+swload_test.go:704: W14 where dead: where=table slot=952 part=false log=dead sign="" signok=true
+swload_test.go:717: W14 where stash: where=stash slot=-1 part=false log=valid sign="Evictions 1, then V's touch restores it" signok=true
+swload_test.go:722: W14 where dropped: where=none slot=-1 part=true log=nolog sign="Evictions 1, Folded 1, Count Degraded with its 4" signok=true
+swload_test.go:728: W14 where shed: where=none slot=-1 part=false log=nolog sign="Evictions 1, Shed 1, then V's touch finds no history" signok=true
+swload_test.go:742: W14 where wait room: where=wait slot=-1 part=false log=valid sign="Waiting 1" signok=true
+swload_test.go:742: W14 where CT wait: where=wait slot=-1 part=false log=valid sign="Waiting 1" signok=true
+--- PASS: TestShortWindowLoadWhere (0.00s)
+--- PASS: TestShortWindowLoadSource (0.00s)
+ok  	github.com/scooter-sensei/clepsydra/go	0.007s
+[17:44:55] 2: check
+[17:45:30] 2 default: go test exit 0
+swload_test.go:572: W14 check churn: build=default load=1.00 seed=2 ops=1212135 prefix=969657 four=969657 mism=0 velkeys=0 lastok=true
+swload_test.go:572: W14 check churn: build=default load=1.15 seed=4 ops=1394045 prefix=1115315 four=1115315 mism=0 velkeys=0 lastok=true
+swload_test.go:596: W14 check: build=default seed=9,9 leg=1 cap=200000 load=1.15 mode=plain offmism=0 replaymism=-1 secs_on=4.4 secs_off=4.7 secs_again=0.0
+swload_test.go:596: W14 check: build=default seed=9,9 leg=1 cap=200000 load=1.15 mode=ct offmism=0 replaymism=0 secs_on=5.2 secs_off=5.1 secs_again=5.1
+swload_test.go:596: W14 check: build=default seed=9,9 leg=2 cap=500 load=0.00 mode=plain offmism=0 replaymism=-1 secs_on=1.6 secs_off=1.2 secs_again=0.0
+swload_test.go:596: W14 check: build=default seed=9,9 leg=2 cap=500 load=0.00 mode=ct offmism=0 replaymism=0 secs_on=2.0 secs_off=1.6 secs_again=2.0
+swload_test.go:607: W14 done: build=default leg=check runs=10
+--- PASS: TestShortWindowLoad (33.92s)
+ok  	github.com/scooter-sensei/clepsydra/go	33.946s
+[17:46:03] 2 drip: go test exit 0
+swload_test.go:572: W14 check churn: build=tfdrip load=1.00 seed=2 ops=1212135 prefix=969657 four=969657 mism=0 velkeys=0 lastok=true
+swload_test.go:572: W14 check churn: build=tfdrip load=1.15 seed=4 ops=1394045 prefix=1115315 four=1115315 mism=0 velkeys=0 lastok=true
+swload_test.go:596: W14 check: build=tfdrip seed=9,9 leg=1 cap=200000 load=1.15 mode=plain offmism=0 replaymism=-1 secs_on=4.4 secs_off=4.3 secs_again=0.0
+swload_test.go:596: W14 check: build=tfdrip seed=9,9 leg=1 cap=200000 load=1.15 mode=ct offmism=0 replaymism=0 secs_on=4.9 secs_off=4.7 secs_again=4.9
+swload_test.go:596: W14 check: build=tfdrip seed=9,9 leg=2 cap=500 load=0.00 mode=plain offmism=0 replaymism=-1 secs_on=1.5 secs_off=1.2 secs_again=0.0
+swload_test.go:596: W14 check: build=tfdrip seed=9,9 leg=2 cap=500 load=0.00 mode=ct offmism=0 replaymism=0 secs_on=2.0 secs_off=1.6 secs_again=2.0
+swload_test.go:607: W14 done: build=tfdrip leg=check runs=10
+--- PASS: TestShortWindowLoad (32.56s)
+ok  	github.com/scooter-sensei/clepsydra/go	32.591s
+[17:46:03] 3: leg 1
+[17:48:32] 3 default: go test exit 0; 105 runs
+swload_test.go:607: W14 done: build=default leg=1 runs=105
+--- PASS: TestShortWindowLoad (148.63s)
+ok  	github.com/scooter-sensei/clepsydra/go	148.653s
+[17:51:09] 3 drip: go test exit 0; 105 runs
+swload_test.go:607: W14 done: build=tfdrip leg=1 runs=105
+--- PASS: TestShortWindowLoad (156.92s)
+ok  	github.com/scooter-sensei/clepsydra/go	156.952s
+[17:51:09] 4: leg 2
+[17:52:52] 4 default: go test exit 0; 105 runs
+swload_test.go:607: W14 done: build=default leg=2 runs=105
+--- PASS: TestShortWindowLoad (103.00s)
+ok  	github.com/scooter-sensei/clepsydra/go	103.012s
+[17:54:40] 4 drip: go test exit 0; 105 runs
+swload_test.go:607: W14 done: build=tfdrip leg=2 runs=105
+--- PASS: TestShortWindowLoad (107.58s)
+ok  	github.com/scooter-sensei/clepsydra/go	107.588s
+[17:54:40] 5: under -race
+[17:55:16] 5: go test exit 0; 1 runs; data races reported: 0
+swload_test.go:607: W14 done: build=tfdrip leg=2 runs=1
+--- PASS: TestShortWindowLoad (29.85s)
+ok  	github.com/scooter-sensei/clepsydra/go	30.886s
+[17:55:16] 6: lab/w14.py
+[17:55:16] 6: exit 0
+W14 clause 1: HOLDS: default: 9 states, missing none, tests pass; tfdrip: 9 states, missing none, tests pass
+W14 clause 2: HOLDS: default: 5 seeds, mism all 0, (9,9) sums equal; tfdrip: 5 seeds, mism all 0, (9,9) sums equal
+W14 clause 3: HOLDS: default: churn [('1.00', '0', True, '0'), ('1.15', '0', True, '0')], watcher off and replay [('1', 'plain', '0', '-1'), ('1', 'ct', '0', '0'), ('2', 'plain', '0', '-1'), ('2', 'ct', '0', '0')]; tfdrip: churn [('1.00', '0', True, '0'), ('1.15', '0', True, '0')], watcher off and replay [('1', 'plain', '0', '-1'), ('1', 'ct', '0', '0'), ('2', 'plain', '0', '-1'), ('2', 'ct', '0', '0')]; leg 1 default: 105 runs of 105; leg 1 tfdrip: 105 runs of 105; leg 2 default: 105 runs of 105; leg 2 tfdrip: 105 runs of 105; -race: 0 data races
+W14 clause 4: HOLDS: every seed, load and mode read keeps at least half the gain; judged on keys the table kept: 1.00 in plain
+W14 clause 5: HOLDS: tfdrip within 1% of the default build everywhere read
+[17:55:16] W14 reading finished (exit 0)

@@ -4296,3 +4296,208 @@ Not covered: concurrency beyond Background's placer (W12's leg B); lag
 with load; loads between those read; other Horizons and Resolutions;
 ConstantTime's pads; churn keys as heavy as the velocity keys; other
 traffic; the floor class's sight.
+
+### W14's reading (1e18e7f's tree; `lab/w14.sh`, outputs in `lab/w14/`)
+
+`lab/w14.sh` ran end to end (17:44:50 to 17:55:16, Go 1.24.7) and exited 0,
+and its joiner exited 0. Its first check found no library file different
+from 495f1aa's. Every run printed its line: 105 a leg in each build, and
+the `-race` run's one. No raw file holds a panic, a failing test or a data
+race.
+
+1. **Holds.** Sight, in both builds: the nine states read as made, every
+   sign true; `TestShortWindowLoadSource` passes.
+2. **Holds.** With no churn in plain mode, leg 1 equals `swRecord` query for
+   query on all five seeds in both builds, and (9, 9)'s window sums equal
+   the exact files'.
+3. **Holds.** The harness, in both builds:
+   - the churn's first four horizons equal `workload.Churn`'s at both
+     loads (969,657 and 1,115,315 ops), and no churn key is a velocity key;
+   - with the watcher off, 0 answers differ at both points in plain mode
+     and ConstantTime, and ConstantTime's two runs differ in 0;
+   - 105 runs a leg;
+   - the `-race` run (leg 2 at Capacity 500, Background) reported no data
+     race.
+4. **Holds.** At 1.00 and 1.15, on every seed and in every mode, the gain
+   is the gain with no load. Every window's error and exact sums under load
+   equal no load's in both builds, so each point's gain is its seed's
+   no-load gain (0.0216 to 0.0222) against a floor of half that. The joiner notes clause 4 judged on keys the
+   table kept at 1.00 in plain mode: no velocity key restored from outside
+   the table there, and none left it.
+5. **Holds.** At Capacity 1,739, 1,000 and 500, on every seed and in every
+   mode, `tfdrip`'s mean and five windows are within 1.01 times the default
+   build's, but at one point. That point holds by clause 5's Background
+   spread rule, with the excess taken as `tfdrip` less the default build,
+   as the rule names it:
+   - the point: (2026, 41), Capacity 1,000, Background, the 30 s window;
+   - `tfdrip` reads 0.1964 over its repeats (0.1942 to 0.1985) against the
+     default build's 0.1937 (0.1872 to 0.1984), 1.0141 times;
+   - the excess, 0.0027, is inside the default build's spread there
+     (0.0112).
+
+   In plain mode and ConstantTime, where both builds place keys alike, the
+   same seed's 30 s error sums at 1,000 differ by 4 events of 661,532.
+   Every other point holds on the 1% alone.
+
+**Reach** (touches by where they restored from, summed over each point's
+runs: 5 a mode, Background's 25; the default build's and `tfdrip`'s, which
+differ only in Background):
+
+- Leg 1 at 1.00:
+  - plain: the table alone, with 13,204 moves (relocations copying a
+    velocity key's log) and none leaving;
+  - Background: waits 639 and 675;
+  - ConstantTime: waits 403.
+- Leg 1 at 1.15:
+  - plain: stash 15, left 34, moved 59,568;
+  - Background: stash 71 and 68, waits 1,628 and 1,725, left 206 and 205;
+  - ConstantTime: stash 9, waits 1,207, left 20.
+- Leg 2 at 1,739: no eviction in any mode; waits alone (Background 11,372
+  and 11,836, ConstantTime 7,274).
+- Leg 2 at 1,000 and 500: every source but the floor, in every mode
+  (waits in Background and ConstantTime only). Plain at 1,000: stash
+  138,839, dropped 591,493, shed 72,438. At 500: stash 93,602, dropped
+  2,492,180, shed 662,564.
+
+NOTHING READ:
+- the floor class everywhere: no run raised a floor (Floored 0);
+- dropped and shed on leg 1 and at Capacity 1,739;
+- the stash at leg 1's 1.00 and at Capacity 1,739, in every mode;
+- waits in plain mode, which parks no key.
+
+**Reported.**
+
+- **Leg 1.** Over the seeds, at every load and mode:
+  - the default build reads 0.0669 (1 s 0.1667);
+  - `tfdrip` reads 0.0449 (1 s 0.0594), 0.0447 to 0.0452 a seed.
+
+  Both sit inside W6's ranges (`tfdrip` 0.0445 to 0.0454, the default
+  build 0.0661 to 0.0674). `tfdrip` is under 0.050 on every seed at every
+  point.
+- **Leg 1's counters, a run:**
+  - at 1.00: no eviction; 220,263 relocations in plain;
+  - at 1.15 in plain: 35,710 evictions, 1,430,281 relocations, 46 sheds;
+  - waits in Background: 98,000 and 101,000 at 1.00, 340,000 and 345,000
+    at 1.15;
+  - waits in ConstantTime: 206,833 at 1.00 and 592,527 at 1.15.
+
+  The velocity keys left the table 34 times over the five plain runs at
+  1.15. The stash gave back 15 of them, and the metric is still the
+  no-load metric (answers were not compared one by one).
+- **Leg 2 at 1,739** (2,000 keys at 1.15 times Capacity): they fit. There is
+  no eviction, and the metric reads as with no load, to the fourth decimal.
+- **Leg 2 at 1,000 and 500** (2 and 4 times Capacity), over the seeds:
+
+  | | default | `tfdrip` | gain | share of no load's gain |
+  |---|---|---|---|---|
+  | 1,000, mean | 0.6169 | 0.6001 | 0.0168 | 76% |
+  | 1,000, 1 s window | 2.07 | 1.99 | | |
+  | 500, mean | 1.0504 | 1.0426 | 0.0077 | 35% |
+
+  The per-run counters at 1,000 and 500, in plain mode:
+
+  | | evictions | sheds | folded | lost | floored |
+  |---|---|---|---|---|---|
+  | 1,000 | 161,597 | 119,117 | 14,639 | 0 | 0 |
+  | 500 | 651,301 | 611,858 | 20,682 | 0 | 0 |
+
+  Promotions fall from 521 a run to 446 and 181.
+
+  In plain mode at 1,000 the queries split as follows, with the error per
+  exact event the same in both builds within 0.002:
+
+  | key | share of queries | error per exact event |
+  |---|---|---|
+  | in the table, no overflow part | 48.5% | 0.037 default, 0.036 `tfdrip` |
+  | in the table, with a part | 10.5% | 0.44 |
+  | in the stash | 3.6% | |
+  | nowhere, with a part | 16.6% | 0.86 |
+  | nowhere, no part (the history shed) | 20.7% | 1.00 |
+
+  At 500, 68% of queries find the key nowhere. The error under overload is
+  the shed and dropped histories', the same in both builds. The log's gain
+  is on the keys still in a slot.
+
+  A 1 s error above 1 means some answers overcount the short window. From
+  the code, an overflow entry keeps a count and a time slice. That is not
+  separated here.
+- **Checked after the reading, not in the rule.** In plain mode and
+  ConstantTime, where both builds place every key alike, the builds were
+  compared window by window on leg 2. `tfdrip`'s error sum is above the
+  default build's in 5 of 150 seed, Capacity, mode and window points, by
+  1 to 14 events in 0.66 to 1.93 million: (2026, 41) at 1,000, plain, 30
+  s; at 500, plain and ConstantTime, 30 s; (2026, 43) at 500, plain, 15 s;
+  (2026, 44) at 500, plain, 30 s. At 500 the 1% margin (about 0.010 of the
+  mean) is wider than the whole gain (0.0077), so clause 5 alone says
+  little there; the paired sums say the log adds at most 14 events'
+  error at any of those points.
+- **Times:**
+  - sight, 3 and 2 s;
+  - the check, 35 and 33 s;
+  - leg 1, 2 min 29 s and 2 min 37 s;
+  - leg 2, 1 min 43 s and 1 min 48 s;
+  - `-race`, 36 s;
+  - the whole run, 10 min 26 s, against the rule's estimate of half an
+    hour.
+- **The predictions against the reading:**
+  - Leg 1 came out as predicted:
+    - at 1.00, plain mode restored nothing from outside the table, and
+      Background and ConstantTime parked velocity keys' new lives;
+    - at 1.15, a few velocity keys were evicted and came back from the
+      stash;
+    - the gain was kept, and is not only near its no-load size but equal
+      to it.
+  - Leg 2 came out as predicted but for one part. Predicted and read:
+    - every source but the floor was reached at 1,000 and 500;
+    - no floor was raised;
+    - `tfdrip` read at or under the default build, but for Background's
+      noise in the 15 s to 60 s windows at 1,000 and 500, and the paired
+      sums' few events above;
+    - the gain shrank with Capacity.
+
+    Not as predicted: the errors rise only from 1,000. At 1,739 the keys
+    fit.
+
+**Verdict: W14 passes its rule.** Clauses 1 to 5 hold. Clause 5 holds at
+one point, (2026, 41) at Capacity 1,000 in Background at 30 s, by its
+Background spread rule alone.
+
+What W14 reads of W4e's library:
+
+- Read: the scorecard's load barely touches the velocity keys. At 1.15 in
+  plain mode, 34 of their 6.5 million touches found them gone from the
+  table. Under tfbench's own load, the churn stream at 1.00 and 1.15
+  beside the velocity keys, every window's error sum is as without load,
+  in plain mode, Background and ConstantTime, in both builds. Eviction takes the lightest keys, the churn's. The few velocity
+  keys that leave come back from the stash, or from a wait, with their
+  histories whole. Relocations copy their logs tens of thousands of times
+  with no window's error sum moved. The drip log's gain under the
+  scorecard's load is its whole gain: target 7's metric reads 0.0447 to
+  0.0452 there.
+- Read: where the velocity keys are the load, at 2 and 4 times Capacity,
+  both builds read 0.59 to 1.07, far past 0.050, from histories shed or
+  dropped to the overflow table. The log keeps 76% and 35% of its gain and
+  does no harm beyond 1% in any window, but at the one Background point
+  above, inside the placer's noise. At 1.15 times Capacity the keys fit,
+  no key is evicted, and leg 2 reads as with no load.
+
+What W14 leaves:
+
+- **Paths not reached.** The floor class was not reached, since no floor
+  was raised. Dropped and shed were never reached on a velocity key under
+  the scorecard's load, which cannot make them.
+- **Under overload the error is the filter's, not the log's.** Both builds
+  are 12 to 21 times target 7's bar, from sheds and overflow parts. The 1 s
+  window's overcount was not separated. Whether a filter run at 2 to 4
+  times its Capacity matters is a question of the filter's sizing, not of
+  the short window.
+- **As the rule named, not covered:**
+  - concurrency beyond Background's placer;
+  - lag with load;
+  - loads between those read;
+  - other Horizons and Resolutions;
+  - ConstantTime's pads;
+  - churn keys as heavy as the velocity keys;
+  - other traffic.
+
+Target 7's status is the user's.

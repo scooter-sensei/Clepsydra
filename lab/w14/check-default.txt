@@ -1,0 +1,11 @@
+=== RUN   TestShortWindowLoad
+    swload_test.go:572: W14 check churn: build=default load=1.00 seed=2 ops=1212135 prefix=969657 four=969657 mism=0 velkeys=0 lastok=true
+    swload_test.go:572: W14 check churn: build=default load=1.15 seed=4 ops=1394045 prefix=1115315 four=1115315 mism=0 velkeys=0 lastok=true
+    swload_test.go:596: W14 check: build=default seed=9,9 leg=1 cap=200000 load=1.15 mode=plain offmism=0 replaymism=-1 secs_on=4.4 secs_off=4.7 secs_again=0.0
+    swload_test.go:596: W14 check: build=default seed=9,9 leg=1 cap=200000 load=1.15 mode=ct offmism=0 replaymism=0 secs_on=5.2 secs_off=5.1 secs_again=5.1
+    swload_test.go:596: W14 check: build=default seed=9,9 leg=2 cap=500 load=0.00 mode=plain offmism=0 replaymism=-1 secs_on=1.6 secs_off=1.2 secs_again=0.0
+    swload_test.go:596: W14 check: build=default seed=9,9 leg=2 cap=500 load=0.00 mode=ct offmism=0 replaymism=0 secs_on=2.0 secs_off=1.6 secs_again=2.0
+    swload_test.go:607: W14 done: build=default leg=check runs=10
+--- PASS: TestShortWindowLoad (33.92s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	33.946s

@@ -4501,3 +4501,285 @@ What W14 leaves:
   - other traffic.
 
 Target 7's status is the user's.
+
+## W12b: the lag's loss split by the drip log's class
+
+**Written after W14**, from W12's "What W12 leaves": how much of the larger
+lags' loss is the dead logs' and how much the valid logs' mistimed events.
+W12 read the gain wear with lag: at `stall:1000` (1% of events up to a
+second late) 0.74 to 0.77 of it is left, and `tfdrip` reads 0.0502 to
+0.0512, the one reading of target 7's metric over 0.050. The dead logs'
+share of the queries rose with it (11.2 to 12.4% of them at `stall:1000`,
+30 to 33% by exact count), but W12 did not separate the two. W12b reads the
+same queries in both builds and splits the loss by `tfdrip`'s class at each
+query. Its answer decides whether a change to the log (bringing a dead log
+back sooner, or not killing it) is worth an arm of its own; that decision is
+the user's. The user chose:
+
+- the judging: whether the dead logs carry at least half of the gross loss
+  at `stall:1000`, on every seed. The parts are signed (below), and the
+  gross loss is the sum of those above 0, so a class that gained at the
+  delay cannot lift the dead logs' share. Set aside: the net loss, under
+  which a dead part over the whole loss would hold; whether `stall:1000`
+  would read at most 0.050 with the dead queries' no-delay gain restored
+  (it would once they carry 3.9 to 20.3% of the loss, by seed: too weak to
+  judge, so reported as an estimate); the harness alone;
+- the valid logs split in two by reading the slot: clean, a log whose
+  field is the one its delivered events would leave delivered in order;
+  off, one whose field differs.
+
+Proposed, and taken: leg A alone (one goroutine, plain mode: it replays, so
+both builds answer the same queries; W12's leg B read within 0.00006 of leg
+A at every delay); the loss counted per query against the same seed's run
+with no delay, window by window; the per-query records kept outside `lab/`;
+how long each dead log has been dead, and whether its key is a hot entry,
+reported.
+
+**What lag does to a key's log** (from the code, not a reading):
+
+- A dead log's query answers as the default build's: `estimate` reads the
+  log only when the window cuts a bucket, the valid bit is set and the
+  register's newest unit is the last touch's (`register.go:509`); else both
+  builds read the same register by the same code. No code that writes word1
+  reads the log, and the default build's top 12 timestamp bits, where
+  `tfdrip` keeps the log, are 0 below 2^34 (`drip_off.go:9`). So at a delay
+  a dead query's gain is 0: what the dead logs lose is the gain the same
+  queries had with no delay.
+- In leg A a log dies only by an event an earlier unit behind its key's
+  last touch (`next0`'s second case, `drip.go:50-51`). `dripForget` is
+  called on each such event (`touch.go:372-373`) but finds the log already
+  dead (`drip.go:151`). It stays dead until an event 11 quanta or more
+  after the last touch, by quantum index (`drip.go:45`): 1.56 to 1.88 s. A
+  key touched more often stays dead.
+- A hot key's touch goes through `next0` on word0 as a register's does
+  (`touch.go:347-358`; `stamp`, `touch.go:436`), so its log dies the same
+  way; but its hot entry counts a late event at the event's own unit
+  (`hot.go:212-218`), so the register's reason to kill the log does not
+  hold for it. Reviving a log sooner and not killing a hot key's log are
+  different changes.
+- An event at or behind the last touch in its unit is pushed as a gap of 0
+  at the last touch's quantum (`next0`'s third case): the valid logs'
+  mistiming. One in the last touch's own quantum leaves the field it would
+  leave in order. A field of 0 (twelve events in one quantum) is valid; the
+  class reads the valid bit alone.
+
+**The split** (per seed and delay). Each query q (W12's: the key and window
+of tick now) has in both builds the same exact count x(q) of the events
+delivered by then, and its error e(q) = |answer - x(q)|, e_d in the default
+build and e_t in `tfdrip`; X_w is the run's exact sum over window w's
+queries. The gain is g(q) = (e_d(q) - e_t(q)) / (5 X_w); summed, it is the
+default build's mean less `tfdrip`'s, as W12 reads it. The loss of q is
+g_none(q) - g(q), from the same seed's run with no delay (its own X_w);
+summed, it is the gain with no delay less the gain at the delay. The class
+c(q) is `tfdrip`'s at the delay, read before the query's count: none, dead,
+clean or off. Each class's part is its queries' loss, each taken over all
+five windows; the parts are signed and sum to the loss. The gross loss is
+the sum of the parts above 0; the dead logs' share is their part over it.
+The dead part is the dead queries' no-delay gain, not a bound on a revival
+(a revived log would answer them with its own error, better or worse, and
+change later queries' logs); `tfdrip`'s mean less the dead part is reported
+beside 0.050 as an estimate. All sums are integers until the joiner divides
+once per class and window.
+
+**The probe** (`go/swsplit_test.go`, `TF_EXP=1`, both builds; the library
+unchanged, `lab/w12b.sh` checks it against 4a586d8's, and W12's three test
+files `swlag_test.go`, `swinfo_test.go` and `velinfo_test.go` against
+073d7da's, W12's; the head's library differs from 073d7da's by W13's tally
+alone: `push.go`, an extra parameter of `miss`, and calls behind `pushOn`, a
+constant false without `tfpush`).
+
+- **The runs.** W12's leg A (`swLagRecord`, `swLagOrder`, `swLagKeys`,
+  `swLagFilter`, the run's `deliver` and `query`) on (9, 9) and (2026, 41)
+  to (2026, 44), at W12's nine delays, each build once: 45 runs a build.
+  `swLagA`'s loop is copied (it has no hook after a delivery), with a read
+  of the slot after each delivery and around each query. Each run prints
+  W12's line unchanged (`swLagLine`), whose integer fields must equal
+  `lab/w12/a-default.txt`'s and `a-drip.txt`'s, and its own `W12b run:`
+  line, and writes its per-query file.
+- **The class** (`classify`, one read of the slot): `swLagClass`'s, and for
+  a valid log the slot's 11-bit field against the in-order field of the
+  key's delivered ticks (the newest twelve pushed by `next0`'s in-order rule
+  from all ones: `swSplitField`): equal is clean, else off. Whether the key
+  is a hot entry is read with it. Counted at each query, all to be 0:
+  `lastbad` (a valid slot whose last touch is not the key's newest
+  delivered tick); `clsmism` (the class against the one W12's own `query`
+  counted); `qmoved` (word0 changed across the count).
+- **Dead since.** From the slot after each delivery: the arrival of the
+  delivery that turned the key's log from valid to dead, kept while it
+  reads dead; a dead query's age is now less that. Beside it the probe's
+  own model of `next0`'s cases (`swSplitNext`); their disagreements counted
+  (`modelmism`, to be 0).
+- **The per-query file.** Binary, little-endian, one a run, in the
+  directory `TF_W12B_Q` names: a header (magic, version, build, seed,
+  delay, head, record count); a record of 16 bytes a query (key, window,
+  class with the hot bit, exact count, answer, dead age in ticks); a
+  trailer (each window's error and exact sums, and a CRC-32 of the
+  records). A file of the wrong size, magic, version, sums or CRC is
+  refused. 240,000 queries a run; 90 files, about 350 MB.
+- **The join** (`TestShortWindowLagSplitJoin`, the default build, no
+  filter). For each seed and delay it pairs the two builds' files and the
+  same seed's two files with no delay (the none pair with itself), checks
+  each header against the pair it is read as, and counts: queries whose
+  key, window or exact count differ between the builds, or whose key or
+  window differ from the none run's; dead queries whose answer differs from
+  the default build's (`deadmism`); records classed impossibly (`clsbad`).
+  It prints integers per class and window (queries, exact sum, both builds'
+  error sums at the delay and with none), per hot and register, and per age
+  bin ([0, 1 s), [1, 2.5 s), [2.5, 10 s), [10, 60 s), 60 s and over). A
+  refused file skips its pair with an error.
+- **Sight** (`TestShortWindowLagSplitSight`): states made by hand, each
+  checked as it is made, in `tfdrip`: a key touched in order (clean); a
+  late event in its key's last quantum (clean); one an earlier quantum
+  behind in the same unit (off), still off a push later, clean once eleven
+  more pushes have left the field; one an earlier unit behind (dead, dead
+  since its delivery), still dead 9 quanta on, clean 11 quanta on; a key
+  promoted to a hot entry (32 events in a unit: clean), touched in order
+  (clean), then an earlier unit behind (dead, hot); a key past the horizon
+  touched again (all ones, clean; on a filter of its own); twelve events in
+  one quantum (field 0, valid, clean); forty in-order touches at random
+  gaps, the field equal to the in-order field at each. A key never touched
+  reads none. In the default build every touched key reads no log. No
+  model or slot-check disagreement anywhere.
+- **No filter** (`TestShortWindowLagSplitField`, `TestShortWindowLagSplitFile`):
+  the in-order field and the dead model against hand-worked values and an
+  independent fold; the file's refusals (a byte cut or added, a record's
+  key, class, hot bit or age changed, a sum changed, the magic or version
+  wrong, an empty file); the join on two hand-made pairs, cell by cell.
+
+`lab/w12b.sh` runs: the sight in both builds; the runs, default then
+`tfdrip`; the join; and `lab/w12b.py`, which reads the lines, computes the
+parts, and prints the clauses and the reported tables. It refuses an
+uncommitted tree, a library or a reused test file that differs, a revision
+that does not resolve, and a scratch trial without a per-query directory of
+its own (or one at `/`, `$HOME`, the clone or beneath it). Caps: 10 minutes
+for the sight, 60 for each build's runs, 30 for the join. Outputs in
+`lab/w12b/`; the per-query files in `~/lab-sw-out/w12b-q/`, not committed
+(the runs replay).
+
+**Before the rule** (not a reading).
+
+- The probe compiles and vets in both builds and is gofmt-clean;
+  `TestShortWindowLagSplitField` and `TestShortWindowLagSplitFile` (no
+  filter) pass in both builds.
+- `lab/w12b.py` was tried on fabricated lines (`~/lab-sw-out/fab12b`, read
+  from no filter, W12's lines taken from `lab/w12`): a set meant to hold
+  held, exit 0; planted failures (a W12 field changed, a dead answer
+  differing, a seed's dead share 0.21) failed clauses 3 and 4 on those
+  alone, clause 5 printing not read; a set with one class part below 0, the
+  dead logs holding 0.44 of the gross loss and 1.46 of the net, failed
+  clause 5 alone; a pair the join refused failed clauses 3 and 4; a line
+  cut mid-write failed clause 3 by name; a missing seed read NOTHING READ
+  (in part); an empty set read NOTHING READ, exit 1.
+- Fresh reviewers read each piece, and then the whole, before any run.
+  Fixed from them: a check of the in-order field that compared it with
+  itself (now against an independent fold); a trailer of sums alone, which
+  could not vouch for the classes and ages the split rests on (now a
+  CRC-32); a refused pair reading as not read (now a failure); a cut line
+  crashing the joiner; no exact tie between the join's per-class cells and
+  W12's own per-class sums (now in clause 3); clause 5 printed beside a
+  failing clause 3 or 4 (now not read); a runner trial able to clear the
+  reading's per-query directory (now refused).
+- At the user's word, on a scratch clone (`~/lab-sw-out/dry12b`, the three
+  files equal to the lab's; outputs in `~/lab-sw-out/dry12b-checks`, the
+  per-query files in `~/lab-sw-out/dry12b-q`), with no delay alone:
+  - the sight, both builds: every state as made, the test passing (15
+    lines ok; in `tfdrip` the two off states off, the dead ones dead since
+    the delivery, the hot key dead and hot);
+  - the runs with no delay, both builds, all five seeds: each equals
+    `swRecord` query for query (mism 0), no query dead or off, `lastbad`,
+    `modelmism`, `clsmism` and `qmoved` 0, 240,000 records; every integer
+    field of W12's line equals `lab/w12`'s, and the printed means too; each
+    file 3,840,166 bytes;
+  - the join on those pairs: 5 pairs, every count 0;
+  - `lab/w12b.sh` refused the clone uncommitted (exit 2); after a scratch
+    commit there, with a pattern matching no test in each test's place, it
+    logged its overrides, found no library or reused test file changed,
+    logged "NO W12b LINES" at every step, read NOTHING READ for every clause
+    and exited 1, its per-query directory the scratch one;
+  - `lab/w12b.py` on those outputs: clauses 1 and 2 hold, 3 and 4 read
+    NOTHING READ (in part), 5 NOTHING READ.
+- Not read before the rule: no delayed run; no dead query outside the
+  sight.
+- Sizing: a run 0.3 s (default) and 0.4 s (`tfdrip`); a build's five runs
+  with no delay, with `swRecord`, 8 to 9 s; the join 0.3 s for five pairs.
+  The reading about two minutes.
+
+**Predictions** (none judged):
+
+- Clause 2 and W12's lines as read before the rule. At every delay W12's
+  line reproduces field for field: the probe only reads the filter.
+- Dead queries only where an event arrives an earlier unit behind its key,
+  as W12's lines count them: none at `none` and `stall:1`; 0 to 62 at
+  `jitter:1` and `stall:10` (some seeds none); hundreds at `jitter:10` and
+  `stall:100`; 18,828 to 22,012 at `jitter:100`, 26,872 to 29,816 at
+  `stall:1000`, and 83,474 to 85,728 at `jitter:1000` (of 240,000).
+- From W12's own figures (an independent review's estimate, not a reading):
+  99.5 to 99.8% of the loss at `stall:1000` sits in the 1 s window. A seed
+  holds if its dead queries' mean no-delay gain per 1 s query is 1.01 to
+  1.09 times the run's average 1 s query's: a gain like the average
+  query's gives a share of 0.46 to 0.49, one in proportion to the exact
+  count about 1.3 (the dead queries hold 30 to 33% of the counts on 11 to
+  12% of the queries). Dead keys run about 6 events a second, where the log
+  holds the last second. The lean: clause 5 holds, at about two in three;
+  its weakest seeds (2026, 41) and (2026, 44). The other parts are small
+  (at `jitter:10` the whole loss is -0.000025 to -0.000130), so the gross
+  and net loss should differ little.
+- The dead part mostly in registers, not hot entries (about 500 promotions
+  a run, W14's no-load runs). Long dead ages: a log revives only after
+  1.56 to 1.88 s with no event, which a key of about 6 events a second
+  seldom sees, so many dead queries should fall in the 10 s and 60 s bins.
+
+**Rule (before the reading).** W12b holds if:
+
+1. sight: the sight passes in both builds, every one of its 15 lines reads
+   as made and its done line counts them;
+2. no delay: on every seed, both builds' runs with no delay equal
+   `swRecord` query for query, and no `tfdrip` query is dead or off;
+3. the harness: the library equal to 4a586d8's and the three reused test
+   files to 073d7da's (the runner's step 0); 45 runs a build, one W12 line
+   and one W12b line for each build, seed and delay, each test with its
+   done line; every W12 line's integer fields equal `lab/w12`'s line for
+   its build, seed and delay; `lastbad`, `modelmism`, `clsmism` and
+   `qmoved` 0 and 240,000 records at every run; the join reads 45 pairs,
+   refuses none, and every count of differing keys, windows and exact
+   counts, and `clsbad`, is 0; X equals both builds' exact sums, and each
+   error column summed over the classes equals its W12 line's error sums;
+   each class's cells summed over the windows equal `tfdrip`'s W12 sums for
+   that class (dead, none, and clean with off as valid), and the clean,
+   off and hot dead queries equal its W12b line's; the parts sum to the
+   loss within 1e-12;
+4. a dead query answers as the default build's, at every seed and delay;
+5. the split: at `stall:1000`, on every seed, the dead logs' part is at
+   least half the gross loss (the sum of the four class parts above 0).
+
+A point not read (a seed or delay without its lines) makes its clause
+NOTHING READ in part, never a pass; a pair the join refuses fails clauses 3
+and 4. Clause 4 reads NOTHING READ if `stall:1000` has no dead query on
+some seed, and clause 5 if a seed's net loss there is 0 or less (no loss to
+split). A run cut by its cap, or one that hangs, is the probe's fault, not
+a reading: its lines are reported, and its points stand as not read until
+it is mended and run under a rule of its own.
+
+If clause 1 fails, the classes are not read; W12's lines are. If clause 2,
+3 or 4 fails, W12b says nothing of clause 5 until the difference is read
+against the code: where clause 3 or 4 fails the joiner prints clause 5 as
+not read, and where clause 1 or 2 fails the record sets it aside. If clause 5
+holds, the dead logs carry most of the one loss that puts target 7's metric
+over 0.050, and a change to the dead logs is the one aimed at it; how much
+it would win back is that arm's reading, not this one's, and the hot and
+register split says which change (reviving sooner, or not killing a hot
+key's log). If it fails, the record names the larger parts at each seed by
+signed size (off, clean, none), and whether the gap-0 push (off) is the
+larger. Target 7's status is the user's either way. A failure is read
+against the code before anything else: a defect of the library, or of the
+probe, said as such.
+
+Reported, not judged: each class's part at every seed and delay, per
+window; the net and gross loss and the dead logs' share of each; the dead
+part by hot entry and register, and by age; `tfdrip`'s mean less the dead
+part beside 0.050 (an estimate); each class's queries, exact sums and both
+builds' errors per window (in the join's lines); times.
+
+Not covered: concurrency (leg B); lag with load; delays over 1 s; other
+Horizons and Resolutions; the revival itself, and a fix of the gap-0 push
+(W12b sizes them; neither is built here).

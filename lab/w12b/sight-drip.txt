@@ -1,0 +1,20 @@
+=== RUN   TestShortWindowLagSplitSight
+    swsplit_test.go:403: W12b sight 1: build=tfdrip cls=clean field=0x7b7 model=0x7b7 since=0 hot=false ok=true
+    swsplit_test.go:405: W12b sight 2: build=tfdrip cls=clean field=0x7fe model=0x7fe since=0 hot=false ok=true
+    swsplit_test.go:407: W12b sight 3a: build=tfdrip cls=off field=0x7fe model=0x7fb since=0 hot=false ok=true
+    swsplit_test.go:409: W12b sight 3b: build=tfdrip cls=off field=0x7f9 model=0x7ed since=0 hot=false ok=true
+    swsplit_test.go:413: W12b sight 3c: build=tfdrip cls=clean field=0x0 model=0x0 since=0 hot=false ok=true
+    swsplit_test.go:415: W12b sight 4a: build=tfdrip cls=dead field=0x0 model=0x7ff since=100001 hot=false ok=true
+    swsplit_test.go:417: W12b sight 4b: build=tfdrip cls=dead field=0x0 model=0x5ff since=100001 hot=false ok=true
+    swsplit_test.go:419: W12b sight 4c: build=tfdrip cls=clean field=0x7ff model=0x7ff since=0 hot=false ok=true
+    swsplit_test.go:423: W12b sight 5a: build=tfdrip cls=clean field=0x0 model=0x0 since=0 hot=true ok=true
+    swsplit_test.go:425: W12b sight 5b: build=tfdrip cls=clean field=0x3 model=0x3 since=0 hot=true ok=true
+    swsplit_test.go:427: W12b sight 5c: build=tfdrip cls=dead field=0x0 model=0x3 since=100401 hot=true ok=true
+    swsplit_test.go:433: W12b sight 6: build=tfdrip cls=clean field=0x7ff model=0x7ff since=0 hot=false ok=true
+    swsplit_test.go:438: W12b sight 7: build=tfdrip cls=clean field=0x0 model=0x0 since=0 hot=false ok=true
+    swsplit_test.go:459: W12b sight 8: build=tfdrip cls=clean field=0x3ff model=0x3ff since=0 hot=false ok=true
+    swsplit_test.go:460: W12b sight k8: build=tfdrip cls=none field=0x0 model=0x7ff since=0 hot=false ok=true
+    swsplit_test.go:461: W12b sight done: build=tfdrip states=15
+--- PASS: TestShortWindowLagSplitSight (0.00s)
+PASS
+ok  	github.com/scooter-sensei/clepsydra/go	0.005s

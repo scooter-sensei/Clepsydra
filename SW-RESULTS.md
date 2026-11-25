@@ -4783,3 +4783,113 @@ builds' errors per window (in the join's lines); times.
 Not covered: concurrency (leg B); lag with load; delays over 1 s; other
 Horizons and Resolutions; the revival itself, and a fix of the gap-0 push
 (W12b sizes them; neither is built here).
+
+### W12b's reading (b9dd783's tree; `lab/w12b.sh`, outputs in `lab/w12b/`)
+
+`lab/w12b.sh` ran end to end (03:40:28 to 03:41:34, Go 1.24.7) and exited 0,
+and its joiner exited 0. Its first check found no library file different
+from 4a586d8's and no reused test file different from 073d7da's. Every run
+printed its lines: 45 a build. The join read 45 pairs and refused none. The
+per-query files, 90 of them (330 MB), are in `~/lab-sw-out/w12b-q/`, not
+committed: the runs replay.
+
+1. **Holds.** Sight, in both builds: the 15 lines read as made and the test
+   passes. In `tfdrip` the two off states read off, the dead ones dead
+   since their delivery, the hot key dead and hot, the rest clean; in the
+   default build every touched key reads no log.
+2. **Holds.** With no delay, on all five seeds, both builds equal `swRecord`
+   query for query, and no `tfdrip` query is dead or off.
+3. **Holds.** The harness:
+   - the base unchanged;
+   - 90 W12 lines and 90 W12b lines, one for each build, seed and delay;
+     every W12 line's integer fields equal `lab/w12`'s, so W12's leg A
+     reproduces at every delay with the probe's reads in it;
+   - `lastbad`, `modelmism`, `clsmism` and `qmoved` 0, 240,000 records, at
+     every run;
+   - the join's 45 pairs, every count of differing keys, windows and exact
+     counts 0, `clsbad` 0;
+   - X and each error column equal W12's sums, each class's cells W12's
+     per-class sums, and the parts sum to the loss within 1e-12.
+4. **Holds.** At every pair a dead query answers as the default build's. At
+   `stall:1000` the dead queries number 27,529 (9, 9), 29,816 (2026, 41),
+   28,070 (2026, 42), 29,386 (2026, 43) and 26,872 (2026, 44).
+5. **Holds.** At `stall:1000`, on every seed, the dead logs' part is at
+   least half the gross loss: it is 0.9593 to 0.9693 of it.
+
+**The split at `stall:1000`** (each class's part summed over the five
+windows):
+
+| seed | loss | gross | dead | off | clean | dead / gross | dead / loss |
+|---|---|---|---|---|---|---|---|
+| (9, 9) | 0.005024 | 0.005106 | 0.004911 | 0.000195 | -0.000082 | 0.9618 | 0.9774 |
+| (2026, 41) | 0.005695 | 0.005808 | 0.005581 | 0.000227 | -0.000113 | 0.9608 | 0.9800 |
+| (2026, 42) | 0.005301 | 0.005410 | 0.005244 | 0.000166 | -0.000109 | 0.9693 | 0.9893 |
+| (2026, 43) | 0.005586 | 0.005667 | 0.005474 | 0.000193 | -0.000080 | 0.9659 | 0.9798 |
+| (2026, 44) | 0.005290 | 0.005404 | 0.005184 | 0.000220 | -0.000114 | 0.9593 | 0.9799 |
+
+The none class's part is 0 at every seed. The off logs (the gap-0 push)
+carry 3.1 to 4.1% of the gross loss; the clean logs gain a little at the
+delay. The dead part sits in the 1 s window: 99.6 to 99.8% of it.
+
+**The dead part at `stall:1000`, by key and age:**
+
+- Hot entries carry 4.2 to 8.1% of it (0.000235 to 0.000415); registers
+  the rest.
+- By how long the log had been dead at the query: under 2.5 s, 3.3 to
+  5.2%; 2.5 to 10 s, 7.0 to 8.7%; 10 s and over, 86.1 to 89.3%; a minute
+  and over alone, 46.4 to 51.8%.
+- `tfdrip`'s mean less the dead part, an estimate and not a bound: 0.0453
+  (9, 9), 0.0456 (2026, 41), 0.0451 (2026, 42), 0.0453 (2026, 43), 0.0451
+  (2026, 44), each under 0.050.
+
+**Reported, at the other delays** (`lab/w12b/tables.txt` per window):
+
+- `jitter:100`: loss 0.0020 to 0.0031; the dead logs 0.988 to 0.997 of the
+  gross loss; the estimate 0.0447 to 0.0453.
+- `jitter:1000`: loss 0.0172 to 0.0179; dead 0.0145 to 0.0148, off 0.0039
+  to 0.0044, clean -0.0010 to -0.0012; the dead logs 0.767 to 0.787 of the
+  gross loss. `tfdrip` reads 0.098 to 0.101 there; less the dead part,
+  0.083 to 0.087, still over 0.050.
+- `stall:100`: loss 0.00009 to 0.00024; the dead logs 0.951 to 0.998 of the
+  gross loss.
+- `jitter:10`: the net loss below 0 on every seed (-0.000025 to -0.000130),
+  a gross loss of 0.000015 to 0.000096, the dead logs 0.82 to 1.00 of it.
+- `jitter:1`, `stall:1` and `stall:10`: every loss within 0.00003 of 0;
+  dead queries 0 to 62.
+- The dead queries by delay, as W12's lines count them (clause 3 ties
+  them): 18,828 to 22,012 at `jitter:100`, 83,474 to 85,728 at
+  `jitter:1000`, 800 to 1,390 at `stall:100`.
+- Times: a run 0.3 to 0.5 s; the reading 66 s.
+
+**Against the predictions.** W12's lines reproduced at every delay, as
+predicted. Clause 5 was leaned to hold at about two in three, the share
+bracketed between about 0.46 (the dead queries gaining like an average
+query) and 1.3 (gaining in proportion to their exact counts); it read 0.96
+to 0.97 of the gross loss, 0.98 to 0.99 of the net. The dead part lies
+mostly in registers and in long-dead logs, as predicted; the gross and net
+loss differ little, as predicted.
+
+**What W12b leaves.**
+
+- At `stall:1000` the one loss that puts target 7's metric over 0.050 is
+  the dead logs': 96 to 97% of the gross loss. The gap-0 push costs 3 to
+  4%.
+- 86 to 89% of that part is in logs dead 10 s or more, about half in logs
+  dead a minute or more. A log revives only after 1.56 to 1.88 s with no
+  event, which these keys seldom see, so a change aimed at them would bring
+  a log back, or not kill it, without waiting for quiet. Hot entries hold
+  4 to 8% of the part: not killing a hot key's log alone reaches no more.
+- The estimate (0.0451 to 0.0456) bounds nothing: a revived log answers
+  those queries with its own error. Whether such a change is worth an arm
+  is the user's to decide.
+- At `jitter:1000` the off logs carry a fifth of the gross loss and the
+  estimate stays over 0.050: a jitter of a second is beyond what bringing
+  dead logs back alone would mend.
+- **As the rule named, not covered:**
+  - concurrency (leg B);
+  - lag with load;
+  - delays over 1 s;
+  - other Horizons and Resolutions;
+  - the revival itself, and a fix of the gap-0 push.
+
+Target 7's status is the user's.

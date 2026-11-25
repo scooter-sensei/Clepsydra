@@ -1,0 +1,64 @@
+[03:40:28] W12b: head b9dd783; go1.24.7
+[03:40:28] 0: library files that differ from 4a586d8's: []
+[03:40:28] 0: reused test files that differ from 073d7da's: []
+[03:40:28] 1: sight
+[03:40:29] 1 default: go test exit 0
+swsplit_test.go:403: W12b sight 1: build=default cls=nolog field=0x0 model=0x7b7 since=0 hot=false ok=true
+swsplit_test.go:405: W12b sight 2: build=default cls=nolog field=0x0 model=0x7fe since=0 hot=false ok=true
+swsplit_test.go:407: W12b sight 3a: build=default cls=nolog field=0x0 model=0x7fb since=0 hot=false ok=true
+swsplit_test.go:409: W12b sight 3b: build=default cls=nolog field=0x0 model=0x7ed since=0 hot=false ok=true
+swsplit_test.go:413: W12b sight 3c: build=default cls=nolog field=0x0 model=0x0 since=0 hot=false ok=true
+swsplit_test.go:415: W12b sight 4a: build=default cls=nolog field=0x0 model=0x7ff since=0 hot=false ok=true
+swsplit_test.go:417: W12b sight 4b: build=default cls=nolog field=0x0 model=0x5ff since=0 hot=false ok=true
+swsplit_test.go:419: W12b sight 4c: build=default cls=nolog field=0x0 model=0x7ff since=0 hot=false ok=true
+swsplit_test.go:423: W12b sight 5a: build=default cls=nolog field=0x0 model=0x0 since=0 hot=true ok=true
+swsplit_test.go:425: W12b sight 5b: build=default cls=nolog field=0x0 model=0x3 since=0 hot=true ok=true
+swsplit_test.go:427: W12b sight 5c: build=default cls=nolog field=0x0 model=0x3 since=0 hot=true ok=true
+swsplit_test.go:433: W12b sight 6: build=default cls=nolog field=0x0 model=0x7ff since=0 hot=false ok=true
+swsplit_test.go:438: W12b sight 7: build=default cls=nolog field=0x0 model=0x0 since=0 hot=false ok=true
+swsplit_test.go:459: W12b sight 8: build=default cls=nolog field=0x0 model=0x3ff since=0 hot=false ok=true
+swsplit_test.go:460: W12b sight k8: build=default cls=none field=0x0 model=0x7ff since=0 hot=false ok=true
+swsplit_test.go:461: W12b sight done: build=default states=15
+--- PASS: TestShortWindowLagSplitSight (0.00s)
+ok  	github.com/scooter-sensei/clepsydra/go	0.006s
+[03:40:29] 1 drip: go test exit 0
+swsplit_test.go:403: W12b sight 1: build=tfdrip cls=clean field=0x7b7 model=0x7b7 since=0 hot=false ok=true
+swsplit_test.go:405: W12b sight 2: build=tfdrip cls=clean field=0x7fe model=0x7fe since=0 hot=false ok=true
+swsplit_test.go:407: W12b sight 3a: build=tfdrip cls=off field=0x7fe model=0x7fb since=0 hot=false ok=true
+swsplit_test.go:409: W12b sight 3b: build=tfdrip cls=off field=0x7f9 model=0x7ed since=0 hot=false ok=true
+swsplit_test.go:413: W12b sight 3c: build=tfdrip cls=clean field=0x0 model=0x0 since=0 hot=false ok=true
+swsplit_test.go:415: W12b sight 4a: build=tfdrip cls=dead field=0x0 model=0x7ff since=100001 hot=false ok=true
+swsplit_test.go:417: W12b sight 4b: build=tfdrip cls=dead field=0x0 model=0x5ff since=100001 hot=false ok=true
+swsplit_test.go:419: W12b sight 4c: build=tfdrip cls=clean field=0x7ff model=0x7ff since=0 hot=false ok=true
+swsplit_test.go:423: W12b sight 5a: build=tfdrip cls=clean field=0x0 model=0x0 since=0 hot=true ok=true
+swsplit_test.go:425: W12b sight 5b: build=tfdrip cls=clean field=0x3 model=0x3 since=0 hot=true ok=true
+swsplit_test.go:427: W12b sight 5c: build=tfdrip cls=dead field=0x0 model=0x3 since=100401 hot=true ok=true
+swsplit_test.go:433: W12b sight 6: build=tfdrip cls=clean field=0x7ff model=0x7ff since=0 hot=false ok=true
+swsplit_test.go:438: W12b sight 7: build=tfdrip cls=clean field=0x0 model=0x0 since=0 hot=false ok=true
+swsplit_test.go:459: W12b sight 8: build=tfdrip cls=clean field=0x3ff model=0x3ff since=0 hot=false ok=true
+swsplit_test.go:460: W12b sight k8: build=tfdrip cls=none field=0x0 model=0x7ff since=0 hot=false ok=true
+swsplit_test.go:461: W12b sight done: build=tfdrip states=15
+--- PASS: TestShortWindowLagSplitSight (0.00s)
+ok  	github.com/scooter-sensei/clepsydra/go	0.005s
+[03:40:29] 2: runs
+[03:41:00] 2 default: go test exit 0; 45 runs
+swsplit_test.go:1039: W12b done: build=default runs=45
+--- PASS: TestShortWindowLagSplit (30.21s)
+ok  	github.com/scooter-sensei/clepsydra/go	30.227s
+[03:41:31] 2 drip: go test exit 0; 45 runs
+swsplit_test.go:1039: W12b done: build=tfdrip runs=45
+--- PASS: TestShortWindowLagSplit (30.03s)
+ok  	github.com/scooter-sensei/clepsydra/go	30.043s
+[03:41:31] 3: join
+[03:41:34] 3: go test exit 0; 45 split lines
+swsplit_test.go:1086: W12b join done: pairs=45
+--- PASS: TestShortWindowLagSplitJoin (2.66s)
+ok  	github.com/scooter-sensei/clepsydra/go	2.668s
+[03:41:34] 4: lab/w12b.py
+[03:41:34] 4: exit 0
+W12b clause 1 (the sight: every state reads ok in both builds, the done line counts them, the test passed): holds: default: 15 lines, 0 not ok, done [15], test passed; tfdrip: 15 lines, 0 not ok, done [15], test passed
+W12b clause 2 (no delay: mism 0 in both builds, tfdrip has no dead or off query, every seed): holds: 10 runs
+W12b clause 3 (the harness: base unchanged, W12's lines equal lab/w12's, the checks 0, X and the sums equal W12's, the parts sum to the loss): holds: 90 W12 and 90 W12b run lines, 45 split lines, identity to 1e-12
+W12b clause 4 (a dead log's answer equals the default build's, at every pair; read at stall:1000 with dead queries on every seed): holds: q_dead at stall:1000: (9,9) 27529, (2026,41) 29816, (2026,42) 28070, (2026,43) 29386, (2026,44) 26872
+W12b clause 5 (at stall:1000 the dead logs hold at least half the gross loss, every seed): holds: dead share of the gross loss (9,9) 0.9618, (2026,41) 0.9608, (2026,42) 0.9693, (2026,43) 0.9659, (2026,44) 0.9593
+[03:41:34] W12b reading finished (exit 0)
